@@ -18,6 +18,7 @@ import { registerTools } from './tools/registry.js';
 import { startHttpBridge, loadOrCreateApiToken } from './transport/http-bridge.js';
 import { startWebSocketServer } from './transport/ws-bridge.js';
 import { getConnectionManager } from './connection/manager.js';
+import { getHeadlessBrowser } from './headless/backend.js';
 
 // ---------------------------------------------------------------------------
 // Version — read from package.json at build time via TS const
@@ -112,13 +113,32 @@ async function main(): Promise<void> {
 
   const toolCount = registerTools(mcpServer);
 
-  // --- Headless mode stub (P4) ---
+  // --- Headless mode ---
   if (process.env[ENV.FOX_HEADLESS]) {
-    process.stderr.write(
-      '[KitsuneMCP] FOX_HEADLESS is set — headless backend will be initialised in P4\n',
-    );
-    // TODO: P4 headless backend
-    // import('./headless/backend.js').then(m => m.startHeadless(...));
+    const { initHeadlessBrowser } = await import('./headless/backend.js');
+    const headless = await initHeadlessBrowser();
+
+    connectionManager.registerBrowser('headless', (message: string) => {
+      const command = JSON.parse(message) as { action: string; tabId?: number; data?: Record<string, unknown>; requestId: string };
+      headless.execute(command.action, command.tabId, command.data ?? {})
+        .then((result) => {
+          connectionManager.handleResponse({
+            requestId: command.requestId,
+            success: (result as Record<string, unknown>).success === true,
+            data: result,
+            error: typeof (result as Record<string, unknown>).error === 'string'
+              ? (result as Record<string, unknown>).error as string
+              : undefined,
+          });
+        })
+        .catch((err: unknown) => {
+          connectionManager.handleResponse({
+            requestId: command.requestId,
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+    });
   }
 
   // --- HTTP bridge ---
@@ -178,7 +198,17 @@ function setupShutdown(
     // 3. Close WebSocket server
     handles.wsServer.close();
 
-    // 4. Drain connection manager
+    // 4. Stop headless browser (if running)
+    const headless = getHeadlessBrowser();
+    if (headless) {
+      try {
+        await headless.stop();
+      } catch {
+        // Best-effort
+      }
+    }
+
+    // 5. Drain connection manager
     connectionManager.shutdown();
 
     process.stderr.write('[KitsuneMCP] Shutdown complete\n');
