@@ -4,6 +4,9 @@
   "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "kitsune-mcp": "dist/index.js"
+  },
   "scripts": {
     "build": "tsc -b",
     "clean": "rimraf dist *.tsbuildinfo"

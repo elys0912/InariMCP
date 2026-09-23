@@ -1,1 +1,709 @@
-export {};
+import { z } from 'zod';
+
+// ---------------------------------------------------------------------------
+// Tool classification (used by SafetyGuard)
+// ---------------------------------------------------------------------------
+
+export type ToolClassification =
+  | 'observe'
+  | 'act'
+  | 'script'
+  | 'wait'
+  | 'logging'
+  | 'workflow'
+  | 'human'
+  | 'container';
+
+// ---------------------------------------------------------------------------
+// ToolDefinition
+// ---------------------------------------------------------------------------
+
+export interface ToolDefinition {
+  /** fox_* prefixed tool name */
+  name: string;
+  /** MCP tool description (English) */
+  description: string;
+  /** Zod input schema for validation */
+  inputSchema: z.ZodType;
+  /** Safety classification */
+  classification: ToolClassification;
+}
+
+// ---------------------------------------------------------------------------
+// Shared schema fragments
+// ---------------------------------------------------------------------------
+
+/** Common element locator fields shared across many tools */
+const elementLocator = {
+  selector: z.string().optional().describe('CSS selector'),
+  xpath: z.string().optional().describe('XPath expression'),
+  text: z.string().optional().describe('Text content to find'),
+};
+
+const tabId = z.number().int().optional().describe('Tab ID (defaults to active tab)');
+const timeoutMs = z.number().int().positive().optional().describe('Timeout in milliseconds');
+
+// =========================================================================
+// Observe tools (read-only)
+// =========================================================================
+
+const foxScreenshotSchema = z.object({
+  scope: z.enum(['viewport', 'full_page', 'all_tabs', 'scroll_capture'])
+    .optional()
+    .default('viewport')
+    .describe('Capture scope: viewport (default), full_page, all_tabs, or scroll_capture'),
+  tabId,
+  saveToFile: z.boolean().optional().default(true).describe('Save screenshot to file'),
+  filename: z.string().optional().describe('Optional filename for saved screenshot'),
+  // all_tabs options
+  urlPattern: z.string().optional().describe('Regex pattern to filter tabs (for all_tabs scope)'),
+  includeData: z.boolean().optional().default(false).describe('Include base64 image data in response (for all_tabs scope)'),
+  // scroll_capture options
+  scrollStep: z.number().int().optional().describe('Pixels to scroll each step (default: 80% of viewport)'),
+  delay: z.number().int().optional().default(500).describe('Delay between scrolls in ms (for scroll_capture scope)'),
+  maxScrolls: z.number().int().optional().default(20).describe('Maximum number of scroll steps (for scroll_capture scope)'),
+  restore: z.boolean().optional().default(true).describe('Restore original scroll position after capture'),
+});
+
+const foxSnapshotSchema = z.object({
+  tabId,
+  selector: z.string().optional().describe('CSS selector to snapshot a subtree (defaults to full page)'),
+  maxDepth: z.number().int().positive().optional().describe('Maximum tree depth to traverse'),
+  includeText: z.boolean().optional().default(true).describe('Include text content in snapshot nodes'),
+  roles: z.array(z.string()).optional().describe('Filter to specific ARIA roles (e.g. ["button", "link"])'),
+});
+
+const foxGetElementsSchema = z.object({
+  selector: z.string().describe('CSS selector to find elements'),
+  limit: z.number().int().optional().default(50).describe('Maximum elements to return'),
+  tabId,
+});
+
+const foxGetTextSchema = z.object({
+  selector: z.string().optional().describe('CSS selector; defaults to the whole page body'),
+  maxLength: z.number().int().optional().default(20000).describe('Truncate returned text to this many characters'),
+  tabId,
+});
+
+const foxFindTextSchema = z.object({
+  query: z.string().describe('Text to search for in the page'),
+  caseSensitive: z.boolean().optional().default(false).describe('Case-sensitive search'),
+  entireWord: z.boolean().optional().default(false).describe('Match entire words only'),
+  includeRectData: z.boolean().optional().default(false).describe('Include bounding rect data for matches'),
+  tabId,
+});
+
+const foxGetPageInfoSchema = z.object({
+  tabId,
+});
+
+const foxGetTabsSchema = z.object({
+  currentWindowOnly: z.boolean().optional().default(true).describe('Only list tabs in the current window'),
+  limit: z.number().int().optional().default(50).describe('Max tabs to return'),
+  urlPattern: z.string().optional().describe('Regex to filter tabs by URL before applying limit'),
+  includeFavicon: z.boolean().optional().default(false).describe('Include favIconUrl per tab'),
+});
+
+// =========================================================================
+// Act tools (state-changing)
+// =========================================================================
+
+const foxNavigateSchema = z.object({
+  action: z.enum(['goto', 'back', 'forward', 'refresh', 'hard_refresh'])
+    .optional()
+    .default('goto')
+    .describe('Navigation action type'),
+  url: z.string().optional().describe('URL to navigate to (required for goto)'),
+  tabId,
+  newTab: z.boolean().optional().default(false).describe('Open URL in new tab (for goto)'),
+  waitForLoad: z.boolean().optional().default(true).describe('Wait for page to fully load'),
+  bypassCache: z.boolean().optional().default(false).describe('Bypass browser cache (for refresh)'),
+});
+
+const foxClickSchema = z.object({
+  ...elementLocator,
+  x: z.number().optional().describe('X coordinate to click'),
+  y: z.number().optional().describe('Y coordinate to click'),
+  tabId,
+  doubleClick: z.boolean().optional().default(false).describe('Perform double-click'),
+  rightClick: z.boolean().optional().default(false).describe('Perform right-click'),
+});
+
+const foxTypeSchema = z.object({
+  text: z.string().describe('Text to type'),
+  selector: z.string().optional().describe('CSS selector for the input element'),
+  placeholder: z.string().optional().describe('Placeholder text to find the input'),
+  name: z.string().optional().describe('Name attribute of the input'),
+  id: z.string().optional().describe('ID of the input element'),
+  tabId,
+  clear: z.boolean().optional().default(false).describe('Clear existing content first'),
+  pressEnter: z.boolean().optional().default(false).describe('Press Enter after typing'),
+  delay: z.number().int().optional().default(50).describe('Delay between keystrokes in ms'),
+});
+
+const foxPressKeySchema = z.object({
+  key: z.string().describe("Key to press, e.g. 'Enter', 'Escape', 'Tab', 'ArrowDown', 'a'"),
+  selector: z.string().optional().describe('CSS selector of element to focus first'),
+  ctrl: z.boolean().optional().default(false).describe('Hold Ctrl'),
+  shift: z.boolean().optional().default(false).describe('Hold Shift'),
+  alt: z.boolean().optional().default(false).describe('Hold Alt'),
+  meta: z.boolean().optional().default(false).describe('Hold Meta/Cmd'),
+  tabId,
+});
+
+const foxSetValueSchema = z.object({
+  selector: z.string().describe('CSS selector for the input element'),
+  value: z.string().describe('Value to set'),
+  tabId,
+});
+
+const foxSelectOptionSchema = z.object({
+  selector: z.string().describe('CSS selector for the select element'),
+  value: z.string().optional().describe('Option value to select'),
+  text: z.string().optional().describe('Option text to select'),
+  index: z.number().int().optional().describe('Option index to select'),
+  tabId,
+});
+
+const foxHoverSchema = z.object({
+  selector: z.string().describe('CSS selector for the element'),
+  tabId,
+});
+
+const foxScrollSchema = z.object({
+  direction: z.enum(['up', 'down', 'left', 'right', 'top', 'bottom']).optional().describe('Scroll direction'),
+  amount: z.number().int().optional().default(300).describe('Scroll amount in pixels'),
+  selector: z.string().optional().describe('CSS selector for scrollable element'),
+  toElement: z.string().optional().describe('CSS selector of element to scroll into view'),
+  tabId,
+});
+
+const foxHighlightSchema = z.object({
+  selector: z.string().describe('CSS selector for the element'),
+  duration: z.number().int().optional().default(3000).describe('Highlight duration in ms'),
+  label: z.string().optional().describe('Label to show above the element'),
+  tabId,
+});
+
+const foxCreateTabSchema = z.object({
+  url: z.string().optional().default('about:blank').describe('URL to open in the new tab'),
+  active: z.boolean().optional().default(true).describe('Make the new tab active'),
+});
+
+const foxCloseTabSchema = z.object({
+  tabId: z.number().int().describe('ID of the tab to close'),
+});
+
+const foxSwitchTabSchema = z.object({
+  tabId: z.number().int().describe('ID of the tab to focus/activate'),
+});
+
+// =========================================================================
+// Wait tools
+// =========================================================================
+
+const foxWaitForElementSchema = z.object({
+  selector: z.string().describe('CSS selector for the element'),
+  timeout: timeoutMs.default(10000),
+  visible: z.boolean().optional().default(true).describe('Wait for element to be visible'),
+  tabId,
+});
+
+const foxWaitForNetworkIdleSchema = z.object({
+  timeout: timeoutMs.default(10000),
+  idleTime: z.number().int().optional().default(500).describe('How long network must be idle (ms)'),
+  tabId,
+});
+
+const foxWaitForNavigationSchema = z.object({
+  timeout: timeoutMs.default(30000),
+  waitUntil: z.enum(['load', 'domcontentloaded']).optional().default('load')
+    .describe('When to consider navigation complete'),
+  urlPattern: z.string().optional().describe('Regex pattern the target URL must match'),
+  tabId,
+});
+
+const foxWaitForUrlSchema = z.object({
+  url: z.string().optional().describe('Exact URL to wait for'),
+  urlPattern: z.string().optional().describe('Regex pattern the URL must match'),
+  timeout: timeoutMs.default(15000),
+  tabId,
+});
+
+// =========================================================================
+// Logging tools
+// =========================================================================
+
+const foxStartLoggingSchema = z.object({
+  clearExisting: z.boolean().optional().default(false).describe('Clear any existing logs before starting'),
+  tabId,
+});
+
+const foxStopLoggingSchema = z.object({
+  tabId,
+});
+
+const foxGetConsoleLogsSchema = z.object({
+  level: z.enum(['log', 'warn', 'error', 'info', 'debug']).optional().describe('Filter by log level'),
+  search: z.string().optional().describe('Filter logs containing this text'),
+  limit: z.number().int().optional().default(100).describe('Maximum number of logs to return'),
+  tabId,
+});
+
+const foxGetNetworkLogsSchema = z.object({
+  urlPattern: z.string().optional().describe('Regex pattern to filter by URL'),
+  method: z.string().optional().describe('Filter by HTTP method (GET, POST, etc.)'),
+  status: z.number().int().optional().describe('Filter by HTTP status code'),
+  errorsOnly: z.boolean().optional().default(false).describe('Only return failed requests'),
+  limit: z.number().int().optional().default(100).describe('Maximum number of logs to return'),
+  tabId,
+});
+
+const foxClearLogsSchema = z.object({
+  console: z.boolean().optional().default(true).describe('Clear console logs'),
+  network: z.boolean().optional().default(true).describe('Clear network logs'),
+  tabId,
+});
+
+// =========================================================================
+// Script tools (require fox_allow_scripts)
+// =========================================================================
+
+const foxExecuteScriptSchema = z.object({
+  script: z.string().describe('JavaScript code to execute'),
+  tabId,
+});
+
+const evalStepSchema = z.object({
+  script: z.string().describe('JavaScript expression to evaluate'),
+  label: z.string().optional().describe('Human-readable label for this step'),
+  captureConsole: z.boolean().optional().default(true).describe('Capture console output for this step'),
+  stopOnError: z.boolean().optional().default(true).describe('Abort chain if this step throws'),
+});
+
+const foxEvalChainSchema = z.object({
+  steps: z.array(evalStepSchema).min(1).describe(
+    'Ordered list of JS expressions to evaluate. Each step receives the prior result as `$prev`.',
+  ),
+  tabId,
+});
+
+const foxInjectObserverSchema = z.object({
+  selector: z.string().optional().default('body').describe('Root element to observe'),
+  observerId: z.string().optional().describe('ID for this observer (to remove it later)'),
+  observeAttributes: z.boolean().optional().default(true).describe('Observe attribute changes'),
+  observeChildList: z.boolean().optional().default(true).describe('Observe child list changes'),
+  observeSubtree: z.boolean().optional().default(true).describe('Observe subtree changes'),
+  tabId,
+});
+
+const foxRemoveObserverSchema = z.object({
+  observerId: z.string().describe('ID of the observer to remove'),
+  tabId,
+});
+
+// =========================================================================
+// Workflow tools
+// =========================================================================
+
+const workflowAssertSchema = z.object({
+  urlContains: z.string().optional().describe('Current URL must contain this substring'),
+  textContains: z.string().optional().describe('Visible page text must contain this substring'),
+  selectorExists: z.string().optional().describe('This CSS selector must match at least one element'),
+});
+
+const workflowStepSchema = z.object({
+  label: z.string().optional().describe('Human-readable step name'),
+  tool: z.string().describe('Browser tool to call, e.g. fox_navigate, fox_click, fox_type'),
+  arguments: z.record(z.unknown()).optional().describe('Arguments for the tool'),
+  assert: workflowAssertSchema.optional().describe('Checks to run after the step succeeds'),
+});
+
+const foxRunWorkflowSchema = z.object({
+  steps: z.array(workflowStepSchema).min(1).describe('Ordered workflow steps'),
+  stopOnFailure: z.boolean().optional().default(true).describe('Stop at the first failing step'),
+  screenshotOnFailure: z.boolean().optional().default(true).describe('Capture a screenshot when a step fails'),
+});
+
+const foxAuditPageSchema = z.object({
+  screenshot: z.boolean().optional().default(true).describe('Also capture a screenshot'),
+  fullPage: z.boolean().optional().default(false).describe('Make the screenshot full-page'),
+  tabId,
+});
+
+const foxWaitAndActSchema = z.object({
+  condition: z.string().describe('JS expression that returns truthy when ready'),
+  actionScript: z.string().describe('JS to run once condition is met'),
+  pollIntervalMs: z.number().int().optional().default(200).describe('How often to check condition'),
+  timeoutMs: z.number().int().optional().default(15000).describe('Max wait time before giving up'),
+  tabId,
+});
+
+const foxHandleDialogSchema = z.object({
+  action: z.enum(['accept', 'dismiss']).describe('Whether to accept or dismiss the dialog'),
+  promptText: z.string().optional().describe('Text to enter in a prompt dialog before accepting'),
+  timeout: timeoutMs.default(5000),
+  tabId,
+});
+
+// =========================================================================
+// Human tools
+// =========================================================================
+
+const foxRequestApprovalSchema = z.object({
+  message: z.string().describe('What you are asking permission to do, in plain language'),
+  detail: z.string().optional().describe('Optional extra context shown in smaller text'),
+  timeout: timeoutMs.default(60000),
+  tabId,
+});
+
+const foxDetectCaptchaSchema = z.object({
+  timeout: timeoutMs.default(180000),
+  tabId,
+});
+
+// =========================================================================
+// Container tools (P7 implementation, schema-only for now)
+// =========================================================================
+
+const foxListContainersSchema = z.object({});
+
+const foxOpenInContainerSchema = z.object({
+  url: z.string().describe('URL to open in the container tab'),
+  containerName: z.string().optional().describe('Container name to use (creates if not found)'),
+  containerId: z.string().optional().describe('Existing contextualIdentity cookie store ID'),
+  active: z.boolean().optional().default(true).describe('Make the new tab active'),
+});
+
+// =========================================================================
+// Safety (always registered)
+// =========================================================================
+
+const foxSafetyStatusSchema = z.object({});
+
+// ===========================================================================
+// TOOL_SCHEMAS registry
+// ===========================================================================
+
+export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
+  // --- Observe ---
+  fox_screenshot: {
+    name: 'fox_screenshot',
+    description:
+      'Take a screenshot of the current browser tab. Supports multiple scopes: viewport (visible area), full_page (entire scrollable page), all_tabs (capture every open tab), or scroll_capture (scroll through page collecting element info at each position).',
+    inputSchema: foxScreenshotSchema,
+    classification: 'observe',
+  },
+  fox_snapshot: {
+    name: 'fox_snapshot',
+    description:
+      'Get a structured accessibility snapshot of the page (similar to Playwright accessibility tree). Returns an indented text representation of the page structure — more token-efficient than a screenshot and broader than fox_get_elements. Useful for understanding overall page layout and interactive elements.',
+    inputSchema: foxSnapshotSchema,
+    classification: 'observe',
+  },
+  fox_get_elements: {
+    name: 'fox_get_elements',
+    description:
+      'Find and return information about elements matching a CSS selector, including tag, text, attributes, and bounding box.',
+    inputSchema: foxGetElementsSchema,
+    classification: 'observe',
+  },
+  fox_get_text: {
+    name: 'fox_get_text',
+    description:
+      'Extract the visible text content of the page or a specific element. Lighter-weight than a screenshot for reading page content.',
+    inputSchema: foxGetTextSchema,
+    classification: 'observe',
+  },
+  fox_find_text: {
+    name: 'fox_find_text',
+    description:
+      'Search for text in the page using the native browser.find API (Firefox-only). Works across frames and finds text outside the viewport without DOM traversal. Returns match count and optionally bounding rects.',
+    inputSchema: foxFindTextSchema,
+    classification: 'observe',
+  },
+  fox_get_page_info: {
+    name: 'fox_get_page_info',
+    description:
+      'Get information about the current page including URL, title, interactive elements, forms, and headings.',
+    inputSchema: foxGetPageInfoSchema,
+    classification: 'observe',
+  },
+  fox_get_tabs: {
+    name: 'fox_get_tabs',
+    description:
+      'Get list of open browser tabs (URL, title, active status, loading state, audio). Defaults to current window, max 50 tabs. Use url_pattern to filter or current_window_only=false for all windows.',
+    inputSchema: foxGetTabsSchema,
+    classification: 'observe',
+  },
+
+  // --- Act ---
+  fox_navigate: {
+    name: 'fox_navigate',
+    description:
+      "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R).",
+    inputSchema: foxNavigateSchema,
+    classification: 'act',
+  },
+  fox_click: {
+    name: 'fox_click',
+    description:
+      'Click on an element in the browser. Can target by CSS selector, XPath, text content, or coordinates. Supports double-click and right-click.',
+    inputSchema: foxClickSchema,
+    classification: 'act',
+  },
+  fox_type: {
+    name: 'fox_type',
+    description:
+      'Type text into an input field or editable element. Can target by selector, placeholder, name, or id. Optionally clear existing content first and press Enter after.',
+    inputSchema: foxTypeSchema,
+    classification: 'act',
+  },
+  fox_press_key: {
+    name: 'fox_press_key',
+    description:
+      'Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta). Useful for Enter, Escape, Tab, arrow keys, and keyboard shortcuts.',
+    inputSchema: foxPressKeySchema,
+    classification: 'act',
+  },
+  fox_set_value: {
+    name: 'fox_set_value',
+    description:
+      'Set the value of an input element directly (without typing simulation). Faster than fox_type for programmatic value assignment.',
+    inputSchema: foxSetValueSchema,
+    classification: 'act',
+  },
+  fox_select_option: {
+    name: 'fox_select_option',
+    description:
+      'Select an option in a dropdown/select element by value, visible text, or index.',
+    inputSchema: foxSelectOptionSchema,
+    classification: 'act',
+  },
+  fox_hover: {
+    name: 'fox_hover',
+    description:
+      'Hover over an element to trigger hover effects, tooltips, or dropdown menus.',
+    inputSchema: foxHoverSchema,
+    classification: 'observe',
+  },
+  fox_scroll: {
+    name: 'fox_scroll',
+    description:
+      'Scroll the page or a specific element in any direction, or scroll a target element into view.',
+    inputSchema: foxScrollSchema,
+    classification: 'observe',
+  },
+  fox_highlight: {
+    name: 'fox_highlight',
+    description:
+      'Highlight an element on the page with a colored overlay for visual debugging. Optionally show a label.',
+    inputSchema: foxHighlightSchema,
+    classification: 'observe',
+  },
+  fox_create_tab: {
+    name: 'fox_create_tab',
+    description: 'Create a new browser tab, optionally with a URL.',
+    inputSchema: foxCreateTabSchema,
+    classification: 'act',
+  },
+  fox_close_tab: {
+    name: 'fox_close_tab',
+    description: 'Close a browser tab by its tab ID.',
+    inputSchema: foxCloseTabSchema,
+    classification: 'act',
+  },
+  fox_switch_tab: {
+    name: 'fox_switch_tab',
+    description: 'Focus/activate a browser tab by its tab ID.',
+    inputSchema: foxSwitchTabSchema,
+    classification: 'observe',
+  },
+
+  // --- Wait ---
+  fox_wait_for_element: {
+    name: 'fox_wait_for_element',
+    description:
+      'Wait for an element matching a CSS selector to appear (and optionally become visible) on the page.',
+    inputSchema: foxWaitForElementSchema,
+    classification: 'wait',
+  },
+  fox_wait_for_network_idle: {
+    name: 'fox_wait_for_network_idle',
+    description:
+      'Wait for network requests (fetch/XHR) to settle. Use after actions that trigger API calls.',
+    inputSchema: foxWaitForNetworkIdleSchema,
+    classification: 'wait',
+  },
+  fox_wait_for_navigation: {
+    name: 'fox_wait_for_navigation',
+    description:
+      'Wait for a page navigation to complete. Useful after clicking links or submitting forms that cause a full page load.',
+    inputSchema: foxWaitForNavigationSchema,
+    classification: 'wait',
+  },
+  fox_wait_for_url: {
+    name: 'fox_wait_for_url',
+    description:
+      'Wait until the current URL matches an exact string or regex pattern. Useful for waiting on redirects or SPA route changes.',
+    inputSchema: foxWaitForUrlSchema,
+    classification: 'wait',
+  },
+
+  // --- Logging ---
+  fox_start_logging: {
+    name: 'fox_start_logging',
+    description:
+      'Start capturing console logs and network requests from the browser. Use before performing actions you want to monitor.',
+    inputSchema: foxStartLoggingSchema,
+    classification: 'logging',
+  },
+  fox_stop_logging: {
+    name: 'fox_stop_logging',
+    description:
+      'Stop capturing console logs and network requests. Logs are preserved and can still be retrieved.',
+    inputSchema: foxStopLoggingSchema,
+    classification: 'logging',
+  },
+  fox_get_console_logs: {
+    name: 'fox_get_console_logs',
+    description:
+      'Retrieve captured console logs (log, error, warn, info, debug). Filter by level or search text.',
+    inputSchema: foxGetConsoleLogsSchema,
+    classification: 'logging',
+  },
+  fox_get_network_logs: {
+    name: 'fox_get_network_logs',
+    description:
+      'Retrieve captured network requests and responses (fetch/XHR). Filter by URL pattern, HTTP method, status code, or errors only.',
+    inputSchema: foxGetNetworkLogsSchema,
+    classification: 'logging',
+  },
+  fox_clear_logs: {
+    name: 'fox_clear_logs',
+    description: 'Clear all captured console and/or network logs.',
+    inputSchema: foxClearLogsSchema,
+    classification: 'logging',
+  },
+
+  // --- Script ---
+  fox_execute_script: {
+    name: 'fox_execute_script',
+    description:
+      'Execute JavaScript code in the browser context. Requires script execution to be enabled in safety config.',
+    inputSchema: foxExecuteScriptSchema,
+    classification: 'script',
+  },
+  fox_eval_chain: {
+    name: 'fox_eval_chain',
+    description:
+      'Execute a sequence of JavaScript expressions sharing state between steps. Each step receives the prior result as `$prev`. Console output is captured per step. Ideal for multi-turn inspection without round-tripping.',
+    inputSchema: foxEvalChainSchema,
+    classification: 'script',
+  },
+  fox_inject_observer: {
+    name: 'fox_inject_observer',
+    description:
+      'Inject a MutationObserver into the page that captures DOM changes (attributes, child list, subtree). Accumulated changes are readable via fox_get_console_logs. Requires script execution enabled.',
+    inputSchema: foxInjectObserverSchema,
+    classification: 'script',
+  },
+  fox_remove_observer: {
+    name: 'fox_remove_observer',
+    description:
+      'Remove a previously injected MutationObserver and get all accumulated changes since it was injected.',
+    inputSchema: foxRemoveObserverSchema,
+    classification: 'script',
+  },
+
+  // --- Workflow ---
+  fox_run_workflow: {
+    name: 'fox_run_workflow',
+    description:
+      'Run a declarative multi-step browser workflow with per-step assertions — an end-to-end test runner. Each step calls a browser tool; optional assertions check URL, text, or selector after each step. Failing steps capture a screenshot.',
+    inputSchema: foxRunWorkflowSchema,
+    classification: 'workflow',
+  },
+  fox_audit_page: {
+    name: 'fox_audit_page',
+    description:
+      'Audit the current page: heading structure, images missing alt text, unlabeled form inputs, empty links/buttons, meta/title info, viewport and element counts, plus an optional screenshot.',
+    inputSchema: foxAuditPageSchema,
+    classification: 'observe',
+  },
+  fox_wait_and_act: {
+    name: 'fox_wait_and_act',
+    description:
+      "Poll the page until a JS condition is met, then execute an action script. Use for waiting on async UI state (e.g. 'wait until #result is visible, then click it').",
+    inputSchema: foxWaitAndActSchema,
+    classification: 'script',
+  },
+  fox_handle_dialog: {
+    name: 'fox_handle_dialog',
+    description:
+      'Handle a browser dialog (alert, confirm, or prompt). Accept or dismiss the dialog, and optionally enter text for prompt dialogs.',
+    inputSchema: foxHandleDialogSchema,
+    classification: 'act',
+  },
+
+  // --- Human ---
+  fox_request_approval: {
+    name: 'fox_request_approval',
+    description:
+      'Ask the human at the browser to approve or deny an action. Shows a banner on the page with an OS notification and waits for their decision. Unavailable in headless mode.',
+    inputSchema: foxRequestApprovalSchema,
+    classification: 'human',
+  },
+  fox_detect_captcha: {
+    name: 'fox_detect_captcha',
+    description:
+      'Detect captchas on the page (reCAPTCHA, hCaptcha, Cloudflare Turnstile, generic image captchas). Reports what was found so the human can be asked to solve it. Does NOT auto-solve.',
+    inputSchema: foxDetectCaptchaSchema,
+    classification: 'human',
+  },
+
+  // --- Container (P7 implementation, schema defined ahead) ---
+  fox_list_containers: {
+    name: 'fox_list_containers',
+    description:
+      'List all Firefox container identities (contextualIdentities). Returns name, color, icon, and cookie store ID for each container.',
+    inputSchema: foxListContainersSchema,
+    classification: 'container',
+  },
+  fox_open_in_container: {
+    name: 'fox_open_in_container',
+    description:
+      'Open a URL in a Firefox container tab. Specify container by name (creates if not found) or by cookie store ID. Provides isolated cookie/storage via contextualIdentities API.',
+    inputSchema: foxOpenInContainerSchema,
+    classification: 'container',
+  },
+
+  // --- Safety (always registered) ---
+  fox_safety_status: {
+    name: 'fox_safety_status',
+    description:
+      'Show the active safety guard policy: read-only mode, script toggle, protected/blocked/allowed URL patterns, rate-limit state, and audit log location.',
+    inputSchema: foxSafetyStatusSchema,
+    classification: 'observe',
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Convenience accessors
+// ---------------------------------------------------------------------------
+
+/** All tool names */
+export const TOOL_NAMES = Object.keys(TOOL_SCHEMAS) as (keyof typeof TOOL_SCHEMAS)[];
+
+/** Total number of registered tools */
+export const TOOL_COUNT = TOOL_NAMES.length;
+
+/** Get a ToolDefinition by name, or undefined if not found */
+export function getToolDefinition(name: string): ToolDefinition | undefined {
+  return TOOL_SCHEMAS[name];
+}
+
+/** Get all tools matching a given classification */
+export function getToolsByClassification(classification: ToolClassification): ToolDefinition[] {
+  return Object.values(TOOL_SCHEMAS).filter((t) => t.classification === classification);
+}
