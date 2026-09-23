@@ -1,0 +1,21 @@
+{
+  "name": "@kitsune-mcp/server",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@kitsune-mcp/shared": "*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "playwright": "^1.50.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.0"
+  }
+}

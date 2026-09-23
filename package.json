@@ -1,0 +1,20 @@
+{
+  "name": "kitsune-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Firefox MCP addon for Claude Code — browser automation via extension + native messaging",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "clean": "npm run clean --workspaces"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "rimraf": "^6.1.3",
+    "typescript": "^7.0.2"
+  }
+}

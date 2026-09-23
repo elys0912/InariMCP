@@ -1,0 +1,7 @@
+{
+  "name": "kitsune_mcp",
+  "description": "KitsuneMCP Native Messaging Host",
+  "path": "/path/to/run-host.sh",
+  "type": "stdio",
+  "allowed_extensions": ["kitsune-mcp@example.com"]
+}
