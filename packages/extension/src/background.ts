@@ -336,13 +336,16 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         result = await createNewTab(data as { url?: string; active?: boolean });
         break;
       case "closeTab":
-        result = await closeTab(tabId!);
+        if (tabId === undefined) { result = { success: false, error: "tabId is required" }; break; }
+        result = await closeTab(tabId);
         break;
       case "focusTab":
-        result = await focusTab(tabId!);
+        if (tabId === undefined) { result = { success: false, error: "tabId is required" }; break; }
+        result = await focusTab(tabId);
         break;
       case "getTabInfo":
-        result = await getTabInfo(tabId!);
+        if (tabId === undefined) { result = { success: false, error: "tabId is required" }; break; }
+        result = await getTabInfo(tabId);
         break;
       case "findTabs":
         result = await findTabs(data as FindTabsOptions);
@@ -517,12 +520,12 @@ async function screenshotAllTabs(
 
     let targetTabs = tabs.filter(
       (t) =>
-        !t.url.startsWith("about:") && !t.url.startsWith("moz-extension:"),
+        !t.url?.startsWith("about:") && !t.url?.startsWith("moz-extension:"),
     );
 
     if (options.urlPattern) {
       const regex = new RegExp(options.urlPattern);
-      targetTabs = targetTabs.filter((t) => regex.test(t.url));
+      targetTabs = targetTabs.filter((t) => t.url && regex.test(t.url));
     }
 
     const results: Record<string, unknown>[] = [];
@@ -540,8 +543,8 @@ async function screenshotAllTabs(
         results.push({
           success: true,
           tabId: tab.id,
-          url: tab.url,
-          title: tab.title,
+          url: tab.url ?? "",
+          title: tab.title ?? "",
           data: options.includeData ? dataUrl : undefined,
           timestamp: Date.now(),
         });
@@ -549,7 +552,7 @@ async function screenshotAllTabs(
         results.push({
           success: false,
           tabId: tab.id,
-          url: tab.url,
+          url: tab.url ?? "",
           error: (e as Error).message,
         });
       }
@@ -709,7 +712,7 @@ async function getPageInfo(
     })) as Record<string, unknown>;
     return {
       success: true,
-      tab: { id: tab.id, url: tab.url, title: tab.title },
+      tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
       ...result,
     };
   } catch (error) {
@@ -778,10 +781,10 @@ async function getAllTabs(
     const windowMap = new Map(windows.map((w) => [w.id, w]));
 
     const totalMatched = urlPattern
-      ? tabs.filter((t) => urlPattern.test(t.url)).length
+      ? tabs.filter((t) => t.url && urlPattern.test(t.url)).length
       : tabs.length;
     if (urlPattern) {
-      tabs = tabs.filter((t) => urlPattern.test(t.url));
+      tabs = tabs.filter((t) => t.url && urlPattern.test(t.url));
     }
 
     const truncated = tabs.length > limit;
@@ -844,8 +847,8 @@ async function getTabInfo(tabId: number): Promise<CommandResult> {
       success: true,
       tab: {
         id: tab.id,
-        url: tab.url,
-        title: tab.title,
+        url: tab.url ?? "",
+        title: tab.title ?? "",
         active: tab.active,
         windowId: tab.windowId,
         index: tab.index,
@@ -874,11 +877,11 @@ async function findTabs(options: FindTabsOptions): Promise<CommandResult> {
     let filtered = tabs;
 
     if (options.url) {
-      filtered = filtered.filter((t) => t.url.startsWith(options.url!));
+      filtered = filtered.filter((t) => t.url?.startsWith(options.url!));
     }
     if (options.urlPattern) {
       const regex = new RegExp(options.urlPattern);
-      filtered = filtered.filter((t) => regex.test(t.url));
+      filtered = filtered.filter((t) => t.url && regex.test(t.url));
     }
     if (options.title) {
       const titleLower = options.title.toLowerCase();
@@ -921,7 +924,7 @@ async function createNewTab(data: {
     });
     return {
       success: true,
-      tab: { id: tab.id, url: tab.url, title: tab.title },
+      tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
     };
   } catch (error) {
     return { success: false, error: (error as Error).message };
@@ -973,7 +976,7 @@ async function refreshTab(
             resolve({
               success: true,
               refreshed: true,
-              tab: { id: tab.id, url: tab.url, title: tab.title },
+              tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
               bypassCache: options.bypassCache || false,
             });
           }
@@ -994,7 +997,7 @@ async function refreshTab(
     return {
       success: true,
       refreshed: true,
-      tab: { id: tab.id, url: tab.url },
+      tab: { id: tab.id, url: tab.url ?? "" },
     };
   } catch (error) {
     return { success: false, error: (error as Error).message };
@@ -1016,21 +1019,21 @@ async function reloadAllTabs(
 
     for (const tab of tabs) {
       if (
-        tab.url.startsWith("about:") ||
-        tab.url.startsWith("moz-extension:")
+        tab.url?.startsWith("about:") ||
+        tab.url?.startsWith("moz-extension:")
       ) {
         continue;
       }
 
       if (options.urlPattern) {
         const regex = new RegExp(options.urlPattern);
-        if (!regex.test(tab.url)) continue;
+        if (!tab.url || !regex.test(tab.url)) continue;
       }
 
       await browser.tabs.reload(tab.id, {
         bypassCache: options.bypassCache || false,
       });
-      results.push({ id: tab.id, url: tab.url, reloaded: true });
+      results.push({ id: tab.id, url: tab.url ?? "", reloaded: true });
     }
 
     return {
@@ -1059,18 +1062,18 @@ async function reloadTabsByUrl(
       let matches = false;
 
       if (options.url) {
-        matches =
-          tab.url === options.url || tab.url.startsWith(options.url);
+        matches = !!tab.url &&
+          (tab.url === options.url || tab.url.startsWith(options.url));
       } else if (options.urlPattern) {
         const regex = new RegExp(options.urlPattern);
-        matches = regex.test(tab.url);
+        matches = !!tab.url && regex.test(tab.url);
       }
 
       if (matches) {
         await browser.tabs.reload(tab.id, {
           bypassCache: options.bypassCache !== false,
         });
-        results.push({ id: tab.id, url: tab.url, reloaded: true });
+        results.push({ id: tab.id, url: tab.url ?? "", reloaded: true });
       }
     }
 
@@ -1145,7 +1148,7 @@ browser.contextMenus.onClicked.addListener(
           nativePort.postMessage({
             action: "screenshotTaken",
             data: result.data,
-            tab: { id: tab.id, url: tab.url, title: tab.title },
+            tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
           });
         }
       });

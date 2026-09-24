@@ -266,6 +266,9 @@
   let networkLogs: NetworkLogEntry[] = [];
   const MAX_LOG_ENTRIES = 500;
 
+  // Active network request counter (used by waitForNetworkIdle)
+  let __fox_activeRequests = 0;
+
   // Original console methods (saved for restoration)
   const originalConsole: Record<string, (...args: unknown[]) => void> = {
     log: console.log.bind(console),
@@ -347,6 +350,7 @@
       logEntry.requestBody = String(init.body).substring(0, 1000);
     }
 
+    __fox_activeRequests++;
     try {
       const response = await originalFetch.apply(
         window,
@@ -386,8 +390,10 @@
         }
       }
 
+      __fox_activeRequests--;
       return response;
     } catch (error) {
+      __fox_activeRequests--;
       if (loggingEnabled) {
         logEntry.error = (error as Error).message;
         logEntry.duration = Date.now() - startTime;
@@ -444,6 +450,11 @@
     this: TrackedXHR,
     body?: Document | XMLHttpRequestBodyInit | null,
   ): void {
+    __fox_activeRequests++;
+    this.addEventListener("loadend", () => {
+      __fox_activeRequests--;
+    });
+
     if (loggingEnabled && this._logData) {
       const startTime = Date.now();
       this._logData.startTime = new Date().toISOString();
@@ -1779,72 +1790,31 @@
     const timeout = options.timeout || 10000;
     const idleTime = options.idleTime || 500;
     const startTime = Date.now();
+    let lastActivitySnapshot = __fox_activeRequests;
+    let lastChangeTime = Date.now();
 
-    let lastActivityTime = Date.now();
-    let pendingRequests = 0;
-
-    const savedFetch = window.fetch;
-    window.fetch = (async (...args: Parameters<typeof window.fetch>) => {
-      pendingRequests++;
-      lastActivityTime = Date.now();
-      try {
-        return await savedFetch.apply(window, args);
-      } finally {
-        pendingRequests--;
-        lastActivityTime = Date.now();
+    while (Date.now() - startTime < timeout) {
+      if (__fox_activeRequests !== lastActivitySnapshot) {
+        lastActivitySnapshot = __fox_activeRequests;
+        lastChangeTime = Date.now();
       }
-    }) as typeof window.fetch;
-
-    const savedOpen = XMLHttpRequest.prototype.open;
-    const savedSend = XMLHttpRequest.prototype.send;
-
-    XMLHttpRequest.prototype.open = function (
-      this: TrackedXHR,
-      ...args: Parameters<typeof XMLHttpRequest.prototype.open>
-    ) {
-      (this as unknown as Record<string, unknown>).__fox_tracked = true;
-      return savedOpen.apply(this, args);
-    } as typeof XMLHttpRequest.prototype.open;
-
-    XMLHttpRequest.prototype.send = function (
-      this: TrackedXHR,
-      ...args: Parameters<typeof XMLHttpRequest.prototype.send>
-    ) {
-      if ((this as unknown as Record<string, unknown>).__fox_tracked) {
-        pendingRequests++;
-        lastActivityTime = Date.now();
-        this.addEventListener("loadend", () => {
-          pendingRequests--;
-          lastActivityTime = Date.now();
-        });
+      const idleDuration = Date.now() - lastChangeTime;
+      if (__fox_activeRequests === 0 && idleDuration >= idleTime) {
+        return {
+          idle: true,
+          waitedMs: Date.now() - startTime,
+          pendingRequests: 0,
+        };
       }
-      return savedSend.apply(this, args);
-    };
-
-    try {
-      while (Date.now() - startTime < timeout) {
-        const idleDuration = Date.now() - lastActivityTime;
-        if (pendingRequests === 0 && idleDuration >= idleTime) {
-          return {
-            idle: true,
-            waitedMs: Date.now() - startTime,
-            pendingRequests: 0,
-          };
-        }
-        await sleep(100);
-      }
-
-      return {
-        idle: false,
-        timedOut: true,
-        waitedMs: timeout,
-        pendingRequests,
-      };
-    } finally {
-      window.fetch = savedFetch;
-      XMLHttpRequest.prototype.open = savedOpen;
-      XMLHttpRequest.prototype.send = savedSend;
+      await sleep(100);
     }
+
+    return {
+      idle: false,
+      timedOut: true,
+      waitedMs: timeout,
+      pendingRequests: __fox_activeRequests,
+    };
   }
 
   // ---------------------------------------------------------------------------

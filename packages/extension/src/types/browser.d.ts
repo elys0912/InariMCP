@@ -52,8 +52,8 @@ declare namespace browser {
   namespace tabs {
     interface Tab {
       id: number;
-      url: string;
-      title: string;
+      url?: string;
+      title?: string;
       active: boolean;
       windowId: number;
       index: number;
