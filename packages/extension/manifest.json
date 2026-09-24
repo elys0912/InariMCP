@@ -25,7 +25,7 @@
     {
       "matches": ["<all_urls>"],
       "js": ["dist/content.js"],
-      "css": ["content.css"],
+      "css": ["dist/content.css"],
       "run_at": "document_end",
       "all_frames": true
     }
@@ -38,7 +38,7 @@
       "48": "icons/icon-48.png"
     },
     "default_title": "KitsuneMCP",
-    "default_popup": "popup/popup.html"
+    "default_popup": "dist/popup/popup.html"
   },
 
   "icons": {
