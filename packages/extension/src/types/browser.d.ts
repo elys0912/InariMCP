@@ -62,6 +62,7 @@ declare namespace browser {
       discarded: boolean;
       audible: boolean;
       favIconUrl?: string;
+      cookieStoreId?: string;
     }
 
     interface TabChangeInfo {
@@ -78,7 +79,7 @@ declare namespace browser {
 
     function query(queryInfo: QueryInfo): Promise<Tab[]>;
     function get(tabId: number): Promise<Tab>;
-    function create(createProperties: { url?: string; active?: boolean }): Promise<Tab>;
+    function create(createProperties: { url?: string; active?: boolean; cookieStoreId?: string }): Promise<Tab>;
     function remove(tabId: number): Promise<void>;
     function update(tabId: number, updateProperties: { active?: boolean; url?: string }): Promise<Tab>;
     function reload(tabId: number, reloadProperties?: { bypassCache?: boolean }): Promise<void>;
@@ -120,6 +121,53 @@ declare namespace browser {
       message: string;
       iconUrl?: string;
     }): Promise<string>;
+  }
+
+  interface ContextualIdentity {
+    cookieStoreId: string;
+    color: string;
+    icon: string;
+    name: string;
+  }
+
+  interface ContextualIdentities {
+    query(details: { name?: string }): Promise<ContextualIdentity[]>;
+    create(details: { name: string; color: string; icon: string }): Promise<ContextualIdentity>;
+    remove(cookieStoreId: string): Promise<ContextualIdentity>;
+    get(cookieStoreId: string): Promise<ContextualIdentity>;
+  }
+
+  const contextualIdentities: ContextualIdentities;
+
+  // browser.find API (Firefox-specific)
+  namespace find {
+    interface FindResult {
+      count: number;
+      rangeData?: Array<{
+        framePos: number;
+        startTextNodePos: number;
+        endTextNodePos: number;
+        startOffset: number;
+        endOffset: number;
+      }>;
+      rectData?: Array<{
+        rectsAndTexts: {
+          rectList: Array<{ top: number; left: number; bottom: number; right: number }>;
+          textList: string[];
+        };
+        textList: string[];
+      }>;
+    }
+
+    function find(queryphrase: string, params?: {
+      tabId?: number;
+      caseSensitive?: boolean;
+      entireWord?: boolean;
+      includeRangeData?: boolean;
+      includeRectData?: boolean;
+    }): Promise<FindResult>;
+    function highlightResults(params?: { tabId?: number; rangeIndex?: number }): Promise<void>;
+    function removeHighlighting(tabId?: number): Promise<void>;
   }
 
   namespace contextMenus {

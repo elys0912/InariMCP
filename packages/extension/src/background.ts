@@ -341,6 +341,21 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
   const { action, tabId, data } = message;
   let result: CommandResult = { success: false };
 
+  // Container scope check (Layer 0)
+  const containerScope = (message as Record<string, unknown>).containerScope as
+    | { containerName: string }
+    | undefined;
+  if (containerScope && tabId !== undefined) {
+    const inScope = await isTabInContainer(tabId, containerScope.containerName);
+    if (!inScope) {
+      result = { success: false, error: "Tab is outside the container scope" };
+      if (nativePort && message.requestId) {
+        nativePort.postMessage({ requestId: message.requestId, ...result });
+      }
+      return result;
+    }
+  }
+
   try {
     switch (action) {
       case "screenshot":
@@ -478,6 +493,35 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
           ...data,
         });
         break;
+      case "list_containers":
+        result = await listContainers();
+        break;
+      case "open_in_container":
+        result = await openInContainer(data as { url: string; containerName?: string; cookieStoreId?: string; color?: string; icon?: string; active?: boolean });
+        break;
+      case "find_text": {
+        const findQuery = (data as { query: string }).query;
+        const caseSensitive = (data as { caseSensitive?: boolean }).caseSensitive ?? false;
+        const entireWord = (data as { entireWord?: boolean }).entireWord ?? false;
+        const includeRectData = (data as { includeRectData?: boolean }).includeRectData ?? false;
+
+        const tab = await resolveTab(tabId);
+        const findResult = await browser.find.find(findQuery, {
+          tabId: tab.id,
+          caseSensitive,
+          entireWord,
+          includeRangeData: true,
+          includeRectData,
+        });
+
+        result = {
+          success: true,
+          count: findResult.count,
+          rangeData: findResult.rangeData,
+          rectData: includeRectData ? findResult.rectData : undefined,
+        };
+        break;
+      }
       default:
         result = { success: false, error: `Unknown action: ${action}` };
     }
@@ -1075,6 +1119,93 @@ async function reloadTabsByUrl(
       reloadedCount: results.length,
       tabs: results,
       bypassCache: options.bypassCache !== false,
+    };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Container helpers
+// ---------------------------------------------------------------------------
+
+async function isTabInContainer(
+  tabId: number,
+  containerName: string,
+): Promise<boolean> {
+  try {
+    const tab = await browser.tabs.get(tabId);
+    if (!tab.cookieStoreId || tab.cookieStoreId === "firefox-default") {
+      return false;
+    }
+    const identity = await browser.contextualIdentities.get(tab.cookieStoreId);
+    return identity.name === containerName;
+  } catch {
+    return false;
+  }
+}
+
+async function listContainers(): Promise<CommandResult> {
+  try {
+    const containers = await browser.contextualIdentities.query({});
+    return {
+      success: true,
+      containers: containers.map((c) => ({
+        name: c.name,
+        color: c.color,
+        icon: c.icon,
+        cookieStoreId: c.cookieStoreId,
+      })),
+    };
+  } catch (error) {
+    return { success: false, error: (error as Error).message };
+  }
+}
+
+async function openInContainer(data: {
+  url: string;
+  containerName?: string;
+  cookieStoreId?: string;
+  color?: string;
+  icon?: string;
+  active?: boolean;
+}): Promise<CommandResult> {
+  try {
+    let storeId = data.cookieStoreId;
+
+    if (!storeId && data.containerName) {
+      const matches = await browser.contextualIdentities.query({
+        name: data.containerName,
+      });
+      if (matches.length > 0) {
+        storeId = matches[0].cookieStoreId;
+      } else {
+        const created = await browser.contextualIdentities.create({
+          name: data.containerName,
+          color: data.color || "toolbar",
+          icon: data.icon || "circle",
+        });
+        storeId = created.cookieStoreId;
+      }
+    }
+
+    if (!storeId) {
+      return {
+        success: false,
+        error: "Either containerName or cookieStoreId is required",
+      };
+    }
+
+    const tab = await browser.tabs.create({
+      url: data.url || "about:blank",
+      cookieStoreId: storeId,
+      active: data.active !== false,
+    });
+
+    return {
+      success: true,
+      tabId: tab.id,
+      cookieStoreId: storeId,
     };
   } catch (error) {
     return { success: false, error: (error as Error).message };
