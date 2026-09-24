@@ -71,6 +71,50 @@ interface ReloadByUrlOptions {
 }
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const TIMEOUTS = {
+  COMMAND: 30_000,
+  RECONNECT_MAX: 30_000,
+  RECONNECT_INITIAL: 1_000,
+  SCREENSHOT_DELAY: 150,
+  NAVIGATION: 30_000,
+} as const;
+
+const EXCLUDED_URL_PREFIXES = ["about:", "moz-extension:"] as const;
+
+function shouldSkipTab(url: string | undefined): boolean {
+  if (!url) return true;
+  return EXCLUDED_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
+}
+
+function matchesPattern(url: string | undefined, pattern: string): boolean {
+  if (!url) return false;
+  return new RegExp(pattern).test(url);
+}
+
+function waitForTabComplete(tabId: number, timeoutMs = TIMEOUTS.NAVIGATION): Promise<void> {
+  return new Promise((resolve) => {
+    const listener = (
+      updatedTabId: number,
+      changeInfo: browser.tabs.TabChangeInfo,
+    ): void => {
+      if (updatedTabId === tabId && changeInfo.status === "complete") {
+        browser.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    browser.tabs.onUpdated.addListener(listener);
+
+    setTimeout(() => {
+      browser.tabs.onUpdated.removeListener(listener);
+      resolve();
+    }, timeoutMs);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
@@ -83,8 +127,8 @@ let requestCounter = 0;
 // Reconnection settings
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 20;
-const INITIAL_RECONNECT_DELAY = 1000;
-const MAX_RECONNECT_DELAY = 30000;
+const INITIAL_RECONNECT_DELAY = TIMEOUTS.RECONNECT_INITIAL;
+const MAX_RECONNECT_DELAY = TIMEOUTS.RECONNECT_MAX;
 
 // ---------------------------------------------------------------------------
 // Reconnection helpers
@@ -106,7 +150,7 @@ function scheduleReconnect(): void {
     setTimeout(() => {
       reconnectAttempts = 0;
       connectNativeHost();
-    }, 60000);
+    }, 60_000);
     return;
   }
 
@@ -227,7 +271,7 @@ function sendToNativeHost(
           pendingRequests.delete(requestId);
           reject(new Error("Request timeout"));
         }
-      }, 30000);
+      }, TIMEOUTS.COMMAND);
 
       pendingRequests.set(requestId, { resolve, reject, timeoutId });
 
@@ -468,7 +512,7 @@ async function takeScreenshot(
     if (needsFocus && options.allowFocus !== false) {
       originalActiveTab = currentTab;
       await browser.tabs.update(targetTab.id, { active: true });
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, TIMEOUTS.SCREENSHOT_DELAY));
     }
 
     try {
@@ -518,14 +562,10 @@ async function screenshotAllTabs(
       await browser.tabs.query({ active: true, currentWindow: true })
     )[0];
 
-    let targetTabs = tabs.filter(
-      (t) =>
-        !t.url?.startsWith("about:") && !t.url?.startsWith("moz-extension:"),
-    );
+    let targetTabs = tabs.filter((t) => !shouldSkipTab(t.url));
 
     if (options.urlPattern) {
-      const regex = new RegExp(options.urlPattern);
-      targetTabs = targetTabs.filter((t) => t.url && regex.test(t.url));
+      targetTabs = targetTabs.filter((t) => matchesPattern(t.url, options.urlPattern!));
     }
 
     const results: Record<string, unknown>[] = [];
@@ -631,28 +671,8 @@ async function navigateTo(
   try {
     const tab = await resolveTab(tabId);
     await browser.tabs.update(tab.id, { url: data.url });
-
-    return new Promise((resolve) => {
-      const listener = (
-        updatedTabId: number,
-        changeInfo: browser.tabs.TabChangeInfo,
-      ): void => {
-        if (updatedTabId === tab.id && changeInfo.status === "complete") {
-          browser.tabs.onUpdated.removeListener(listener);
-          resolve({ success: true, url: data.url });
-        }
-      };
-      browser.tabs.onUpdated.addListener(listener);
-
-      setTimeout(() => {
-        browser.tabs.onUpdated.removeListener(listener);
-        resolve({
-          success: true,
-          url: data.url,
-          note: "Navigation initiated but completion not confirmed",
-        });
-      }, 30000);
-    });
+    await waitForTabComplete(tab.id);
+    return { success: true, url: data.url };
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }
@@ -880,8 +900,7 @@ async function findTabs(options: FindTabsOptions): Promise<CommandResult> {
       filtered = filtered.filter((t) => t.url?.startsWith(options.url!));
     }
     if (options.urlPattern) {
-      const regex = new RegExp(options.urlPattern);
-      filtered = filtered.filter((t) => t.url && regex.test(t.url));
+      filtered = filtered.filter((t) => matchesPattern(t.url, options.urlPattern!));
     }
     if (options.title) {
       const titleLower = options.title.toLowerCase();
@@ -966,32 +985,13 @@ async function refreshTab(
     });
 
     if (options.waitForLoad !== false) {
-      return new Promise((resolve) => {
-        const listener = (
-          updatedTabId: number,
-          changeInfo: browser.tabs.TabChangeInfo,
-        ): void => {
-          if (updatedTabId === tab.id && changeInfo.status === "complete") {
-            browser.tabs.onUpdated.removeListener(listener);
-            resolve({
-              success: true,
-              refreshed: true,
-              tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
-              bypassCache: options.bypassCache || false,
-            });
-          }
-        };
-        browser.tabs.onUpdated.addListener(listener);
-
-        setTimeout(() => {
-          browser.tabs.onUpdated.removeListener(listener);
-          resolve({
-            success: true,
-            refreshed: true,
-            note: "Refresh initiated but completion not confirmed",
-          });
-        }, 30000);
-      });
+      await waitForTabComplete(tab.id);
+      return {
+        success: true,
+        refreshed: true,
+        tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
+        bypassCache: options.bypassCache || false,
+      };
     }
 
     return {
@@ -1018,16 +1018,10 @@ async function reloadAllTabs(
     const results: { id: number; url: string; reloaded: boolean }[] = [];
 
     for (const tab of tabs) {
-      if (
-        tab.url?.startsWith("about:") ||
-        tab.url?.startsWith("moz-extension:")
-      ) {
-        continue;
-      }
+      if (shouldSkipTab(tab.url)) continue;
 
       if (options.urlPattern) {
-        const regex = new RegExp(options.urlPattern);
-        if (!tab.url || !regex.test(tab.url)) continue;
+        if (!matchesPattern(tab.url, options.urlPattern)) continue;
       }
 
       await browser.tabs.reload(tab.id, {
@@ -1065,8 +1059,7 @@ async function reloadTabsByUrl(
         matches = !!tab.url &&
           (tab.url === options.url || tab.url.startsWith(options.url));
       } else if (options.urlPattern) {
-        const regex = new RegExp(options.urlPattern);
-        matches = !!tab.url && regex.test(tab.url);
+        matches = matchesPattern(tab.url, options.urlPattern);
       }
 
       if (matches) {

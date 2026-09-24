@@ -256,6 +256,40 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Constants
+  // ---------------------------------------------------------------------------
+
+  const TIMEOUTS = {
+    DEFAULT: 10_000,
+    WAIT_ELEMENT: 10_000,
+    NETWORK_IDLE: 10_000,
+    APPROVAL: 60_000,
+    CAPTCHA: 180_000,
+    SCROLL_STEP: 500,
+  } as const;
+
+  const DEFAULTS = {
+    SCREENSHOT_FORMAT: "png" as const,
+    SCREENSHOT_QUALITY: 90,
+  } as const;
+
+  const INTERACTIVE_SELECTORS = [
+    "a[href]",
+    "button",
+    "input",
+    "textarea",
+    "select",
+    "[onclick]",
+    '[role="button"]',
+    '[role="link"]',
+    '[tabindex]:not([tabindex="-1"])',
+  ] as const;
+
+  function isTextInput(el: Element): el is HTMLInputElement | HTMLTextAreaElement {
+    return el.tagName === "INPUT" || el.tagName === "TEXTAREA";
+  }
+
+  // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
 
@@ -936,23 +970,31 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Approval banner
+  // Overlay banner helper
   // ---------------------------------------------------------------------------
 
-  function requestApproval(options: ApprovalOptions): Promise<Record<string, unknown>> {
+  function createOverlayBanner(config: {
+    id: string;
+    title: string;
+    detail?: string;
+    buttons: Array<{ label: string; value: string; color: string; textColor?: string }>;
+    timeoutMs: number;
+    borderColor: string;
+    background: string;
+  }): Promise<string> {
     return new Promise((resolve) => {
-      const existing = document.getElementById("__fox_approval_banner");
+      const existing = document.getElementById(config.id);
       if (existing) existing.remove();
 
       const banner = document.createElement("div");
-      banner.id = "__fox_approval_banner";
+      banner.id = config.id;
       banner.style.cssText = [
         "position:fixed",
         "top:0",
         "left:0",
         "right:0",
         "z-index:2147483647",
-        "background:#1a1a2e",
+        `background:${config.background}`,
         "color:#fff",
         "padding:14px 20px",
         "font:14px/1.5 system-ui,sans-serif",
@@ -960,60 +1002,76 @@
         "align-items:center",
         "gap:16px",
         "box-shadow:0 2px 12px rgba(0,0,0,.4)",
-        "border-bottom:3px solid #e94560",
+        `border-bottom:3px solid ${config.borderColor}`,
       ].join(";");
 
       const textWrap = document.createElement("div");
       textWrap.style.cssText = "flex:1;min-width:0";
-      const title = document.createElement("div");
-      title.style.cssText = "font-weight:600";
-      title.textContent =
-        "⚠️ KitsuneMCP requests approval: " +
-        (options.message || "Perform an action");
-      textWrap.appendChild(title);
-      if (options.detail) {
-        const detail = document.createElement("div");
-        detail.style.cssText =
-          "font-size:12px;opacity:.75;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
-        detail.textContent = options.detail;
-        textWrap.appendChild(detail);
+      const titleEl = document.createElement("div");
+      titleEl.style.cssText = "font-weight:600";
+      titleEl.textContent = config.title;
+      textWrap.appendChild(titleEl);
+      if (config.detail) {
+        const detailEl = document.createElement("div");
+        detailEl.style.cssText =
+          "font-size:12px;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+        detailEl.textContent = config.detail;
+        textWrap.appendChild(detailEl);
       }
-
-      function makeButton(label: string, bg: string): HTMLButtonElement {
-        const b = document.createElement("button");
-        b.textContent = label;
-        b.style.cssText =
-          "padding:8px 18px;border:none;border-radius:6px;cursor:pointer;" +
-          "font:600 13px system-ui,sans-serif;color:#fff;background:" +
-          bg;
-        return b;
-      }
-      const approveBtn = makeButton("Approve", "#16a34a");
-      const denyBtn = makeButton("Deny", "#dc2626");
 
       banner.appendChild(textWrap);
-      banner.appendChild(approveBtn);
-      banner.appendChild(denyBtn);
-      (document.body || document.documentElement).appendChild(banner);
 
-      const timeoutMs = options.timeout || 60000;
       let settled = false;
-      function finish(approved: boolean, timedOut: boolean): void {
+      function finish(value: string): void {
         if (settled) return;
         settled = true;
         banner.remove();
-        resolve({
-          success: true,
-          approved,
-          timedOut,
-          decidedAt: new Date().toISOString(),
-        });
+        resolve(value);
       }
 
-      approveBtn.addEventListener("click", () => finish(true, false));
-      denyBtn.addEventListener("click", () => finish(false, false));
-      setTimeout(() => finish(false, true), timeoutMs);
+      for (const btn of config.buttons) {
+        const b = document.createElement("button");
+        b.textContent = btn.label;
+        const tc = btn.textColor || "#fff";
+        b.style.cssText =
+          "padding:8px 18px;border:none;border-radius:6px;cursor:pointer;" +
+          `font:600 13px system-ui,sans-serif;color:${tc};background:${btn.color}`;
+        b.addEventListener("click", () => finish(btn.value));
+        banner.appendChild(b);
+      }
+
+      (document.body || document.documentElement).appendChild(banner);
+      setTimeout(() => finish("timeout"), config.timeoutMs);
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Approval banner
+  // ---------------------------------------------------------------------------
+
+  async function requestApproval(options: ApprovalOptions): Promise<Record<string, unknown>> {
+    const timeoutMs = options.timeout || TIMEOUTS.APPROVAL;
+    const result = await createOverlayBanner({
+      id: "__fox_approval_banner",
+      title:
+        "⚠️ KitsuneMCP requests approval: " +
+        (options.message || "Perform an action"),
+      detail: options.detail,
+      buttons: [
+        { label: "Approve", value: "approve", color: "#16a34a" },
+        { label: "Deny", value: "deny", color: "#dc2626" },
+      ],
+      timeoutMs,
+      borderColor: "#e94560",
+      background: "#1a1a2e",
+    });
+
+    return {
+      success: true,
+      approved: result === "approve",
+      timedOut: result === "timeout",
+      decidedAt: new Date().toISOString(),
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -1074,9 +1132,9 @@
     return { present: widgets.length > 0, widgets };
   }
 
-  function solveCaptcha(
+  async function solveCaptcha(
     options: CaptchaOptions = {},
-  ): Record<string, unknown> | Promise<Record<string, unknown>> {
+  ): Promise<Record<string, unknown>> {
     const detection = detectCaptcha();
     if (options.detectOnly) {
       return { success: true, ...detection };
@@ -1098,99 +1156,59 @@
       };
     }
 
-    return new Promise((resolve) => {
-      const existing = document.getElementById("__fox_captcha_banner");
-      if (existing) existing.remove();
+    const timeoutMs = options.timeout || TIMEOUTS.CAPTCHA;
+    const start = Date.now();
+    const types = detection.widgets.map((w) => w.type).join(", ");
 
-      const types = detection.widgets.map((w) => w.type).join(", ");
-      const banner = document.createElement("div");
-      banner.id = "__fox_captcha_banner";
-      banner.style.cssText = [
-        "position:fixed",
-        "top:0",
-        "left:0",
-        "right:0",
-        "z-index:2147483647",
-        "background:#0f3460",
-        "color:#fff",
-        "padding:14px 20px",
-        "font:14px/1.5 system-ui,sans-serif",
-        "display:flex",
-        "align-items:center",
-        "gap:16px",
-        "box-shadow:0 2px 12px rgba(0,0,0,.4)",
-        "border-bottom:3px solid #ffd166",
-      ].join(";");
-
-      const textWrap = document.createElement("div");
-      textWrap.style.cssText = "flex:1;min-width:0";
-      const title = document.createElement("div");
-      title.style.cssText = "font-weight:600";
-      title.textContent =
+    // Start the banner (resolves on button click or timeout)
+    const bannerPromise = createOverlayBanner({
+      id: "__fox_captcha_banner",
+      title:
         "🧩 Please solve the captcha (" +
         types +
-        "), then it continues automatically.";
-      const detail = document.createElement("div");
-      detail.style.cssText = "font-size:12px;opacity:.8";
-      detail.textContent =
-        "KitsuneMCP paused and is waiting for you. Click Done if it does not continue on its own.";
-      textWrap.appendChild(title);
-      textWrap.appendChild(detail);
+        "), then it continues automatically.",
+      detail:
+        "KitsuneMCP paused and is waiting for you. Click Done if it does not continue on its own.",
+      buttons: [
+        { label: "Done", value: "done", color: "#ffd166", textColor: "#0f3460" },
+        { label: "Cancel", value: "cancel", color: "transparent", textColor: "#fff" },
+      ],
+      timeoutMs,
+      borderColor: "#ffd166",
+      background: "#0f3460",
+    });
 
-      const doneBtn = document.createElement("button");
-      doneBtn.textContent = "Done";
-      doneBtn.style.cssText =
-        "padding:8px 18px;border:none;border-radius:6px;cursor:pointer;" +
-        "font:600 13px system-ui,sans-serif;color:#0f3460;background:#ffd166";
-      const cancelBtn = document.createElement("button");
-      cancelBtn.textContent = "Cancel";
-      cancelBtn.style.cssText =
-        "padding:8px 14px;border:1px solid #ffffff55;border-radius:6px;" +
-        "cursor:pointer;font:600 13px system-ui,sans-serif;color:#fff;background:transparent";
-
-      banner.appendChild(textWrap);
-      banner.appendChild(doneBtn);
-      banner.appendChild(cancelBtn);
-      (document.body || document.documentElement).appendChild(banner);
-
-      const timeoutMs = options.timeout || 180000;
-      const start = Date.now();
-      let settled = false;
-
-      function finish(payload: Record<string, unknown>): void {
-        if (settled) return;
-        settled = true;
-        clearInterval(poll);
-        banner.remove();
-        resolve({
-          success: true,
-          present: true,
-          elapsedMs: Date.now() - start,
-          ...payload,
-        });
-      }
-
+    // Poll for token resolution concurrently
+    const pollPromise = new Promise<string>((resolve) => {
       const poll = setInterval(() => {
         const now = detectCaptcha();
         const tokened = now.widgets.filter((w) => w.solved !== null);
         if (tokened.length && tokened.every((w) => w.solved === true)) {
-          finish({ solved: true, resolvedBy: "token", widgets: now.widgets });
-        } else if (Date.now() - start > timeoutMs) {
-          finish({ solved: false, timedOut: true, widgets: now.widgets });
+          clearInterval(poll);
+          resolve("token");
         }
       }, 1000);
-
-      doneBtn.addEventListener("click", () =>
-        finish({
-          solved: true,
-          resolvedBy: "human",
-          widgets: detectCaptcha().widgets,
-        }),
-      );
-      cancelBtn.addEventListener("click", () =>
-        finish({ solved: false, cancelled: true }),
-      );
+      // Clean up poll when banner resolves first
+      bannerPromise.then(() => clearInterval(poll));
     });
+
+    const result = await Promise.race([bannerPromise, pollPromise]);
+    // Remove banner if poll won the race
+    const leftover = document.getElementById("__fox_captcha_banner");
+    if (leftover) leftover.remove();
+
+    const base = { success: true, present: true, elapsedMs: Date.now() - start };
+
+    if (result === "token") {
+      return { ...base, solved: true, resolvedBy: "token", widgets: detectCaptcha().widgets };
+    } else if (result === "done") {
+      return { ...base, solved: true, resolvedBy: "human", widgets: detectCaptcha().widgets };
+    } else if (result === "cancel") {
+      return { ...base, solved: false, cancelled: true };
+    } else {
+      // timeout
+      return { ...base, solved: false, timedOut: true, widgets: detectCaptcha().widgets };
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1305,10 +1323,7 @@
     const htmlEl = element as HTMLInputElement;
 
     if (options.clear) {
-      if (
-        element.tagName === "INPUT" ||
-        element.tagName === "TEXTAREA"
-      ) {
+      if (isTextInput(element)) {
         htmlEl.value = "";
       } else if ((element as HTMLElement).isContentEditable) {
         element.textContent = "";
@@ -1317,10 +1332,7 @@
     }
 
     if (options.instant) {
-      if (
-        element.tagName === "INPUT" ||
-        element.tagName === "TEXTAREA"
-      ) {
+      if (isTextInput(element)) {
         htmlEl.value = options.clear ? text : htmlEl.value + text;
       } else if ((element as HTMLElement).isContentEditable) {
         element.textContent = options.clear
@@ -1346,10 +1358,7 @@
           }),
         );
 
-        if (
-          element.tagName === "INPUT" ||
-          element.tagName === "TEXTAREA"
-        ) {
+        if (isTextInput(element)) {
           htmlEl.value += char;
         } else if ((element as HTMLElement).isContentEditable) {
           document.execCommand("insertText", false, char);
@@ -1503,19 +1512,7 @@
   function getPageInfo(): Record<string, unknown> {
     const interactiveElements: Record<string, unknown>[] = [];
 
-    const selectors = [
-      "a[href]",
-      "button",
-      "input",
-      "textarea",
-      "select",
-      "[onclick]",
-      '[role="button"]',
-      '[role="link"]',
-      '[tabindex]:not([tabindex="-1"])',
-    ];
-
-    document.querySelectorAll(selectors.join(", ")).forEach((el, index) => {
+    document.querySelectorAll(INTERACTIVE_SELECTORS.join(", ")).forEach((el, index) => {
       if (index < 100) {
         const rect = el.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
@@ -1681,7 +1678,7 @@
   async function waitForElement(
     options: WaitOptions,
   ): Promise<Record<string, unknown>> {
-    const timeout = options.timeout || 10000;
+    const timeout = options.timeout || TIMEOUTS.WAIT_ELEMENT;
     const interval = options.interval || 100;
     const startTime = Date.now();
 
@@ -1703,7 +1700,7 @@
   async function waitForChange(
     options: WaitForChangeOptions,
   ): Promise<Record<string, unknown>> {
-    const timeout = options.timeout || 10000;
+    const timeout = options.timeout || TIMEOUTS.DEFAULT;
     const targetSelector = options.selector || "body";
     const target =
       document.querySelector(targetSelector) || document.body;
@@ -1787,7 +1784,7 @@
   async function waitForNetworkIdle(
     options: NetworkIdleOptions,
   ): Promise<Record<string, unknown>> {
-    const timeout = options.timeout || 10000;
+    const timeout = options.timeout || TIMEOUTS.NETWORK_IDLE;
     const idleTime = options.idleTime || 500;
     const startTime = Date.now();
     let lastActivitySnapshot = __fox_activeRequests;
@@ -1902,19 +1899,7 @@
 
   function getVisibleInteractiveElements(): Record<string, unknown>[] {
     const elements: Record<string, unknown>[] = [];
-    const selectorList = [
-      "a[href]",
-      "button",
-      "input",
-      "textarea",
-      "select",
-      "[onclick]",
-      '[role="button"]',
-      '[role="link"]',
-      '[tabindex]:not([tabindex="-1"])',
-    ];
-
-    document.querySelectorAll(selectorList.join(", ")).forEach((el) => {
+    document.querySelectorAll(INTERACTIVE_SELECTORS.join(", ")).forEach((el) => {
       const rect = el.getBoundingClientRect();
       if (
         rect.top < window.innerHeight &&
@@ -1945,7 +1930,7 @@
   ): Promise<Record<string, unknown>> {
     const scrollStep =
       options.scrollStep || window.innerHeight * 0.8;
-    const delay = options.delay || 500;
+    const delay = options.delay || TIMEOUTS.SCROLL_STEP;
     const maxScrolls = options.maxScrolls || 20;
 
     const snapshots: Record<string, unknown>[] = [];
@@ -2115,10 +2100,7 @@
 
     if (isPasswordField(element)) {
       value = "[MASKED]";
-    } else if (
-      element.tagName === "INPUT" ||
-      element.tagName === "TEXTAREA"
-    ) {
+    } else if (isTextInput(element)) {
       value = (element as HTMLInputElement).value;
     } else if (element.tagName === "SELECT") {
       const sel = element as HTMLSelectElement;
@@ -2138,11 +2120,8 @@
 
     assertNotPasswordField(element, options);
 
-    if (
-      element.tagName === "INPUT" ||
-      element.tagName === "TEXTAREA"
-    ) {
-      (element as HTMLInputElement).value = options.value;
+    if (isTextInput(element)) {
+      element.value = options.value;
     } else if (element.tagName === "SELECT") {
       (element as HTMLSelectElement).value = options.value;
     } else if ((element as HTMLElement).isContentEditable) {
