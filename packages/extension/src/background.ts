@@ -602,9 +602,6 @@ async function screenshotAllTabs(
 ): Promise<CommandResult> {
   try {
     const tabs = await browser.tabs.query({});
-    const currentTab = (
-      await browser.tabs.query({ active: true, currentWindow: true })
-    )[0];
 
     let targetTabs = tabs.filter((t) => !shouldSkipTab(t.url));
 
@@ -616,10 +613,7 @@ async function screenshotAllTabs(
 
     for (const tab of targetTabs) {
       try {
-        await browser.tabs.update(tab.id, { active: true });
-        await new Promise((r) => setTimeout(r, 200));
-
-        const dataUrl = await browser.tabs.captureVisibleTab(tab.windowId, {
+        const dataUrl = await browser.tabs.captureTab(tab.id, {
           format: options.format || "png",
           quality: options.quality || 90,
         });
@@ -633,6 +627,7 @@ async function screenshotAllTabs(
           timestamp: Date.now(),
         });
       } catch (e) {
+        console.warn(`captureTab failed for tab ${tab.id} (${tab.url}):`, e);
         results.push({
           success: false,
           tabId: tab.id,
@@ -640,10 +635,6 @@ async function screenshotAllTabs(
           error: (e as Error).message,
         });
       }
-    }
-
-    if (currentTab) {
-      await browser.tabs.update(currentTab.id, { active: true });
     }
 
     return {

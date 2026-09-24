@@ -84,6 +84,7 @@ declare namespace browser {
     function update(tabId: number, updateProperties: { active?: boolean; url?: string }): Promise<Tab>;
     function reload(tabId: number, reloadProperties?: { bypassCache?: boolean }): Promise<void>;
     function sendMessage(tabId: number, message: unknown): Promise<unknown>;
+    function captureTab(tabId: number, options?: { format?: string; quality?: number }): Promise<string>;
     function captureVisibleTab(
       windowId: number,
       options?: { format?: string; quality?: number },
