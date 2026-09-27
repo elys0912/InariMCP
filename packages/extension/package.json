@@ -15,6 +15,6 @@
   },
   "scripts": {
     "build": "tsc -b && node -e \"const fs=require('fs'),p=require('path');[['src/popup/popup.html','dist/popup/popup.html'],['src/popup/popup.css','dist/popup/popup.css'],['src/content.css','dist/content.css']].forEach(([s,d])=>{fs.mkdirSync(p.dirname(d),{recursive:true});fs.copyFileSync(s,d)})\"",
-    "clean": "rimraf dist *.tsbuildinfo"
+    "clean": "rimraf --glob dist \"*.tsbuildinfo\""
   }
 }
