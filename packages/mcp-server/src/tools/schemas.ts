@@ -11,8 +11,7 @@ export type ToolClassification =
   | 'wait'
   | 'logging'
   | 'workflow'
-  | 'human'
-  | 'container';
+  | 'human';
 
 // ---------------------------------------------------------------------------
 // ToolDefinition
@@ -363,7 +362,7 @@ const foxDetectCaptchaSchema = z.object({
 });
 
 // =========================================================================
-// Container tools (P7 implementation, schema-only for now)
+// Container tools (Firefox contextualIdentities, implemented in P7)
 // =========================================================================
 
 const foxListContainersSchema = z.object({});
@@ -371,7 +370,7 @@ const foxListContainersSchema = z.object({});
 const foxOpenInContainerSchema = z.object({
   url: z.string().describe('URL to open in the container tab'),
   containerName: z.string().optional().describe('Container name to use (creates if not found)'),
-  containerId: z.string().optional().describe('Existing contextualIdentity cookie store ID'),
+  cookieStoreId: z.string().optional().describe('cookieStoreId of an existing container (e.g. "firefox-container-1", as returned by fox_list_containers). Takes precedence over containerName'),
   active: z.boolean().optional().default(true).describe('Make the new tab active'),
 });
 
@@ -662,20 +661,20 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
     classification: 'human',
   },
 
-  // --- Container (P7 implementation, schema defined ahead) ---
+  // --- Container (Firefox contextualIdentities; design.md 7.2) ---
   fox_list_containers: {
     name: 'fox_list_containers',
     description:
-      'List all Firefox container identities (contextualIdentities). Returns name, color, icon, and cookie store ID for each container.',
+      'List Firefox container identities (contextualIdentities). Returns name, color, icon, and cookieStoreId for each container. When container scope is enabled in safety.json, only the agent container is returned.',
     inputSchema: foxListContainersSchema,
-    classification: 'container',
+    classification: 'observe',
   },
   fox_open_in_container: {
     name: 'fox_open_in_container',
     description:
-      'Open a URL in a Firefox container tab. Specify container by name (creates if not found) or by cookie store ID. Provides isolated cookie/storage via contextualIdentities API.',
+      'Open a URL in a Firefox container tab. Specify the container by containerName (created if not found) or by cookieStoreId (must already exist). Provides isolated cookies/storage via the contextualIdentities API. When container scope is enabled in safety.json, only the agent container is allowed.',
     inputSchema: foxOpenInContainerSchema,
-    classification: 'container',
+    classification: 'act',
   },
 
   // --- Safety (always registered) ---

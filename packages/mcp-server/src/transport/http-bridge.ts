@@ -342,6 +342,9 @@ export function startHttpBridge(options: HttpBridgeOptions): http.Server {
             success: data['success'] as boolean ?? false,
             data: data['data'],
             error: data['error'] as string | undefined,
+            safetyDecision: typeof data['safetyDecision'] === 'string'
+              ? data['safetyDecision']
+              : undefined,
           });
           sendJson(res, 200, { success: true });
           return;

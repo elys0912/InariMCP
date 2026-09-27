@@ -19,6 +19,8 @@ import { startHttpBridge, loadOrCreateApiToken } from './transport/http-bridge.j
 import { startWebSocketServer } from './transport/ws-bridge.js';
 import { getConnectionManager } from './connection/manager.js';
 import { getHeadlessBrowser } from './headless/backend.js';
+import { getSafetyGuard } from './safety/guard.js';
+import { getContainerConfig } from './safety/container.js';
 
 // ---------------------------------------------------------------------------
 // Version — read from package.json at build time via TS const
@@ -117,6 +119,17 @@ async function main(): Promise<void> {
   if (process.env[ENV.FOX_HEADLESS]) {
     const { initHeadlessBrowser } = await import('./headless/backend.js');
     const headless = await initHeadlessBrowser();
+
+    // Layer 0 cannot be honoured without Firefox containers: the guard
+    // refuses every command (checkHeadlessContainerScope). Say so up front.
+    const containerCfg = getContainerConfig(getSafetyGuard().config);
+    if (containerCfg.enabled) {
+      process.stderr.write(
+        `[KitsuneMCP] WARNING: container_scope is enabled ('${containerCfg.containerName}') ` +
+        'but the headless backend has no containers — all browser commands will be ' +
+        'refused as out_of_scope.\n',
+      );
+    }
 
     connectionManager.registerBrowser('headless', (message: string) => {
       const command = JSON.parse(message) as { action: string; tabId?: number; data?: Record<string, unknown>; requestId: string };

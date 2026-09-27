@@ -15,8 +15,11 @@
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserAction, BrowserCommand, ToolResult } from '@kitsune-mcp/shared';
 import { getSafetyGuard } from '../safety/guard.js';
+import type { SafetyConfig } from '../safety/config.js';
+import { getContainerConfig } from '../safety/container.js';
 import { sanitizeResult } from '../safety/sanitizer.js';
 import { audit } from '../safety/audit.js';
+import type { AuditDecision } from '../safety/audit.js';
 import { camelizeArgs } from '../utils/camelize.js';
 import { saveScreenshot } from '../utils/screenshot.js';
 import { getConnectionManager } from '../connection/manager.js';
@@ -118,6 +121,34 @@ function buildCommandData(
   // (already there from args, just verify)
 
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Safety metadata forwarded to the Extension
+// ---------------------------------------------------------------------------
+
+/**
+ * Attach safety metadata that only the Extension can enforce:
+ *   - containerScope: Layer 0, on EVERY command (the Extension checks the
+ *     target tab's cookieStoreId; the server cannot see tabs).
+ *   - protectedUrlPatterns: on screenshot_all_tabs only, so protected tabs
+ *     are excluded from the bulk capture (omitted when
+ *     confirmProtectedActions is false → previous behaviour).
+ */
+function attachSafetyMetadata(command: BrowserCommand, config: SafetyConfig): void {
+  const containerCfg = getContainerConfig(config);
+  if (containerCfg.enabled) {
+    command.containerScope = { containerName: containerCfg.containerName };
+  }
+
+  if (
+    command.action === 'screenshot_all_tabs' &&
+    config.enabled &&
+    config.confirmProtectedActions &&
+    config.protectedUrlPatterns.length > 0
+  ) {
+    command.protectedUrlPatterns = [...config.protectedUrlPatterns];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +273,7 @@ export function createToolHandler(
     // -----------------------------------------------------------------------
     const denial = guard.check(toolName, args);
     if (denial !== null) {
-      return safetyDenialToCallResult(denial);
+      return safetyDenialToCallResult({ ...denial, decision: denial.safetyDecision });
     }
 
     // -----------------------------------------------------------------------
@@ -278,12 +309,28 @@ export function createToolHandler(
       data,
       requestId: '', // Will be assigned by connectionManager.sendCommand()
     };
+    attachSafetyMetadata(command, guard.config);
 
     // -----------------------------------------------------------------------
     // 4. Send command to browser
     // -----------------------------------------------------------------------
     const connectionManager = getConnectionManager();
     const response = await connectionManager.sendCommand(command);
+
+    // Extension-side safety refusal (e.g. Layer 0 out_of_scope): surface it
+    // as a SAFETY_BLOCKED result, distinct from ordinary browser errors.
+    if (!response.success && response.safetyDecision) {
+      const decision = response.safetyDecision;
+      const auditDecision: AuditDecision = decision === 'out_of_scope' ? 'out_of_scope' : 'denied';
+      if (guard.config.auditLog) {
+        audit(toolName, args, (args['url'] as string) ?? null, auditDecision);
+      }
+      return safetyDenialToCallResult({
+        error: response.error ?? `Refused by browser safety check (${decision})`,
+        decision,
+        layer: decision === 'out_of_scope' ? 0 : undefined,
+      });
+    }
 
     // -----------------------------------------------------------------------
     // 5. Post-processing

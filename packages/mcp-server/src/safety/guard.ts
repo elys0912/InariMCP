@@ -2,14 +2,14 @@ import { loadConfig, getAuditLogPath } from './config.js';
 import type { SafetyConfig } from './config.js';
 import { audit } from './audit.js';
 import type { AuditDecision } from './audit.js';
-import { checkContainerScope } from './container.js';
+import { checkHeadlessContainerScope } from './container.js';
 
 const SAFE_URL_RE = /^(https?:\/\/|about:blank$)/i;
 
 export const OBSERVE_TOOLS: ReadonlySet<string> = new Set([
   'fox_screenshot', 'fox_screenshot_all_tabs',
   'fox_get_page_info', 'fox_get_elements', 'fox_get_value',
-  'fox_get_text', 'fox_get_tabs', 'fox_get_tab_info',
+  'fox_get_text', 'fox_find_text', 'fox_get_tabs', 'fox_get_tab_info',
   'fox_find_tabs', 'fox_wait_for_element', 'fox_wait_for_change',
   'fox_wait_for_network_idle', 'fox_observe_element',
   'fox_stop_observing', 'fox_scroll_and_capture',
@@ -18,6 +18,7 @@ export const OBSERVE_TOOLS: ReadonlySet<string> = new Set([
   'fox_clear_logs', 'fox_highlight', 'fox_scroll',
   'fox_hover', 'fox_focus_tab', 'fox_safety_status',
   'fox_request_approval', 'fox_audit_page', 'fox_solve_captcha',
+  'fox_list_containers',
 ]);
 
 export const SCRIPT_TOOLS: ReadonlySet<string> = new Set([
@@ -77,7 +78,7 @@ export class SafetyGuard {
     }
 
     const targetUrl = this._targetUrl(args);
-    const denial = this._checkInner(toolName, targetUrl);
+    const denial = this._checkInner(toolName, targetUrl, args);
 
     const isObserve = OBSERVE_TOOLS.has(toolName);
     let decision: AuditDecision;
@@ -133,12 +134,17 @@ export class SafetyGuard {
   private _checkInner(
     toolName: string,
     targetUrl: string | null,
+    args: Record<string, unknown>,
   ): SafetyDenial | null {
     const isObserve = OBSERVE_TOOLS.has(toolName);
     const isScript = SCRIPT_TOOLS.has(toolName);
 
-    // Layer 0: Container scope
-    const containerDenial = checkContainerScope(this.config);
+    // Layer 0: Container scope (server-side part only).
+    // The server cannot see tabs, so the per-tab cookieStoreId check is done
+    // by the Extension using the `containerScope` that handlers.ts attaches
+    // to every BrowserCommand. Here we only refuse everything when the
+    // backend has no containers at all (headless).
+    const containerDenial = checkHeadlessContainerScope(this.config);
     if (containerDenial) {
       return {
         success: false,
@@ -178,8 +184,14 @@ export class SafetyGuard {
       }
     }
 
-    // Layer 4: Observe tools pass through
+    // Layer 4: Observe tools pass through.
+    // Exception: a single-tab fox_screenshot on a protected domain captures
+    // sensitive page content, so it gets the same elicitation as Layer 7.
+    // (scope all_tabs is handled Extension-side: protected tabs are excluded.)
     if (isObserve) {
+      if (toolName === 'fox_screenshot' && args['scope'] !== 'all_tabs') {
+        return this._protectedConfirmation(toolName, targetUrl);
+      }
       return null;
     }
 
@@ -203,29 +215,44 @@ export class SafetyGuard {
     }
 
     // Layer 7: Protected domain confirmation (MCP elicitation)
-    if (this.config.confirmProtectedActions) {
-      const checkUrl = targetUrl ?? this._currentUrl;
-      const matched = this._matchedProtected(checkUrl);
-      if (matched) {
-        return {
-          success: false,
-          safetyDecision: 'confirmation_required',
-          confirmationRequired: true,
-          elicitation: {
-            protectedUrl: checkUrl!,
-            matchedPattern: matched,
-            toolName,
-          },
-          error:
-            `${toolName} targets a protected site ('${checkUrl}' matches ` +
-            `pattern '${matched}' in safety.json). This is a guard against ` +
-            'unintended actions on sensitive sites (banking, payments, health, government). ' +
-            'Human confirmation is required via MCP elicitation.',
-        };
-      }
-    }
+    return this._protectedConfirmation(toolName, targetUrl);
+  }
 
-    return null;
+  /**
+   * Layer 7: require human confirmation (MCP elicitation) when the target
+   * URL — or, failing that, the last URL seen via noteUrl() — matches
+   * protected_url_patterns. No-op when confirmProtectedActions is false.
+   */
+  private _protectedConfirmation(
+    toolName: string,
+    targetUrl: string | null,
+  ): SafetyDenial | null {
+    if (!this.config.confirmProtectedActions) {
+      return null;
+    }
+    const checkUrl = targetUrl ?? this._currentUrl;
+    if (checkUrl === null) {
+      return null;
+    }
+    const matched = this._matchedProtected(checkUrl);
+    if (!matched) {
+      return null;
+    }
+    return {
+      success: false,
+      safetyDecision: 'confirmation_required',
+      confirmationRequired: true,
+      elicitation: {
+        protectedUrl: checkUrl,
+        matchedPattern: matched,
+        toolName,
+      },
+      error:
+        `${toolName} targets a protected site ('${checkUrl}' matches ` +
+        `pattern '${matched}' in safety.json). This is a guard against ` +
+        'unintended actions on sensitive sites (banking, payments, health, government). ' +
+        'Human confirmation is required via MCP elicitation.',
+    };
   }
 
   private _targetUrl(args: Record<string, unknown>): string | null {

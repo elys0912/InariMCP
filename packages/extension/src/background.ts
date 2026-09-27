@@ -70,6 +70,24 @@ interface ReloadByUrlOptions {
   bypassCache?: boolean;
 }
 
+/** Layer 0 container scope as sent by the MCP Server. */
+interface ContainerScope {
+  containerName: string;
+}
+
+/**
+ * Resolved container scope. cookieStoreId is null when the agent container
+ * does not exist yet (then no existing tab is in scope).
+ */
+interface ScopeFilter {
+  containerName: string;
+  cookieStoreId: string | null;
+}
+
+type ScopeDecision =
+  | { allowed: true; scope: ScopeFilter; tabId: number | undefined }
+  | { allowed: false; error: string };
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -338,23 +356,31 @@ async function sendToContentScript(
 // ---------------------------------------------------------------------------
 
 async function handleCommand(message: NativeMessage): Promise<CommandResult> {
-  const { action, tabId, data } = message;
+  const { action, data } = message;
+  let tabId = message.tabId;
   let result: CommandResult = { success: false };
 
-  // Container scope check (Layer 0)
-  const containerScope = (message as Record<string, unknown>).containerScope as
-    | { containerName: string }
-    | undefined;
-  if (containerScope && tabId !== undefined) {
-    const inScope = await isTabInContainer(tabId, containerScope.containerName);
-    if (!inScope) {
-      result = { success: false, error: "Tab is outside the container scope" };
+  // Container scope check (Layer 0, design.md 7.1). The MCP Server attaches
+  // `containerScope` to every command when container_scope.enabled is true.
+  const containerScope = parseContainerScope(message.containerScope);
+  let scope: ScopeFilter | null = null;
+  if (containerScope) {
+    const decision = await enforceContainerScope(action, tabId, containerScope);
+    if (!decision.allowed) {
+      result = outOfScope(decision.error);
       if (nativePort && message.requestId) {
         nativePort.postMessage({ requestId: message.requestId, ...result });
       }
       return result;
     }
+    scope = decision.scope;
+    // Pin the tab that passed the check so the handler cannot drift to a
+    // different active tab between the check and the operation.
+    if (decision.tabId !== undefined) {
+      tabId = decision.tabId;
+    }
   }
+  const protectedPatterns = parseProtectedPatterns(message.protectedUrlPatterns);
 
   try {
     switch (action) {
@@ -389,28 +415,28 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         result = await waitForElement(tabId, data);
         break;
       case "getTabs":
-        result = await getAllTabs(data as GetAllTabsOptions);
+        result = await getAllTabs(data as GetAllTabsOptions, scope);
         break;
       case "createTab":
-        result = await createNewTab(data as { url?: string; active?: boolean });
+        result = await createNewTab(data as { url?: string; active?: boolean }, scope);
         break;
       case "closeTab":
-        if (tabId === undefined) { result = { success: false, error: "tabId is required" }; break; }
+        if (tabId === undefined || message.tabId === undefined) { result = { success: false, error: "tabId is required" }; break; }
         result = await closeTab(tabId);
         break;
       case "focusTab":
-        if (tabId === undefined) { result = { success: false, error: "tabId is required" }; break; }
+        if (tabId === undefined || message.tabId === undefined) { result = { success: false, error: "tabId is required" }; break; }
         result = await focusTab(tabId);
         break;
       case "getTabInfo":
-        if (tabId === undefined) { result = { success: false, error: "tabId is required" }; break; }
+        if (tabId === undefined || message.tabId === undefined) { result = { success: false, error: "tabId is required" }; break; }
         result = await getTabInfo(tabId);
         break;
       case "findTabs":
-        result = await findTabs(data as FindTabsOptions);
+        result = await findTabs(data as FindTabsOptions, scope);
         break;
       case "screenshotAllTabs":
-        result = await screenshotAllTabs(data as ScreenshotOptions);
+        result = await screenshotAllTabs(data as ScreenshotOptions, scope, protectedPatterns);
         break;
       case "refresh":
       case "reload":
@@ -420,10 +446,10 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         result = await hardRefreshTab(tabId);
         break;
       case "reloadAll":
-        result = await reloadAllTabs(data as ReloadAllOptions);
+        result = await reloadAllTabs(data as ReloadAllOptions, scope);
         break;
       case "reloadByUrl":
-        result = await reloadTabsByUrl(data as ReloadByUrlOptions);
+        result = await reloadTabsByUrl(data as ReloadByUrlOptions, scope);
         break;
       case "status": {
         const connected = nativePort !== null;
@@ -494,10 +520,10 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         });
         break;
       case "list_containers":
-        result = await listContainers();
+        result = await listContainers(scope);
         break;
       case "open_in_container":
-        result = await openInContainer(data as { url: string; containerName?: string; cookieStoreId?: string; color?: string; icon?: string; active?: boolean });
+        result = await openInContainer(data as { url: string; containerName?: string; cookieStoreId?: string; color?: string; icon?: string; active?: boolean }, scope);
         break;
       case "find_text": {
         const findQuery = (data as { query: string }).query;
@@ -599,15 +625,25 @@ async function takeScreenshot(
 
 async function screenshotAllTabs(
   options: ScreenshotOptions = {},
+  scope: ScopeFilter | null = null,
+  protectedPatterns: RegExp[] = [],
 ): Promise<CommandResult> {
   try {
     const tabs = await browser.tabs.query({});
 
-    let targetTabs = tabs.filter((t) => !shouldSkipTab(t.url));
+    let targetTabs = tabs.filter((t) => !shouldSkipTab(t.url) && isTabInScope(t, scope));
 
     if (options.urlPattern) {
       targetTabs = targetTabs.filter((t) => matchesPattern(t.url, options.urlPattern!));
     }
+
+    // Protected domains (banking, payments, ...) are excluded by default.
+    // Only the count is reported -- never the URL or title of excluded tabs.
+    const beforeProtected = targetTabs.length;
+    if (protectedPatterns.length > 0) {
+      targetTabs = targetTabs.filter((t) => !matchesAnyPattern(t.url, protectedPatterns));
+    }
+    const excludedProtected = beforeProtected - targetTabs.length;
 
     const results: Record<string, unknown>[] = [];
 
@@ -642,6 +678,14 @@ async function screenshotAllTabs(
       screenshots: results,
       count: results.filter((r) => r.success).length,
       failed: results.filter((r) => !r.success).length,
+      excludedProtected,
+      ...(excludedProtected > 0
+        ? {
+          excludedReason:
+            "Tabs matching protected_url_patterns in safety.json were not captured " +
+            "(set confirm_protected_actions to false to include them).",
+        }
+        : {}),
     };
   } catch (error) {
     return { success: false, error: (error as Error).message };
@@ -817,6 +861,7 @@ async function waitForElement(
 
 async function getAllTabs(
   options: GetAllTabsOptions = {},
+  scope: ScopeFilter | null = null,
 ): Promise<CommandResult> {
   try {
     const currentWindowOnly = options.current_window_only !== false;
@@ -831,7 +876,7 @@ async function getAllTabs(
     const queryOpts: browser.tabs.QueryInfo = currentWindowOnly
       ? { currentWindow: true }
       : {};
-    let tabs = await browser.tabs.query(queryOpts);
+    let tabs = (await browser.tabs.query(queryOpts)).filter((t) => isTabInScope(t, scope));
     const windows = await browser.windows.getAll();
     const windowMap = new Map(windows.map((w) => [w.id, w]));
 
@@ -926,10 +971,13 @@ async function getTabInfo(tabId: number): Promise<CommandResult> {
   }
 }
 
-async function findTabs(options: FindTabsOptions): Promise<CommandResult> {
+async function findTabs(
+  options: FindTabsOptions,
+  scope: ScopeFilter | null = null,
+): Promise<CommandResult> {
   try {
     const tabs = await browser.tabs.query({});
-    let filtered = tabs;
+    let filtered = tabs.filter((t) => isTabInScope(t, scope));
 
     if (options.url) {
       filtered = filtered.filter((t) => t.url?.startsWith(options.url!));
@@ -967,14 +1015,24 @@ async function findTabs(options: FindTabsOptions): Promise<CommandResult> {
   }
 }
 
-async function createNewTab(data: {
-  url?: string;
-  active?: boolean;
-}): Promise<CommandResult> {
+async function createNewTab(
+  data: {
+    url?: string;
+    active?: boolean;
+  },
+  scope: ScopeFilter | null = null,
+): Promise<CommandResult> {
   try {
+    // With container scope, the new tab must be born inside the agent
+    // container -- otherwise every follow-up command on it is out_of_scope.
+    let cookieStoreId: string | undefined;
+    if (scope) {
+      cookieStoreId = scope.cookieStoreId ?? await ensureScopeContainer(scope);
+    }
     const tab = await browser.tabs.create({
       url: data.url || "about:blank",
       active: data.active !== false,
+      ...(cookieStoreId ? { cookieStoreId } : {}),
     });
     return {
       success: true,
@@ -1047,6 +1105,7 @@ async function hardRefreshTab(
 
 async function reloadAllTabs(
   options: ReloadAllOptions = {},
+  scope: ScopeFilter | null = null,
 ): Promise<CommandResult> {
   try {
     const tabs = await browser.tabs.query({});
@@ -1054,6 +1113,7 @@ async function reloadAllTabs(
 
     for (const tab of tabs) {
       if (shouldSkipTab(tab.url)) continue;
+      if (!isTabInScope(tab, scope)) continue;
 
       if (options.urlPattern) {
         if (!matchesPattern(tab.url, options.urlPattern)) continue;
@@ -1078,6 +1138,7 @@ async function reloadAllTabs(
 
 async function reloadTabsByUrl(
   options: ReloadByUrlOptions,
+  scope: ScopeFilter | null = null,
 ): Promise<CommandResult> {
   try {
     if (!options.url && !options.urlPattern) {
@@ -1088,6 +1149,7 @@ async function reloadTabsByUrl(
     const results: { id: number; url: string; reloaded: boolean }[] = [];
 
     for (const tab of tabs) {
+      if (!isTabInScope(tab, scope)) continue;
       let matches = false;
 
       if (options.url) {
@@ -1120,25 +1182,163 @@ async function reloadTabsByUrl(
 // Container helpers
 // ---------------------------------------------------------------------------
 
-async function isTabInContainer(
-  tabId: number,
-  containerName: string,
-): Promise<boolean> {
-  try {
-    const tab = await browser.tabs.get(tabId);
-    if (!tab.cookieStoreId || tab.cookieStoreId === "firefox-default") {
-      return false;
-    }
-    const identity = await browser.contextualIdentities.get(tab.cookieStoreId);
-    return identity.name === containerName;
-  } catch {
-    return false;
-  }
+/** Parse the `containerScope` field attached by the MCP Server. */
+function parseContainerScope(raw: unknown): ContainerScope | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const name = (raw as Record<string, unknown>).containerName;
+  return typeof name === "string" && name !== "" ? { containerName: name } : null;
 }
 
-async function listContainers(): Promise<CommandResult> {
+/** Compile the `protectedUrlPatterns` field (same semantics as the server: case-insensitive). */
+function parseProtectedPatterns(raw: unknown): RegExp[] {
+  if (!Array.isArray(raw)) return [];
+  const compiled: RegExp[] = [];
+  for (const pattern of raw) {
+    if (typeof pattern !== "string") continue;
+    try {
+      compiled.push(new RegExp(pattern, "i"));
+    } catch {
+      console.warn(`[KitsuneMCP] Invalid protected URL pattern ignored: ${pattern}`);
+    }
+  }
+  return compiled;
+}
+
+function matchesAnyPattern(url: string | undefined, patterns: RegExp[]): boolean {
+  if (!url) return false;
+  return patterns.some((p) => p.test(url));
+}
+
+function outOfScope(error: string): CommandResult {
+  return { success: false, safetyDecision: "out_of_scope", error };
+}
+
+/**
+ * Look up the agent container's cookieStoreId by name. Returns null when no
+ * such container exists (then no existing tab can be in scope). If several
+ * containers share the name, the first one is used -- the same rule as
+ * open_in_container.
+ */
+async function findScopeContainer(containerName: string): Promise<string | null> {
+  const matches = await browser.contextualIdentities.query({ name: containerName });
+  const first = matches[0];
+  return first ? first.cookieStoreId : null;
+}
+
+/**
+ * Create the agent container on demand. Used only by tab-creating actions,
+ * matching open_in_container's existing auto-create behaviour.
+ */
+async function ensureScopeContainer(scope: ScopeFilter): Promise<string> {
+  const existing = await findScopeContainer(scope.containerName);
+  if (existing) return existing;
+  const created = await browser.contextualIdentities.create({
+    name: scope.containerName,
+    color: "toolbar",
+    icon: "circle",
+  });
+  return created.cookieStoreId;
+}
+
+function isTabInScope(tab: browser.tabs.Tab, scope: ScopeFilter | null): boolean {
+  if (scope === null) return true;
+  return scope.cookieStoreId !== null && tab.cookieStoreId === scope.cookieStoreId;
+}
+
+/**
+ * Actions that do not target a single tab and enforce the scope themselves
+ * (by filtering tabs / containers, or by choosing the container of a new
+ * tab). Every other action is treated as single-tab and checked up front,
+ * so unknown actions fall into the strict branch (default deny).
+ */
+const SCOPE_SELF_ENFORCED_ACTIONS: ReadonlySet<string> = new Set([
+  // multi-tab: targets / results filtered to the agent container
+  "getTabs",
+  "findTabs",
+  "screenshotAllTabs",
+  "reloadAll",
+  "reloadByUrl",
+  // new tab: created inside the agent container
+  "createTab",
+  // container management: restricted to the agent container
+  "list_containers",
+  "open_in_container",
+]);
+
+/** Actions that touch no tab and no container at all. */
+const SCOPE_NO_TAB_ACTIONS: ReadonlySet<string> = new Set([
+  "status",
+]);
+
+/**
+ * Layer 0 enforcement. For single-tab actions, resolves the target tab
+ * (explicit tabId, else the active tab -- same logic as resolveTab()) and
+ * requires its cookieStoreId to be the agent container's. Anything that
+ * cannot be resolved is refused.
+ */
+async function enforceContainerScope(
+  action: string | undefined,
+  tabId: number | undefined,
+  containerScope: ContainerScope,
+): Promise<ScopeDecision> {
+  const { containerName } = containerScope;
+  let cookieStoreId: string | null;
   try {
-    const containers = await browser.contextualIdentities.query({});
+    cookieStoreId = await findScopeContainer(containerName);
+  } catch (error) {
+    return {
+      allowed: false,
+      error: `Container scope check failed: ${(error as Error).message}`,
+    };
+  }
+  const scope: ScopeFilter = { containerName, cookieStoreId };
+
+  if (
+    action !== undefined &&
+    (SCOPE_SELF_ENFORCED_ACTIONS.has(action) || SCOPE_NO_TAB_ACTIONS.has(action))
+  ) {
+    return { allowed: true, scope, tabId: undefined };
+  }
+
+  if (cookieStoreId === null) {
+    return {
+      allowed: false,
+      error:
+        `Container '${containerName}' does not exist, so no tab is inside the container scope. ` +
+        "Open a tab with fox_create_tab or fox_open_in_container first.",
+    };
+  }
+
+  let tab: browser.tabs.Tab | undefined;
+  try {
+    tab = await resolveTab(tabId);
+  } catch {
+    tab = undefined;
+  }
+  if (!tab) {
+    return {
+      allowed: false,
+      error: "Could not resolve the target tab for the container scope check",
+    };
+  }
+  if (tab.cookieStoreId !== cookieStoreId) {
+    return {
+      allowed: false,
+      error: `Tab ${tab.id} is outside the container scope (container '${containerName}')`,
+    };
+  }
+  return { allowed: true, scope, tabId: tab.id };
+}
+
+async function listContainers(
+  scope: ScopeFilter | null = null,
+): Promise<CommandResult> {
+  try {
+    const all = await browser.contextualIdentities.query({});
+    // With container scope, only the agent container is visible.
+    const containers = scope
+      ? all.filter((c) => c.cookieStoreId === scope.cookieStoreId)
+      : all;
     return {
       success: true,
       containers: containers.map((c) => ({
@@ -1153,16 +1353,51 @@ async function listContainers(): Promise<CommandResult> {
   }
 }
 
-async function openInContainer(data: {
-  url: string;
-  containerName?: string;
-  cookieStoreId?: string;
-  color?: string;
-  icon?: string;
-  active?: boolean;
-}): Promise<CommandResult> {
+async function openInContainer(
+  data: {
+    url: string;
+    containerName?: string;
+    cookieStoreId?: string;
+    color?: string;
+    icon?: string;
+    active?: boolean;
+  },
+  scope: ScopeFilter | null = null,
+): Promise<CommandResult> {
   try {
+    // Container scope: opening a tab in any container other than the agent
+    // container is refused (user decision -- no new tabs outside the scope).
+    if (scope) {
+      if (data.containerName !== undefined && data.containerName !== scope.containerName) {
+        return outOfScope(
+          `Container '${data.containerName}' is outside the container scope ` +
+          `(only '${scope.containerName}' is allowed)`,
+        );
+      }
+      if (
+        data.cookieStoreId !== undefined &&
+        (scope.cookieStoreId === null || data.cookieStoreId !== scope.cookieStoreId)
+      ) {
+        return outOfScope(
+          `cookieStoreId '${data.cookieStoreId}' is outside the container scope ` +
+          `(only '${scope.containerName}' is allowed)`,
+        );
+      }
+    }
+
     let storeId = data.cookieStoreId;
+
+    if (storeId) {
+      // Verify the container exists before handing the ID to tabs.create.
+      try {
+        await browser.contextualIdentities.get(storeId);
+      } catch {
+        return {
+          success: false,
+          error: `Container with cookieStoreId '${storeId}' does not exist`,
+        };
+      }
+    }
 
     if (!storeId && data.containerName) {
       const matches = await browser.contextualIdentities.query({

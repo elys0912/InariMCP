@@ -157,6 +157,9 @@ export function startWebSocketServer(options: WsBridgeOptions): WebSocketServer 
               success: parsed.success as boolean ?? false,
               data: parsed.data,
               error: parsed.error as string | undefined,
+              safetyDecision: typeof parsed.safetyDecision === 'string'
+                ? parsed.safetyDecision
+                : undefined,
             });
           } else {
             // Event from the browser (tab updates, etc.)

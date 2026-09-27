@@ -25,6 +25,18 @@ export const BrowserCommandSchema = z.object({
   tabId: z.number().int().optional(),
   data: z.record(z.unknown()).optional(),
   requestId: z.string(),
+  /**
+   * Layer 0 container scope (design.md 7.1). Attached to EVERY command when
+   * safety.json `container_scope.enabled` is true. The Extension enforces it
+   * against the target tab's cookieStoreId (the MCP Server cannot see tabs).
+   */
+  containerScope: z.object({ containerName: z.string() }).optional(),
+  /**
+   * Protected-domain regex patterns (safety.json `protected_url_patterns`).
+   * Attached only to `screenshot_all_tabs` when `confirm_protected_actions`
+   * is true, so the Extension can exclude protected tabs from the capture.
+   */
+  protectedUrlPatterns: z.array(z.string()).optional(),
 });
 
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>;
@@ -38,6 +50,12 @@ export const BrowserResponseSchema = z.object({
   success: z.boolean(),
   data: z.unknown().optional(),
   error: z.string().optional(),
+  /**
+   * Set when the Extension refused the command for a safety reason
+   * (e.g. 'out_of_scope' from Layer 0). Lets the MCP Server distinguish
+   * safety denials from ordinary browser errors.
+   */
+  safetyDecision: z.string().optional(),
 });
 
 export type BrowserResponse = z.infer<typeof BrowserResponseSchema>;

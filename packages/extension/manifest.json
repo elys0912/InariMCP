@@ -10,10 +10,11 @@
     "tabs",
     "nativeMessaging",
     "notifications",
-    "storage",
     "<all_urls>",
-    "webNavigation",
-    "contextMenus"
+    "contextMenus",
+    "contextualIdentities",
+    "cookies",
+    "find"
   ],
 
   "background": {
