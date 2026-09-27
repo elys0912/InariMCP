@@ -16,6 +16,7 @@ export const ENV = {
   FOX_ALLOW_SCRIPTS: 'FOX_ALLOW_SCRIPTS',
   FOX_SAFETY_CONFIG: 'FOX_SAFETY_CONFIG',
   FOX_NATIVE_HOST_LOG: 'FOX_NATIVE_HOST_LOG',
+  FOX_DAEMON_IDLE_TIMEOUT: 'FOX_DAEMON_IDLE_TIMEOUT',
 } as const;
 
 export const LEGACY_ENV = {
@@ -37,12 +38,24 @@ export const ENV_DEFAULTS = {
   FOX_HTTP_PORT: 8765,
   FOX_WS_PORT: 8766,
   FOX_HEADLESS_STARTUP_TIMEOUT: 45_000,
-  POLL_INTERVAL_MS: 500,
   HEALTH_CHECK_INTERVAL_MS: 10_000,
   HEALTH_CHECK_MAX_FAILURES: 2,
   MAX_RESTART_ATTEMPTS: 10,
   BACKOFF_BASE_MS: 2_000,
   BACKOFF_MAX_MS: 60_000,
   STABLE_THRESHOLD_MS: 300_000,
+  /**
+   * Native Messaging size limits (MDN "Native messaging", App side):
+   *   - host → extension: "The maximum size of a single message from the
+   *     application is 1 MB."
+   *   - extension → host: "The maximum size of a message sent to the
+   *     application is 4 GB."
+   * NATIVE_MSG_MAX_SIZE is the outgoing (host → extension) hard limit.
+   * NATIVE_MSG_MAX_INCOMING_SIZE is our own cap on extension → host frames:
+   * large enough for full-page / all-tabs screenshot data URLs, small enough
+   * that a corrupt length prefix cannot make the host buffer gigabytes.
+   * Oversized frames are skipped, not treated as EOF.
+   */
   NATIVE_MSG_MAX_SIZE: 1_048_576,
+  NATIVE_MSG_MAX_INCOMING_SIZE: 64 * 1_048_576,
 } as const;

@@ -1,8 +1,9 @@
 /**
  * Screenshot file management utilities.
  *
- * Handles saving base64-encoded screenshot data to disk and listing
- * previously saved screenshots. The storage directory defaults to
+ * Resolves the screenshot directory and lists saved screenshots (GET
+ * /screenshots, headless backend). Files are written by the Native Host
+ * (screenshot-store.ts) or the headless backend. The directory defaults to
  * `~/.kitsune-mcp/screenshots/` but can be overridden via
  * FOX_SCREENSHOTS_DIR (or legacy CLAUDE_BROWSER_SCREENSHOTS_DIR).
  */
@@ -30,31 +31,6 @@ export function getScreenshotsDir(): string {
     process.env[LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR];
   if (envDir) return envDir;
   return path.join(os.homedir(), '.kitsune-mcp', 'screenshots');
-}
-
-// ---------------------------------------------------------------------------
-// Save
-// ---------------------------------------------------------------------------
-
-/**
- * Save a base64-encoded PNG screenshot to disk.
- *
- * @param data     Base64-encoded image data (without data-URI prefix)
- * @param filename Optional filename. Defaults to `screenshot_<timestamp>.png`.
- * @returns Absolute path of the saved file.
- */
-export function saveScreenshot(data: string, filename?: string): string {
-  const dir = getScreenshotsDir();
-  fs.mkdirSync(dir, { recursive: true });
-
-  const name = filename ?? `screenshot_${Date.now()}.png`;
-  const filePath = path.join(dir, name);
-
-  // Strip the optional data-URI prefix if present
-  const raw = data.replace(/^data:image\/\w+;base64,/, '');
-  fs.writeFileSync(filePath, Buffer.from(raw, 'base64'));
-
-  return filePath;
 }
 
 // ---------------------------------------------------------------------------

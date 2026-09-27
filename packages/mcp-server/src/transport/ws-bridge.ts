@@ -1,25 +1,37 @@
 /**
- * WebSocket server bridge for browser Extension connections.
+ * WebSocket server bridge for browser connections.
  *
- * Uses the `ws` library (already in package.json). Listens on
- * `ws://127.0.0.1:{FOX_WS_PORT}` and authenticates Extension
- * connections via a token-in-first-frame handshake.
+ * Uses the `ws` library. Listens on `ws://127.0.0.1:{FOX_WS_PORT}`.
+ *
+ * v0.1 client: the Native Host (packages/native-host/src/ws-client.ts),
+ * which relays commands to the Extension over Native Messaging. A direct
+ * Extension → WS connection is a future option (design.md 5.3); the Origin
+ * rule below already admits it.
  *
  * Fork-source: server.py L1479-1540
  *
- * Security:
- *  - Origin validation: only `moz-extension://` origins are accepted
- *    from browser clients. Non-browser clients (e.g. Native Host) may
- *    omit Origin entirely — that is fine.
- *  - First-frame auth: the Extension must send `{ "token": "<TOKEN>" }`
- *    within 10 seconds (design.md 8.2).
- *  - Token comparison: crypto.timingSafeEqual (design.md 7.3).
- *  - Auth failure: closed with code 1008 (Policy Violation).
+ * Handshake:
+ *  1. Client connects. Origin check: absent (non-browser client such as the
+ *     Native Host) or `moz-extension://` → continue; anything else → 1008.
+ *     Browsers always send Origin on WebSocket upgrades, so a web page
+ *     cannot pose as an Origin-less client; and every client, with or
+ *     without Origin, must still pass step 2.
+ *  2. Client sends `{ "token": "<API_TOKEN>" }` as its first frame within
+ *     10 s (design.md 8.2). Compared with crypto.timingSafeEqual
+ *     (design.md 7.3). Failure / timeout → close 1008 (Policy Violation).
+ *  3. Server replies `{ "type": "auth_ok" }` and registers the connection
+ *     as a 'native-host' browser in the connection manager.
+ *
+ * After the handshake:
+ *  - server → client: BrowserCommand JSON (one per frame)
+ *  - client → server: BrowserResponse JSON (has `requestId`), validated by
+ *    parseBrowserResponse(); frames without `requestId` are logged as events.
  */
 
 import * as crypto from 'node:crypto';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
+import { parseBrowserResponse } from '@kitsune-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
 
 // ---------------------------------------------------------------------------
@@ -75,18 +87,14 @@ export interface WsBridgeOptions {
 /**
  * Start the WebSocket server for Extension connections.
  *
- * @returns The WebSocketServer instance (already listening).
+ * @returns The WebSocketServer instance, once it is listening. Rejects with
+ *          the listen error (e.g. EADDRINUSE) — same contract as
+ *          startHttpBridge().
  */
-export function startWebSocketServer(options: WsBridgeOptions): WebSocketServer {
+export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocketServer> {
   const { port, apiToken, connectionManager, host = '127.0.0.1' } = options;
 
   const wss = new WebSocketServer({ host, port });
-
-  wss.on('listening', () => {
-    process.stderr.write(
-      `[KitsuneMCP] WebSocket server listening on ws://${host}:${port}\n`,
-    );
-  });
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const origin = req.headers['origin'] as string | undefined;
@@ -138,42 +146,47 @@ export function startWebSocketServer(options: WsBridgeOptions): WebSocketServer 
       // ----- Authenticated — register browser -----
       const browserId = `ws_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       connectionManager.registerBrowser(browserId, (message: string) => {
-        if (ws.readyState === ws.OPEN) {
-          ws.send(message);
+        if (ws.readyState !== ws.OPEN) {
+          throw new Error('WebSocket is not open');
         }
-      });
+        ws.send(message);
+      }, 'native-host');
+      ws.send(JSON.stringify({ type: 'auth_ok' }));
 
       // ----- Subsequent messages -----
       ws.on('message', (data: Buffer | string) => {
+        let parsed: unknown;
         try {
-          const parsed = JSON.parse(
-            typeof data === 'string' ? data : data.toString('utf-8'),
-          );
-
-          if (parsed && typeof parsed === 'object' && 'requestId' in parsed) {
-            // Response to a command we sent
-            connectionManager.handleResponse({
-              requestId: parsed.requestId as string,
-              success: parsed.success as boolean ?? false,
-              data: parsed.data,
-              error: parsed.error as string | undefined,
-              safetyDecision: typeof parsed.safetyDecision === 'string'
-                ? parsed.safetyDecision
-                : undefined,
-            });
-          } else {
-            // Event from the browser (tab updates, etc.)
-            const eventType =
-              (parsed && typeof parsed === 'object' && parsed.type) || 'unknown';
-            process.stderr.write(
-              `[KitsuneMCP] Browser event: ${String(eventType)}\n`,
-            );
-          }
+          parsed = JSON.parse(typeof data === 'string' ? data : data.toString('utf-8'));
         } catch {
-          process.stderr.write(
-            '[KitsuneMCP] Invalid JSON from browser WebSocket\n',
-          );
+          process.stderr.write('[KitsuneMCP] Invalid JSON from browser WebSocket\n');
+          return;
         }
+
+        if (typeof parsed === 'object' && parsed !== null && 'requestId' in parsed) {
+          // Response to a command we sent
+          const result = parseBrowserResponse(parsed);
+          if (result.ok) {
+            connectionManager.handleResponse(result.response);
+            return;
+          }
+          process.stderr.write(`[KitsuneMCP] ${result.error}\n`);
+          if (result.requestId !== undefined) {
+            connectionManager.handleResponse({
+              requestId: result.requestId,
+              success: false,
+              error: result.error,
+            });
+          }
+          return;
+        }
+
+        // Event from the browser side (no requestId)
+        const eventType =
+          typeof parsed === 'object' && parsed !== null && 'type' in parsed
+            ? String((parsed as { type: unknown }).type)
+            : 'unknown';
+        process.stderr.write(`[KitsuneMCP] Browser event: ${eventType}\n`);
       });
 
       ws.on('close', () => {
@@ -189,11 +202,23 @@ export function startWebSocketServer(options: WsBridgeOptions): WebSocketServer 
     });
   });
 
-  wss.on('error', (err) => {
-    process.stderr.write(
-      `[KitsuneMCP] WebSocket server error: ${err.message}\n`,
-    );
+  return new Promise<WebSocketServer>((resolve, reject) => {
+    const onStartupError = (err: Error): void => {
+      wss.close();
+      reject(err);
+    };
+    wss.once('error', onStartupError);
+    wss.once('listening', () => {
+      wss.removeListener('error', onStartupError);
+      wss.on('error', (err) => {
+        process.stderr.write(
+          `[KitsuneMCP] WebSocket server error: ${err.message}\n`,
+        );
+      });
+      process.stderr.write(
+        `[KitsuneMCP] WebSocket server listening on ws://${host}:${port}\n`,
+      );
+      resolve(wss);
+    });
   });
-
-  return wss;
 }

@@ -99,11 +99,13 @@ FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
 | パッケージ | 役割 |
 |---|---|
 | `packages/shared` | 他の3パッケージで使われる共有のzodスキーマ、アクション名、定数。 |
-| `packages/mcp-server` | Claude Codeがstdio経由で通信するMCPサーバー。`fox_*`ツールを登録し、安全ガードを実行し、WebSocket（優先）、ヘッドレスPlaywrightバックエンド（上級者向け）、またはHTTPポーリング（フォールバック）経由でコマンドをディスパッチする。 |
-| `packages/native-host` | MCPサーバーとFirefox拡張機能の間のネイティブメッセージングブリッジで、ヘルスモニタリングと自動再起動を備える。 |
+| `packages/mcp-server` | 1つの実行ファイルで2つの役割を持つ。既定では薄いstdio中継で、Claude Codeがセッションごとに1つ起動し、`fox_*`ツールの一覧を返して、呼び出しを共有サーバーに転送する。`--daemon`を付けるとその共有サーバーになる。HTTP/WebSocketのポートを持つ唯一のプロセスで、安全ガードを実行し、Native HostへのWebSocket（優先）かヘッドレスPlaywrightバックエンド（上級者向け）にコマンドをディスパッチする。 |
+| `packages/native-host` | 共有サーバーとFirefox拡張機能の間のネイティブメッセージングブリッジ。共有サーバーが動いていなければ起動し、プロセスがいなくなったときだけ起動し直す（応答が遅いだけのサーバーは止めない）。 |
 | `packages/extension` | 実際にクリック・入力・DOM読み取りを行うFirefox WebExtension（Manifest V2）。 |
 
-コマンドフロー: Claude Code → MCPサーバー → 安全ガード → （WebSocketまたはNative Messaging）→ 拡張機能バックグラウンドスクリプト → コンテンツスクリプト → ページDOM、結果は同じ経路を逆にたどって返ってくる。
+コマンドフロー: Claude Code → stdio中継 → HTTP → 共有サーバー → 安全ガード → WebSocket → Native Host → Native Messaging → 拡張機能バックグラウンドスクリプト → コンテンツスクリプト → ページDOM、結果は同じ経路を逆にたどって返ってくる。
+
+`claude mcp add`のコマンドは変わらない。中継が最初の利用時に共有サーバーを起動し（Firefoxが先ならNative Hostが起動する）、共有サーバーは10分使われなければ自分で終了する。セッションごとに中継が1つずつ立ち、全員が1つの共有サーバーを使うので、Claude Codeを複数セッション同時に使ってもポートがぶつからない。安全ガードの状態（レート制限、監査ログ、現在のURL）もセッション間で共有される。
 
 完全な設計ドキュメント（アーキテクチャ図、プロトコル仕様、全ツール一覧、安全レイヤーの内訳）は`docs/design.md`を参照。
 
@@ -118,7 +120,7 @@ FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
 | `FOX_HOST` | `127.0.0.1` | HTTP/WSサーバーのバインドアドレス |
 | `FOX_HTTP_PORT` | `8765` | HTTPサーバーのポート |
 | `FOX_WS_PORT` | `8766` | WebSocketサーバーのポート |
-| `FOX_CAPS` | （全ツール） | ツールプロファイル: `core`、`logs`、`script`、`workflow`、`human`、`container`、`wait` — カンマ区切り |
+| `FOX_CAPS` | （全ツール） | ツールプロファイル: `core`、`logs`、`script`、`workflow`、`human`、`container`、`wait` — カンマ区切り。**安全の境界ではない** — 登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。読み取り専用、スクリプト禁止、URL 制限、コンテナスコープといった実際の制限は下記の`safety.json` / SafetyGuardが担う。クライアント側が広い`FOX_CAPS`で中継を起動すればどのツールにも到達できる点も同じ |
 | `FOX_HEADLESS` | `0` | `1`でヘッドレスPlaywrightバックエンドを有効化 |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45` | ヘッドレスブラウザの起動タイムアウト（秒） |
 | `FOX_EXECUTABLE` | — | Firefoxバイナリの明示的なパス |
@@ -130,6 +132,12 @@ FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
 ### `safety.json`
 
 初回実行時に`~/.kitsune-mcp/safety.json`に妥当なデフォルト値で自動生成される（安全ガード有効、スクリプト実行許可、保護対象ドメインの確認有効、パスワード入力無効、レート制限120アクション/分、銀行や`.gov`などの保護対象ドメインの初期リスト）。独自のブロック/許可URLパターンを追加したり、コンテナスコープを有効にしたりする場合は編集する。完全なスキーマは`docs/design.md` §9.1に記載。
+
+### 先に daemon を起動した側の設定が勝つ
+
+daemon はセッションごとに新しく起動されるわけではない。Claude Codeの中継とFirefox（Native Host経由）のどちらか先に起動した方がdaemonを立ち上げ、残りは全員その1つのdaemonと通信する。これは環境変数に影響する — `FOX_READ_ONLY`、`FOX_HEADLESS`、`FOX_ALLOW_SCRIPTS`などは、実際にdaemonを起動したプロセスの環境変数だけが読まれる。Firefoxが先にdaemonを起動していた場合、後から起動したClaude CodeセッションのMCP設定に`FOX_READ_ONLY=1`と書いてあっても効かない。警告は出るが、既存のdaemonはそのままの設定で動き続ける。
+
+`safety.json`にはこの問題がない。どちらがdaemonを起動しても、既定では同じ固定パス（`~/.kitsune-mcp/safety.json`）から読まれるからだ。`read_only`などを確実に効かせたいなら、環境変数ではなく`safety.json`側に設定すること。
 
 ## Status
 

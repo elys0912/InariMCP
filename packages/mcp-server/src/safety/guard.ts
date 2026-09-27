@@ -110,6 +110,44 @@ export class SafetyGuard {
     }
   }
 
+  /**
+   * Build the Layer 7-shaped confirmation result for a refusal the Extension
+   * made itself: a single-tab screenshot whose target tab URL matched the
+   * `protectedUrlPatterns` attached to the command (safetyDecision
+   * "confirmation_required"). The server could not have caught this when
+   * its last-known URL was stale or unknown.
+   *
+   * @param url  The protected tab's URL if the Extension reported it
+   *             (`data.url`); also recorded via noteUrl semantics.
+   */
+  confirmationFromBrowser(
+    toolName: string,
+    args: Record<string, unknown>,
+    url: string | null,
+    transport?: string,
+  ): SafetyDenial {
+    if (url) this._currentUrl = url;
+    const protectedUrl = url ?? this._currentUrl ?? '(target tab)';
+    const matched =
+      this._matchedProtected(url ?? this._currentUrl) ?? '(protected_url_patterns)';
+
+    if (this.config.auditLog) {
+      audit(toolName, args, url ?? this._currentUrl, 'confirmation_required', transport);
+    }
+
+    return {
+      success: false,
+      safetyDecision: 'confirmation_required',
+      confirmationRequired: true,
+      elicitation: { protectedUrl, matchedPattern: matched, toolName },
+      error:
+        `${toolName} targets a protected site ('${protectedUrl}' matches ` +
+        `pattern '${matched}' in safety.json, as checked by the browser). ` +
+        'This is a guard against capturing sensitive sites (banking, payments, ' +
+        'health, government). Human confirmation is required via MCP elicitation.',
+    };
+  }
+
   status(): SafetyStatus {
     return {
       success: true,

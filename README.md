@@ -99,11 +99,13 @@ A monorepo of four TypeScript packages:
 | Package | Role |
 |---|---|
 | `packages/shared` | Shared zod schemas, action names, and constants used by the other three packages. |
-| `packages/mcp-server` | The MCP server Claude Code talks to over stdio. Registers the `fox_*` tools, runs the safety guard, and dispatches commands over WebSocket (preferred), the headless Playwright backend (advanced), or HTTP polling (fallback). |
-| `packages/native-host` | A Native Messaging bridge process between the MCP server and the Firefox extension, with health monitoring and auto-restart. |
+| `packages/mcp-server` | Two roles in one executable. By default it is a thin stdio relay: the process Claude Code starts, one per session, which lists the `fox_*` tools and forwards each call to the shared daemon. With `--daemon` it is that shared daemon: the single process that owns the HTTP/WebSocket ports, runs the safety guard, and dispatches commands to the Native Host over WebSocket (preferred) or to the headless Playwright backend (advanced). |
+| `packages/native-host` | A Native Messaging bridge process between the daemon and the Firefox extension. Starts the daemon if none is running and restarts it only if its process is gone (a slow daemon is never killed). |
 | `packages/extension` | The Firefox WebExtension (Manifest V2) that actually clicks, types, and reads the DOM. |
 
-Command flow: Claude Code → MCP server → safety guard → (WebSocket or Native Messaging) → extension background script → content script → page DOM, and the result flows back the same way.
+Command flow: Claude Code → stdio relay → HTTP → shared daemon → safety guard → WebSocket → Native Host → Native Messaging → extension background script → content script → page DOM, and the result flows back the same way.
+
+The `claude mcp add` command stays the same: the relay starts the daemon on first use (and the Native Host does the same when Firefox starts first), and the daemon exits by itself after 10 minutes unused. Because every session gets its own relay and they all share one daemon, you can run several Claude Code sessions at the same time without port conflicts. They share the safety guard state too (rate limit, audit log, current URL).
 
 See `docs/design.md` for the full design doc (architecture diagrams, protocol specs, the complete tool list, and the safety-layer breakdown).
 
@@ -118,7 +120,7 @@ All prefixed `FOX_`; the old `CLAUDE_BROWSER_*` names (inherited from the fork) 
 | `FOX_HOST` | `127.0.0.1` | Bind address for the HTTP/WS server |
 | `FOX_HTTP_PORT` | `8765` | HTTP server port |
 | `FOX_WS_PORT` | `8766` | WebSocket server port |
-| `FOX_CAPS` | (all tools) | Tool profile: `core`, `logs`, `script`, `workflow`, `human`, `container`, `wait` — comma-separated |
+| `FOX_CAPS` | (all tools) | Tool profile: `core`, `logs`, `script`, `workflow`, `human`, `container`, `wait` — comma-separated. **Not a safety boundary** — it only trims which tool schemas get registered to save context tokens. Actual restrictions (read-only, no scripts, URL limits, container scope) come from `safety.json` / the SafetyGuard below, and a client can always register a wider `FOX_CAPS` to reach any tool anyway |
 | `FOX_HEADLESS` | `0` | `1` to enable the headless Playwright backend |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45` | Headless browser startup timeout (seconds) |
 | `FOX_EXECUTABLE` | — | Explicit path to a Firefox binary |
@@ -130,6 +132,12 @@ All prefixed `FOX_`; the old `CLAUDE_BROWSER_*` names (inherited from the fork) 
 ### `safety.json`
 
 Auto-generated on first run at `~/.kitsune-mcp/safety.json` with sane defaults (safety guard on, scripts allowed, protected-domain confirmation on, password typing off, 120 actions/minute rate limit, a starter list of protected domains like banks and `.gov`). Edit it to add your own blocked/allowed URL patterns or to turn on container scoping. Full schema is documented in `docs/design.md` §9.1.
+
+### Whichever side starts the daemon first, its config wins
+
+The daemon isn't started fresh per session — whoever gets there first (your Claude Code relay, or Firefox via the native host) starts it, and everyone else just talks to that one running daemon. That matters for env vars: `FOX_READ_ONLY`, `FOX_HEADLESS`, `FOX_ALLOW_SCRIPTS`, etc. are only read from the environment of whichever process actually launched the daemon. If Firefox starts the daemon first, a later Claude Code session's `FOX_READ_ONLY=1` in its MCP config does nothing — you'll see a warning, but the existing daemon keeps running with its original settings.
+
+`safety.json` doesn't have this problem: it's read from the same fixed path (`~/.kitsune-mcp/safety.json` by default) no matter which side starts the daemon. If you need `read_only` or similar to reliably take effect, set it in `safety.json` rather than relying on the env var.
 
 ## Status
 

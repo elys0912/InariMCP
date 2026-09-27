@@ -11,7 +11,7 @@ interface StatusResponse {
 
 interface ScreenshotResponse {
   success: boolean;
-  data?: string;
+  imageData?: string;
   error?: string;
 }
 
@@ -121,10 +121,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           action: 'screenshot',
         }) as ScreenshotResponse;
 
-        if (result.success && result.data) {
+        if (result.success && result.imageData) {
           showToast('Screenshot captured!', 'success');
           const link = document.createElement('a');
-          link.href = result.data;
+          link.href = result.imageData;
           link.download = `screenshot-${Date.now()}.png`;
           link.click();
         } else {

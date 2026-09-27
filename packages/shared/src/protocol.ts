@@ -33,8 +33,11 @@ export const BrowserCommandSchema = z.object({
   containerScope: z.object({ containerName: z.string() }).optional(),
   /**
    * Protected-domain regex patterns (safety.json `protected_url_patterns`).
-   * Attached only to `screenshot_all_tabs` when `confirm_protected_actions`
-   * is true, so the Extension can exclude protected tabs from the capture.
+   * Attached to `screenshot` and `screenshot_all_tabs` when the guard is
+   * enabled and `confirm_protected_actions` is true. For all_tabs the
+   * Extension excludes protected tabs; for a single screenshot it refuses
+   * with `safetyDecision: "confirmation_required"` when the target tab's URL
+   * matches (the MCP Server cannot see which tab is actually captured).
    */
   protectedUrlPatterns: z.array(z.string()).optional(),
 });
@@ -48,7 +51,15 @@ export type BrowserCommand = z.infer<typeof BrowserCommandSchema>;
 export const BrowserResponseSchema = z.object({
   requestId: z.string(),
   success: z.boolean(),
-  data: z.unknown().optional(),
+  /**
+   * Result payload, passed through whole. Well-known keys:
+   *   - `url`: page URL after the operation (feeds SafetyGuard.noteUrl)
+   *   - `imagePath`: screenshot file saved by the Native Host / headless
+   *     backend (`imageData` never reaches the MCP Server on the Extension
+   *     path — the Native Host swaps it for a file path)
+   *   - `screenshots[i].imagePath`: same, for scope all_tabs
+   */
+  data: z.record(z.unknown()).optional(),
   error: z.string().optional(),
   /**
    * Set when the Extension refused the command for a safety reason
@@ -59,6 +70,43 @@ export const BrowserResponseSchema = z.object({
 });
 
 export type BrowserResponse = z.infer<typeof BrowserResponseSchema>;
+
+/** Result of {@link parseBrowserResponse}. */
+export type ParsedBrowserResponse =
+  | { ok: true; response: BrowserResponse }
+  | {
+      ok: false;
+      /** requestId, when one could be recovered from the invalid frame. */
+      requestId: string | undefined;
+      error: string;
+    };
+
+/**
+ * Validate one decoded browser response frame against BrowserResponseSchema.
+ *
+ * Single entry point for every transport that receives responses (the WS
+ * bridge today). Unknown top-level keys are stripped; `data` is kept whole.
+ * When validation fails but a string `requestId` is present, it is returned
+ * so the caller can fail that pending request right away instead of letting
+ * it time out.
+ */
+export function parseBrowserResponse(raw: unknown): ParsedBrowserResponse {
+  const result = BrowserResponseSchema.safeParse(raw);
+  if (result.success) {
+    return { ok: true, response: result.data };
+  }
+
+  let requestId: string | undefined;
+  if (typeof raw === 'object' && raw !== null && 'requestId' in raw) {
+    const id: unknown = (raw as { requestId: unknown }).requestId;
+    if (typeof id === 'string') requestId = id;
+  }
+
+  const issues = result.error.issues
+    .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+    .join('; ');
+  return { ok: false, requestId, error: `Invalid browser response: ${issues}` };
+}
 
 // ---------------------------------------------------------------------------
 // Safety block detail  (attached to ToolResult when code === SAFETY_BLOCKED)

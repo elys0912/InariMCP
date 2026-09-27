@@ -9,7 +9,9 @@
 // ---------------------------------------------------------------------------
 
 interface NativeMessage {
-  requestId?: number;
+  // Numeric for extension-initiated requests (sendToNativeHost), string for
+  // MCP Server commands (BrowserCommand.requestId).
+  requestId?: number | string;
   action?: string;
   tabId?: number;
   data?: Record<string, unknown>;
@@ -40,9 +42,9 @@ interface ScreenshotOptions {
 }
 
 interface GetAllTabsOptions {
-  current_window_only?: boolean;
-  include_favicon?: boolean;
-  url_pattern?: string;
+  currentWindowOnly?: boolean;
+  includeFavicon?: boolean;
+  urlPattern?: string;
   limit?: number;
 }
 
@@ -230,7 +232,7 @@ function handleNativeMessage(raw: unknown): void {
   const message = raw as NativeMessage;
   console.log("[KitsuneMCP] Received from native host:", message);
 
-  if (message.requestId && pendingRequests.has(message.requestId)) {
+  if (typeof message.requestId === "number" && pendingRequests.has(message.requestId)) {
     const entry = pendingRequests.get(message.requestId)!;
     pendingRequests.delete(message.requestId);
     // BUG FIX: clear the timeout so it doesn't fire after resolution
@@ -356,9 +358,20 @@ async function sendToContentScript(
 // ---------------------------------------------------------------------------
 
 async function handleCommand(message: NativeMessage): Promise<CommandResult> {
-  const { action, data } = message;
+  const { data } = message;
   let tabId = message.tabId;
   let result: CommandResult = { success: false };
+
+  // Normalize the wire action name (snake_case) to the internal name once,
+  // before any check, so the scope sets and the switch below all see the
+  // same name.
+  const resolved = resolveWireAction(message.action);
+  if (resolved.kind === "notImplemented") {
+    result = { success: false, error: `Not implemented in extension: ${resolved.wireName}` };
+    postWireResponse(message, result);
+    return result;
+  }
+  const action = resolved.action;
 
   // Container scope check (Layer 0, design.md 7.1). The MCP Server attaches
   // `containerScope` to every command when container_scope.enabled is true.
@@ -368,9 +381,7 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
     const decision = await enforceContainerScope(action, tabId, containerScope);
     if (!decision.allowed) {
       result = outOfScope(decision.error);
-      if (nativePort && message.requestId) {
-        nativePort.postMessage({ requestId: message.requestId, ...result });
-      }
+      postWireResponse(message, result);
       return result;
     }
     scope = decision.scope;
@@ -381,6 +392,22 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
     }
   }
   const protectedPatterns = parseProtectedPatterns(message.protectedUrlPatterns);
+
+  // Protected-domain check for single-tab captures (screenshot and
+  // scroll_and_capture), against the real URL of the target tab (not the
+  // server's last navigated URL). The server only attaches the patterns when
+  // confirm_protected_actions is true.
+  if (
+    (action === "screenshot" || action === "scrollAndCapture") &&
+    protectedPatterns.length > 0
+  ) {
+    const refusal = await checkProtectedScreenshot(tabId, protectedPatterns);
+    if (refusal) {
+      result = refusal;
+      postWireResponse(message, result);
+      return result;
+    }
+  }
 
   try {
     switch (action) {
@@ -555,11 +582,123 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
     result = { success: false, error: (error as Error).message };
   }
 
-  if (nativePort && message.requestId) {
-    nativePort.postMessage({ requestId: message.requestId, ...result });
+  // Report the target tab's URL after the operation so the server's guard
+  // can track the current page (data.url). Only for single-tab actions; the
+  // tab-creating actions set `url` themselves, and a closed tab has none.
+  if (
+    result.success &&
+    typeof result.url !== "string" &&
+    action !== undefined &&
+    isSingleTabAction(action) &&
+    action !== "closeTab"
+  ) {
+    try {
+      const tab = await resolveTab(tabId);
+      if (tab && tab.url) {
+        result = { ...result, url: tab.url };
+      }
+    } catch {
+      // Tab vanished -- report the result without a URL
+    }
   }
 
+  postWireResponse(message, result);
+
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Wire protocol helpers
+// ---------------------------------------------------------------------------
+
+type ResolvedAction =
+  | { kind: "action"; action: string | undefined }
+  | { kind: "notImplemented"; wireName: string };
+
+/**
+ * Convert a wire action name (snake_case, see action-map.ts) to the internal
+ * name. Names not in the table pass through unchanged: internal callers
+ * (popup, content script) already use internal names such as "status", and
+ * anything unknown still ends in the dispatcher's "Unknown action" branch.
+ */
+function resolveWireAction(raw: string | undefined): ResolvedAction {
+  if (raw === undefined) return { kind: "action", action: undefined };
+  const mapped = WIRE_ACTION_MAP.get(raw);
+  if (mapped === null) return { kind: "notImplemented", wireName: raw };
+  return { kind: "action", action: mapped ?? raw };
+}
+
+/** Response envelope sent back over Native Messaging (BrowserResponse). */
+interface WireResponse {
+  requestId: number | string;
+  success: boolean;
+  error?: string;
+  safetyDecision?: string;
+  data?: Record<string, unknown>;
+}
+
+/**
+ * Wrap a handler result in the wire contract: success / error /
+ * safetyDecision stay top-level, every other field goes into `data`.
+ */
+function toWireResponse(requestId: number | string, result: CommandResult): WireResponse {
+  const { success, error, safetyDecision, ...rest } = result;
+  const response: WireResponse = { requestId, success };
+  if (typeof error === "string") response.error = error;
+  if (typeof safetyDecision === "string") response.safetyDecision = safetyDecision;
+  if (Object.keys(rest).length > 0) response.data = rest;
+  return response;
+}
+
+/**
+ * Send the result of a native command back to the native host. Messages from
+ * the popup / content script carry no requestId and get the raw result via
+ * sendResponse instead.
+ */
+function postWireResponse(message: NativeMessage, result: CommandResult): void {
+  if (nativePort && message.requestId) {
+    try {
+      nativePort.postMessage(toWireResponse(message.requestId, result));
+    } catch (e) {
+      // Port disconnected meanwhile, or the result is not serializable. The
+      // server fails the request on its own timeout / WS disconnect.
+      console.error(
+        `Failed to send response for requestId ${message.requestId}:`,
+        e,
+      );
+    }
+  }
+}
+
+/**
+ * Refuse a screenshot when the target tab (same resolution as the container
+ * scope check / takeScreenshot) is on a protected domain. Returns null when
+ * the capture may proceed. Fails closed if the tab cannot be resolved.
+ */
+async function checkProtectedScreenshot(
+  tabId: number | undefined,
+  patterns: RegExp[],
+): Promise<CommandResult | null> {
+  let tab: browser.tabs.Tab | undefined;
+  try {
+    tab = await resolveTab(tabId);
+  } catch {
+    tab = undefined;
+  }
+  if (!tab) {
+    return {
+      success: false,
+      error: "Could not resolve the target tab for the protected domain check",
+    };
+  }
+  if (matchesAnyPattern(tab.url, patterns)) {
+    return {
+      success: false,
+      safetyDecision: "confirmation_required",
+      error: "Protected domain: confirmation required",
+    };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -595,16 +734,12 @@ async function takeScreenshot(
       );
 
       if (options.fullPage) {
-        const fullPageData = await browser.tabs.sendMessage(targetTab.id, {
-          action: "captureFullPage",
-          format: options.format || "png",
-        });
-        return { success: true, data: fullPageData, type: "fullPage" };
+        return await captureFullPageImage(targetTab, dataUrl, options);
       }
 
       return {
         success: true,
-        data: dataUrl,
+        imageData: dataUrl,
         type: "visible",
         tab: {
           id: targetTab.id,
@@ -621,6 +756,59 @@ async function takeScreenshot(
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }
+}
+
+/**
+ * Full-page capture. The content script only reports the page dimensions
+ * ("captureFullPage"), so the image itself is taken with captureTab's `rect`
+ * option (Firefox 82+). If that fails (older Firefox, page too large for a
+ * single canvas, content script unavailable), the visible-area capture is
+ * returned instead and `fullPageCaptured` is false.
+ */
+async function captureFullPageImage(
+  targetTab: browser.tabs.Tab,
+  visibleDataUrl: string,
+  options: ScreenshotOptions,
+): Promise<CommandResult> {
+  const tabInfo = {
+    id: targetTab.id,
+    url: targetTab.url,
+    title: targetTab.title,
+  };
+  let dimensions: Record<string, unknown> | null = null;
+  try {
+    dimensions = (await browser.tabs.sendMessage(targetTab.id, {
+      action: "captureFullPage",
+      format: options.format || "png",
+    })) as Record<string, unknown>;
+    const width = dimensions.scrollWidth;
+    const height = dimensions.scrollHeight;
+    if (typeof width === "number" && typeof height === "number" && width > 0 && height > 0) {
+      const fullDataUrl = await browser.tabs.captureTab(targetTab.id, {
+        format: options.format || "png",
+        quality: options.quality || 90,
+        rect: { x: 0, y: 0, width, height },
+      });
+      return {
+        success: true,
+        imageData: fullDataUrl,
+        type: "fullPage",
+        fullPageCaptured: true,
+        pageDimensions: dimensions,
+        tab: tabInfo,
+      };
+    }
+  } catch (error) {
+    console.warn("[KitsuneMCP] Full-page capture failed, using visible area:", error);
+  }
+  return {
+    success: true,
+    imageData: visibleDataUrl,
+    type: "fullPage",
+    fullPageCaptured: false,
+    pageDimensions: dimensions,
+    tab: tabInfo,
+  };
 }
 
 async function screenshotAllTabs(
@@ -659,7 +847,7 @@ async function screenshotAllTabs(
           tabId: tab.id,
           url: tab.url ?? "",
           title: tab.title ?? "",
-          data: options.includeData ? dataUrl : undefined,
+          imageData: options.includeData ? dataUrl : undefined,
           timestamp: Date.now(),
         });
       } catch (e) {
@@ -751,7 +939,16 @@ async function navigateTo(
     const tab = await resolveTab(tabId);
     await browser.tabs.update(tab.id, { url: data.url });
     await waitForTabComplete(tab.id);
-    return { success: true, url: data.url };
+    // Report the URL actually loaded (after redirects), so the server's guard
+    // tracks the real page; fall back to the requested URL.
+    let finalUrl = data.url;
+    try {
+      const updated = await browser.tabs.get(tab.id);
+      if (updated.url) finalUrl = updated.url;
+    } catch {
+      // keep the requested URL
+    }
+    return { success: true, url: finalUrl };
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }
@@ -864,10 +1061,10 @@ async function getAllTabs(
   scope: ScopeFilter | null = null,
 ): Promise<CommandResult> {
   try {
-    const currentWindowOnly = options.current_window_only !== false;
-    const includeFavicon = options.include_favicon === true;
-    const urlPattern = options.url_pattern
-      ? new RegExp(options.url_pattern)
+    const currentWindowOnly = options.currentWindowOnly !== false;
+    const includeFavicon = options.includeFavicon === true;
+    const urlPattern = options.urlPattern
+      ? new RegExp(options.urlPattern)
       : null;
     const limit = Number.isInteger(options.limit)
       ? (options.limit as number)
@@ -1037,6 +1234,8 @@ async function createNewTab(
     return {
       success: true,
       tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
+      // The new tab is usually still about:blank here; report the requested URL.
+      url: data.url || "about:blank",
     };
   } catch (error) {
     return { success: false, error: (error as Error).message };
@@ -1270,6 +1469,11 @@ const SCOPE_NO_TAB_ACTIONS: ReadonlySet<string> = new Set([
   "status",
 ]);
 
+/** Internal action that targets one tab (the strict branch of the scope check). */
+function isSingleTabAction(action: string): boolean {
+  return !SCOPE_SELF_ENFORCED_ACTIONS.has(action) && !SCOPE_NO_TAB_ACTIONS.has(action);
+}
+
 /**
  * Layer 0 enforcement. For single-tab actions, resolves the target tab
  * (explicit tabId, else the active tab -- same logic as resolveTab()) and
@@ -1432,6 +1636,7 @@ async function openInContainer(
       success: true,
       tabId: tab.id,
       cookieStoreId: storeId,
+      url: data.url || "about:blank",
     };
   } catch (error) {
     return { success: false, error: (error as Error).message };
@@ -1497,7 +1702,7 @@ browser.contextMenus.onClicked.addListener(
         if (result.success && nativePort) {
           nativePort.postMessage({
             action: "screenshotTaken",
-            data: result.data,
+            data: result.imageData,
             tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
           });
         }

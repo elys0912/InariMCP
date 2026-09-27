@@ -1,12 +1,18 @@
 /**
- * MCP Server subprocess management.
+ * Locating and starting the shared KitsuneMCP daemon.
  *
- * Handles starting, stopping, health checking, and restarting the
- * MCP server process. Cross-platform port-kill support (Windows / Unix).
+ * The daemon (`node packages/mcp-server/dist/index.js --daemon`) owns the
+ * HTTP / WebSocket ports and serves every Claude Code session (through their
+ * stdio relays) as well as this Native Host. The rule is the same for the
+ * relays and for us: if a daemon answers /health, just connect; if nothing
+ * listens on the port, start one detached. When several of us start one at
+ * the same time, the daemon that cannot bind the port exits by itself.
+ *
+ * A daemon that is alive but slow to answer is never killed: other sessions
+ * depend on it. (The fork source killed whatever held the port.)
  */
 
-import { spawn, execSync } from 'node:child_process';
-import type { ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import * as net from 'node:net';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
@@ -37,28 +43,46 @@ function resolvePort(): number {
   return ENV_DEFAULTS.FOX_HTTP_PORT;
 }
 
+function resolveWsPort(): number {
+  const raw =
+    process.env[ENV.FOX_WS_PORT] ??
+    process.env[LEGACY_ENV.CLAUDE_BROWSER_WS_PORT];
+  if (raw) {
+    const parsed = Number(raw);
+    if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return ENV_DEFAULTS.FOX_WS_PORT;
+}
+
+/** Same file the relays use for a detached daemon's stderr. */
+function daemonLogPath(): string {
+  return path.join(os.homedir(), '.kitsune-mcp', 'logs', 'daemon.log');
+}
+
+/** How long start() waits for a daemon it spawned to answer /health. */
+const STARTUP_WAIT_MS = 15_000;
+
 export class ServerLauncher {
   readonly httpPort: number;
+  /** Daemon ws-bridge port — the Native Host's command channel. */
+  readonly wsPort: number;
   readonly host: string;
   private cachedApiToken: string | undefined;
 
-  private serverProcess: ChildProcess | null = null;
   private restartAttempts = 0;
   private lastStableTime = Date.now();
-
-  private readonly pidFilePath: string;
 
   constructor() {
     this.host = resolveHost();
     this.httpPort = resolvePort();
+    this.wsPort = resolveWsPort();
     this.cachedApiToken = this.loadApiToken();
-    this.pidFilePath = path.join(os.homedir(), '.kitsune-mcp', 'server.pid');
   }
 
   /**
    * The API token, re-read from disk whenever we don't yet have one cached.
    * This covers the case where the token file didn't exist yet when the
-   * launcher was constructed (e.g. server hadn't generated it on first boot).
+   * launcher was constructed (the daemon creates it on first boot).
    * Once a token is found, it's cached and not re-read on every call.
    */
   private get apiToken(): string | undefined {
@@ -72,13 +96,18 @@ export class ServerLauncher {
   // Public API
   // -------------------------------------------------------------------------
 
+  /**
+   * Spawn a daemon (detached, stdio cut off, stderr appended to
+   * ~/.kitsune-mcp/logs/daemon.log) and wait for it to answer /health.
+   * Callers must only do this when nothing listens on the port.
+   */
   async start(): Promise<boolean> {
     if (this.restartAttempts >= ENV_DEFAULTS.MAX_RESTART_ATTEMPTS) {
-      log(`max restart attempts (${ENV_DEFAULTS.MAX_RESTART_ATTEMPTS}) reached`);
+      log(`max start attempts (${ENV_DEFAULTS.MAX_RESTART_ATTEMPTS}) reached`);
       return false;
     }
 
-    // Resolve server entry point relative to this package
+    // Resolve the daemon entry point relative to this package
     const serverEntry = path.resolve(
       __dirname,
       '..', '..', 'mcp-server', 'dist', 'index.js',
@@ -89,106 +118,77 @@ export class ServerLauncher {
       return false;
     }
 
+    let logFd: number | 'ignore' = 'ignore';
     try {
-      this.serverProcess = spawn(
-        process.execPath,
-        [serverEntry],
-        {
-          stdio: ['ignore', 'ignore', 'ignore'],
-          detached: true,
-        },
-      );
+      fs.mkdirSync(path.dirname(daemonLogPath()), { recursive: true, mode: 0o700 });
+      logFd = fs.openSync(daemonLogPath(), 'a', 0o600);
+    } catch {
+      // Logging is best-effort
+    }
 
-      // Unref so the child doesn't keep the native-host alive on exit
-      this.serverProcess.unref();
+    try {
+      const child = spawn(process.execPath, [serverEntry, '--daemon'], {
+        stdio: ['ignore', 'ignore', logFd],
+        detached: true,
+        windowsHide: true,
+      });
+      child.on('error', (err) => log(`daemon spawn error: ${err.message}`));
+      // Don't keep the Native Host alive for the daemon, nor the other way round.
+      child.unref();
 
       this.restartAttempts++;
       this.lastStableTime = Date.now();
-
-      const pid = this.serverProcess.pid;
-      log(`started MCP server (PID: ${pid ?? 'unknown'}, attempt #${this.restartAttempts})`);
-
-      // Save PID file
-      if (pid !== undefined) {
-        try {
-          const dir = path.dirname(this.pidFilePath);
-          fs.mkdirSync(dir, { recursive: true });
-          fs.writeFileSync(this.pidFilePath, String(pid));
-        } catch {
-          // Non-critical
-        }
-      }
-
-      // Wait up to 3 seconds for the server to become healthy
-      for (let i = 0; i < 15; i++) {
-        await this.sleep(200);
-        if (await this.checkHealth()) {
-          log('MCP server is now available');
-          this.restartAttempts = 0;
-          return true;
-        }
-      }
-
-      log('MCP server started but not yet responding');
-      return true;
+      log(`started daemon (PID: ${child.pid ?? 'unknown'}, attempt #${this.restartAttempts})`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      log(`failed to start MCP server: ${msg}`);
+      log(`failed to start daemon: ${msg}`);
       return false;
-    }
-  }
-
-  async stop(): Promise<void> {
-    if (!this.serverProcess || this.serverProcess.exitCode !== null) {
-      this.serverProcess = null;
-      return;
-    }
-
-    const pid = this.serverProcess.pid;
-    if (pid === undefined) {
-      this.serverProcess = null;
-      return;
-    }
-
-    log(`stopping MCP server (PID: ${pid})`);
-
-    try {
-      this.serverProcess.kill('SIGTERM');
-    } catch {
-      // May already be dead
-    }
-
-    // Wait up to 5 seconds for graceful exit
-    const exited = await this.waitForExit(5_000);
-
-    if (!exited) {
-      log(`MCP server PID ${pid} did not exit after SIGTERM, sending SIGKILL`);
-      try {
-        this.serverProcess.kill('SIGKILL');
-      } catch {
-        // Ignore
+    } finally {
+      if (typeof logFd === 'number') {
+        try { fs.closeSync(logFd); } catch { /* ignore */ }
       }
-      await this.waitForExit(2_000);
     }
 
-    this.serverProcess = null;
+    const deadline = Date.now() + STARTUP_WAIT_MS;
+    while (Date.now() < deadline) {
+      await this.sleep(200);
+      if (await this.checkHealth()) {
+        log('daemon is now available');
+        this.restartAttempts = 0;
+        return true;
+      }
+    }
+
+    log(`daemon started but not yet responding (see ${daemonLogPath()})`);
+    return true;
   }
 
+  /**
+   * Connect-or-start at Native Host startup:
+   *   healthy daemon   → nothing to do
+   *   port in use      → a daemon (or something else) is there but slow:
+   *                      leave it alone, the health monitor keeps watching
+   *   port free        → start a daemon
+   */
   async ensureRunning(): Promise<void> {
     if (await this.checkHealth()) {
-      log('MCP server already running and responding');
+      log('daemon already running and responding');
       return;
     }
 
     if (await this.isPortInUse()) {
-      log('port in use but server not responding — killing stale process');
-      await this.killExisting();
+      log(
+        `port ${this.host}:${this.httpPort} is in use but /health did not answer — ` +
+        'not starting another daemon (the running one is left alone)',
+      );
+      return;
     }
 
-    log('MCP server not running, attempting to start');
+    log('daemon not running, starting it');
     await this.start();
   }
 
+  /** True when something accepts TCP connections on the HTTP port. */
   isPortInUse(): Promise<boolean> {
     return new Promise((resolve) => {
       const sock = new net.Socket();
@@ -200,8 +200,9 @@ export class ServerLauncher {
       });
 
       sock.on('timeout', () => {
+        // Connect neither accepted nor refused: something is there.
         sock.destroy();
-        resolve(false);
+        resolve(true);
       });
 
       sock.on('error', () => {
@@ -242,41 +243,35 @@ export class ServerLauncher {
     });
   }
 
-  async killExisting(): Promise<void> {
-    const port = this.httpPort;
-
-    try {
-      if (process.platform === 'win32') {
-        await this.killExistingWindows(port);
-      } else {
-        await this.killExistingUnix(port);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log(`failed to kill existing server: ${msg}`);
-    }
-  }
-
   resetBackoff(): void {
     const now = Date.now();
     if (
       this.restartAttempts > 0 &&
       now - this.lastStableTime > ENV_DEFAULTS.STABLE_THRESHOLD_MS
     ) {
-      log('resetting restart counter after stability period');
+      log('resetting start counter after stability period');
       this.restartAttempts = 0;
     }
   }
 
   getBackoffDelay(): number {
     return Math.min(
-      ENV_DEFAULTS.BACKOFF_BASE_MS * Math.pow(2, this.restartAttempts - 1),
+      ENV_DEFAULTS.BACKOFF_BASE_MS * Math.pow(2, Math.max(0, this.restartAttempts - 1)),
       ENV_DEFAULTS.BACKOFF_MAX_MS,
     );
   }
 
   getApiToken(): string | undefined {
     return this.apiToken;
+  }
+
+  /**
+   * Drop the cached token so the next getApiToken() re-reads the file.
+   * Called when the server rejects our token (WS close 1008), e.g. after
+   * ~/.kitsune-mcp/api_token was regenerated.
+   */
+  reloadApiToken(): void {
+    this.cachedApiToken = undefined;
   }
 
   getRestartAttempts(): number {
@@ -298,115 +293,6 @@ export class ServerLauncher {
       // Token file missing or unreadable
     }
     return undefined;
-  }
-
-  private async killExistingWindows(port: number): Promise<void> {
-    try {
-      const output = execSync(
-        `netstat -ano | findstr :${port} | findstr LISTENING`,
-        { encoding: 'utf-8', timeout: 5_000 },
-      );
-
-      const pids = new Set<number>();
-      for (const line of output.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const parts = trimmed.split(/\s+/);
-        const pidStr = parts[parts.length - 1];
-        const pid = Number(pidStr);
-        if (!Number.isNaN(pid) && pid > 0) pids.add(pid);
-      }
-
-      for (const pid of pids) {
-        log(`killing process on port ${port}: PID ${pid}`);
-        try {
-          execSync(`taskkill /PID ${pid} /F`, { timeout: 5_000 });
-        } catch {
-          // Process may already be gone
-        }
-      }
-    } catch {
-      // netstat/findstr may fail if no process is listening
-    }
-
-    await this.sleep(500);
-  }
-
-  private async killExistingUnix(port: number): Promise<void> {
-    let pids: number[] = [];
-
-    // Try lsof first
-    try {
-      const output = execSync(`lsof -ti :${port}`, {
-        encoding: 'utf-8',
-        timeout: 5_000,
-      });
-      pids = output
-        .split('\n')
-        .map((s) => Number(s.trim()))
-        .filter((n) => !Number.isNaN(n) && n > 0);
-    } catch {
-      // lsof not available, try fuser
-      try {
-        execSync(`fuser -k ${port}/tcp`, { timeout: 5_000 });
-        await this.sleep(500);
-        return;
-      } catch {
-        log('neither lsof nor fuser available to kill existing server');
-        return;
-      }
-    }
-
-    // SIGTERM first
-    for (const pid of pids) {
-      log(`sending SIGTERM to process on port ${port}: PID ${pid}`);
-      try {
-        process.kill(pid, 'SIGTERM');
-      } catch {
-        // Already gone
-      }
-    }
-
-    await this.sleep(2_000);
-
-    // SIGKILL any survivors
-    for (const pid of pids) {
-      try {
-        process.kill(pid, 0); // Check if alive
-        log(`process ${pid} still alive after SIGTERM, sending SIGKILL`);
-        process.kill(pid, 'SIGKILL');
-      } catch {
-        // Already gone
-      }
-    }
-
-    await this.sleep(500);
-  }
-
-  private waitForExit(timeoutMs: number): Promise<boolean> {
-    return new Promise((resolve) => {
-      if (!this.serverProcess || this.serverProcess.exitCode !== null) {
-        resolve(true);
-        return;
-      }
-
-      const timer = setTimeout(() => {
-        cleanup();
-        resolve(false);
-      }, timeoutMs);
-
-      const onExit = (): void => {
-        cleanup();
-        resolve(true);
-      };
-
-      const cleanup = (): void => {
-        clearTimeout(timer);
-        this.serverProcess?.removeListener('exit', onExit);
-      };
-
-      this.serverProcess.on('exit', onExit);
-    });
   }
 
   private sleep(ms: number): Promise<void> {

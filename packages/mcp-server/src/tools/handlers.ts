@@ -6,12 +6,14 @@
  *   2. Argument camelize    — snake_case → camelCase for Extension
  *   3. BrowserCommand build — action + data + tabId + requestId
  *   4. sendCommand()        — forward to Extension / headless backend
- *   5. Post-processing      — screenshot save, URL tracking, sanitize
+ *   5. Post-processing      — URL tracking, screenshot resource_link, sanitize
  *   6. Return ToolResult    — unified envelope back to Claude Code
  *
  * Fork-source: server.py L1009-1245 execute_tool() + _dispatch_action()
  */
 
+import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserAction, BrowserCommand, ToolResult } from '@kitsune-mcp/shared';
 import { getSafetyGuard } from '../safety/guard.js';
@@ -21,7 +23,6 @@ import { sanitizeResult } from '../safety/sanitizer.js';
 import { audit } from '../safety/audit.js';
 import type { AuditDecision } from '../safety/audit.js';
 import { camelizeArgs } from '../utils/camelize.js';
-import { saveScreenshot } from '../utils/screenshot.js';
 import { getConnectionManager } from '../connection/manager.js';
 
 // ---------------------------------------------------------------------------
@@ -115,6 +116,21 @@ function buildCommandData(
     if (scope === 'full_page') {
       data['fullPage'] = true;
     }
+    // all_tabs: the Extension only attaches imageData when includeData is
+    // true, and the Native Host needs it to save the files the result links
+    // to (imagePath). The base64 never reaches the client either way: the
+    // Native Host replaces it with imagePath.
+    if (scope === 'all_tabs') {
+      data['includeData'] = true;
+    }
+  }
+
+  // fox_detect_captcha → solve_captcha always runs in detect-only mode: the
+  // project never tries to get past a CAPTCHA (design.md 4.1), and the
+  // caller cannot override this (set after camelize, so it wins over any
+  // argument of the same name).
+  if (toolName === 'fox_detect_captcha') {
+    data['detectOnly'] = true;
   }
 
   // fox_navigate goto: url must be in data
@@ -131,10 +147,21 @@ function buildCommandData(
  * Attach safety metadata that only the Extension can enforce:
  *   - containerScope: Layer 0, on EVERY command (the Extension checks the
  *     target tab's cookieStoreId; the server cannot see tabs).
- *   - protectedUrlPatterns: on screenshot_all_tabs only, so protected tabs
- *     are excluded from the bulk capture (omitted when
- *     confirmProtectedActions is false → previous behaviour).
+ *   - protectedUrlPatterns: on screenshot, scroll_and_capture and
+ *     screenshot_all_tabs, only when the guard is enabled and
+ *     confirmProtectedActions is true.
+ *     all_tabs: the Extension excludes protected tabs from the capture.
+ *     screenshot / scroll_and_capture: the Extension refuses with
+ *     safetyDecision "confirmation_required" when the actual target tab is
+ *     protected — the server-side Layer 4 check only knows the last URL it
+ *     saw.
  */
+const PROTECTED_CAPTURE_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAction>([
+  'screenshot',
+  'scroll_and_capture',
+  'screenshot_all_tabs',
+]);
+
 function attachSafetyMetadata(command: BrowserCommand, config: SafetyConfig): void {
   const containerCfg = getContainerConfig(config);
   if (containerCfg.enabled) {
@@ -142,7 +169,7 @@ function attachSafetyMetadata(command: BrowserCommand, config: SafetyConfig): vo
   }
 
   if (
-    command.action === 'screenshot_all_tabs' &&
+    PROTECTED_CAPTURE_ACTIONS.has(command.action) &&
     config.enabled &&
     config.confirmProtectedActions &&
     config.protectedUrlPatterns.length > 0
@@ -222,24 +249,54 @@ function safetyDenialToCallResult(
 }
 
 // ---------------------------------------------------------------------------
-// Screenshot post-processing
+// Screenshot post-processing (design.md 5.5: resource_link, never base64)
 // ---------------------------------------------------------------------------
 
-function handleScreenshotResult(
-  args: Record<string, unknown>,
-  responseData: Record<string, unknown>,
-): void {
-  const saveToFile = args['saveToFile'] ?? args['save_to_file'] ?? true;
-  if (!saveToFile) return;
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
 
-  const imageData = responseData['imageData'] as string | undefined
-    ?? responseData['image_data'] as string | undefined;
+/**
+ * Collect screenshot file paths from a browser response payload.
+ *
+ * Both backends report files the same way:
+ *   - single capture: `data.imagePath`
+ *   - all_tabs:       `data.screenshots[i].imagePath`
+ * (Extension path: the Native Host saved the image and replaced `imageData`
+ * with `imagePath`. Headless path: the backend saved it itself.)
+ */
+function collectImagePaths(data: Record<string, unknown>): string[] {
+  const paths: string[] = [];
+  const single = data['imagePath'];
+  if (typeof single === 'string' && single) paths.push(single);
 
-  if (imageData) {
-    const filename = (args['filename'] as string | undefined) ?? undefined;
-    const savedPath = saveScreenshot(imageData, filename);
-    responseData['savedTo'] = savedPath;
+  const shots = data['screenshots'];
+  if (Array.isArray(shots)) {
+    for (const shot of shots) {
+      if (isRecord(shot) && typeof shot['imagePath'] === 'string' && shot['imagePath']) {
+        paths.push(shot['imagePath']);
+      }
+    }
   }
+  return paths;
+}
+
+function mimeTypeFor(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.webp') return 'image/webp';
+  return 'image/png';
+}
+
+/** One MCP resource_link content block per saved screenshot file. */
+function screenshotResourceLinks(paths: string[]): CallToolResult['content'] {
+  return paths.map((p) => ({
+    type: 'resource_link' as const,
+    uri: pathToFileURL(p).href,
+    name: path.basename(p),
+    mimeType: mimeTypeFor(p),
+    description: 'Screenshot saved by KitsuneMCP',
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -251,9 +308,14 @@ function handleScreenshotResult(
  *
  * The returned function matches the MCP SDK's ToolCallback signature:
  *   (args: Record<string, unknown>) => CallToolResult | Promise<CallToolResult>
+ *
+ * @param transport Caller label for the audit log ('stdio' for MCP clients,
+ *                  'http' for POST /mcp/call). Every entry point goes through
+ *                  the same SafetyGuard pipeline.
  */
 export function createToolHandler(
   toolName: string,
+  transport: string = 'stdio',
 ): (args: Record<string, unknown>) => Promise<CallToolResult> {
   return async (args: Record<string, unknown>): Promise<CallToolResult> => {
     const guard = getSafetyGuard();
@@ -271,7 +333,7 @@ export function createToolHandler(
     // -----------------------------------------------------------------------
     // 1. Safety check
     // -----------------------------------------------------------------------
-    const denial = guard.check(toolName, args);
+    const denial = guard.check(toolName, args, transport);
     if (denial !== null) {
       return safetyDenialToCallResult({ ...denial, decision: denial.safetyDecision });
     }
@@ -317,13 +379,26 @@ export function createToolHandler(
     const connectionManager = getConnectionManager();
     const response = await connectionManager.sendCommand(command);
 
-    // Extension-side safety refusal (e.g. Layer 0 out_of_scope): surface it
-    // as a SAFETY_BLOCKED result, distinct from ordinary browser errors.
+    // Extension-side refusal: the target tab matched protectedUrlPatterns
+    // (single-tab screenshot). Same elicitation result as guard Layer 7.
+    if (!response.success && response.safetyDecision === 'confirmation_required') {
+      const reportedUrl = response.data?.['url'];
+      const confirmation = guard.confirmationFromBrowser(
+        toolName,
+        args,
+        typeof reportedUrl === 'string' && reportedUrl ? reportedUrl : null,
+        transport,
+      );
+      return safetyDenialToCallResult({ ...confirmation, decision: confirmation.safetyDecision });
+    }
+
+    // Other Extension-side safety refusals (e.g. Layer 0 out_of_scope):
+    // surface as SAFETY_BLOCKED, distinct from ordinary browser errors.
     if (!response.success && response.safetyDecision) {
       const decision = response.safetyDecision;
       const auditDecision: AuditDecision = decision === 'out_of_scope' ? 'out_of_scope' : 'denied';
       if (guard.config.auditLog) {
-        audit(toolName, args, (args['url'] as string) ?? null, auditDecision);
+        audit(toolName, args, (args['url'] as string) ?? null, auditDecision, transport);
       }
       return safetyDenialToCallResult({
         error: response.error ?? `Refused by browser safety check (${decision})`,
@@ -336,15 +411,17 @@ export function createToolHandler(
     // 5. Post-processing
     // -----------------------------------------------------------------------
 
-    // fox_navigate: track URL on success
-    if (toolName === 'fox_navigate' && response.success && response.data) {
-      guard.noteUrl(response.data as Record<string, unknown>);
+    // Track the page URL after every successful operation (data.url, or
+    // data.tab.url), so Layer 4/7 protected-domain checks see the current
+    // page on both the Extension and headless paths.
+    if (response.success && response.data) {
+      guard.noteUrl(response.data);
     }
 
-    // fox_screenshot: save screenshot file
-    if (toolName === 'fox_screenshot' && response.success && response.data) {
-      handleScreenshotResult(args, response.data as Record<string, unknown>);
-    }
+    // Saved screenshot files → resource_link blocks (both backends).
+    const imagePaths = response.success && response.data
+      ? collectImagePaths(response.data)
+      : [];
 
     // Sanitize sensitive data from response
     const sanitizedData = sanitizeResult(response.data);
@@ -355,6 +432,7 @@ export function createToolHandler(
       args,
       (args['url'] as string) ?? null,
       response.success ? 'allowed' : 'denied',
+      transport,
     );
 
     // -----------------------------------------------------------------------
@@ -364,6 +442,10 @@ export function createToolHandler(
       ? { success: true, data: sanitizedData }
       : { success: false, error: response.error ?? 'Browser command failed', data: sanitizedData };
 
-    return toolResultToCallResult(toolResult);
+    const callResult = toolResultToCallResult(toolResult);
+    if (imagePaths.length > 0) {
+      callResult.content.push(...screenshotResourceLinks(imagePaths));
+    }
+    return callResult;
   };
 }

@@ -9,6 +9,10 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@kitsune-mcp/shared": "*"
+    "@kitsune-mcp/shared": "*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.0"
   }
 }

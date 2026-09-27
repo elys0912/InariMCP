@@ -2,8 +2,25 @@
  * HTTP API server (transport bridge).
  *
  * Uses Node.js standard `http` module — no Express, no external dependencies.
- * Provides the REST endpoints that the Native Host, Extension (polling mode),
- * and local debug tools consume.
+ * Provides the REST endpoints that the Native Host (health probe) and local
+ * debug tools consume. Browser commands do NOT travel over HTTP: the Native
+ * Host receives them over the WebSocket bridge (ws-bridge.ts).
+ *
+ * This server belongs to the shared daemon (`--daemon`). Tool calls from
+ * every Claude Code session arrive here: each session's stdio relay
+ * (relay/main.ts) forwards its MCP tools/call to POST /mcp/call.
+ *
+ * Tool execution over HTTP (POST /mcp/call, and its alias POST
+ * /browser/command): zod validation against TOOL_SCHEMAS[name].inputSchema ->
+ * createToolHandler (SafetyGuard.check, containerScope /
+ * protectedUrlPatterns attachment, post-processing). Every tool is
+ * reachable: FOX_CAPS is a per-session tools/list setting applied by each
+ * relay, not a daemon-side restriction (design.md 4.1.1). Policy
+ * restrictions live in the SafetyGuard (safety.json / FOX_READ_ONLY /
+ * FOX_ALLOW_SCRIPTS) and apply to every caller alike.
+ *
+ * A relay identifies itself with the `X-Kitsune-Relay: <id>` header; its
+ * calls are audited with transport `relay:<id>` (other callers: `http`).
  *
  * Fork-source: server.py L885-1460 MCPHTTPHandler
  *
@@ -18,11 +35,14 @@ import * as http from 'node:http';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
-import type { BrowserCommand } from '@kitsune-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
 import { getScreenshotsDir, listScreenshots } from '../utils/screenshot.js';
+import { TOOL_SCHEMAS } from '../tools/schemas.js';
+import { getRegisteredToolNames } from '../tools/registry.js';
+import { createToolHandler } from '../tools/handlers.js';
+import { RELAY_ID_HEADER, isValidRelayId } from '../utils/endpoint.js';
+import type { DaemonActivity } from '../daemon/activity.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -30,41 +50,6 @@ import { getScreenshotsDir, listScreenshots } from '../utils/screenshot.js';
 
 const PACKAGE_VERSION = '0.1.0';
 const MAX_BODY_BYTES = 1_048_576; // 1 MB — generous for any JSON payload
-
-// ---------------------------------------------------------------------------
-// API token management
-// ---------------------------------------------------------------------------
-
-function getTokenPath(): string {
-  return path.join(os.homedir(), '.kitsune-mcp', 'api_token');
-}
-
-/**
- * Load or generate the API token.
- *
- * - Reads from `~/.kitsune-mcp/api_token` if it exists.
- * - Otherwise generates a 64-char hex token via crypto.randomBytes(32)
- *   and persists it.
- */
-export function loadOrCreateApiToken(): string {
-  const tokenPath = getTokenPath();
-
-  try {
-    if (fs.existsSync(tokenPath)) {
-      const token = fs.readFileSync(tokenPath, 'utf-8').trim();
-      if (token.length > 0) return token;
-    }
-  } catch {
-    // Fall through to generation
-  }
-
-  const token = crypto.randomBytes(32).toString('hex');
-  const dir = path.dirname(tokenPath);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(tokenPath, token, { mode: 0o600 });
-  process.stderr.write(`[KitsuneMCP] Generated new API token at ${tokenPath}\n`);
-  return token;
-}
 
 // ---------------------------------------------------------------------------
 // Auth helper
@@ -149,14 +134,24 @@ export interface HttpBridgeOptions {
   port?: number;
   apiToken: string;
   connectionManager: BrowserConnectionManager;
+  /** Resolves once the daemon can run tools (headless backend booted). */
+  ready?: Promise<void>;
+  /** Idle tracking: relay heartbeats and in-flight calls. */
+  activity?: DaemonActivity;
+  /** Extra fields for GET /daemon/info (authenticated). */
+  info?: () => Record<string, unknown>;
 }
 
 /**
- * Create and start the HTTP bridge server.
+ * Create the HTTP bridge server and start listening.
  *
- * @returns The http.Server instance (already listening).
+ * The listening port doubles as the daemon's singleton lock: the promise
+ * rejects with the listen error (e.g. EADDRINUSE when another daemon already
+ * owns the port) instead of throwing from an unhandled 'error' event.
+ *
+ * @returns The http.Server instance, once it is listening.
  */
-export function startHttpBridge(options: HttpBridgeOptions): http.Server {
+export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server> {
   const host =
     process.env[ENV.FOX_HOST] ??
     process.env[LEGACY_ENV.CLAUDE_BROWSER_HOST] ??
@@ -174,8 +169,22 @@ export function startHttpBridge(options: HttpBridgeOptions): http.Server {
     return options.port ?? ENV_DEFAULTS.FOX_HTTP_PORT;
   })();
 
-  const { apiToken, connectionManager } = options;
+  const { apiToken, connectionManager, activity } = options;
+  const ready = options.ready ?? Promise.resolve();
+  let isReady = options.ready === undefined;
+  ready.then(() => { isReady = true; }, () => { /* the daemon exits on failure */ });
   const startTime = Date.now();
+
+  // Every tool (see header comment: FOX_CAPS is applied by each relay).
+  const registeredTools = getRegisteredToolNames('all');
+
+  /** Audit transport label: `relay:<id>` for relays, `http` otherwise. */
+  const callerOf = (req: http.IncomingMessage): { transport: string; relayId?: string } => {
+    const raw = req.headers[RELAY_ID_HEADER];
+    const id = typeof raw === 'string' ? raw.trim() : '';
+    if (id && isValidRelayId(id)) return { transport: `relay:${id}`, relayId: id };
+    return { transport: 'http' };
+  };
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${host}:${port}`);
@@ -212,11 +221,15 @@ export function startHttpBridge(options: HttpBridgeOptions): http.Server {
     _req: http.IncomingMessage,
     res: http.ServerResponse,
   ): void {
-    // /health — unauthenticated
+    // /health — unauthenticated. Relays also call it as their heartbeat.
     if (pathname === '/health') {
+      const { relayId } = callerOf(_req);
+      if (relayId !== undefined) activity?.noteRelay(relayId);
       sendJson(res, 200, {
         status: 'ok',
+        service: 'kitsune-mcp',
         version: PACKAGE_VERSION,
+        ready: isReady,
         connected: connectionManager.hasBrowser,
         browsers_connected: connectionManager.browserCount,
         uptime: Math.floor((Date.now() - startTime) / 1000),
@@ -230,9 +243,25 @@ export function startHttpBridge(options: HttpBridgeOptions): http.Server {
       return;
     }
 
+    if (pathname === '/daemon/info') {
+      sendJson(res, 200, {
+        pid: process.pid,
+        version: PACKAGE_VERSION,
+        ready: isReady,
+        relays: activity?.liveRelayCount() ?? 0,
+        ...(options.info?.() ?? {}),
+      });
+      return;
+    }
+
     if (pathname === '/mcp/tools') {
-      // TODO: P3-3 でツールレジストリ統合 — 現在は空リスト
-      sendJson(res, 200, { tools: [] });
+      const tools = [...registeredTools].flatMap((name) => {
+        const def = TOOL_SCHEMAS[name];
+        return def
+          ? [{ name: def.name, description: def.description, classification: def.classification }]
+          : [];
+      });
+      sendJson(res, 200, { tools });
       return;
     }
 
@@ -254,17 +283,6 @@ export function startHttpBridge(options: HttpBridgeOptions): http.Server {
         }
       });
       sendJson(res, 200, { screenshots });
-      return;
-    }
-
-    if (pathname === '/browser/poll') {
-      const queue = connectionManager.pendingCommands;
-      if (queue.length > 0) {
-        const command = queue.shift()!;
-        sendJson(res, 200, { command, has_more: queue.length > 0 });
-      } else {
-        sendJson(res, 200, { command: null, has_more: false });
-      }
       return;
     }
 
@@ -295,58 +313,13 @@ export function startHttpBridge(options: HttpBridgeOptions): http.Server {
           return;
         }
 
-        if (pathname === '/mcp/call') {
-          // TODO: P3-3 でツールハンドラ統合
-          const toolName = data['name'] as string | undefined;
-          if (!toolName) {
-            sendError(res, 400, 'Missing tool name');
-            return;
-          }
-          sendJson(res, 501, {
-            success: false,
-            error: 'Tool execution not yet implemented (P3-3)',
-          });
-          return;
-        }
-
-        if (pathname === '/browser/command') {
-          const action = data['action'] as string | undefined;
-          if (!action) {
-            sendError(res, 400, 'Missing action');
-            return;
-          }
-          // Queue for Extension polling / direct WebSocket dispatch
-          const command: BrowserCommand = {
-            action: action as BrowserCommand['action'],
-            requestId: String(Date.now()),
-            ...(data['tabId'] != null ? { tabId: data['tabId'] as number } : {}),
-            ...(data['data'] != null ? { data: data['data'] as Record<string, unknown> } : {}),
-          };
-          connectionManager.pendingCommands.push(command);
-          sendJson(res, 200, {
-            success: true,
-            message: 'Command queued',
-            action,
-          });
-          return;
-        }
-
-        if (pathname === '/browser/response') {
-          const requestId = data['requestId'] as string | undefined;
-          if (!requestId) {
-            sendError(res, 400, 'Missing requestId');
-            return;
-          }
-          connectionManager.handleResponse({
-            requestId,
-            success: data['success'] as boolean ?? false,
-            data: data['data'],
-            error: data['error'] as string | undefined,
-            safetyDecision: typeof data['safetyDecision'] === 'string'
-              ? data['safetyDecision']
-              : undefined,
-          });
-          sendJson(res, 200, { success: true });
+        // /browser/command is kept as an alias of /mcp/call. It used to take
+        // a raw browser action and queue it unchecked; raw actions skipped
+        // SafetyGuard, containerScope and zod validation, and mapping an
+        // action back to a tool is ambiguous (screenshot ← viewport/full_page,
+        // navigate ← goto/back/forward/…). Both now take a tool call.
+        if (pathname === '/mcp/call' || pathname === '/browser/command') {
+          handleToolCall(pathname, data, req, res);
           return;
         }
 
@@ -359,13 +332,100 @@ export function startHttpBridge(options: HttpBridgeOptions): http.Server {
   }
 
   // -----------------------------------------------------------------------
+  // Tool call (POST /mcp/call, POST /browser/command)
+  // Body: { name: "fox_*", arguments?: {...} }
+  // -----------------------------------------------------------------------
+  function handleToolCall(
+    pathname: string,
+    data: Record<string, unknown>,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    const caller = callerOf(req);
+    if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
+
+    const toolName = data['name'];
+    if (typeof toolName !== 'string' || !toolName) {
+      if (pathname === '/browser/command' && typeof data['action'] === 'string') {
+        sendError(
+          res,
+          400,
+          'Raw browser actions are no longer accepted. Send a tool call instead: ' +
+          '{ "name": "fox_<tool>", "arguments": { ... } } (see GET /mcp/tools).',
+        );
+        return;
+      }
+      sendError(res, 400, 'Missing tool name');
+      return;
+    }
+
+    const def = TOOL_SCHEMAS[toolName];
+    if (!def || !registeredTools.has(toolName)) {
+      sendError(res, 404, `Unknown tool: ${toolName}`);
+      return;
+    }
+
+    const rawArgs = data['arguments'] ?? {};
+    const parsed = def.inputSchema.safeParse(rawArgs);
+    if (!parsed.success) {
+      sendJson(res, 400, {
+        success: false,
+        error: `Invalid arguments for ${toolName}`,
+        code: 'INVALID_ARGUMENTS',
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.join('.'),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+
+    const args: unknown = parsed.data;
+    if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+      sendError(res, 400, 'Tool arguments must be an object');
+      return;
+    }
+
+    const handler = createToolHandler(toolName, caller.transport);
+    activity?.beginCall();
+    ready
+      .then(() => handler(args as Record<string, unknown>))
+      .then((result) => {
+        sendJson(res, 200, { success: result.isError !== true, result });
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        sendError(res, 500, `Tool execution failed: ${msg}`);
+      })
+      .finally(() => {
+        activity?.endCall();
+        if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
+      });
+  }
+
+  // -----------------------------------------------------------------------
   // Start listening
   // -----------------------------------------------------------------------
-  server.listen(port, host, () => {
-    process.stderr.write(
-      `[KitsuneMCP] HTTP bridge listening on http://${host}:${port}\n`,
-    );
-  });
+  // Tool calls may legitimately take minutes (request_approval 90 s,
+  // detect_captcha 200 s, or longer with an explicit timeout argument):
+  // don't let Node's default request timeout cut them off.
+  server.requestTimeout = 0;
 
-  return server;
+  return new Promise<http.Server>((resolve, reject) => {
+    const onStartupError = (err: Error): void => {
+      server.close();
+      reject(err);
+    };
+    server.once('error', onStartupError);
+    server.listen(port, host, () => {
+      server.removeListener('error', onStartupError);
+      server.on('error', (err) => {
+        process.stderr.write(`[KitsuneMCP] HTTP server error: ${err.message}\n`);
+      });
+      process.stderr.write(
+        `[KitsuneMCP] HTTP bridge listening on http://${host}:${port}\n`,
+      );
+      resolve(server);
+    });
+  });
 }

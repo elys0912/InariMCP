@@ -11,9 +11,19 @@
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { TOOL_SCHEMAS } from './schemas.js';
-import { createToolHandler } from './handlers.js';
 import { ENV } from '@kitsune-mcp/shared';
+
+/**
+ * Callback that executes one tool call. In the stdio relay it forwards the
+ * call to the shared daemon (relay/daemon-client.ts); the daemon itself runs
+ * tools through handlers.ts createToolHandler().
+ */
+export type ToolCallHandler = (
+  args: Record<string, unknown>,
+  extra: { signal: AbortSignal },
+) => Promise<CallToolResult>;
 
 // ---------------------------------------------------------------------------
 // Profile definitions (design.md 4.1.1)
@@ -133,6 +143,18 @@ function resolveToolSet(capsEnv: string | undefined): Set<string> {
   return toolSet;
 }
 
+/**
+ * Names of the tools exposed under the current FOX_CAPS (or the given
+ * override; the daemon's HTTP entry points pass 'all').
+ */
+export function getRegisteredToolNames(capsOverride?: string): Set<string> {
+  const toolSet = resolveToolSet(capsOverride ?? process.env[ENV.FOX_CAPS]);
+  for (const name of toolSet) {
+    if (!TOOL_SCHEMAS[name]) toolSet.delete(name);
+  }
+  return toolSet;
+}
+
 // ---------------------------------------------------------------------------
 // registerTools
 // ---------------------------------------------------------------------------
@@ -143,12 +165,14 @@ function resolveToolSet(capsEnv: string | undefined): Set<string> {
  * Reads `FOX_CAPS` from the environment (or the explicit `capsOverride`
  * parameter) to determine which profiles to load.
  *
- * @param server       - The McpServer instance.
- * @param capsOverride - Optional override for `FOX_CAPS` (useful in tests).
+ * @param server         - The McpServer instance.
+ * @param handlerFactory - Builds the callback for one tool name.
+ * @param capsOverride   - Optional override for `FOX_CAPS` (useful in tests).
  * @returns The number of tools registered.
  */
 export function registerTools(
   server: McpServer,
+  handlerFactory: (toolName: string) => ToolCallHandler,
   capsOverride?: string,
 ): number {
   const capsEnv = capsOverride ?? process.env[ENV.FOX_CAPS];
@@ -170,7 +194,7 @@ export function registerTools(
     // which is the `.shape` of a ZodObject.
     const zodShape = extractZodShape(def.inputSchema);
 
-    const handler = createToolHandler(toolName);
+    const handler = handlerFactory(toolName);
 
     server.registerTool(
       toolName,

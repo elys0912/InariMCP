@@ -2,206 +2,187 @@
  * KitsuneMCP Native Messaging Host — main entry point.
  *
  * Bridges the Firefox Extension (stdin/stdout, Native Messaging protocol)
- * and the MCP Server (HTTP on localhost).
+ * and the MCP Server (WebSocket client to its ws-bridge):
+ *
+ *   MCP Server ──WS──▶ Native Host ──Native Messaging──▶ Extension
+ *   MCP Server ◀──WS── Native Host ◀──Native Messaging── Extension
+ *
+ * Commands from the server are passed to the Extension unmodified. Responses
+ * from the Extension have their screenshot data URLs saved to disk and
+ * replaced by `imagePath` before they go back to the server.
  */
 
-import * as http from 'node:http';
-import * as path from 'node:path';
-import * as os from 'node:os';
 import { readMessage, sendMessage } from './protocol.js';
 import { ServerLauncher } from './server-launcher.js';
-import { CommandPoller } from './command-poller.js';
+import { ServerConnection } from './ws-client.js';
 import { HealthMonitor } from './health-monitor.js';
+import { externalizeScreenshots, saveScreenshot } from './screenshot-store.js';
 
 function log(msg: string): void {
   process.stderr.write(`[KitsuneMCP:NativeHost] ${msg}\n`);
 }
 
 // ---------------------------------------------------------------------------
-// HTTP helpers
+// In-flight command bookkeeping (for screenshot filenames)
 // ---------------------------------------------------------------------------
 
-function httpPost(
-  host: string,
-  port: number,
-  urlPath: string,
-  body: Record<string, unknown>,
-  apiToken?: string,
-): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const encoded = Buffer.from(JSON.stringify(body), 'utf-8');
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Content-Length': String(encoded.length),
-    };
-    if (apiToken) {
-      headers['X-API-Key'] = apiToken;
-    }
+interface InFlight {
+  action: string;
+  filename: string | undefined;
+  sentAt: number;
+}
 
-    const req = http.request(
-      {
-        hostname: host,
-        port,
-        path: urlPath,
-        method: 'POST',
-        headers,
-        timeout: 30_000,
-      },
-      (res) => {
-        let data = '';
-        res.on('data', (chunk: Buffer) => { data += chunk.toString(); });
-        res.on('end', () => {
-          try {
-            resolve(JSON.parse(data) as Record<string, unknown>);
-          } catch {
-            resolve({ success: false, error: 'invalid JSON response' });
-          }
-        });
-      },
-    );
+/** requestId → command info, so a response can reuse the requested filename. */
+const inFlight = new Map<string, InFlight>();
+/** Entries older than this are assumed abandoned (longest server timeout is 200 s). */
+const IN_FLIGHT_TTL_MS = 10 * 60_000;
 
-    req.on('error', (err: Error) => reject(err));
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('request timeout'));
-    });
-
-    req.write(encoded);
-    req.end();
-  });
+function pruneInFlight(now: number): void {
+  for (const [id, entry] of inFlight) {
+    if (now - entry.sentAt > IN_FLIGHT_TTL_MS) inFlight.delete(id);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Message processing
+// Server → Extension
 // ---------------------------------------------------------------------------
 
-function forwardToMcpServer(
+function handleServerCommand(
+  command: Record<string, unknown>,
+  connection: ServerConnection,
+): void {
+  const requestId = String(command['requestId']);
+  const action = String(command['action']);
+  log(`command from server: ${action} (requestId ${requestId})`);
+
+  const data = command['data'];
+  const filename =
+    typeof data === 'object' && data !== null && !Array.isArray(data) &&
+    typeof (data as Record<string, unknown>)['filename'] === 'string'
+      ? (data as Record<string, string>)['filename']
+      : undefined;
+
+  const now = Date.now();
+  pruneInFlight(now);
+  inFlight.set(requestId, { action, filename, sentAt: now });
+
+  // Forward unmodified.
+  if (!sendMessage(command)) {
+    inFlight.delete(requestId);
+    connection.send({
+      requestId,
+      success: false,
+      error: 'Command exceeds the 1 MB Native Messaging limit (host → extension)',
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Extension → Server / local handling
+// ---------------------------------------------------------------------------
+
+function replyToExtension(
   message: Record<string, unknown>,
-  launcher: ServerLauncher,
+  body: Record<string, unknown>,
 ): void {
-  httpPost(
-    launcher.host,
-    launcher.httpPort,
-    '/browser/command',
-    message,
-    launcher.getApiToken(),
-  )
-    .then((result) => {
-      if (message['requestId']) {
-        (result as Record<string, unknown>)['requestId'] = message['requestId'];
-      }
-      sendMessage(result);
-    })
-    .catch((err: unknown) => {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      log(`failed to forward to MCP server: ${errorMsg}`);
-      sendMessage({
-        success: false,
-        error: `MCP server connection failed: ${errorMsg}`,
-        ...(message['requestId'] ? { requestId: message['requestId'] } : {}),
-      });
-    });
-}
-
-function forwardResponseToServer(
-  response: Record<string, unknown>,
-  launcher: ServerLauncher,
-): void {
-  httpPost(
-    launcher.host,
-    launcher.httpPort,
-    '/browser/response',
-    response,
-    launcher.getApiToken(),
-  ).catch((err: unknown) => {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    log(`failed to forward response to server: ${errorMsg}`);
+  sendMessage({
+    ...body,
+    ...(message['requestId'] !== undefined ? { requestId: message['requestId'] } : {}),
   });
 }
 
 function processMessage(
   message: Record<string, unknown>,
   launcher: ServerLauncher,
+  connection: ServerConnection,
 ): void {
-  const action = message['action'] as string | undefined;
+  const action = typeof message['action'] === 'string' ? message['action'] : undefined;
 
-  // Response from Extension (has requestId but no action) — forward to server
-  if (message['requestId'] && !action) {
-    log(`forwarding response for requestId: ${message['requestId'] as string}`);
+  // Response to a server command (has requestId, no action) → WS to server
+  if (message['requestId'] !== undefined && action === undefined) {
+    const requestId = String(message['requestId']);
+    const entry = inFlight.get(requestId);
+    inFlight.delete(requestId);
 
-    // Save screenshot data locally if present
-    if (message['success'] && message['data']) {
-      const screenshotMsg: Record<string, unknown> = {
-        action: 'fox_screenshot',
-        data: message['data'],
-        filename: `screenshot_${Date.now()}.png`,
-      };
-      forwardToMcpServer(screenshotMsg, launcher);
+    externalizeScreenshots(message, entry?.filename, log);
+
+    if (!connection.send(message)) {
+      log(`dropping response for requestId ${requestId}: not connected to MCP server`);
+    } else {
+      log(`response for ${entry?.action ?? 'unknown'} (requestId ${requestId}) sent to server`);
     }
-
-    forwardResponseToServer(message, launcher);
     return;
   }
 
-  // Local commands
+  // Local commands initiated by the Extension itself
   if (action === 'ping') {
-    sendMessage({
+    replyToExtension(message, {
       action: 'pong',
       pong: true,
       success: true,
       timestamp: Date.now() / 1000,
-      ...(message['requestId'] ? { requestId: message['requestId'] } : {}),
     });
     return;
   }
 
   if (action === 'status') {
-    launcher.checkHealth()
-      .then((available) => {
-        sendMessage({
-          success: true,
-          mcp_server: {
-            url: `http://${launcher.host}:${launcher.httpPort}`,
-            available,
-          },
-          native_host: {
-            version: '0.1.0',
-            pid: process.pid,
-          },
-          ...(message['requestId'] ? { requestId: message['requestId'] } : {}),
-        });
-      })
-      .catch(() => {
-        sendMessage({
-          success: true,
-          mcp_server: {
-            url: `http://${launcher.host}:${launcher.httpPort}`,
-            available: false,
-          },
-          native_host: {
-            version: '0.1.0',
-            pid: process.pid,
-          },
-          ...(message['requestId'] ? { requestId: message['requestId'] } : {}),
-        });
+    const reply = (available: boolean): void => {
+      replyToExtension(message, {
+        success: true,
+        mcp_server: {
+          url: `http://${launcher.host}:${launcher.httpPort}`,
+          available,
+          ws: { url: connection.url, connected: connection.isConnected },
+        },
+        native_host: {
+          version: '0.1.0',
+          pid: process.pid,
+        },
       });
-    return;
-  }
-
-  if (action === 'saveScreenshot') {
-    // Convert to fox_screenshot and forward to server
-    const screenshotMsg: Record<string, unknown> = {
-      action: 'fox_screenshot',
-      data: message['data'],
-      filename: message['filename'] ??
-        `screenshot_${Date.now()}.png`,
     };
-    forwardToMcpServer(screenshotMsg, launcher);
+    launcher.checkHealth().then(reply).catch(() => reply(false));
     return;
   }
 
-  // Everything else goes to the MCP server
-  forwardToMcpServer(message, launcher);
+  // Screenshots the Extension took on its own (popup / context menu): these
+  // are not MCP tool calls, so they are only saved locally.
+  if (action === 'saveScreenshot' || action === 'screenshotTaken') {
+    const data = message['data'];
+    const imageData =
+      typeof data === 'string'
+        ? data
+        : typeof data === 'object' && data !== null && !Array.isArray(data) &&
+          typeof (data as Record<string, unknown>)['imageData'] === 'string'
+          ? (data as Record<string, string>)['imageData']
+          : undefined;
+    const filename = typeof message['filename'] === 'string' ? message['filename'] : undefined;
+
+    if (imageData === undefined) {
+      replyToExtension(message, { success: false, error: 'no image data' });
+      return;
+    }
+    try {
+      const imagePath = saveScreenshot(imageData, filename);
+      log(`${action}: saved ${imagePath}`);
+      replyToExtension(message, { success: true, data: { imagePath } });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`${action}: failed to save: ${msg}`);
+      replyToExtension(message, { success: false, error: `failed to save screenshot: ${msg}` });
+    }
+    return;
+  }
+
+  // Browser commands are never initiated by the Extension through the host:
+  // popup actions run inside the Extension (outside Layer 0, by design), and
+  // MCP tool calls originate from the server.
+  log(`unsupported message from Extension: ${action ?? '(no action)'}`);
+  if (message['requestId'] !== undefined) {
+    replyToExtension(message, {
+      success: false,
+      error: `Native Host does not handle action '${action ?? ''}'`,
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -210,17 +191,14 @@ function processMessage(
 
 let running = true;
 
-function shutdown(
-  poller: CommandPoller,
-  monitor: HealthMonitor,
-  launcher: ServerLauncher,
-): void {
+function shutdown(connection: ServerConnection, monitor: HealthMonitor): void {
   if (!running) return;
   running = false;
   log('shutting down');
-  poller.stop();
+  connection.stop();
   monitor.stop();
-  // Don't stop the MCP server — it may serve other consumers
+  // Never stop the daemon: it also serves the Claude Code sessions (relays),
+  // and exits on its own once nobody uses it.
 }
 
 async function main(): Promise<void> {
@@ -228,24 +206,23 @@ async function main(): Promise<void> {
   log('KitsuneMCP Native Host starting');
 
   const launcher = new ServerLauncher();
-  log(`MCP server target: http://${launcher.host}:${launcher.httpPort}`);
+  log(`MCP server target: http://${launcher.host}:${launcher.httpPort} (WS port ${launcher.wsPort})`);
 
-  // Ensure MCP server is running
+  // Connect to the shared daemon, starting it if nothing listens on the port
   await launcher.ensureRunning();
 
-  const poller = new CommandPoller(
-    launcher.host,
-    launcher.httpPort,
-    launcher.getApiToken(),
+  const connection: ServerConnection = new ServerConnection(
+    launcher,
+    (command) => handleServerCommand(command, connection),
   );
-  poller.start();
+  connection.start();
 
-  const monitor = new HealthMonitor(launcher);
+  const monitor = new HealthMonitor(launcher, () => connection.reconnectNow());
   monitor.start();
 
   // Graceful shutdown
   const onSignal = (): void => {
-    shutdown(poller, monitor, launcher);
+    shutdown(connection, monitor);
     process.exit(0);
   };
 
@@ -257,19 +234,37 @@ async function main(): Promise<void> {
 
   // stdin read loop
   while (running) {
-    const message = await readMessage();
-    if (message === null) {
+    const result = await readMessage();
+
+    if (result.kind === 'eof') {
       log('stdin closed, exiting');
       break;
     }
 
-    const action = message['action'] as string | undefined;
-    log(`received: ${action ?? 'response'}`);
+    if (result.kind === 'skipped') {
+      // Unusable frame (too large / bad JSON). Keep running; if we know which
+      // server request it answered, fail that request now instead of letting
+      // it time out.
+      if (result.requestId !== undefined) {
+        inFlight.delete(result.requestId);
+        connection.send({
+          requestId: result.requestId,
+          success: false,
+          error: `Extension response discarded by Native Host: ${result.reason}`,
+        });
+      }
+      continue;
+    }
 
-    processMessage(message, launcher);
+    const message = result.message;
+    const action = typeof message['action'] === 'string' ? message['action'] : 'response';
+    log(`received from Extension: ${action}`);
+
+    processMessage(message, launcher, connection);
   }
 
-  shutdown(poller, monitor, launcher);
+  shutdown(connection, monitor);
+  process.exit(0);
 }
 
 process.on('unhandledRejection', (reason) => {

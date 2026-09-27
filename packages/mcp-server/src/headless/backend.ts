@@ -205,12 +205,14 @@ export class HeadlessBrowser {
         const filepath = path.join(dir, filename);
         await page.screenshot({
           path: filepath,
-          fullPage: (args['full_page'] as boolean) ?? false,
+          fullPage: (args['fullPage'] as boolean) ?? false,
         });
         const stats = fs.statSync(filepath);
+        // Same shape as the Extension path (Native Host): data.imagePath
         return {
           success: true,
-          filepath,
+          imagePath: filepath,
+          url: page.url(),
           filename,
           size: stats.size,
           message: `Screenshot saved to ${filepath}`,
@@ -220,7 +222,7 @@ export class HeadlessBrowser {
       // --- snapshot (base64, no file) ---
       case 'snapshot': {
         const buf = await page.screenshot({
-          fullPage: (args['full_page'] as boolean) ?? false,
+          fullPage: (args['fullPage'] as boolean) ?? false,
         });
         return {
           success: true,
@@ -451,7 +453,7 @@ export class HeadlessBrowser {
       // --- get_text ---
       case 'get_text': {
         const selector = (args['selector'] as string) || 'body';
-        const maxLength = Number(args['max_length'] ?? 20_000);
+        const maxLength = Number(args['maxLength'] ?? 20_000);
         const text = await page.innerText(selector, { timeout: 10_000 });
         const truncated = text.length > maxLength;
         return {
@@ -479,8 +481,8 @@ export class HeadlessBrowser {
           const step = steps[i]!;
           const script = (step['script'] as string) ?? '';
           const label = (step['label'] as string) ?? `step_${i}`;
-          const capture = step['capture_console'] !== false;
-          const stopOnError = step['stop_on_error'] !== false;
+          const capture = step['captureConsole'] !== false;
+          const stopOnError = step['stopOnError'] !== false;
 
           const consoleMsgs: Array<{ type: string; text: string }> = [];
 
@@ -513,9 +515,9 @@ export class HeadlessBrowser {
       // --- wait_and_act ---
       case 'wait_and_act': {
         const condition = (args['condition'] as string) ?? 'true';
-        const actionScript = (args['action_script'] as string) ?? '';
-        const pollMs = (args['poll_interval_ms'] as number) ?? 200;
-        const timeoutMs = (args['timeout_ms'] as number) ?? 15_000;
+        const actionScript = (args['actionScript'] as string) ?? '';
+        const pollMs = (args['pollIntervalMs'] as number) ?? 200;
+        const timeoutMs = (args['timeoutMs'] as number) ?? 15_000;
         let elapsed = 0;
         while (elapsed < timeoutMs) {
           try {
@@ -536,9 +538,9 @@ export class HeadlessBrowser {
       // --- inject_observer ---
       case 'inject_observer': {
         const selector = (args['selector'] as string) ?? 'body';
-        const observeAttrs = args['observe_attributes'] !== false;
-        const observeChildren = args['observe_child_list'] !== false;
-        const observeSubtree = args['observe_subtree'] !== false;
+        const observeAttrs = args['observeAttributes'] !== false;
+        const observeChildren = args['observeChildList'] !== false;
+        const observeSubtree = args['observeSubtree'] !== false;
         const script = `(function() {
           if (window.__fox_observer) window.__fox_observer.disconnect();
           window.__fox_mutations = window.__fox_mutations || [];
@@ -591,7 +593,7 @@ export class HeadlessBrowser {
       // --- solve_captcha ---
       case 'solve_captcha': {
         const detection = (await page.evaluate(CAPTCHA_DETECT_JS)) as Record<string, unknown>;
-        if (args['detect_only']) {
+        if (args['detectOnly']) {
           return { success: true, ...detection };
         }
         const widgets = (detection['widgets'] as Array<Record<string, unknown>>) ?? [];

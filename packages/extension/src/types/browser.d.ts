@@ -84,7 +84,14 @@ declare namespace browser {
     function update(tabId: number, updateProperties: { active?: boolean; url?: string }): Promise<Tab>;
     function reload(tabId: number, reloadProperties?: { bypassCache?: boolean }): Promise<void>;
     function sendMessage(tabId: number, message: unknown): Promise<unknown>;
-    function captureTab(tabId: number, options?: { format?: string; quality?: number }): Promise<string>;
+    interface ImageDetails {
+      format?: string;
+      quality?: number;
+      /** Area of the document to capture, in CSS pixels (Firefox 82+). */
+      rect?: { x: number; y: number; width: number; height: number };
+    }
+
+    function captureTab(tabId: number, options?: ImageDetails): Promise<string>;
     function captureVisibleTab(
       windowId: number,
       options?: { format?: string; quality?: number },
