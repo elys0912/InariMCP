@@ -164,6 +164,7 @@
 
   interface LoggingOptions {
     clearExisting?: boolean;
+    protectedPatterns?: unknown;
   }
 
   interface ConsoleLogOptions {
@@ -295,245 +296,551 @@
 
   let highlightOverlay: HTMLDivElement | null = null;
 
+  // Recording happens only while `loggingEnabled` is true. The on/off switch
+  // itself is kept per tab by the background script, so the next document
+  // after a reload / navigation resumes it (resumeLoggingFromBackground).
   let loggingEnabled = false;
+
+  // Protected URL patterns of this tab's logging session (sent by the
+  // background script; empty when confirm_protected_actions is off). Checked
+  // against the current URL on every record, so a same-document move onto a
+  // protected URL (history.pushState) pauses recording too. Full navigations
+  // onto protected pages are handled by the background (no resume there).
+  let protectedPatterns: RegExp[] = [];
+
+  function compilePatterns(raw: unknown): RegExp[] {
+    if (!Array.isArray(raw)) return [];
+    const compiled: RegExp[] = [];
+    for (const pattern of raw) {
+      if (typeof pattern !== "string") continue;
+      try {
+        compiled.push(new RegExp(pattern, "i"));
+      } catch {
+        // invalid pattern -- the background script ignores it as well
+      }
+    }
+    return compiled;
+  }
+
+  function onProtectedPage(): boolean {
+    const url = window.location.href;
+    return protectedPatterns.some((p) => p.test(url));
+  }
+
+  /** Record now? Logging on, and the page is not a protected one. */
+  function shouldRecord(): boolean {
+    return loggingEnabled && !onProtectedPage();
+  }
   let consoleLogs: ConsoleLogEntry[] = [];
   let networkLogs: NetworkLogEntry[] = [];
   const MAX_LOG_ENTRIES = 500;
 
-  // Active network request counter (used by waitForNetworkIdle)
+  // Bumped by every startLogging / stopLogging, so a late reply to the
+  // resume query cannot override a newer explicit command.
+  let loggingControlVersion = 0;
+
+  // Message type used to ask the background script whether logging is on
+  // for this tab (same string as LOGGING_STATE_QUERY in background.ts).
+  const LOGGING_STATE_QUERY = "kitsune:loggingState";
+
+  // In-flight page requests (fetch + XHR) seen by the page hooks; used by
+  // waitForNetworkIdle. A count only -- no request content.
   let __fox_activeRequests = 0;
 
-  // Original console methods (saved for restoration)
-  const originalConsole: Record<string, (...args: unknown[]) => void> = {
-    log: console.log.bind(console),
-    warn: console.warn.bind(console),
-    error: console.error.bind(console),
-    info: console.info.bind(console),
-    debug: console.debug.bind(console),
-  };
-
   // ---------------------------------------------------------------------------
-  // Console & Network Logging
+  // Console & Network Logging -- hooks in the page's own JS world
   // ---------------------------------------------------------------------------
+  //
+  // Firefox runs content scripts in a sandbox that sees the page through Xray
+  // wrappers: `console`, `XMLHttpRequest` and `fetch` in this script are the
+  // sandbox's own, and replacing them never affects the page's scripts. The
+  // hooks are therefore defined on the page's objects (window.wrappedJSObject)
+  // with exportFunction(). No <script> element is inserted, so the page's CSP
+  // does not apply and no code string is ever evaluated in the page.
+  //
+  // Everything exported here can be called by the page directly, with any
+  // arguments. Rules for those functions:
+  //   - they only record strings into this script's buffers and forward the
+  //     call to the page's ORIGINAL function (never this sandbox's fetch /
+  //     XHR, which carry extension privileges);
+  //   - they never touch browser.* APIs and never hand sandbox objects to
+  //     the page (return values are the page's own objects or undefined);
+  //   - page values are read through Xrays (page getters / toJSON do not
+  //     run), inside try/catch, and stored only as strings / numbers.
+  // A page can therefore inject fake log entries or skew the in-flight
+  // request counter of its own tab, and nothing more.
+  //
+  // The hooks are installed lazily (startLogging, resumed logging, or
+  // waitForNetworkIdle), never on pages nobody asked about. Once installed
+  // they stay until the page unloads; with logging off they only count
+  // in-flight requests.
 
   const interception = { fetch: false, xhr: false, console: false };
+  let pageHooksInstalled = false;
 
-  function interceptConsole(): void {
-    (["log", "warn", "error", "info", "debug"] as const).forEach((method) => {
-      (console as unknown as Record<string, (...a: unknown[]) => void>)[method] =
-        function (...args: unknown[]) {
-          if (loggingEnabled) {
-            const entry: ConsoleLogEntry = {
-              level: method,
-              timestamp: new Date().toISOString(),
-              message: args
-                .map((arg) => {
-                  try {
-                    if (typeof arg === "object") {
-                      return JSON.stringify(arg, null, 2);
-                    }
-                    return String(arg);
-                  } catch {
-                    return String(arg);
-                  }
-                })
-                .join(" "),
-              url: window.location.href,
-            };
-            consoleLogs.push(entry);
-            if (consoleLogs.length > MAX_LOG_ENTRIES) {
-              consoleLogs.shift();
-            }
-          }
-          originalConsole[method].apply(console, args);
-        };
-    });
+  // Diagnostics for the real-browser check: when this copy of the script
+  // started and when the hooks went in (document.readyState at that time).
+  // "loading" at init means the early document_start injection ran.
+  const injectionInfo = {
+    readyStateAtInit: document.readyState as string,
+    readyStateAtHookInstall: null as string | null,
+  };
+
+  function pushConsoleLog(entry: ConsoleLogEntry): void {
+    consoleLogs.push(entry);
+    if (consoleLogs.length > MAX_LOG_ENTRIES) {
+      consoleLogs.shift();
+    }
   }
 
-  // Network interceptor — fetch
-  const originalFetch = window.fetch;
-  const fetchInterceptor: typeof window.fetch = async function (
-    ...args: Parameters<typeof window.fetch>
-  ): Promise<Response> {
-    const startTime = Date.now();
-    const [resource, init] = args;
-    const url =
-      typeof resource === "string"
-        ? resource
-        : resource instanceof URL
-          ? resource.href
-          : (resource as Request).url;
-    const method = init?.method || "GET";
+  function pushNetworkLog(entry: NetworkLogEntry): void {
+    // The single place entries are stored: masking here covers every path.
+    const safe: NetworkLogEntry = { ...entry };
+    if (safe.requestHeaders) safe.requestHeaders = maskHeaders(safe.requestHeaders);
+    if (safe.responseHeaders) safe.responseHeaders = maskHeaders(safe.responseHeaders);
+    networkLogs.push(safe);
+    if (networkLogs.length > MAX_LOG_ENTRIES) {
+      networkLogs.shift();
+    }
+  }
 
-    const logEntry: NetworkLogEntry = {
+  /** Count one in-flight request; the returned function settles it (once). */
+  function beginRequest(): () => void {
+    __fox_activeRequests++;
+    let settled = false;
+    return () => {
+      if (settled) return;
+      settled = true;
+      __fox_activeRequests = Math.max(0, __fox_activeRequests - 1);
+    };
+  }
+
+  function safeString(value: unknown): string {
+    try {
+      return String(value);
+    } catch {
+      return "[unprintable]";
+    }
+  }
+
+  function stringifyArg(arg: unknown): string {
+    if (typeof arg === "object" && arg !== null) {
+      try {
+        const json = JSON.stringify(arg, null, 2);
+        if (typeof json === "string") return json;
+      } catch {
+        // cyclic or not serializable -- fall through
+      }
+    }
+    return safeString(arg);
+  }
+
+  function errorMessage(reason: unknown): string {
+    if (typeof reason === "object" && reason !== null) {
+      const message = (reason as { message?: unknown }).message;
+      if (typeof message === "string") return message;
+    }
+    return safeString(reason);
+  }
+
+  /** Read a Headers object, [name, value] pairs or a plain record (via Xray). */
+  function readHeaders(headers: unknown): Record<string, string> | undefined {
+    if (typeof headers !== "object" || headers === null) return undefined;
+    const out: Record<string, string> = {};
+    try {
+      const h = headers as Headers;
+      if (typeof h.forEach === "function" && typeof h.get === "function") {
+        h.forEach((value, key) => {
+          out[String(key)] = String(value);
+        });
+      } else if (Array.isArray(headers)) {
+        for (const pair of headers as unknown[]) {
+          if (Array.isArray(pair) && pair.length >= 2) {
+            out[safeString(pair[0])] = safeString(pair[1]);
+          }
+        }
+      } else {
+        for (const [key, value] of Object.entries(headers as Record<string, unknown>)) {
+          out[key] = safeString(value);
+        }
+      }
+    } catch {
+      return Object.keys(out).length > 0 ? out : undefined;
+    }
+    return out;
+  }
+
+  function describeFetch(input: unknown, init: unknown): NetworkLogEntry {
+    let url = "";
+    let method = "GET";
+    let requestHeaders: Record<string, string> | undefined;
+    let requestBody: string | null | undefined;
+
+    if (typeof input === "string") {
+      url = input;
+    } else if (typeof input === "object" && input !== null) {
+      const req = input as { url?: unknown; method?: unknown; headers?: unknown; href?: unknown };
+      if (typeof req.url === "string") {
+        // Request
+        url = req.url;
+        if (typeof req.method === "string") method = req.method;
+        requestHeaders = readHeaders(req.headers);
+      } else if (typeof req.href === "string") {
+        // URL
+        url = req.href;
+      } else {
+        url = safeString(input);
+      }
+    } else {
+      url = safeString(input);
+    }
+
+    if (typeof init === "object" && init !== null) {
+      const opts = init as { method?: unknown; headers?: unknown; body?: unknown };
+      if (typeof opts.method === "string") method = opts.method;
+      const fromInit = readHeaders(opts.headers);
+      if (fromInit) requestHeaders = fromInit;
+      if (opts.body !== undefined && opts.body !== null) {
+        requestBody = safeString(opts.body).substring(0, 1000);
+      }
+    }
+
+    const entry: NetworkLogEntry = {
       type: "fetch",
       method,
       url,
       startTime: new Date().toISOString(),
       pageUrl: window.location.href,
     };
+    if (requestHeaders) entry.requestHeaders = requestHeaders;
+    if (requestBody !== undefined) entry.requestBody = requestBody;
+    return entry;
+  }
 
-    if (init?.headers) {
-      logEntry.requestHeaders = maskHeaders(
-        init.headers instanceof Headers
-          ? Object.fromEntries(init.headers.entries())
-          : (init.headers as Record<string, string>),
-      );
-    }
-    if (init?.body) {
-      logEntry.requestBody = String(init.body).substring(0, 1000);
-    }
-
-    __fox_activeRequests++;
+  async function recordFetchResponse(
+    entry: NetworkLogEntry,
+    startTime: number,
+    response: unknown,
+  ): Promise<void> {
     try {
-      const response = await originalFetch.apply(
-        window,
-        args as [RequestInfo | URL, RequestInit?],
-      );
-      const endTime = Date.now();
+      const res = response as Response;
+      entry.status = typeof res.status === "number" ? res.status : undefined;
+      entry.statusText = typeof res.statusText === "string" ? res.statusText : undefined;
+      entry.duration = Date.now() - startTime;
+      entry.responseHeaders = readHeaders(res.headers);
 
-      if (loggingEnabled) {
-        logEntry.status = response.status;
-        logEntry.statusText = response.statusText;
-        logEntry.duration = endTime - startTime;
-        logEntry.responseHeaders = maskHeaders(
-          Object.fromEntries(response.headers.entries()),
-        );
-
-        const clone = response.clone();
+      const contentType = entry.responseHeaders?.["content-type"] ?? "";
+      if (contentType.includes("application/json") || contentType.includes("text/")) {
+        // clone() runs before the first await, i.e. before the page's own
+        // handlers (registered after ours) can consume the body.
+        const clone = res.clone();
         try {
-          const contentType = response.headers.get("content-type") || "";
+          const text = await clone.text();
           if (contentType.includes("application/json")) {
-            const body: unknown = await clone.json();
-            logEntry.responseBody = JSON.stringify(body, null, 2).substring(
-              0,
-              5000,
-            );
-          } else if (contentType.includes("text/")) {
-            logEntry.responseBody = (await clone.text()).substring(0, 5000);
+            try {
+              entry.responseBody = JSON.stringify(JSON.parse(text), null, 2).substring(0, 5000);
+            } catch {
+              entry.responseBody = text.substring(0, 5000);
+            }
           } else {
-            logEntry.responseBody = "[Binary data]";
+            entry.responseBody = text.substring(0, 5000);
           }
         } catch {
-          logEntry.responseBody = "[Could not read response]";
+          entry.responseBody = "[Could not read response]";
         }
-
-        networkLogs.push(logEntry);
-        if (networkLogs.length > MAX_LOG_ENTRIES) {
-          networkLogs.shift();
-        }
+      } else {
+        entry.responseBody = "[Binary data]";
       }
-
-      __fox_activeRequests--;
-      return response;
-    } catch (error) {
-      __fox_activeRequests--;
-      if (loggingEnabled) {
-        logEntry.error = (error as Error).message;
-        logEntry.duration = Date.now() - startTime;
-        networkLogs.push(logEntry);
-        if (networkLogs.length > MAX_LOG_ENTRIES) {
-          networkLogs.shift();
-        }
-      }
-      throw error;
+    } catch {
+      entry.responseBody = "[Could not read response]";
     }
-  };
-
-  try {
-    window.fetch = fetchInterceptor;
-    interception.fetch = true;
-  } catch {
-    // fetch is read-only in Firefox's content-script sandbox
+    if (shouldRecord()) pushNetworkLog(entry);
   }
 
-  // XHR interceptor
-  const originalXHROpen = XMLHttpRequest.prototype.open;
-  const originalXHRSend = XMLHttpRequest.prototype.send;
+  function installFetchHook(pageWin: Window & typeof globalThis): void {
+    const originalFetch: unknown = pageWin.fetch;
+    const pagePromiseThen: unknown = pageWin.Promise.prototype.then;
+    if (typeof originalFetch !== "function" || typeof pagePromiseThen !== "function") {
+      return;
+    }
 
-  interface TrackedXHR extends XMLHttpRequest {
-    _logData?: NetworkLogEntry;
-  }
-
-  const xhrOpenInterceptor = function (
-    this: TrackedXHR,
-    method: string,
-    url: string | URL,
-    async_?: boolean,
-    username?: string | null,
-    password?: string | null,
-  ): void {
-    this._logData = {
-      type: "xhr",
-      method,
-      url: String(url),
-      startTime: "",
-      pageUrl: window.location.href,
-    };
-    return originalXHROpen.call(
-      this,
-      method,
-      url,
-      async_ ?? true,
-      username,
-      password,
-    );
-  };
-
-  const xhrSendInterceptor = function (
-    this: TrackedXHR,
-    body?: Document | XMLHttpRequestBodyInit | null,
-  ): void {
-    __fox_activeRequests++;
-    this.addEventListener("loadend", () => {
-      __fox_activeRequests--;
-    });
-
-    if (loggingEnabled && this._logData) {
+    const fetchHook = function (input: unknown, init: unknown): unknown {
+      const settle = beginRequest();
       const startTime = Date.now();
-      this._logData.startTime = new Date().toISOString();
-      this._logData.requestBody = body
-        ? String(body).substring(0, 1000)
-        : null;
-
-      this.addEventListener("load", () => {
-        if (!this._logData) return;
-        this._logData.status = this.status;
-        this._logData.statusText = this.statusText;
-        this._logData.duration = Date.now() - startTime;
-        this._logData.responseBody = this.responseText?.substring(0, 5000);
-        networkLogs.push({ ...this._logData });
-        if (networkLogs.length > MAX_LOG_ENTRIES) {
-          networkLogs.shift();
+      let entry: NetworkLogEntry | null = null;
+      if (shouldRecord()) {
+        try {
+          entry = describeFetch(input, init);
+        } catch {
+          entry = null;
         }
-      });
+      }
 
-      this.addEventListener("error", () => {
-        if (!this._logData) return;
-        this._logData.error = "Network error";
-        this._logData.duration = Date.now() - startTime;
-        networkLogs.push({ ...this._logData });
-        if (networkLogs.length > MAX_LOG_ENTRIES) {
-          networkLogs.shift();
+      let pagePromise: unknown;
+      try {
+        // The page's own fetch, run with the page's principal.
+        pagePromise = Reflect.apply(originalFetch, pageWin, [input, init]);
+      } catch (error) {
+        settle();
+        throw error;
+      }
+
+      // Observe completion with the page's Promise#then. The callbacks must
+      // be exported (the page cannot call sandbox functions otherwise), must
+      // not throw and must return undefined, so the derived promise always
+      // resolves (no unhandled rejection shows up in the page).
+      const onFulfilled = exportFunction(function (response: unknown): void {
+        settle();
+        if (entry && shouldRecord()) {
+          void recordFetchResponse(entry, startTime, response);
         }
-      });
-    }
-    return originalXHRSend.apply(this, [body]);
-  };
+      }, window);
+      const onRejected = exportFunction(function (reason: unknown): void {
+        settle();
+        if (entry && shouldRecord()) {
+          entry.error = errorMessage(reason);
+          entry.duration = Date.now() - startTime;
+          pushNetworkLog(entry);
+        }
+      }, window);
+      try {
+        Reflect.apply(pagePromiseThen, pagePromise, [onFulfilled, onRejected]);
+      } catch {
+        settle();
+      }
+      return pagePromise;
+    };
 
-  try {
-    XMLHttpRequest.prototype.open = xhrOpenInterceptor as typeof XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.send = xhrSendInterceptor as typeof XMLHttpRequest.prototype.send;
-    interception.xhr = true;
-  } catch {
-    // XHR prototype not writable in this sandbox
+    exportFunction(fetchHook, pageWin, { defineAs: "fetch" });
+    interception.fetch = true;
   }
 
-  try {
-    interceptConsole();
+  function installXhrHooks(pageWin: Window & typeof globalThis): void {
+    const proto = pageWin.XMLHttpRequest.prototype;
+    const originalOpen: unknown = proto.open;
+    const originalSend: unknown = proto.send;
+    const originalSetRequestHeader: unknown = proto.setRequestHeader;
+    if (
+      typeof originalOpen !== "function" ||
+      typeof originalSend !== "function" ||
+      typeof originalSetRequestHeader !== "function"
+    ) {
+      return;
+    }
+
+    // open() -> setRequestHeader() -> send() bookkeeping, keyed by the
+    // (Xray-wrapped) XHR.
+    const pending = new WeakMap<object, NetworkLogEntry>();
+
+    const openHook = function (this: unknown, ...args: unknown[]): unknown {
+      try {
+        if (typeof this === "object" && this !== null) {
+          if (shouldRecord()) {
+            pending.set(this, {
+              type: "xhr",
+              method: safeString(args[0]),
+              url: safeString(args[1]),
+              startTime: "",
+              pageUrl: window.location.href,
+            });
+          } else {
+            pending.delete(this);
+          }
+        }
+      } catch {
+        // bookkeeping only -- never break the page's call
+      }
+      return Reflect.apply(originalOpen, this, args);
+    };
+
+    const setRequestHeaderHook = function (this: unknown, ...args: unknown[]): unknown {
+      try {
+        const entry =
+          typeof this === "object" && this !== null ? pending.get(this) : undefined;
+        if (entry && shouldRecord()) {
+          // Stored raw here, masked by pushNetworkLog before it is kept.
+          // Repeated names are combined the way XHR itself does.
+          const name = safeString(args[0]);
+          const value = safeString(args[1]);
+          const headers = entry.requestHeaders ?? {};
+          const existing = Object.keys(headers).find(
+            (key) => key.toLowerCase() === name.toLowerCase(),
+          );
+          if (existing !== undefined) {
+            headers[existing] = `${headers[existing]}, ${value}`;
+          } else {
+            headers[name] = value;
+          }
+          entry.requestHeaders = headers;
+        }
+      } catch {
+        // bookkeeping only
+      }
+      return Reflect.apply(originalSetRequestHeader, this, args);
+    };
+
+    const sendHook = function (this: unknown, ...args: unknown[]): unknown {
+      let settle: (() => void) | null = null;
+      if (typeof this === "object" && this !== null) {
+        const xhr = this as XMLHttpRequest;
+        try {
+          settle = beginRequest();
+          xhr.addEventListener("loadend", settle);
+        } catch {
+          if (settle) settle();
+          settle = null;
+        }
+
+        try {
+          const entry = pending.get(this);
+          pending.delete(this);
+          if (entry && shouldRecord()) {
+            const startTime = Date.now();
+            entry.startTime = new Date().toISOString();
+            entry.requestBody =
+              args[0] !== undefined && args[0] !== null
+                ? safeString(args[0]).substring(0, 1000)
+                : null;
+
+            xhr.addEventListener("load", () => {
+              if (!shouldRecord()) return;
+              entry.status = xhr.status;
+              entry.statusText = xhr.statusText;
+              entry.duration = Date.now() - startTime;
+              try {
+                entry.responseBody = xhr.responseText.substring(0, 5000);
+              } catch {
+                // responseType other than "" / "text"
+                entry.responseBody = "[Could not read response]";
+              }
+              pushNetworkLog(entry);
+            });
+
+            xhr.addEventListener("error", () => {
+              if (!shouldRecord()) return;
+              entry.error = "Network error";
+              entry.duration = Date.now() - startTime;
+              pushNetworkLog(entry);
+            });
+          }
+        } catch {
+          // bookkeeping only
+        }
+      }
+
+      try {
+        return Reflect.apply(originalSend, this, args);
+      } catch (error) {
+        // send() threw synchronously (e.g. not opened) -- no loadend follows
+        if (settle) settle();
+        throw error;
+      }
+    };
+
+    exportFunction(openHook, proto, { defineAs: "open" });
+    exportFunction(sendHook, proto, { defineAs: "send" });
+    exportFunction(setRequestHeaderHook, proto, { defineAs: "setRequestHeader" });
+    interception.xhr = true;
+  }
+
+  function installConsoleHooks(pageWin: Window & typeof globalThis): void {
+    const pageConsole = pageWin.console;
+    for (const method of ["log", "warn", "error", "info", "debug"] as const) {
+      const original: unknown = pageConsole[method];
+      if (typeof original !== "function") continue;
+      const consoleHook = function (...args: unknown[]): void {
+        if (shouldRecord()) {
+          try {
+            pushConsoleLog({
+              level: method,
+              timestamp: new Date().toISOString(),
+              message: args.map(stringifyArg).join(" "),
+              url: window.location.href,
+            });
+          } catch {
+            // never break the page's console call
+          }
+        }
+        Reflect.apply(original, pageConsole, args);
+      };
+      exportFunction(consoleHook, pageConsole, { defineAs: method });
+    }
     interception.console = true;
-  } catch {
-    // console not writable in this sandbox
+  }
+
+  /** Install the page-world hooks once per document (Firefox only). */
+  function installPageHooks(): void {
+    if (pageHooksInstalled) return;
+    pageHooksInstalled = true;
+    injectionInfo.readyStateAtHookInstall = document.readyState;
+
+    const pageWin = window.wrappedJSObject;
+    if (!pageWin || typeof exportFunction !== "function") {
+      // Not Firefox: no Xray waivers -- leave everything unavailable.
+      return;
+    }
+    try {
+      installFetchHook(pageWin);
+    } catch {
+      interception.fetch = false;
+    }
+    try {
+      installXhrHooks(pageWin);
+    } catch {
+      interception.xhr = false;
+    }
+    try {
+      installConsoleHooks(pageWin);
+    } catch {
+      interception.console = false;
+    }
+  }
+
+  /**
+   * Resume logging after a reload / navigation (top frame only -- the
+   * background script sends the logging commands to frame 0).
+   *
+   * When this copy was injected early (document_start, by the background
+   * script, only for a tab whose logging is on) the hooks go in right away
+   * so the page's first scripts are captured; should the background then
+   * answer that logging is off, everything recorded so far is dropped.
+   */
+  function resumeLoggingFromBackground(): void {
+    if (window !== window.top) return;
+
+    const early = document.readyState === "loading";
+    const versionAtQuery = loggingControlVersion;
+    if (early) {
+      installPageHooks();
+      loggingEnabled = true;
+    }
+
+    const discardProvisional = (): void => {
+      if (!early || loggingControlVersion !== versionAtQuery) return;
+      loggingEnabled = false;
+      consoleLogs = [];
+      networkLogs = [];
+    };
+
+    browser.runtime
+      .sendMessage({ type: LOGGING_STATE_QUERY })
+      .then((reply: unknown) => {
+        if (loggingControlVersion !== versionAtQuery) return;
+        const state =
+          typeof reply === "object" && reply !== null
+            ? (reply as { enabled?: unknown; protectedPatterns?: unknown })
+            : {};
+        if (state.enabled === true) {
+          protectedPatterns = compilePatterns(state.protectedPatterns);
+          installPageHooks();
+          loggingEnabled = true;
+        } else {
+          discardProvisional();
+        }
+      })
+      .catch(() => {
+        discardProvisional();
+      });
   }
 
   // ---------------------------------------------------------------------------
@@ -541,6 +848,9 @@
   // ---------------------------------------------------------------------------
 
   function startLogging(options: LoggingOptions = {}): Record<string, unknown> {
+    loggingControlVersion++;
+    protectedPatterns = compilePatterns(options.protectedPatterns);
+    installPageHooks();
     loggingEnabled = true;
     if (options.clearExisting) {
       consoleLogs = [];
@@ -551,10 +861,12 @@
       message: "Logging started",
       consoleLogsCount: consoleLogs.length,
       networkLogsCount: networkLogs.length,
+      interception: { ...interception },
     };
   }
 
   function stopLogging(): Record<string, unknown> {
+    loggingControlVersion++;
     loggingEnabled = false;
     return {
       success: true,
@@ -589,6 +901,7 @@
       returnedCount: logs.length,
       loggingEnabled,
       interceptionAvailable: interception.console,
+      injection: { ...injectionInfo },
     };
   }
 
@@ -1272,6 +1585,9 @@
           clientY: y,
         }),
       );
+      // One click event only. A dispatched click also runs the element's
+      // activation behavior (links, checkboxes, submit buttons), so calling
+      // element.click() as well would fire every click handler twice.
       element.dispatchEvent(
         new MouseEvent("click", {
           bubbles: true,
@@ -1281,10 +1597,6 @@
           clientY: y,
         }),
       );
-
-      if ((element as HTMLElement).click) {
-        (element as HTMLElement).click();
-      }
     }
 
     return {
@@ -1784,6 +2096,9 @@
   async function waitForNetworkIdle(
     options: NetworkIdleOptions,
   ): Promise<Record<string, unknown>> {
+    // Counting needs the page hooks. Requests already in flight before they
+    // were installed are not seen.
+    installPageHooks();
     const timeout = options.timeout || TIMEOUTS.NETWORK_IDLE;
     const idleTime = options.idleTime || 500;
     const startTime = Date.now();
@@ -1801,6 +2116,7 @@
           idle: true,
           waitedMs: Date.now() - startTime,
           pendingRequests: 0,
+          interception: { fetch: interception.fetch, xhr: interception.xhr },
         };
       }
       await sleep(100);
@@ -1811,6 +2127,7 @@
       timedOut: true,
       waitedMs: timeout,
       pendingRequests: __fox_activeRequests,
+      interception: { fetch: interception.fetch, xhr: interception.xhr },
     };
   }
 
@@ -2340,5 +2657,6 @@
   // Init
   // ---------------------------------------------------------------------------
 
+  resumeLoggingFromBackground();
   console.log("[KitsuneMCP] Content script loaded");
 })();

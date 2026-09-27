@@ -144,6 +144,22 @@ let isConnected = false;
 const pendingRequests = new Map<number, PendingRequest>();
 let requestCounter = 0;
 
+// Console / network logging: tabs where it is switched on, with the
+// protected URL patterns attached to start_logging (empty when the server
+// sent none, i.e. confirm_protected_actions is off). The records themselves
+// stay in that tab's top-frame content script; this map only outlives
+// reloads / navigations, so the next document resumes recording (content
+// script query + early injection, see "Event listeners") -- except while the
+// tab is on a protected page, where recording is paused. Cleared by
+// stop_logging or when the tab closes.
+interface LoggingTabState {
+  patterns: RegExp[];
+}
+const loggingTabs = new Map<number, LoggingTabState>();
+const TOP_FRAME_ID = 0;
+/** Message type of the content script's "is logging on for my tab?" query. */
+const LOGGING_STATE_QUERY = "kitsune:loggingState";
+
 // Reconnection settings
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 20;
@@ -340,13 +356,13 @@ async function resolveTab(
 async function sendToContentScript(
   tabId: number | undefined,
   message: Record<string, unknown>,
+  frameId?: number,
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
-    const result = (await browser.tabs.sendMessage(
-      tab.id,
-      message,
-    )) as Record<string, unknown>;
+    const result = (await (frameId === undefined
+      ? browser.tabs.sendMessage(tab.id, message)
+      : browser.tabs.sendMessage(tab.id, message, { frameId }))) as Record<string, unknown>;
     return { success: true, ...result };
   } catch (error) {
     return { success: false, error: (error as Error).message };
@@ -509,7 +525,6 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
       case "getComputedStyles":
       case "getBoundingRect":
       case "waitForChange":
-      case "waitForNetworkIdle":
       case "observeElement":
       case "stopObserving":
       case "scrollAndCapture":
@@ -518,33 +533,57 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
       case "getText":
         result = await sendToContentScript(tabId, { action, ...data });
         break;
-      // Console and network logging
-      case "startLogging":
-        result = await sendToContentScript(tabId, {
-          action: "startLogging",
-          ...data,
-        });
+      // Page-activity tracking and console / network logging live in the
+      // top frame's content script (frame 0), so every command for them goes
+      // there -- not to whichever frame happens to answer first.
+      case "waitForNetworkIdle":
+        result = await sendToContentScript(tabId, { action, ...data }, TOP_FRAME_ID);
         break;
-      case "stopLogging":
-        result = await sendToContentScript(tabId, { action: "stopLogging" });
+      case "startLogging": {
+        const tab = await resolveTab(tabId);
+        // Same rule as a single-tab screenshot: refuse on a protected page,
+        // judged by the tab's real URL.
+        const refusal = await checkProtectedScreenshot(tab.id, protectedPatterns);
+        if (refusal) {
+          result = refusal;
+          break;
+        }
+        result = await sendToContentScript(
+          tab.id,
+          {
+            action: "startLogging",
+            ...data,
+            protectedPatterns: protectedPatterns.map((p) => p.source),
+          },
+          TOP_FRAME_ID,
+        );
+        if (result.success) loggingTabs.set(tab.id, { patterns: protectedPatterns });
         break;
+      }
+      case "stopLogging": {
+        const tab = await resolveTab(tabId);
+        loggingTabs.delete(tab.id);
+        result = await sendToContentScript(tab.id, { action: "stopLogging" }, TOP_FRAME_ID);
+        break;
+      }
       case "getConsoleLogs":
-        result = await sendToContentScript(tabId, {
-          action: "getConsoleLogs",
-          ...data,
-        });
+      case "getNetworkLogs": {
+        const tab = await resolveTab(tabId);
+        result = await sendToContentScript(tab.id, { action, ...data }, TOP_FRAME_ID);
+        if (result.success) {
+          result = {
+            ...result,
+            pausedForProtectedDomain: isLoggingPausedForTab(tab, protectedPatterns),
+          };
+        }
         break;
-      case "getNetworkLogs":
-        result = await sendToContentScript(tabId, {
-          action: "getNetworkLogs",
-          ...data,
-        });
-        break;
+      }
       case "clearLogs":
-        result = await sendToContentScript(tabId, {
-          action: "clearLogs",
-          ...data,
-        });
+        result = await sendToContentScript(
+          tabId,
+          { action: "clearLogs", ...data },
+          TOP_FRAME_ID,
+        );
         break;
       case "list_containers":
         result = await listContainers(scope);
@@ -691,11 +730,18 @@ async function checkProtectedScreenshot(
       error: "Could not resolve the target tab for the protected domain check",
     };
   }
-  if (matchesAnyPattern(tab.url, patterns)) {
+  const tabUrl = tab.url;
+  const matched = findProtectedMatch(tabUrl, patterns);
+  if (tabUrl && matched) {
+    // url / matchedPattern end up in the wire response's `data`, so the
+    // server can name the page that was actually refused (its own
+    // last-known URL may be stale).
     return {
       success: false,
       safetyDecision: "confirmation_required",
       error: "Protected domain: confirmation required",
+      url: tabUrl,
+      matchedPattern: matched.source,
     };
   }
   return null;
@@ -1403,6 +1449,26 @@ function parseProtectedPatterns(raw: unknown): RegExp[] {
   return compiled;
 }
 
+/** The first protected pattern that matches the URL, if any. */
+function findProtectedMatch(url: string | undefined, patterns: RegExp[]): RegExp | undefined {
+  if (!url) return undefined;
+  return patterns.find((p) => p.test(url));
+}
+
+/**
+ * Whether logging on this tab is paused because the tab is on a protected
+ * page: the tab's real URL against the patterns kept at start_logging and
+ * those attached to the current command (either set matching pauses).
+ */
+function isLoggingPausedForTab(tab: browser.tabs.Tab, commandPatterns: RegExp[]): boolean {
+  const state = loggingTabs.get(tab.id);
+  if (!state) return false;
+  return (
+    findProtectedMatch(tab.url, state.patterns) !== undefined ||
+    findProtectedMatch(tab.url, commandPatterns) !== undefined
+  );
+}
+
 function matchesAnyPattern(url: string | undefined, patterns: RegExp[]): boolean {
   if (!url) return false;
   return patterns.some((p) => p.test(url));
@@ -1654,7 +1720,32 @@ browser.runtime.onMessage.addListener(
     sender: browser.runtime.MessageSender,
     sendResponse: (response: unknown) => void,
   ): boolean | void => {
-    const msg = message as { target?: string; [key: string]: unknown };
+    const msg = message as { target?: string; type?: string; [key: string]: unknown };
+    if (msg.type === LOGGING_STATE_QUERY) {
+      // Only the top frame records (commands go to frame 0). The URL is the
+      // one the browser reports for the sender (tab and document), never a
+      // value supplied in the message.
+      const senderTabId = sender.tab?.id;
+      const state = senderTabId !== undefined ? loggingTabs.get(senderTabId) : undefined;
+      if (sender.frameId !== TOP_FRAME_ID || !state) {
+        sendResponse({ enabled: false });
+        return;
+      }
+      if (
+        findProtectedMatch(sender.tab?.url, state.patterns) ||
+        findProtectedMatch(sender.url, state.patterns)
+      ) {
+        // Paused while on a protected page; resumes on the next
+        // non-protected document (logging stays on for the tab).
+        sendResponse({ enabled: false, pausedForProtectedDomain: true });
+        return;
+      }
+      sendResponse({
+        enabled: true,
+        protectedPatterns: state.patterns.map((p) => p.source),
+      });
+      return;
+    }
     if (msg.target === "background") {
       handleCommand({
         ...msg,
@@ -1664,6 +1755,43 @@ browser.runtime.onMessage.addListener(
     }
   },
 );
+
+// Logging tabs: inject the content script at document_start as soon as a new
+// document commits, so the page hooks catch the page's first scripts (the
+// manifest content script only runs at document_end). Best effort: the
+// injection is asynchronous and may still land after some early scripts.
+// The injected copy confirms the state with the background before keeping
+// anything (resumeLoggingFromBackground); the later manifest copy is a no-op
+// thanks to the __fox_injected guard (same sandbox).
+browser.webNavigation.onCommitted.addListener((details) => {
+  if (details.frameId !== TOP_FRAME_ID) return;
+  const state = loggingTabs.get(details.tabId);
+  if (!state || shouldSkipTab(details.url)) return;
+  // Protected page: recording is paused there, so no early hooks either.
+  if (findProtectedMatch(details.url, state.patterns)) return;
+  console.log(`[KitsuneMCP] Early logging injection requested (tab ${details.tabId})`);
+  browser.tabs
+    .executeScript(details.tabId, {
+      file: "/dist/content.js",
+      runAt: "document_start",
+      frameId: TOP_FRAME_ID,
+    })
+    .then(() => {
+      console.log(`[KitsuneMCP] Early logging injection done (tab ${details.tabId})`);
+    })
+    .catch((error: unknown) => {
+      // Page where extensions cannot inject (e.g. addons.mozilla.org, or
+      // a non-web URL). Nothing to resume there.
+      console.warn(
+        `[KitsuneMCP] Early logging injection failed (tab ${details.tabId}):`,
+        (error as Error).message,
+      );
+    });
+});
+
+browser.tabs.onRemoved.addListener((tabId) => {
+  loggingTabs.delete(tabId);
+});
 
 // Block external messages (design doc 7.8 -- prevent command injection from
 // other extensions)

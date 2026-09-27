@@ -119,17 +119,22 @@ export class SafetyGuard {
    *
    * @param url  The protected tab's URL if the Extension reported it
    *             (`data.url`); also recorded via noteUrl semantics.
+   * @param matchedPattern  The pattern the Extension matched
+   *             (`data.matchedPattern`), if reported.
    */
   confirmationFromBrowser(
     toolName: string,
     args: Record<string, unknown>,
     url: string | null,
     transport?: string,
+    matchedPattern?: string | null,
   ): SafetyDenial {
     if (url) this._currentUrl = url;
     const protectedUrl = url ?? this._currentUrl ?? '(target tab)';
     const matched =
-      this._matchedProtected(url ?? this._currentUrl) ?? '(protected_url_patterns)';
+      matchedPattern ||
+      this._matchedProtected(url ?? this._currentUrl) ||
+      '(protected_url_patterns)';
 
     if (this.config.auditLog) {
       audit(toolName, args, url ?? this._currentUrl, 'confirmation_required', transport);

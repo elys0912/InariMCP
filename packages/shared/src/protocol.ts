@@ -38,6 +38,10 @@ export const BrowserCommandSchema = z.object({
    * Extension excludes protected tabs; for a single screenshot it refuses
    * with `safetyDecision: "confirmation_required"` when the target tab's URL
    * matches (the MCP Server cannot see which tab is actually captured).
+   * Also attached to `start_logging`, `get_console_logs` and
+   * `get_network_logs` (same condition): start_logging on a protected tab is
+   * refused the same way, and recording pauses while a logging tab is on a
+   * protected page (`pausedForProtectedDomain` in the get_* results).
    */
   protectedUrlPatterns: z.array(z.string()).optional(),
 });

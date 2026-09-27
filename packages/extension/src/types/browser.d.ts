@@ -20,6 +20,7 @@ declare namespace browser {
 
     interface MessageSender {
       tab?: tabs.Tab;
+      frameId?: number;
       id?: string;
       url?: string;
     }
@@ -83,7 +84,11 @@ declare namespace browser {
     function remove(tabId: number): Promise<void>;
     function update(tabId: number, updateProperties: { active?: boolean; url?: string }): Promise<Tab>;
     function reload(tabId: number, reloadProperties?: { bypassCache?: boolean }): Promise<void>;
-    function sendMessage(tabId: number, message: unknown): Promise<unknown>;
+    function sendMessage(
+      tabId: number,
+      message: unknown,
+      options?: { frameId?: number },
+    ): Promise<unknown>;
     interface ImageDetails {
       format?: string;
       quality?: number;
@@ -96,7 +101,10 @@ declare namespace browser {
       windowId: number,
       options?: { format?: string; quality?: number },
     ): Promise<string>;
-    function executeScript(tabId: number, details: { code: string }): Promise<unknown[]>;
+    function executeScript(
+      tabId: number,
+      details: { code?: string; file?: string; runAt?: string; frameId?: number },
+    ): Promise<unknown[]>;
     function goBack(tabId: number): Promise<void>;
     function goForward(tabId: number): Promise<void>;
 
@@ -106,6 +114,22 @@ declare namespace browser {
     const onUpdated: {
       addListener(callback: (tabId: number, changeInfo: TabChangeInfo, tab: Tab) => void): void;
       removeListener(callback: (tabId: number, changeInfo: TabChangeInfo, tab: Tab) => void): void;
+    };
+    const onRemoved: {
+      addListener(
+        callback: (tabId: number, removeInfo: { windowId: number; isWindowClosing: boolean }) => void,
+      ): void;
+    };
+  }
+
+  namespace webNavigation {
+    interface CommittedDetails {
+      tabId: number;
+      frameId: number;
+      url: string;
+    }
+    const onCommitted: {
+      addListener(callback: (details: CommittedDetails) => void): void;
     };
   }
 
@@ -194,4 +218,24 @@ declare namespace browser {
       ): void;
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Firefox content-script globals for sharing functions with page scripts
+// (Xray vision). Only available in content scripts, and only in Firefox.
+// ---------------------------------------------------------------------------
+
+/**
+ * Make a content-script function callable from the page's JS world. With
+ * `defineAs`, it is also defined as that property of `targetScope`.
+ */
+declare function exportFunction<F extends (...args: never[]) => unknown>(
+  func: F,
+  targetScope: object,
+  options?: { defineAs?: string; allowCrossOriginArguments?: boolean },
+): F;
+
+interface Window {
+  /** Firefox content scripts: the page's own objects (Xray waived). */
+  readonly wrappedJSObject?: Window & typeof globalThis;
 }

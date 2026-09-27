@@ -14,7 +14,8 @@
     "contextMenus",
     "contextualIdentities",
     "cookies",
-    "find"
+    "find",
+    "webNavigation"
   ],
 
   "background": {

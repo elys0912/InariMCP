@@ -155,11 +155,18 @@ function buildCommandData(
  *     safetyDecision "confirmation_required" when the actual target tab is
  *     protected — the server-side Layer 4 check only knows the last URL it
  *     saw.
+ *     Also on start_logging / get_console_logs / get_network_logs, same
+ *     condition: the Extension refuses start_logging on a protected tab
+ *     (confirmation_required), keeps the patterns with the tab and pauses
+ *     recording while the tab is on a protected page.
  */
 const PROTECTED_CAPTURE_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAction>([
   'screenshot',
   'scroll_and_capture',
   'screenshot_all_tabs',
+  'start_logging',
+  'get_console_logs',
+  'get_network_logs',
 ]);
 
 function attachSafetyMetadata(command: BrowserCommand, config: SafetyConfig): void {
@@ -383,11 +390,13 @@ export function createToolHandler(
     // (single-tab screenshot). Same elicitation result as guard Layer 7.
     if (!response.success && response.safetyDecision === 'confirmation_required') {
       const reportedUrl = response.data?.['url'];
+      const reportedPattern = response.data?.['matchedPattern'];
       const confirmation = guard.confirmationFromBrowser(
         toolName,
         args,
         typeof reportedUrl === 'string' && reportedUrl ? reportedUrl : null,
         transport,
+        typeof reportedPattern === 'string' && reportedPattern ? reportedPattern : null,
       );
       return safetyDenialToCallResult({ ...confirmation, decision: confirmation.safetyDecision });
     }
