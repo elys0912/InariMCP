@@ -4,7 +4,7 @@
 
 **Control your everyday Firefox from Claude Code.** A Firefox-only MCP addon — your real profile, your real logins, no throwaway browser.
 
-> Status: **early WIP, not yet installable end-to-end.** See [Status](#status) below.
+> Status: **early WIP — the installer is in place (verified on real Windows hardware; macOS/Linux untested) and the extension path works end-to-end.** Signed-package distribution via AMO/GitHub Releases is still in progress. See [Status](#status) below.
 
 ![status](https://img.shields.io/badge/status-WIP-yellow) ![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
 
@@ -41,8 +41,6 @@ KitsuneMCP is deliberately narrow. If your use case is one of these, you'll be h
 
 ## Quick Start
 
-> These steps reflect what's implemented today (P1–P5). Extension packaging/install and end-to-end wiring are not finished yet — see [Status](#status).
-
 ### Prerequisites
 
 - Node.js >= 18.0.0
@@ -54,16 +52,61 @@ KitsuneMCP is deliberately narrow. If your use case is one of these, you'll be h
 ```bash
 git clone <this-repo>
 cd KitsuneMCP
-npm install
-npm run build
+npm run install:windows
 ```
 
-This builds all four workspace packages: `shared`, `mcp-server`, `native-host`, `extension`.
+On macOS/Linux, use `npm run install:unix` instead (the script itself is untested on real macOS/Linux hardware — see [Status](#status)). Either one runs `npm install` + `npm run build` for you, writes the Native Messaging host under `~/.kitsune-mcp/native-host/`, registers it with Firefox, and offers to register the MCP server with Claude Code. Equivalent direct invocations:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+```
+
+```bash
+bash scripts/install.sh
+```
+
+Run `-SkipBuild`/`--skip-build`, `-NoRegisterClaude`/`--no-register-claude`, or `-ClaudeScope`/`--claude-scope` (default `user`, i.e. available to every project) to adjust behavior; see the script's own `--help`/header comment for the full list.
+
+**If you ever swap out or upgrade Node.js**, re-run the installer — the generated wrapper embeds the absolute path to the `node` binary that built it.
+
+### Load the extension in Firefox
+
+A signed, one-click-install `.xpi` isn't published yet (AMO signing + GitHub Releases distribution is still in progress — see [docs/release.md](docs/release.md)). For now, load it as a temporary add-on:
+
+1. Open `about:debugging#/runtime/this-firefox` in Firefox.
+2. "Load Temporary Add-on..." → select `packages/extension/manifest.json`.
+3. It's removed when Firefox restarts, so you'll need to load it again after each restart.
+
+### Check the connection
+
+```bash
+curl -s http://127.0.0.1:8765/health
+```
+
+`browsers_connected` should be `1` once the extension has connected (takes a few seconds after loading it).
+
+### Manual setup / detailed verification
+
+For the full manual, step-by-step setup (useful if you want to know exactly what the installer does, or need to work around it) and a complete tool-by-tool verification walkthrough, see [`docs/e2e-test-plan.md`](docs/e2e-test-plan.md).
+
+### Uninstall
+
+```bash
+npm run uninstall:windows   # or: npm run uninstall:unix
+```
+
+This stops a running daemon (with confirmation), and removes the Firefox registration, the native-host files, and the Claude Code registration. Add `-Purge`/`--purge` to also delete the rest of `~/.kitsune-mcp/` (API token, `safety.json`, logs, screenshots).
+
+### Logs
+
+Native Host logs go to `~/.kitsune-mcp/logs/native-host.log` by default. Override the path with `FOX_NATIVE_HOST_LOG`, or set it to `0`/`off` to disable logging.
 
 ### Add to Claude Code
 
+The installer registers KitsuneMCP with Claude Code for you (`claude mcp add`, scope `user` by default — available from any project). If you skipped that step, or `claude` wasn't on your `PATH` at install time, register it manually:
+
 ```bash
-claude mcp add kitsune-mcp -- node <INSTALL_PATH>/packages/mcp-server/dist/index.js
+claude mcp add --scope user kitsune-mcp -- node <INSTALL_PATH>/packages/mcp-server/dist/index.js
 ```
 
 Or add it manually to your MCP config (see `config/mcp_config.json` for a template):
@@ -141,7 +184,7 @@ The daemon isn't started fresh per session — whoever gets there first (your Cl
 
 ## Status
 
-This project is **under active, incremental development** — not ready for general use yet.
+This project is **under active, incremental development** — not ready for general use yet. It has moved past "source you can read and build": you can now load the extension yourself (`about:debugging` temporary add-on) and drive your real Firefox end-to-end. What's missing is packaging it up so anyone can install it without doing that by hand.
 
 **Done:**
 - Design doc + multi-angle review (`docs/design.md`)
@@ -150,13 +193,19 @@ This project is **under active, incremental development** — not ready for gene
 - MCP server core + all 41 tool schemas/handlers (P3)
 - Headless Playwright backend (P4)
 - Native messaging host (P5)
+- Extension ported to TypeScript (P6)
+- Firefox-native APIs: container tabs, `browser.find`, `tabs.captureTab` (P7)
+- Extension path wired end-to-end, plus the relay + shared-daemon split so several Claude Code sessions can drive Firefox at the same time without fighting over ports (P7.5)
+- Real-device E2E on Windows 11 + Firefox (2026-09-27) — walkthrough in [`docs/e2e-test-plan.md`](docs/e2e-test-plan.md)
+- Installer (`scripts/install.ps1` / `scripts/uninstall.ps1` for Windows, `scripts/install.sh` / `scripts/uninstall.sh` for macOS/Linux) — verified end-to-end on real Windows 11 hardware (2026-09-28); the macOS/Linux scripts exist but haven't been run on real macOS/Linux yet
+- Distribution prep: the real Extension ID is confirmed (`kitsune-mcp@elys0912.github.io`), AMO's `data_collection_permissions` is set, and `web-ext lint` passes with 0 errors/warnings (P8)
 
 **Not done yet:**
-- Extension bugfixes and KitsuneMCP rebranding (P6)
-- Firefox-native container/`browser.find`/sidebar integration (P7)
-- Installers, AMO packaging, and a real Extension ID (P8)
+- AMO signing and distributing the signed package via GitHub Releases
 
-Until P6–P8 land, treat this as source you can read and build, not something to install and rely on. Track progress in `docs/design.md` and `docs/引き継ぎ.md`.
+Of the 41 registered `fox_*` tools, 10 aren't implemented on the extension path yet (`fox_snapshot`, `fox_run_workflow`, `fox_audit_page`, `fox_inject_observer`, `fox_remove_observer`, `fox_handle_dialog`, `fox_wait_for_navigation`, `fox_wait_for_url`, `fox_eval_chain`, `fox_wait_and_act`) — calling one returns a clear "not implemented" error rather than doing nothing silently; some of these already work under headless mode.
+
+Track progress in `docs/design.md` and `docs/引き継ぎ.md`.
 
 ## Credits
 

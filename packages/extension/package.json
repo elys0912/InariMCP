@@ -2,6 +2,17 @@
   "name": "@kitsune-mcp/extension",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "author": "elys0912",
+  "homepage": "https://github.com/elys0912/KitsuneMCP",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elys0912/KitsuneMCP.git",
+    "directory": "packages/extension"
+  },
+  "bugs": {
+    "url": "https://github.com/elys0912/KitsuneMCP/issues"
+  },
   "scripts": {
     "build": "tsc -b && node -e \"const fs=require('fs'),p=require('path');[['src/popup/popup.html','dist/popup/popup.html'],['src/popup/popup.css','dist/popup/popup.css'],['src/content.css','dist/content.css']].forEach(([s,d])=>{fs.mkdirSync(p.dirname(d),{recursive:true});fs.copyFileSync(s,d)})\"",
     "clean": "rimraf dist *.tsbuildinfo"

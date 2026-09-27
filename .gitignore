@@ -2,3 +2,20 @@ node_modules/
 dist/
 *.tsbuildinfo
 .env
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.log
+
+# web-ext build output
+web-ext-artifacts/
+*.xpi
+*.zip
+
+# test coverage
+coverage/
+
+# local native-messaging manifests with real paths (see docs/e2e-test-plan.md);
+# the tracked template is packages/native-host/kitsune-mcp.json
+packages/native-host/kitsune-mcp.*.json

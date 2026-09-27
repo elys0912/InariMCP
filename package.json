@@ -3,12 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "description": "Firefox MCP addon for Claude Code — browser automation via extension + native messaging",
+  "license": "MIT",
+  "author": "elys0912",
+  "homepage": "https://github.com/elys0912/KitsuneMCP",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elys0912/KitsuneMCP.git"
+  },
+  "bugs": {
+    "url": "https://github.com/elys0912/KitsuneMCP/issues"
+  },
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "clean": "npm run clean --workspaces"
+    "clean": "npm run clean --workspaces",
+    "install:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1",
+    "uninstall:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/uninstall.ps1",
+    "install:unix": "bash scripts/install.sh",
+    "uninstall:unix": "bash scripts/uninstall.sh"
   },
   "engines": {
     "node": ">=18.0.0"

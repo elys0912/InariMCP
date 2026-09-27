@@ -2,6 +2,17 @@
   "name": "@kitsune-mcp/native-host",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "author": "elys0912",
+  "homepage": "https://github.com/elys0912/KitsuneMCP",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elys0912/KitsuneMCP.git",
+    "directory": "packages/native-host"
+  },
+  "bugs": {
+    "url": "https://github.com/elys0912/KitsuneMCP/issues"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {

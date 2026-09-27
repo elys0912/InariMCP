@@ -4,7 +4,7 @@
 
 **普段使いのFirefoxをClaude Codeから操作する。** Firefox専用のMCPアドオン — 使い捨てブラウザではなく、あなたの実プロファイル・実ログインをそのまま使う。
 
-> ステータス: **開発初期、まだエンドツーエンドではインストールできない。** 下記の[Status](#status)を参照。
+> ステータス: **開発初期 — インストーラは完成済み（実機Windowsで確認済み、macOS/Linuxは未検証）で、拡張機能経路はエンドツーエンドで動く。** AMO / GitHub Releases経由での署名済みパッケージ配布は準備中。下記の[Status](#status)を参照。
 
 ![status](https://img.shields.io/badge/status-WIP-yellow) ![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
 
@@ -41,8 +41,6 @@ KitsuneMCPは意図的に用途を絞っている。以下に当てはまる場�
 
 ## クイックスタート
 
-> 以下の手順は現時点（P1〜P5）で実装済みの内容を反映している。拡張機能のパッケージング/インストールとエンドツーエンドの配線はまだ完了していない — [Status](#status)を参照。
-
 ### 前提条件
 
 - Node.js >= 18.0.0
@@ -54,16 +52,61 @@ KitsuneMCPは意図的に用途を絞っている。以下に当てはまる場�
 ```bash
 git clone <this-repo>
 cd KitsuneMCP
-npm install
-npm run build
+npm run install:windows
 ```
 
-これで4つのワークスペースパッケージ（`shared`、`mcp-server`、`native-host`、`extension`）が全てビルドされる。
+macOS/Linuxでは代わりに`npm run install:unix`を使う（このスクリプト自体は実機のmacOS/Linuxではまだ検証していない — [Status](#status)参照）。どちらも`npm install`と`npm run build`を自動で行い、`~/.kitsune-mcp/native-host/`にNative Messaging hostを生成してFirefoxに登録し、Claude CodeへのMCPサーバー登録も尋ねてくれる。直接実行する場合の同等コマンド:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install.ps1
+```
+
+```bash
+bash scripts/install.sh
+```
+
+`-SkipBuild`/`--skip-build`、`-NoRegisterClaude`/`--no-register-claude`、`-ClaudeScope`/`--claude-scope`（既定は`user`、全プロジェクト共通）などで挙動を調整できる。詳細はスクリプト自身の`--help`・冒頭コメントを参照。
+
+**Node.jsを入れ替えた・アップグレードした場合は、インストーラを実行し直すこと** — 生成されるラッパーには、ビルド時のnodeバイナリの絶対パスが埋め込まれている。
+
+### Firefoxへの拡張機能の読み込み
+
+署名済みでワンクリックインストールできる`.xpi`はまだ配布していない（AMO署名 + GitHub Releasesでの配布は準備中 — [docs/release.md](docs/release.md)参照）。今のところは一時的なアドオンとして読み込む。
+
+1. Firefoxで`about:debugging#/runtime/this-firefox`を開く
+2. 「一時的なアドオンを読み込む」→ `packages/extension/manifest.json`を選択
+3. Firefoxを再起動すると消えるので、その都度読み込み直す必要がある
+
+### 接続確認
+
+```bash
+curl -s http://127.0.0.1:8765/health
+```
+
+拡張機能が接続すると（読み込みから数秒後）`browsers_connected`が`1`になる。
+
+### 手動セットアップ・詳細な確認手順
+
+インストーラが何をしているか正確に知りたい場合や、インストーラを使わず手動でセットアップしたい場合、および全ツールを1本ずつ確認する完全な手順は[`docs/e2e-test-plan.md`](docs/e2e-test-plan.md)を参照。
+
+### アンインストール
+
+```bash
+npm run uninstall:windows   # または: npm run uninstall:unix
+```
+
+実行中のdaemonを止め（確認あり）、Firefoxへの登録・native-hostのファイル・Claude Codeへの登録を削除する。`-Purge`/`--purge`を付けると`~/.kitsune-mcp/`の残り（APIトークン、`safety.json`、ログ、スクリーンショット）も削除する。
+
+### ログ
+
+Native Hostのログは既定で`~/.kitsune-mcp/logs/native-host.log`に出力される。`FOX_NATIVE_HOST_LOG`でパスを変更でき、`0`/`off`を指定すると無効化できる。
 
 ### Claude Codeへの追加
 
+インストーラがClaude Codeへの登録（`claude mcp add`、既定スコープ`user` = 全プロジェクト共通）を代わりに行ってくれる。この手順をスキップした場合や、インストール時に`claude`が`PATH`に無かった場合は手動で登録する。
+
 ```bash
-claude mcp add kitsune-mcp -- node <INSTALL_PATH>/packages/mcp-server/dist/index.js
+claude mcp add --scope user kitsune-mcp -- node <INSTALL_PATH>/packages/mcp-server/dist/index.js
 ```
 
 または、MCP設定に手動で追加する（テンプレートは`config/mcp_config.json`を参照）。
@@ -141,7 +184,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 
 ## Status
 
-このプロジェクトは**活発かつ段階的に開発中** — まだ一般利用の準備は整っていない。
+このプロジェクトは**活発かつ段階的に開発中** — まだ一般利用の準備は整っていない。とはいえ「読んでビルドできるソースコード」の段階は過ぎていて、拡張機能を自分で読み込めば（`about:debugging`の一時的なアドオン）実際のFirefoxをエンドツーエンドで動かせる。足りないのは、それを手作業なしで誰でもインストールできるようにするパッケージングの部分だけ。
 
 **完了済み:**
 - 設計ドキュメント + 多角的レビュー（`docs/design.md`）
@@ -150,13 +193,19 @@ daemon はセッションごとに新しく起動されるわけではない。C
 - MCPサーバーのコア + 全41ツールのスキーマ/ハンドラ（P3）
 - ヘッドレスPlaywrightバックエンド（P4）
 - ネイティブメッセージングホスト（P5）
+- 拡張機能のTypeScript移植（P6）
+- Firefoxネイティブapi: コンテナタブ、`browser.find`、`tabs.captureTab`（P7）
+- 拡張機能経路のエンドツーエンド結合、および中継＋共有サーバー構成への移行（Claude Codeを複数セッション同時に使ってもポートを取り合わない）（P7.5）
+- Windows 11 + Firefoxでの実機E2E（2026-09-27） — 手順は[`docs/e2e-test-plan.md`](docs/e2e-test-plan.md)
+- インストーラー（Windows用`scripts/install.ps1` / `scripts/uninstall.ps1`、macOS/Linux用`scripts/install.sh` / `scripts/uninstall.sh`） — 実機Windows 11で結線を確認済み（2026-09-28）。macOS/Linux版はスクリプトは存在するが、実機のmacOS/Linuxではまだ動かしていない
+- 配布準備: 正式なExtension ID確定（`kitsune-mcp@elys0912.github.io`）、AMOの`data_collection_permissions`設定、`web-ext lint`がエラー・警告0件（P8）
 
 **未完了:**
-- 拡張機能のバグ修正とKitsuneMCPへのリブランディング（P6）
-- Firefoxネイティブのコンテナ/`browser.find`/サイドバー統合（P7）
-- インストーラー、AMOパッケージング、正式なExtension ID（P8）
+- AMOでの署名と、GitHub Releasesでの署名済みパッケージの配布
 
-P6〜P8が完了するまでは、インストールして使うものではなく、読んでビルドできるソースコードとして扱ってほしい。進捗は`docs/design.md`と`docs/引き継ぎ.md`で追跡している。
+登録される41本の`fox_*`ツールのうち10本は、拡張機能経路ではまだ未実装（`fox_snapshot`、`fox_run_workflow`、`fox_audit_page`、`fox_inject_observer`、`fox_remove_observer`、`fox_handle_dialog`、`fox_wait_for_navigation`、`fox_wait_for_url`、`fox_eval_chain`、`fox_wait_and_act`） — 呼び出すと黙って失敗するのではなく「未実装」という明確なエラーが返る。一部はヘッドレスモードでは既に動く。
+
+進捗は`docs/design.md`と`docs/引き継ぎ.md`で追跡している。
 
 ## Credits
 
