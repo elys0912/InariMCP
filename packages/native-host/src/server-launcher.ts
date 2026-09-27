@@ -19,10 +19,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
-
-function log(msg: string): void {
-  process.stderr.write(`[KitsuneMCP:NativeHost] ${msg}\n`);
-}
+import { log } from './logger.js';
 
 function resolveHost(): string {
   return (

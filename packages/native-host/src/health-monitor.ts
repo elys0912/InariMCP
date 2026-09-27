@@ -19,10 +19,7 @@
 
 import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
 import type { ServerLauncher } from './server-launcher.js';
-
-function log(msg: string): void {
-  process.stderr.write(`[KitsuneMCP:NativeHost] ${msg}\n`);
-}
+import { log } from './logger.js';
 
 export class HealthMonitor {
   private timer: ReturnType<typeof setInterval> | null = null;

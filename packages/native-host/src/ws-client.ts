@@ -23,13 +23,10 @@
 import WebSocket from 'ws';
 import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
 import type { ServerLauncher } from './server-launcher.js';
+import { log } from './logger.js';
 
 const AUTH_TIMEOUT_MS = 10_000;
 const POLICY_VIOLATION = 1008;
-
-function log(msg: string): void {
-  process.stderr.write(`[KitsuneMCP:NativeHost] ${msg}\n`);
-}
 
 export type CommandHandler = (command: Record<string, unknown>) => void;
 

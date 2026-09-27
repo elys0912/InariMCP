@@ -17,10 +17,7 @@ import { ServerLauncher } from './server-launcher.js';
 import { ServerConnection } from './ws-client.js';
 import { HealthMonitor } from './health-monitor.js';
 import { externalizeScreenshots, saveScreenshot } from './screenshot-store.js';
-
-function log(msg: string): void {
-  process.stderr.write(`[KitsuneMCP:NativeHost] ${msg}\n`);
-}
+import { activeLogPath, log } from './logger.js';
 
 // ---------------------------------------------------------------------------
 // In-flight command bookkeeping (for screenshot filenames)
@@ -204,6 +201,7 @@ function shutdown(connection: ServerConnection, monitor: HealthMonitor): void {
 async function main(): Promise<void> {
   log('========================================');
   log('KitsuneMCP Native Host starting');
+  log(`log file: ${activeLogPath() ?? '(disabled by FOX_NATIVE_HOST_LOG)'}`);
 
   const launcher = new ServerLauncher();
   log(`MCP server target: http://${launcher.host}:${launcher.httpPort} (WS port ${launcher.wsPort})`);
@@ -271,7 +269,7 @@ process.on('unhandledRejection', (reason) => {
   const msg = reason instanceof Error
     ? `${reason.message}\n${reason.stack ?? ''}`
     : String(reason);
-  process.stderr.write(`[KitsuneMCP:NativeHost] unhandledRejection: ${msg}\n`);
+  log(`unhandledRejection: ${msg}`);
 });
 
 main().catch((err: unknown) => {

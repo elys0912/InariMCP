@@ -16,6 +16,7 @@
  */
 
 import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { log } from './logger.js';
 
 const MAX_OUTGOING_SIZE = ENV_DEFAULTS.NATIVE_MSG_MAX_SIZE;
 const MAX_INCOMING_SIZE = ENV_DEFAULTS.NATIVE_MSG_MAX_INCOMING_SIZE;
@@ -24,10 +25,6 @@ const LENGTH_BYTES = 4;
 const DRAIN_CHUNK = 1_048_576;
 /** Bytes peeked from an oversized frame to recover its requestId. */
 const PEEK_BYTES = 4_096;
-
-function log(msg: string): void {
-  process.stderr.write(`[KitsuneMCP:NativeHost] ${msg}\n`);
-}
 
 /** Result of one {@link readMessage} call. */
 export type ReadResult =
