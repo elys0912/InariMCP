@@ -4,7 +4,7 @@
 
 **普段使いのFirefoxをClaude Codeから操作する。** Firefox専用のMCPアドオン — 使い捨てブラウザではなく、あなたの実プロファイル・実ログインをそのまま使う。
 
-> ステータス: **開発初期 — インストーラは完成済み（実機Windowsで確認済み、macOS/Linuxは未検証）で、拡張機能経路はエンドツーエンドで動く。** AMO / GitHub Releases経由での署名済みパッケージ配布は準備中。下記の[Status](#status)を参照。
+> ステータス: **開発初期 — インストーラは完成済み（実機のWindowsとLinuxで確認済み、macOSは未検証）で、拡張機能経路はエンドツーエンドで動く。** AMO / GitHub Releases経由での署名済みパッケージ配布は準備中。下記の[Status](#status)を参照。
 
 ![status](https://img.shields.io/badge/status-WIP-yellow) ![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
 
@@ -55,7 +55,7 @@ cd KitsuneMCP
 npm run install:windows
 ```
 
-macOS/Linuxでは代わりに`npm run install:unix`を使う（このスクリプト自体は実機のmacOS/Linuxではまだ検証していない — [Status](#status)参照）。どちらも`npm install`と`npm run build`を自動で行い、`~/.kitsune-mcp/native-host/`にNative Messaging hostを生成してFirefoxに登録し、Claude CodeへのMCPサーバー登録も尋ねてくれる。直接実行する場合の同等コマンド:
+macOS/Linuxでは代わりに`npm run install:unix`を使う（Linuxでは確認済み、実機のmacOSではまだ検証していない — [Status](#status)参照）。LinuxのFirefoxはディストリビューションのパッケージかMozillaのAPTリポジトリ版を使うこと。Flatpak版はNative Messaging hostを起動できず、Snap版（Ubuntuの既定の`firefox`）も動かない場合がある。どちらも`npm install`と`npm run build`を自動で行い、`~/.kitsune-mcp/native-host/`にNative Messaging hostを生成してFirefoxに登録し、Claude CodeへのMCPサーバー登録も尋ねてくれる。直接実行する場合の同等コマンド:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
@@ -197,7 +197,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 - Firefoxネイティブapi: コンテナタブ、`browser.find`、`tabs.captureTab`（P7）
 - 拡張機能経路のエンドツーエンド結合、および中継＋共有サーバー構成への移行（Claude Codeを複数セッション同時に使ってもポートを取り合わない）（P7.5）
 - Windows 11 + Firefoxでの実機E2E（2026-09-27） — 手順は[`docs/e2e-test-plan.md`](docs/e2e-test-plan.md)
-- インストーラー（Windows用`scripts/install.ps1` / `scripts/uninstall.ps1`、macOS/Linux用`scripts/install.sh` / `scripts/uninstall.sh`） — 実機Windows 11で結線を確認済み（2026-09-28）。macOS/Linux版はスクリプトは存在するが、実機のmacOS/Linuxではまだ動かしていない
+- インストーラー（Windows用`scripts/install.ps1` / `scripts/uninstall.ps1`、macOS/Linux用`scripts/install.sh` / `scripts/uninstall.sh`） — 実機Windows 11と、Linux（WSL2のUbuntu 24.04、deb版Firefox 156）で結線を確認済み（2026-09-28）。macOS固有の経路は実機のmacOSではまだ動かしていない。Linuxの確認に使ったスモークテストは`scripts/e2e/`にある
 - 配布準備: 正式なExtension ID確定（`kitsune-mcp@elys0912.github.io`）、AMOの`data_collection_permissions`設定、`web-ext lint`がエラー・警告0件（P8）
 
 **未完了:**

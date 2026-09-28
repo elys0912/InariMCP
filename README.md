@@ -4,7 +4,7 @@
 
 **Control your everyday Firefox from Claude Code.** A Firefox-only MCP addon — your real profile, your real logins, no throwaway browser.
 
-> Status: **early WIP — the installer is in place (verified on real Windows hardware; macOS/Linux untested) and the extension path works end-to-end.** Signed-package distribution via AMO/GitHub Releases is still in progress. See [Status](#status) below.
+> Status: **early WIP — the installer is in place (verified on real Windows and Linux hardware; macOS untested) and the extension path works end-to-end.** Signed-package distribution via AMO/GitHub Releases is still in progress. See [Status](#status) below.
 
 ![status](https://img.shields.io/badge/status-WIP-yellow) ![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
 
@@ -55,7 +55,7 @@ cd KitsuneMCP
 npm run install:windows
 ```
 
-On macOS/Linux, use `npm run install:unix` instead (the script itself is untested on real macOS/Linux hardware — see [Status](#status)). Either one runs `npm install` + `npm run build` for you, writes the Native Messaging host under `~/.kitsune-mcp/native-host/`, registers it with Firefox, and offers to register the MCP server with Claude Code. Equivalent direct invocations:
+On macOS/Linux, use `npm run install:unix` instead (verified on Linux; untested on real macOS hardware — see [Status](#status)). On Linux, use Firefox from a distribution package or Mozilla's APT repository: the Flatpak build cannot start Native Messaging hosts, and the Snap build (the default `firefox` on Ubuntu) may not either. Either one runs `npm install` + `npm run build` for you, writes the Native Messaging host under `~/.kitsune-mcp/native-host/`, registers it with Firefox, and offers to register the MCP server with Claude Code. Equivalent direct invocations:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install.ps1
@@ -197,7 +197,7 @@ This project is **under active, incremental development** — not ready for gene
 - Firefox-native APIs: container tabs, `browser.find`, `tabs.captureTab` (P7)
 - Extension path wired end-to-end, plus the relay + shared-daemon split so several Claude Code sessions can drive Firefox at the same time without fighting over ports (P7.5)
 - Real-device E2E on Windows 11 + Firefox (2026-09-27) — walkthrough in [`docs/e2e-test-plan.md`](docs/e2e-test-plan.md)
-- Installer (`scripts/install.ps1` / `scripts/uninstall.ps1` for Windows, `scripts/install.sh` / `scripts/uninstall.sh` for macOS/Linux) — verified end-to-end on real Windows 11 hardware (2026-09-28); the macOS/Linux scripts exist but haven't been run on real macOS/Linux yet
+- Installer (`scripts/install.ps1` / `scripts/uninstall.ps1` for Windows, `scripts/install.sh` / `scripts/uninstall.sh` for macOS/Linux) — verified end-to-end on real Windows 11 hardware and on Linux (WSL2 Ubuntu 24.04 with the deb build of Firefox 156, 2026-09-28); the macOS paths haven't been run on real macOS yet. `scripts/e2e/` has the smoke tests used for the Linux check
 - Distribution prep: the real Extension ID is confirmed (`kitsune-mcp@elys0912.github.io`), AMO's `data_collection_permissions` is set, and `web-ext lint` passes with 0 errors/warnings (P8)
 
 **Not done yet:**

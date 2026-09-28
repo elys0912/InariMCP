@@ -12,6 +12,8 @@ Thumbs.db
 web-ext-artifacts/
 *.xpi
 *.zip
+# written by `web-ext sign` (AMO upload tracking)
+packages/extension/.amo-upload-uuid
 
 # test coverage
 coverage/
