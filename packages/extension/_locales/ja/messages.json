@@ -21,6 +21,7 @@
   "statusConnected": { "message": "接続済み" },
   "statusConnectedN": { "message": "接続済み（$1）" },
   "statusSetupNeeded": { "message": "要セットアップ" },
+  "statusUpdateNeeded": { "message": "要更新" },
 
   "setupHostMissingTitle": { "message": "セットアップが必要" },
   "setupHostMissingText": {
@@ -31,6 +32,11 @@
   "setupHostErrorText": {
     "message": "Native Host は登録されていますが、起動に失敗しました（$1）。よくある原因は Node.js の更新や移動で、インストーラを実行し直すと直ります:"
   },
+  "setupHostOutdatedTitle": { "message": "Native Host が古くなっています" },
+  "setupHostOutdatedText": {
+    "message": "ブラウザ操作はそのまま使えますが、KitsuneMCP のフォルダがこの拡張より古い版です。そのフォルダで更新してください（手元でビルドし直すだけで、npm から新しいパッケージは取得しません）:"
+  },
+  "setupHostOutdatedNote": { "message": "更新したら Firefox を再起動してください。" },
   "setupDetails": { "message": "詳細: $1" },
   "setupDaemonDownTitle": { "message": "MCP サーバーが応答しません" },
   "setupDaemonDownText": { "message": "Native Host は動いていますが、KitsuneMCP のサーバーが応答しません。" },
@@ -53,6 +59,7 @@
 
   "badgeSetupNeeded": { "message": "KitsuneMCP: セットアップが必要" },
   "badgeHostError": { "message": "KitsuneMCP: Native Host が動いていません" },
+  "badgeHostOutdated": { "message": "KitsuneMCP: Native Host が古くなっています" },
   "badgeDaemonDown": { "message": "KitsuneMCP: MCP サーバーが応答しません" },
   "badgeNoSession": { "message": "KitsuneMCP: Claude Code とつながっていません" },
 

@@ -397,6 +397,8 @@ function sendToNativeHost(
  * What the user has to do next, as far as the Extension can tell:
  *   hostMissing  Native Host not registered with Firefox (installer not run)
  *   hostError    Native Host registered but failed (e.g. stale node path)
+ *   hostOutdated Native Host from an older checkout (no session count): tools
+ *                work, but the checkout needs git pull + npm run build
  *   daemonDown   Native Host runs, but the MCP daemon does not answer
  *   noSession    all set on the Firefox side, no Claude Code session connected
  *   ready        at least one Claude Code session connected
@@ -405,6 +407,7 @@ type SetupState =
   | { kind: "connecting" }
   | { kind: "hostMissing"; error: string }
   | { kind: "hostError"; error: string }
+  | { kind: "hostOutdated"; serverUrl?: string }
   | { kind: "daemonDown"; serverUrl?: string }
   | { kind: "noSession"; serverUrl?: string; registerCommand?: string }
   | { kind: "ready"; serverUrl?: string; relays: number };
@@ -444,6 +447,11 @@ async function getSetupState(): Promise<SetupState> {
 
   const server = reply.mcp_server ?? {};
   const serverUrl = typeof server.url === "string" ? server.url : undefined;
+  // Native Hosts before 0.1.2 do not send `relays` at all (current ones send
+  // null when the daemon info is unavailable): not a daemon problem.
+  if (server.available === true && !("relays" in server)) {
+    return { kind: "hostOutdated", serverUrl };
+  }
   if (server.available !== true || typeof server.relays !== "number") {
     return { kind: "daemonDown", serverUrl };
   }
@@ -463,6 +471,7 @@ const BADGE_TITLE_KEYS: Record<SetupState["kind"], string | null> = {
   connecting: null,
   hostMissing: "badgeSetupNeeded",
   hostError: "badgeHostError",
+  hostOutdated: "badgeHostOutdated",
   daemonDown: "badgeDaemonDown",
   noSession: "badgeNoSession",
   ready: null,

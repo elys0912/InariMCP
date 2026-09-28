@@ -24,6 +24,7 @@
     "description": "$1 = number of Claude Code sessions"
   },
   "statusSetupNeeded": { "message": "Setup needed" },
+  "statusUpdateNeeded": { "message": "Update needed" },
 
   "setupHostMissingTitle": { "message": "Setup needed" },
   "setupHostMissingText": {
@@ -35,6 +36,11 @@
     "message": "The native host is registered but did not work ($1). Re-running the installer fixes the usual cause, a Node.js that was upgraded or moved:",
     "description": "$1 = error message from Firefox"
   },
+  "setupHostOutdatedTitle": { "message": "Native host is out of date" },
+  "setupHostOutdatedText": {
+    "message": "Browser tools still work, but your KitsuneMCP folder is older than this extension. Update it there (this rebuilds locally; no new npm packages are downloaded):"
+  },
+  "setupHostOutdatedNote": { "message": "Then restart Firefox." },
   "setupDetails": {
     "message": "Details: $1",
     "description": "$1 = log file path"
@@ -66,6 +72,7 @@
 
   "badgeSetupNeeded": { "message": "KitsuneMCP: setup needed" },
   "badgeHostError": { "message": "KitsuneMCP: native host failed" },
+  "badgeHostOutdated": { "message": "KitsuneMCP: native host is out of date" },
   "badgeDaemonDown": { "message": "KitsuneMCP: MCP server not responding" },
   "badgeNoSession": { "message": "KitsuneMCP: no Claude Code session" },
 

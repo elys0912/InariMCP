@@ -77,6 +77,15 @@ function guideFor(state: SetupState, os: string): SetupGuide | null {
         note: t('setupDetails', `${LOG_DIR}/native-host.log`),
         link: true,
       };
+    case 'hostOutdated':
+      return {
+        title: t('setupHostOutdatedTitle'),
+        text: t('setupHostOutdatedText'),
+        // Windows PowerShell 5.1 has no &&
+        command: os === 'win' ? 'git pull; npm run build' : 'git pull && npm run build',
+        note: t('setupHostOutdatedNote'),
+        notice: true,
+      };
     case 'daemonDown':
       return {
         title: t('setupDaemonDownTitle'),
@@ -118,6 +127,9 @@ function renderSetup(state: SetupState, os: string): void {
       break;
     case 'noSession':
       updateStatus('notice', t('statusNoSession'));
+      break;
+    case 'hostOutdated':
+      updateStatus('notice', t('statusUpdateNeeded'));
       break;
     case 'ready':
       updateStatus(
