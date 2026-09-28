@@ -20,6 +20,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { log } from './logger.js';
+import { spawnDaemonBreakaway } from './breakaway.js';
 
 function resolveHost(): string {
   return (
@@ -123,9 +124,29 @@ export class ServerLauncher {
       return false;
     }
 
-    let logFd: number | 'ignore' = 'ignore';
     try {
       fs.mkdirSync(path.dirname(daemonLogPath()), { recursive: true, mode: 0o700 });
+    } catch {
+      // Logging is best-effort
+    }
+
+    // Windows: outside Firefox's job object, or closing Firefox kills the
+    // daemon (see breakaway.ts). Falls back to a plain spawn on failure.
+    if (process.platform === 'win32') {
+      try {
+        const pid = await spawnDaemonBreakaway(serverEntry, daemonLogPath());
+        this.restartAttempts++;
+        this.lastStableTime = Date.now();
+        log(`started daemon outside the job object (PID: ${pid}, attempt #${this.restartAttempts})`);
+        return this.waitUntilHealthy();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log(`breakaway start failed (${msg}); starting the daemon inside the job instead`);
+      }
+    }
+
+    let logFd: number | 'ignore' = 'ignore';
+    try {
       logFd = fs.openSync(daemonLogPath(), 'a', 0o600);
     } catch {
       // Logging is best-effort
@@ -154,6 +175,11 @@ export class ServerLauncher {
       }
     }
 
+    return this.waitUntilHealthy();
+  }
+
+  /** Wait up to STARTUP_WAIT_MS for a daemon we just started to answer /health. */
+  private async waitUntilHealthy(): Promise<boolean> {
     const deadline = Date.now() + STARTUP_WAIT_MS;
     while (Date.now() < deadline) {
       await this.sleep(200);
