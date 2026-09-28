@@ -1948,6 +1948,15 @@ browser.runtime.onMessage.addListener(
       return;
     }
     if (msg.target === "background") {
+      // Only the Extension's own pages (the popup) may drive the dispatcher
+      // directly. Content scripts -- including code run by fox_execute_script
+      // -- could otherwise call every handler without the containerScope /
+      // protectedUrlPatterns the MCP Server attaches (Layer 0 bypass).
+      if (!isExtensionPage(sender)) {
+        console.error("[KitsuneMCP] Refused background command from", sender.url);
+        sendResponse({ success: false, error: "Background commands are only accepted from extension pages" });
+        return;
+      }
       handleCommand({
         ...msg,
         tabId: sender.tab?.id,
@@ -1956,6 +1965,18 @@ browser.runtime.onMessage.addListener(
     }
   },
 );
+
+/**
+ * True for a message from one of this Extension's own pages (popup, or the
+ * popup page opened in a tab). Content scripts report the web page's URL.
+ */
+function isExtensionPage(sender: browser.runtime.MessageSender): boolean {
+  return (
+    sender.id === browser.runtime.id &&
+    typeof sender.url === "string" &&
+    sender.url.startsWith(browser.runtime.getURL("/"))
+  );
+}
 
 // Logging tabs: inject the content script at document_start as soon as a new
 // document commits, so the page hooks catch the page's first scripts (the

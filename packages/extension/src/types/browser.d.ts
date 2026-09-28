@@ -31,6 +31,7 @@ declare namespace browser {
       arch: string;
     }
 
+    const id: string;
     function connectNative(application: string): Port;
     function getURL(path: string): string;
     function getManifest(): { version: string; [key: string]: unknown };
