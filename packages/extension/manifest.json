@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "KitsuneMCP",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Firefox MCP addon for Claude Code — browser automation via extension + native messaging",
   "author": "elys0912",
   "homepage_url": "https://github.com/elys0912/KitsuneMCP",
