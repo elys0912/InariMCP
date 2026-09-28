@@ -191,8 +191,20 @@ export class HeadlessBrowser {
       // --- navigation ---
       case 'navigate': {
         const url = (args['url'] as string) ?? '';
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-        return { success: true, url: page.url(), title: await page.title() };
+        let target = page;
+        if (args['newTab'] === true) {
+          if (!this._context) return { success: false, error: 'No browser context' };
+          target = await this._context.newPage();
+          this._page = target;
+          this._registerTab(target);
+        }
+        await target.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+        return {
+          success: true,
+          url: target.url(),
+          title: await target.title(),
+          ...(target !== page ? { tabId: this._activeTabId } : {}),
+        };
       }
 
       // --- screenshot (file) ---
@@ -467,7 +479,7 @@ export class HeadlessBrowser {
 
       // --- find_text ---
       case 'find_text': {
-        const query = (args['text'] as string) ?? '';
+        const query = (args['query'] as string) ?? '';
         const count = await page.locator(`:text("${query.replace(/"/g, '\\"')}")`).count();
         return { success: true, query, count };
       }
@@ -622,7 +634,7 @@ export class HeadlessBrowser {
       // --- handle_dialog ---
       case 'handle_dialog': {
         const dialogAction = (args['action'] as string) ?? 'dismiss';
-        const promptText = args['text'] as string | undefined;
+        const promptText = args['promptText'] as string | undefined;
         const timeout = (args['timeout'] as number) ?? 10_000;
         return new Promise<Record<string, unknown>>((resolve) => {
           const timer = setTimeout(() => {
@@ -660,9 +672,19 @@ export class HeadlessBrowser {
 
       // --- wait_for_url ---
       case 'wait_for_url': {
-        const pattern = (args['pattern'] as string) ?? '**';
-        const timeout = (args['timeout'] as number) ?? 30_000;
-        await page.waitForURL(pattern, { timeout });
+        // Schema: url = exact URL, urlPattern = regex (same as the extension).
+        const exact = args['url'] as string | undefined;
+        const regex = args['urlPattern'] as string | undefined;
+        if (!exact && !regex) {
+          return { success: false, error: 'Must provide url or urlPattern' };
+        }
+        const timeout = (args['timeout'] as number) ?? 15_000;
+        // A plain string would be read as a glob ('?' and '*' in query
+        // strings), so compare the exact URL with a predicate instead.
+        await page.waitForURL(
+          exact ? (u: URL) => u.href === exact : new RegExp(regex!),
+          { timeout },
+        );
         return { success: true, url: page.url() };
       }
 

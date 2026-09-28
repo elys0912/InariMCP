@@ -387,7 +387,12 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
     postWireResponse(message, result);
     return result;
   }
-  const action = resolved.action;
+  // fox_navigate with newTab opens the URL in a fresh tab. Route it as
+  // createTab so the scope check treats it like fox_create_tab: the new tab
+  // is born inside the agent container instead of requiring the current
+  // active tab to be in scope.
+  const navigateInNewTab = resolved.action === "navigate" && data?.newTab === true;
+  const action = navigateInNewTab ? "createTab" : resolved.action;
 
   // Container scope check (Layer 0, design.md 7.1). The MCP Server attaches
   // `containerScope` to every command when container_scope.enabled is true.
@@ -461,7 +466,9 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         result = await getAllTabs(data as GetAllTabsOptions, scope);
         break;
       case "createTab":
-        result = await createNewTab(data as { url?: string; active?: boolean }, scope);
+        result = navigateInNewTab
+          ? await navigateNewTab(data as { url: string; waitForLoad?: boolean }, scope)
+          : await createNewTab(data as { url?: string; active?: boolean }, scope);
         break;
       case "closeTab":
         if (tabId === undefined || message.tabId === undefined) { result = { success: false, error: "tabId is required" }; break; }
@@ -997,6 +1004,26 @@ async function navigateTo(
     return { success: true, url: finalUrl };
   } catch (error) {
     return { success: false, error: (error as Error).message };
+  }
+}
+
+async function navigateNewTab(
+  data: { url: string; waitForLoad?: boolean },
+  scope: ScopeFilter | null,
+): Promise<CommandResult> {
+  const created = await createNewTab({ url: data.url, active: true }, scope);
+  const tabId = (created.tab as { id?: number } | undefined)?.id;
+  if (!created.success || tabId === undefined) return created;
+  try {
+    if (data.waitForLoad !== false) {
+      const tab = await browser.tabs.get(tabId);
+      if (tab.status !== "complete") await waitForTabComplete(tabId);
+    }
+    // Same shape as navigateTo (url after redirects), plus the new tab's id.
+    const updated = await browser.tabs.get(tabId);
+    return { success: true, url: updated.url || data.url, tabId };
+  } catch (error) {
+    return { success: false, error: (error as Error).message, tabId };
   }
 }
 
