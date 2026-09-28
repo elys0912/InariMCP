@@ -22,6 +22,17 @@
     </header>
 
     <main>
+      <section id="setup" class="setup" hidden>
+        <h2 id="setup-title"></h2>
+        <p id="setup-text" class="setup-text"></p>
+        <div id="setup-command" class="setup-command" hidden>
+          <code id="setup-command-text"></code>
+          <button id="btn-copy-command" class="btn-small">Copy</button>
+        </div>
+        <p id="setup-note" class="setup-note" hidden></p>
+        <a id="setup-link" class="setup-link" href="https://github.com/elys0912/KitsuneMCP#install" target="_blank" rel="noopener noreferrer" hidden>Installation guide</a>
+      </section>
+
       <section class="quick-actions">
         <h2>Quick Actions</h2>
         <div class="action-buttons">
@@ -54,8 +65,8 @@
       <section class="connection-info">
         <h2>MCP Server</h2>
         <div class="server-status">
-          <span id="server-url">localhost:8765</span>
-          <button id="btn-test-connection" class="btn-small">Test</button>
+          <span id="server-url">127.0.0.1:8765</span>
+          <button id="btn-test-connection" class="btn-small">Recheck</button>
         </div>
       </section>
     </main>

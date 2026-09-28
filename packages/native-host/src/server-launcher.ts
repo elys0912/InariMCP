@@ -59,6 +59,18 @@ function daemonLogPath(): string {
 /** How long start() waits for a daemon it spawned to answer /health. */
 const STARTUP_WAIT_MS = 15_000;
 
+/** The daemon / MCP server entry point, relative to this package. */
+export function serverEntryPath(): string {
+  return path.resolve(__dirname, '..', '..', 'mcp-server', 'dist', 'index.js');
+}
+
+/** The subset of GET /daemon/info the Native Host reports to the Extension. */
+export interface DaemonInfo {
+  version?: string;
+  /** Claude Code sessions (relays) seen within the relay TTL. */
+  relays: number;
+}
+
 export class ServerLauncher {
   readonly httpPort: number;
   /** Daemon ws-bridge port — the Native Host's command channel. */
@@ -104,11 +116,7 @@ export class ServerLauncher {
       return false;
     }
 
-    // Resolve the daemon entry point relative to this package
-    const serverEntry = path.resolve(
-      __dirname,
-      '..', '..', 'mcp-server', 'dist', 'index.js',
-    );
+    const serverEntry = serverEntryPath();
 
     if (!fs.existsSync(serverEntry)) {
       log(`MCP server entry not found: ${serverEntry}`);
@@ -234,6 +242,62 @@ export class ServerLauncher {
       req.on('timeout', () => {
         req.destroy();
         resolve(false);
+      });
+
+      req.end();
+    });
+  }
+
+  /**
+   * GET /daemon/info (authenticated). Null when the daemon is unreachable,
+   * the token is missing / rejected, or the reply is not what we expect.
+   */
+  fetchDaemonInfo(): Promise<DaemonInfo | null> {
+    const token = this.apiToken;
+    if (token === undefined) return Promise.resolve(null);
+
+    return new Promise((resolve) => {
+      const req = http.request(
+        {
+          hostname: this.host,
+          port: this.httpPort,
+          path: '/daemon/info',
+          method: 'GET',
+          timeout: 3_000,
+          headers: { 'x-api-key': token },
+        },
+        (res) => {
+          let body = '';
+          res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+          res.on('end', () => {
+            if (res.statusCode === 403) {
+              // Token regenerated since we cached it: re-read next time.
+              this.reloadApiToken();
+            }
+            if (res.statusCode !== 200) {
+              resolve(null);
+              return;
+            }
+            try {
+              const parsed = JSON.parse(body) as Record<string, unknown>;
+              const relays = parsed['relays'];
+              if (typeof relays !== 'number') {
+                resolve(null);
+                return;
+              }
+              const version = parsed['version'];
+              resolve({ relays, ...(typeof version === 'string' ? { version } : {}) });
+            } catch {
+              resolve(null);
+            }
+          });
+        },
+      );
+
+      req.on('error', () => resolve(null));
+      req.on('timeout', () => {
+        req.destroy();
+        resolve(null);
       });
 
       req.end();

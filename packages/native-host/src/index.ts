@@ -13,7 +13,7 @@
  */
 
 import { readMessage, sendMessage } from './protocol.js';
-import { ServerLauncher } from './server-launcher.js';
+import { ServerLauncher, serverEntryPath, type DaemonInfo } from './server-launcher.js';
 import { ServerConnection } from './ws-client.js';
 import { HealthMonitor } from './health-monitor.js';
 import { externalizeScreenshots, saveScreenshot } from './screenshot-store.js';
@@ -78,6 +78,18 @@ function handleServerCommand(
 // Extension → Server / local handling
 // ---------------------------------------------------------------------------
 
+/**
+ * The `claude mcp add` command for this checkout, quoted for the platform's
+ * usual shell (same form as the installers print).
+ */
+function claudeRegisterCommand(): string {
+  const entry = serverEntryPath();
+  const quoted = process.platform === 'win32'
+    ? `"${entry}"`
+    : `'${entry.replace(/'/g, `'\\''`)}'`;
+  return `claude mcp add --scope user kitsune-mcp -- node ${quoted}`;
+}
+
 function replyToExtension(
   message: Record<string, unknown>,
   body: Record<string, unknown>,
@@ -123,21 +135,28 @@ function processMessage(
   }
 
   if (action === 'status') {
-    const reply = (available: boolean): void => {
+    const reply = (available: boolean, daemon: DaemonInfo | null): void => {
       replyToExtension(message, {
         success: true,
         mcp_server: {
           url: `http://${launcher.host}:${launcher.httpPort}`,
           available,
           ws: { url: connection.url, connected: connection.isConnected },
+          // null when /daemon/info could not be read (daemon down, no token)
+          relays: daemon?.relays ?? null,
+          ...(daemon?.version !== undefined ? { version: daemon.version } : {}),
         },
         native_host: {
           version: '0.1.0',
           pid: process.pid,
         },
+        // Shown by the popup when no Claude Code session is connected.
+        claude_register_command: claudeRegisterCommand(),
       });
     };
-    launcher.checkHealth().then(reply).catch(() => reply(false));
+    Promise.all([launcher.checkHealth(), launcher.fetchDaemonInfo()])
+      .then(([available, daemon]) => reply(available, daemon))
+      .catch(() => reply(false, null));
     return;
   }
 

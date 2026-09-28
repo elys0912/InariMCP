@@ -173,6 +173,12 @@ function waitForTabState(
 const NATIVE_HOST_NAME = "kitsune_mcp";
 let nativePort: browser.runtime.Port | null = null;
 let isConnected = false;
+// connectNative() returns a port even when the host is not registered; that
+// failure only shows up afterwards as onDisconnect with port.error. So the
+// host counts as running only once it has answered on the current port.
+let hostConfirmed = false;
+/** port.error of the last disconnect; cleared when the host answers. */
+let lastHostError: string | null = null;
 const pendingRequests = new Map<number, PendingRequest>();
 let requestCounter = 0;
 
@@ -246,11 +252,18 @@ function connectNativeHost(): void {
     );
     nativePort = browser.runtime.connectNative(NATIVE_HOST_NAME);
     isConnected = true;
+    hostConfirmed = false;
     reconnectAttempts = 0;
     console.log("[KitsuneMCP] Connected to native host");
 
     nativePort.onMessage.addListener(handleNativeMessage);
     nativePort.onDisconnect.addListener(handleDisconnect);
+    // The answer confirms the host (see hostConfirmed). A missing host
+    // rejects this via handleDisconnect, which refreshes the badge itself.
+    sendToNativeHost({ action: "ping" }).then(
+      () => { void refreshSetupState(); },
+      () => {},
+    );
   } catch (error) {
     console.error("[KitsuneMCP] Failed to connect to native host:", error);
     isConnected = false;
@@ -263,8 +276,12 @@ function handleDisconnect(port: browser.runtime.Port): void {
   console.log("[KitsuneMCP] Disconnected from native host");
   if (port.error) {
     console.error("[KitsuneMCP] Disconnect error:", port.error);
+    lastHostError = port.error.message;
+  } else if (!hostConfirmed) {
+    lastHostError = "Native host exited without answering";
   }
   isConnected = false;
+  hostConfirmed = false;
   nativePort = null;
 
   for (const [, entry] of pendingRequests) {
@@ -273,12 +290,18 @@ function handleDisconnect(port: browser.runtime.Port): void {
   }
   pendingRequests.clear();
 
+  void refreshSetupState();
   scheduleReconnect();
 }
 
 function handleNativeMessage(raw: unknown): void {
   const message = raw as NativeMessage;
   console.log("[KitsuneMCP] Received from native host:", message);
+
+  if (!hostConfirmed) {
+    hostConfirmed = true;
+    lastHostError = null;
+  }
 
   if (typeof message.requestId === "number" && pendingRequests.has(message.requestId)) {
     const entry = pendingRequests.get(message.requestId)!;
@@ -367,6 +390,96 @@ function sendToNativeHost(
 }
 
 // ---------------------------------------------------------------------------
+// Setup state (popup guidance + toolbar badge)
+// ---------------------------------------------------------------------------
+
+/**
+ * What the user has to do next, as far as the Extension can tell:
+ *   hostMissing  Native Host not registered with Firefox (installer not run)
+ *   hostError    Native Host registered but failed (e.g. stale node path)
+ *   daemonDown   Native Host runs, but the MCP daemon does not answer
+ *   noSession    all set on the Firefox side, no Claude Code session connected
+ *   ready        at least one Claude Code session connected
+ */
+type SetupState =
+  | { kind: "connecting" }
+  | { kind: "hostMissing"; error: string }
+  | { kind: "hostError"; error: string }
+  | { kind: "daemonDown"; serverUrl?: string }
+  | { kind: "noSession"; serverUrl?: string; registerCommand?: string }
+  | { kind: "ready"; serverUrl?: string; relays: number };
+
+/** Native Host reply to `status` (packages/native-host/src/index.ts). */
+interface HostStatusReply {
+  mcp_server?: { url?: string; available?: boolean; relays?: number | null };
+  claude_register_command?: string;
+}
+
+const NATIVE_HOST_MISSING = /No such native application/i;
+/** The host checks /health and /daemon/info with 3 s timeouts each. */
+const SETUP_STATUS_TIMEOUT_MS = 5_000;
+/** Matches the relay heartbeat, so a new session shows up within ~30 s. */
+const SETUP_REFRESH_MS = 30_000;
+const BADGE_COLOR = "#D9372B";
+
+async function getSetupState(): Promise<SetupState> {
+  if (!hostConfirmed || !nativePort) {
+    if (lastHostError === null) return { kind: "connecting" };
+    return NATIVE_HOST_MISSING.test(lastHostError)
+      ? { kind: "hostMissing", error: lastHostError }
+      : { kind: "hostError", error: lastHostError };
+  }
+
+  let reply: HostStatusReply;
+  try {
+    reply = (await Promise.race([
+      sendToNativeHost({ action: "status" }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Native host status timed out")), SETUP_STATUS_TIMEOUT_MS),
+      ),
+    ])) as HostStatusReply;
+  } catch (error) {
+    return { kind: "hostError", error: (error as Error).message };
+  }
+
+  const server = reply.mcp_server ?? {};
+  const serverUrl = typeof server.url === "string" ? server.url : undefined;
+  if (server.available !== true || typeof server.relays !== "number") {
+    return { kind: "daemonDown", serverUrl };
+  }
+  if (server.relays === 0) {
+    return {
+      kind: "noSession",
+      serverUrl,
+      registerCommand:
+        typeof reply.claude_register_command === "string" ? reply.claude_register_command : undefined,
+    };
+  }
+  return { kind: "ready", serverUrl, relays: server.relays };
+}
+
+const BADGE_TITLES: Record<SetupState["kind"], string> = {
+  connecting: "KitsuneMCP",
+  hostMissing: "KitsuneMCP: setup needed",
+  hostError: "KitsuneMCP: native host failed",
+  daemonDown: "KitsuneMCP: MCP server not responding",
+  noSession: "KitsuneMCP: no Claude Code session",
+  ready: "KitsuneMCP",
+};
+
+function applyBadge(state: SetupState): void {
+  const attention = state.kind !== "ready" && state.kind !== "connecting";
+  browser.browserAction.setBadgeText({ text: attention ? "!" : "" }).catch(() => {});
+  browser.browserAction.setTitle({ title: BADGE_TITLES[state.kind] }).catch(() => {});
+}
+
+async function refreshSetupState(): Promise<SetupState> {
+  const state = await getSetupState();
+  applyBadge(state);
+  return state;
+}
+
+// ---------------------------------------------------------------------------
 // Tab resolution helper
 // ---------------------------------------------------------------------------
 
@@ -397,9 +510,21 @@ async function sendToContentScript(
       : browser.tabs.sendMessage(tab.id, message, { frameId }))) as Record<string, unknown>;
     return { success: true, ...result };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    const msg = (error as Error).message;
+    return {
+      success: false,
+      error: NO_CONTENT_SCRIPT.test(msg) ? NO_CONTENT_SCRIPT_MESSAGE : msg,
+    };
   }
 }
+
+/** tabs.sendMessage error when the tab has no content script to answer. */
+const NO_CONTENT_SCRIPT = /Receiving end does not exist/i;
+const NO_CONTENT_SCRIPT_MESSAGE =
+  "KitsuneMCP cannot reach this page: Firefox does not let extensions into it " +
+  "(JSON viewer, about: pages, addons.mozilla.org, other extensions' pages), " +
+  "or it was opened before KitsuneMCP was installed or updated (reload the tab). " +
+  "Tab-level tools such as fox_screenshot and fox_get_tabs still work.";
 
 // ---------------------------------------------------------------------------
 // Command dispatcher
@@ -534,11 +659,18 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         result = await reloadTabsByUrl(data as ReloadByUrlOptions, scope);
         break;
       case "status": {
-        const connected = nativePort !== null;
+        // The popup asks for a recheck (e.g. right after running the
+        // installer) so it need not wait for the reconnect backoff.
+        if (data?.recheck === true && !hostConfirmed) {
+          reconnectAttempts = 0;
+          connectNativeHost();
+        }
+        const setup = await refreshSetupState();
         result = {
           success: true,
-          connected,
-          version: "0.1.0",
+          connected: hostConfirmed,
+          version: browser.runtime.getManifest().version,
+          setup,
         };
         break;
       }
@@ -1915,5 +2047,8 @@ browser.contextMenus.onClicked.addListener(
 // Initialize
 // ---------------------------------------------------------------------------
 
+browser.browserAction.setBadgeBackgroundColor({ color: BADGE_COLOR }).catch(() => {});
 connectNativeHost();
+// Session count changes without any event reaching the Extension.
+setInterval(() => { void refreshSetupState(); }, SETUP_REFRESH_MS);
 console.log("[KitsuneMCP] Background script initialized");

@@ -74,6 +74,15 @@ header {
   color: #f9e2af;
 }
 
+/* Waiting on the user (e.g. no Claude Code session): yellow, no pulse */
+.status.notice .status-dot {
+  background: #f9e2af;
+}
+
+.status.notice {
+  color: #f9e2af;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
@@ -90,6 +99,60 @@ h2 {
   letter-spacing: 0.5px;
   color: #6c7086;
   margin-bottom: 8px;
+}
+
+.setup {
+  background: #313244;
+  border-left: 3px solid #f38ba8;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.setup.notice {
+  border-left-color: #f9e2af;
+}
+
+.setup h2 {
+  color: #cdd6f4;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+}
+
+.setup-text,
+.setup-note {
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.setup-note {
+  color: #a6adc8;
+}
+
+.setup-command {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.setup-command code {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  background: #1e1e2e;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+  color: #89b4fa;
+  word-break: break-all;
+  user-select: all;
+}
+
+.setup-link {
+  font-size: 12px;
+  color: #89b4fa;
 }
 
 .quick-actions .action-buttons {

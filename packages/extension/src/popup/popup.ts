@@ -2,10 +2,13 @@
  * KitsuneMCP - Popup Script
  */
 
+// SetupState is declared in background.ts: the extension's scripts are
+// classic scripts, type-checked in one shared global scope.
 interface StatusResponse {
   success: boolean;
-  status?: string;
+  connected?: boolean;
   version?: string;
+  setup?: SetupState;
   error?: string;
 }
 
@@ -22,24 +25,162 @@ interface PageInfoResponse {
 
 type ToastType = 'info' | 'success' | 'error' | 'warning';
 
-function updateStatus(connected: boolean, customText: string | null = null): void {
+type PillStyle = 'connected' | 'disconnected' | 'starting' | 'notice';
+
+function updateStatus(style: PillStyle, text: string): void {
   const statusEl = document.getElementById('status');
   if (!statusEl) return;
   const statusText = statusEl.querySelector('.status-text');
   if (!statusText) return;
 
-  statusEl.classList.remove('connected', 'disconnected', 'starting');
+  statusEl.classList.remove('connected', 'disconnected', 'starting', 'notice');
+  statusEl.classList.add(style);
+  statusText.textContent = text;
+}
 
-  if (customText) {
-    statusEl.classList.add('starting');
-    statusText.textContent = customText;
-  } else if (connected) {
-    statusEl.classList.add('connected');
-    statusText.textContent = 'Connected';
-  } else {
-    statusEl.classList.add('disconnected');
-    statusText.textContent = 'Disconnected';
+// ---------------------------------------------------------------------------
+// Setup guidance
+// ---------------------------------------------------------------------------
+
+interface SetupGuide {
+  title: string;
+  text: string;
+  command?: string;
+  note?: string;
+  /** Show the link to the installation guide. */
+  link?: boolean;
+  /** Yellow "notice" instead of red "problem". */
+  notice?: boolean;
+}
+
+const LOG_DIR = '~/.kitsune-mcp/logs';
+
+function installerCommand(os: string): string {
+  return os === 'win' ? 'npm run install:windows' : 'npm run install:unix';
+}
+
+function guideFor(state: SetupState, os: string): SetupGuide | null {
+  switch (state.kind) {
+    case 'hostMissing':
+      return {
+        title: 'Setup needed',
+        text:
+          'Firefox cannot find the KitsuneMCP native host. Run the installer ' +
+          'in your KitsuneMCP folder (a clone of the repository):',
+        command: installerCommand(os),
+        note: 'Then press Recheck.',
+        link: true,
+      };
+    case 'hostError':
+      return {
+        title: 'Native host failed',
+        text:
+          `The native host is registered but did not work (${state.error}). ` +
+          'Re-running the installer fixes the usual cause, a Node.js that was ' +
+          'upgraded or moved:',
+        command: installerCommand(os),
+        note: `Details: ${LOG_DIR}/native-host.log`,
+        link: true,
+      };
+    case 'daemonDown':
+      return {
+        title: 'MCP server not responding',
+        text:
+          'The native host runs, but the KitsuneMCP server does not answer' +
+          (state.serverUrl ? ` at ${state.serverUrl}.` : '.'),
+        note: `Details: ${LOG_DIR}/daemon.log`,
+      };
+    case 'noSession':
+      return {
+        title: 'Claude Code is not connected',
+        text:
+          'Firefox is ready. Either KitsuneMCP is not registered with Claude ' +
+          'Code, or no Claude Code session is running. To register it:',
+        command: state.registerCommand,
+        note:
+          'After registering, restart Claude Code. A running session shows ' +
+          'up here within about 30 seconds.',
+        // An older native host sends no command: point to the guide instead.
+        link: state.registerCommand === undefined,
+        notice: true,
+      };
+    case 'connecting':
+    case 'ready':
+      return null;
   }
+}
+
+function setHidden(id: string, hidden: boolean): void {
+  const el = document.getElementById(id);
+  if (el) el.hidden = hidden;
+}
+
+function setText(id: string, text: string): void {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function renderSetup(state: SetupState, os: string): void {
+  switch (state.kind) {
+    case 'connecting':
+      updateStatus('starting', 'Connecting...');
+      break;
+    case 'noSession':
+      updateStatus('notice', 'No session');
+      break;
+    case 'ready':
+      updateStatus('connected', state.relays === 1 ? 'Connected' : `Connected (${state.relays})`);
+      break;
+    default:
+      updateStatus('disconnected', 'Setup needed');
+  }
+
+  if ('serverUrl' in state && state.serverUrl) {
+    setText('server-url', state.serverUrl.replace(/^https?:\/\//, ''));
+  }
+
+  const guide = guideFor(state, os);
+  setHidden('setup', guide === null);
+  if (guide === null) return;
+
+  document.getElementById('setup')?.classList.toggle('notice', guide.notice === true);
+  setText('setup-title', guide.title);
+  setText('setup-text', guide.text);
+  setHidden('setup-command', guide.command === undefined);
+  setText('setup-command-text', guide.command ?? '');
+  setHidden('setup-note', guide.note === undefined);
+  setText('setup-note', guide.note ?? '');
+  setHidden('setup-link', guide.link !== true);
+}
+
+async function queryStatus(recheck: boolean): Promise<SetupState> {
+  try {
+    const result = await browser.runtime.sendMessage({
+      target: 'background',
+      action: 'status',
+      data: { recheck },
+    }) as StatusResponse;
+    return result?.setup ?? { kind: 'connecting' };
+  } catch {
+    return { kind: 'connecting' };
+  }
+}
+
+/** Waits between polls while the background is still (re)connecting. */
+const POLL_INTERVAL_MS = 1_000;
+const MAX_POLLS = 4;
+
+async function refreshStatus(os: string, recheck: boolean): Promise<void> {
+  if (recheck) updateStatus('starting', 'Checking...');
+  let state = await queryStatus(recheck);
+  if (!recheck) renderSetup(state, os);
+  // A recheck restarts the connection, so its own answer is stale: poll at
+  // least once. Otherwise poll only while the background is still connecting.
+  for (let i = 0; i < MAX_POLLS && ((recheck && i === 0) || state.kind === 'connecting'); i++) {
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+    state = await queryStatus(false);
+  }
+  renderSetup(state, os);
 }
 
 function showToast(message: string, type: ToastType = 'info'): void {
@@ -54,53 +195,9 @@ function showToast(message: string, type: ToastType = 'info'): void {
   setTimeout(() => toast.remove(), 3000);
 }
 
-async function checkConnection(): Promise<void> {
-  try {
-    const result = await browser.runtime.sendMessage({
-      target: 'background',
-      action: 'status',
-    }) as StatusResponse;
-
-    if (result && result.success) {
-      updateStatus(true);
-    } else {
-      updateStatus(false);
-      tryAutoStart();
-    }
-  } catch {
-    updateStatus(false);
-    tryAutoStart();
-  }
-}
-
-async function tryAutoStart(): Promise<void> {
-  try {
-    updateStatus(false, 'Starting...');
-
-    await browser.runtime.sendMessage({
-      target: 'background',
-      action: 'status',
-    });
-
-    await new Promise(resolve => setTimeout(resolve, 2500));
-
-    const result = await browser.runtime.sendMessage({
-      target: 'background',
-      action: 'status',
-    }) as StatusResponse;
-
-    if (result && result.success) {
-      updateStatus(true);
-    } else {
-      updateStatus(false);
-    }
-  } catch {
-    updateStatus(false);
-    console.log('Auto-start failed');
-  }
-}
-
 document.addEventListener('DOMContentLoaded', async () => {
+  const os = await browser.runtime.getPlatformInfo().then(info => info.os, () => '');
+
   const tabs = await browser.tabs.query({ active: true, currentWindow: true });
   const currentTab = tabs[0];
 
@@ -159,57 +256,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Test connection button
+  // Recheck button (retries the native host right away, e.g. after
+  // running the installer)
   const btnTestConnection = document.getElementById('btn-test-connection');
   if (btnTestConnection) {
-    btnTestConnection.addEventListener('click', async () => {
-      showToast('Checking MCP server...', 'info');
+    btnTestConnection.addEventListener('click', () => {
+      void refreshStatus(os, true);
+    });
+  }
 
+  // Copy the setup command
+  const btnCopyCommand = document.getElementById('btn-copy-command');
+  if (btnCopyCommand) {
+    btnCopyCommand.addEventListener('click', async () => {
+      const command = document.getElementById('setup-command-text')?.textContent ?? '';
       try {
-        const result = await browser.runtime.sendMessage({
-          target: 'background',
-          action: 'status',
-        }) as StatusResponse;
-
-        if (result && result.success) {
-          updateStatus(true);
-          const ver = result.version ? ` v${result.version}` : '';
-          showToast(`Connected!${ver}`, 'success');
-        } else {
-          throw new Error('Server not responding');
-        }
+        await navigator.clipboard.writeText(command);
+        showToast('Copied!', 'success');
       } catch {
-        showToast('Starting MCP server via native host...', 'info');
-        updateStatus(false, 'Starting...');
-
-        try {
-          await browser.runtime.sendMessage({
-            target: 'background',
-            action: 'status',
-          });
-
-          await new Promise(resolve => setTimeout(resolve, 2000));
-
-          const retryResult = await browser.runtime.sendMessage({
-            target: 'background',
-            action: 'status',
-          }) as StatusResponse;
-
-          if (retryResult && retryResult.success) {
-            updateStatus(true);
-            showToast('Server started!', 'success');
-          } else {
-            updateStatus(false);
-            showToast('Server started but not responding yet', 'warning');
-          }
-        } catch (nativeError: unknown) {
-          updateStatus(false);
-          showToast('Failed to start server. Check native host.', 'error');
-          console.error('Native host error:', nativeError);
-        }
+        showToast('Copy failed: select the command and copy it by hand', 'error');
       }
     });
   }
 
-  checkConnection();
+  void refreshStatus(os, false);
 });

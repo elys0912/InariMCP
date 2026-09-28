@@ -25,8 +25,16 @@ declare namespace browser {
       url?: string;
     }
 
+    interface PlatformInfo {
+      /** "win" | "mac" | "linux" | "android" | "openbsd" | ... */
+      os: string;
+      arch: string;
+    }
+
     function connectNative(application: string): Port;
     function getURL(path: string): string;
+    function getManifest(): { version: string; [key: string]: unknown };
+    function getPlatformInfo(): Promise<PlatformInfo>;
     function sendMessage(message: unknown): Promise<unknown>;
 
     const onMessage: {
@@ -144,6 +152,12 @@ declare namespace browser {
     function get(windowId: number): Promise<Window>;
     function getAll(): Promise<Window[]>;
     function update(windowId: number, updateInfo: { focused?: boolean }): Promise<Window>;
+  }
+
+  namespace browserAction {
+    function setBadgeText(details: { text: string | null; tabId?: number }): Promise<void>;
+    function setBadgeBackgroundColor(details: { color: string; tabId?: number }): Promise<void>;
+    function setTitle(details: { title: string | null; tabId?: number }): Promise<void>;
   }
 
   namespace notifications {
