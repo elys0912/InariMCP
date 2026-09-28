@@ -155,6 +155,11 @@ h2 {
   color: #89b4fa;
 }
 
+/* Keep Recheck within Firefox's popup height limit while a guide is shown */
+#setup:not([hidden]) ~ .current-tab {
+  display: none;
+}
+
 .quick-actions .action-buttons {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
