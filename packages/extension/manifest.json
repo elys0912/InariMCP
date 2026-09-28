@@ -41,7 +41,8 @@
       "48": "icons/icon.svg"
     },
     "default_title": "KitsuneMCP",
-    "default_popup": "dist/popup/popup.html"
+    "default_popup": "dist/popup/popup.html",
+    "default_area": "navbar"
   },
 
   "icons": {
