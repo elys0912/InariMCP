@@ -11,6 +11,14 @@
   if ((window as unknown as Record<string, unknown>).__fox_injected) return;
   (window as unknown as Record<string, unknown>).__fox_injected = true;
 
+  /**
+   * Localized banner text (same as t() in i18n.ts, which is not loaded when
+   * this script is injected on its own).
+   */
+  function msg(key: string, substitutions?: string | string[]): string {
+    return browser.i18n.getMessage(key, substitutions) || key;
+  }
+
   // ---------------------------------------------------------------------------
   // Types (self-contained — no imports allowed in extension content scripts)
   // ---------------------------------------------------------------------------
@@ -1366,13 +1374,11 @@
     const timeoutMs = options.timeout || TIMEOUTS.APPROVAL;
     const result = await createOverlayBanner({
       id: "__fox_approval_banner",
-      title:
-        "⚠️ KitsuneMCP requests approval: " +
-        (options.message || "Perform an action"),
+      title: msg("bannerApprovalTitle", options.message || msg("bannerApprovalDefault")),
       detail: options.detail,
       buttons: [
-        { label: "Approve", value: "approve", color: "#16a34a" },
-        { label: "Deny", value: "deny", color: "#dc2626" },
+        { label: msg("bannerApprove"), value: "approve", color: "#16a34a" },
+        { label: msg("bannerDeny"), value: "deny", color: "#dc2626" },
       ],
       timeoutMs,
       borderColor: "#e94560",
@@ -1476,15 +1482,11 @@
     // Start the banner (resolves on button click or timeout)
     const bannerPromise = createOverlayBanner({
       id: "__fox_captcha_banner",
-      title:
-        "🧩 Please solve the captcha (" +
-        types +
-        "), then it continues automatically.",
-      detail:
-        "KitsuneMCP paused and is waiting for you. Click Done if it does not continue on its own.",
+      title: msg("bannerCaptchaTitle", types),
+      detail: msg("bannerCaptchaDetail"),
       buttons: [
-        { label: "Done", value: "done", color: "#ffd166", textColor: "#0f3460" },
-        { label: "Cancel", value: "cancel", color: "transparent", textColor: "#fff" },
+        { label: msg("bannerDone"), value: "done", color: "#ffd166", textColor: "#0f3460" },
+        { label: msg("bannerCancel"), value: "cancel", color: "transparent", textColor: "#fff" },
       ],
       timeoutMs,
       borderColor: "#ffd166",

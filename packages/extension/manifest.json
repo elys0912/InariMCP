@@ -2,7 +2,8 @@
   "manifest_version": 2,
   "name": "KitsuneMCP",
   "version": "0.1.1",
-  "description": "Firefox MCP addon for Claude Code — browser automation via extension + native messaging",
+  "description": "__MSG_extDescription__",
+  "default_locale": "en",
   "author": "elys0912",
   "homepage_url": "https://github.com/elys0912/KitsuneMCP",
 
@@ -20,7 +21,7 @@
   ],
 
   "background": {
-    "scripts": ["dist/action-map.js", "dist/background.js"],
+    "scripts": ["dist/i18n.js", "dist/action-map.js", "dist/background.js"],
     "persistent": true
   },
 

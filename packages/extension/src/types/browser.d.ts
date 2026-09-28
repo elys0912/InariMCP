@@ -154,6 +154,11 @@ declare namespace browser {
     function update(windowId: number, updateInfo: { focused?: boolean }): Promise<Window>;
   }
 
+  namespace i18n {
+    function getMessage(messageName: string, substitutions?: string | string[]): string;
+    function getUILanguage(): string;
+  }
+
   namespace browserAction {
     function setBadgeText(details: { text: string | null; tabId?: number }): Promise<void>;
     function setBadgeBackgroundColor(details: { color: string; tabId?: number }): Promise<void>;

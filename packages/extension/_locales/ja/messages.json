@@ -1,0 +1,77 @@
+{
+  "extDescription": {
+    "message": "Claude Code から Firefox を操作する MCP アドオン（拡張機能 + Native Messaging）"
+  },
+
+  "popupFooter": { "message": "KitsuneMCP — Firefox 用 MCP アドオン" },
+  "popupQuickActions": { "message": "クイック操作" },
+  "popupScreenshot": { "message": "スクリーンショット" },
+  "popupPageInfo": { "message": "ページ情報" },
+  "popupCurrentTab": { "message": "現在のタブ" },
+  "popupLoading": { "message": "読み込み中..." },
+  "popupUntitled": { "message": "無題" },
+  "popupMcpServer": { "message": "MCP サーバー" },
+  "popupRecheck": { "message": "再確認" },
+  "popupCopy": { "message": "コピー" },
+  "popupInstallGuide": { "message": "インストール手順" },
+
+  "statusConnecting": { "message": "接続中..." },
+  "statusChecking": { "message": "確認中..." },
+  "statusNoSession": { "message": "セッションなし" },
+  "statusConnected": { "message": "接続済み" },
+  "statusConnectedN": { "message": "接続済み（$1）" },
+  "statusSetupNeeded": { "message": "要セットアップ" },
+
+  "setupHostMissingTitle": { "message": "セットアップが必要" },
+  "setupHostMissingText": {
+    "message": "Firefox が KitsuneMCP の Native Host を見つけられません。KitsuneMCP のフォルダ（リポジトリを clone したもの）でインストーラを実行してください:"
+  },
+  "setupHostMissingNote": { "message": "実行したら「再確認」を押してください。" },
+  "setupHostErrorTitle": { "message": "Native Host が動いていません" },
+  "setupHostErrorText": {
+    "message": "Native Host は登録されていますが、起動に失敗しました（$1）。よくある原因は Node.js の更新や移動で、インストーラを実行し直すと直ります:"
+  },
+  "setupDetails": { "message": "詳細: $1" },
+  "setupDaemonDownTitle": { "message": "MCP サーバーが応答しません" },
+  "setupDaemonDownText": { "message": "Native Host は動いていますが、KitsuneMCP のサーバーが応答しません。" },
+  "setupDaemonDownTextAt": { "message": "Native Host は動いていますが、KitsuneMCP のサーバー（$1）が応答しません。" },
+  "setupNoSessionTitle": { "message": "Claude Code とつながっていません" },
+  "setupNoSessionText": {
+    "message": "Firefox 側の準備はできています。KitsuneMCP が Claude Code に登録されていないか、Claude Code のセッションが起動していません。登録するには:"
+  },
+  "setupNoSessionNote": {
+    "message": "登録したら Claude Code を起動し直してください。起動中のセッションは 30 秒ほどでここに反映されます。"
+  },
+
+  "toastScreenshotCaptured": { "message": "スクリーンショットを撮りました" },
+  "toastScreenshotFailed": { "message": "スクリーンショットに失敗しました" },
+  "toastFoundElements": { "message": "操作できる要素が $1 個あります" },
+  "toastPageInfoCopied": { "message": "ページ情報をクリップボードにコピーしました" },
+  "toastCopied": { "message": "コピーしました" },
+  "toastCopyFailed": { "message": "コピーできませんでした。コマンドを選択して手動でコピーしてください" },
+  "toastUnknownError": { "message": "不明なエラー" },
+
+  "badgeSetupNeeded": { "message": "KitsuneMCP: セットアップが必要" },
+  "badgeHostError": { "message": "KitsuneMCP: Native Host が動いていません" },
+  "badgeDaemonDown": { "message": "KitsuneMCP: MCP サーバーが応答しません" },
+  "badgeNoSession": { "message": "KitsuneMCP: Claude Code とつながっていません" },
+
+  "menuScreenshot": { "message": "KitsuneMCP でスクリーンショットを撮る" },
+  "menuInspect": { "message": "KitsuneMCP で要素を調べる" },
+
+  "notifyApprovalTitle": { "message": "Claude が承認を求めています" },
+  "notifyApprovalDefault": { "message": "Claude が操作の実行を求めています" },
+  "notifyCaptchaTitle": { "message": "CAPTCHA の解決が必要です" },
+  "notifyCaptchaMessage": { "message": "Claude が CAPTCHA で止まっています。解いてください。" },
+
+  "bannerApprovalTitle": { "message": "⚠️ KitsuneMCP が承認を求めています: $1" },
+  "bannerApprovalDefault": { "message": "操作の実行" },
+  "bannerApprove": { "message": "承認" },
+  "bannerDeny": { "message": "拒否" },
+  "bannerCaptchaTitle": { "message": "🧩 CAPTCHA（$1）を解いてください。解けたら自動で続きます。" },
+  "bannerCaptchaDetail": {
+    "message": "KitsuneMCP は一時停止して待っています。自動で続かないときは「完了」を押してください。"
+  },
+  "bannerDone": { "message": "完了" },
+  "bannerCancel": { "message": "キャンセル" }
+}

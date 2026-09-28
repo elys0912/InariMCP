@@ -458,19 +458,23 @@ async function getSetupState(): Promise<SetupState> {
   return { kind: "ready", serverUrl, relays: server.relays };
 }
 
-const BADGE_TITLES: Record<SetupState["kind"], string> = {
-  connecting: "KitsuneMCP",
-  hostMissing: "KitsuneMCP: setup needed",
-  hostError: "KitsuneMCP: native host failed",
-  daemonDown: "KitsuneMCP: MCP server not responding",
-  noSession: "KitsuneMCP: no Claude Code session",
-  ready: "KitsuneMCP",
+/** Toolbar tooltip per state (message keys); null = the plain name. */
+const BADGE_TITLE_KEYS: Record<SetupState["kind"], string | null> = {
+  connecting: null,
+  hostMissing: "badgeSetupNeeded",
+  hostError: "badgeHostError",
+  daemonDown: "badgeDaemonDown",
+  noSession: "badgeNoSession",
+  ready: null,
 };
 
 function applyBadge(state: SetupState): void {
   const attention = state.kind !== "ready" && state.kind !== "connecting";
+  const titleKey = BADGE_TITLE_KEYS[state.kind];
   browser.browserAction.setBadgeText({ text: attention ? "!" : "" }).catch(() => {});
-  browser.browserAction.setTitle({ title: BADGE_TITLES[state.kind] }).catch(() => {});
+  browser.browserAction
+    .setTitle({ title: titleKey === null ? "KitsuneMCP" : t(titleKey) })
+    .catch(() => {});
 }
 
 async function refreshSetupState(): Promise<SetupState> {
@@ -1109,11 +1113,11 @@ async function requestApproval(
     if (browser.notifications) {
       await browser.notifications.create({
         type: "basic",
-        title: "Claude requests approval",
+        title: t("notifyApprovalTitle"),
         message: (
-          (data.message as string) || "Claude wants to perform an action"
+          (data.message as string) || t("notifyApprovalDefault")
         ).slice(0, 200),
-        iconUrl: browser.runtime.getURL("icons/icon-48.png"),
+        iconUrl: browser.runtime.getURL("icons/icon.svg"),
       });
     }
   } catch {
@@ -1131,10 +1135,9 @@ async function solveCaptcha(
       if (browser.notifications) {
         await browser.notifications.create({
           type: "basic",
-          title: "Captcha needs solving",
-          message:
-            "Claude paused on a captcha and needs you to solve it.",
-          iconUrl: browser.runtime.getURL("icons/icon-48.png"),
+          title: t("notifyCaptchaTitle"),
+          message: t("notifyCaptchaMessage"),
+          iconUrl: browser.runtime.getURL("icons/icon.svg"),
         });
       }
     } catch {
@@ -2008,13 +2011,13 @@ browser.runtime.onMessageExternal.addListener(
 // Context menus
 browser.contextMenus.create({
   id: "kitsune-screenshot",
-  title: "Take Screenshot for KitsuneMCP",
+  title: t("menuScreenshot"),
   contexts: ["page"],
 });
 
 browser.contextMenus.create({
   id: "kitsune-inspect",
-  title: "Inspect Element for KitsuneMCP",
+  title: t("menuInspect"),
   contexts: ["all"],
 });
 

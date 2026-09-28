@@ -63,43 +63,34 @@ function guideFor(state: SetupState, os: string): SetupGuide | null {
   switch (state.kind) {
     case 'hostMissing':
       return {
-        title: 'Setup needed',
-        text:
-          'Firefox cannot find the KitsuneMCP native host. Run the installer ' +
-          'in your KitsuneMCP folder (a clone of the repository):',
+        title: t('setupHostMissingTitle'),
+        text: t('setupHostMissingText'),
         command: installerCommand(os),
-        note: 'Then press Recheck.',
+        note: t('setupHostMissingNote'),
         link: true,
       };
     case 'hostError':
       return {
-        title: 'Native host failed',
-        text:
-          `The native host is registered but did not work (${state.error}). ` +
-          'Re-running the installer fixes the usual cause, a Node.js that was ' +
-          'upgraded or moved:',
+        title: t('setupHostErrorTitle'),
+        text: t('setupHostErrorText', state.error),
         command: installerCommand(os),
-        note: `Details: ${LOG_DIR}/native-host.log`,
+        note: t('setupDetails', `${LOG_DIR}/native-host.log`),
         link: true,
       };
     case 'daemonDown':
       return {
-        title: 'MCP server not responding',
-        text:
-          'The native host runs, but the KitsuneMCP server does not answer' +
-          (state.serverUrl ? ` at ${state.serverUrl}.` : '.'),
-        note: `Details: ${LOG_DIR}/daemon.log`,
+        title: t('setupDaemonDownTitle'),
+        text: state.serverUrl
+          ? t('setupDaemonDownTextAt', state.serverUrl)
+          : t('setupDaemonDownText'),
+        note: t('setupDetails', `${LOG_DIR}/daemon.log`),
       };
     case 'noSession':
       return {
-        title: 'Claude Code is not connected',
-        text:
-          'Firefox is ready. Either KitsuneMCP is not registered with Claude ' +
-          'Code, or no Claude Code session is running. To register it:',
+        title: t('setupNoSessionTitle'),
+        text: t('setupNoSessionText'),
         command: state.registerCommand,
-        note:
-          'After registering, restart Claude Code. A running session shows ' +
-          'up here within about 30 seconds.',
+        note: t('setupNoSessionNote'),
         // An older native host sends no command: point to the guide instead.
         link: state.registerCommand === undefined,
         notice: true,
@@ -123,16 +114,19 @@ function setText(id: string, text: string): void {
 function renderSetup(state: SetupState, os: string): void {
   switch (state.kind) {
     case 'connecting':
-      updateStatus('starting', 'Connecting...');
+      updateStatus('starting', t('statusConnecting'));
       break;
     case 'noSession':
-      updateStatus('notice', 'No session');
+      updateStatus('notice', t('statusNoSession'));
       break;
     case 'ready':
-      updateStatus('connected', state.relays === 1 ? 'Connected' : `Connected (${state.relays})`);
+      updateStatus(
+        'connected',
+        state.relays === 1 ? t('statusConnected') : t('statusConnectedN', String(state.relays)),
+      );
       break;
     default:
-      updateStatus('disconnected', 'Setup needed');
+      updateStatus('disconnected', t('statusSetupNeeded'));
   }
 
   if ('serverUrl' in state && state.serverUrl) {
@@ -171,7 +165,7 @@ const POLL_INTERVAL_MS = 1_000;
 const MAX_POLLS = 4;
 
 async function refreshStatus(os: string, recheck: boolean): Promise<void> {
-  if (recheck) updateStatus('starting', 'Checking...');
+  if (recheck) updateStatus('starting', t('statusChecking'));
   let state = await queryStatus(recheck);
   if (!recheck) renderSetup(state, os);
   // A recheck restarts the connection, so its own answer is stale: poll at
@@ -195,7 +189,17 @@ function showToast(message: string, type: ToastType = 'info'): void {
   setTimeout(() => toast.remove(), 3000);
 }
 
+/** Fill every [data-i18n] element with its localized message. */
+function localizePage(): void {
+  document.documentElement.lang = browser.i18n.getUILanguage();
+  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => {
+    const key = el.dataset.i18n;
+    if (key) el.textContent = t(key);
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+  localizePage();
   const os = await browser.runtime.getPlatformInfo().then(info => info.os, () => '');
 
   const tabs = await browser.tabs.query({ active: true, currentWindow: true });
@@ -204,7 +208,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (currentTab) {
     const titleEl = document.querySelector('.tab-title');
     const urlEl = document.querySelector('.tab-url');
-    if (titleEl) titleEl.textContent = currentTab.title || 'Untitled';
+    if (titleEl) titleEl.textContent = currentTab.title || t('popupUntitled');
     if (urlEl) urlEl.textContent = currentTab.url || '-';
   }
 
@@ -219,16 +223,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         }) as ScreenshotResponse;
 
         if (result.success && result.imageData) {
-          showToast('Screenshot captured!', 'success');
+          showToast(t('toastScreenshotCaptured'), 'success');
           const link = document.createElement('a');
           link.href = result.imageData;
           link.download = `screenshot-${Date.now()}.png`;
           link.click();
         } else {
-          showToast(result.error || 'Screenshot failed', 'error');
+          showToast(result.error || t('toastScreenshotFailed'), 'error');
         }
       } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : 'Unknown error';
+        const msg = error instanceof Error ? error.message : t('toastUnknownError');
         showToast(msg, 'error');
       }
     });
@@ -245,12 +249,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         console.log('Page Info:', result);
         const count = result.interactiveElements?.length ?? 0;
-        showToast(`Found ${count} interactive elements`, 'success');
+        showToast(t('toastFoundElements', String(count)), 'success');
 
         await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
-        showToast('Page info copied to clipboard!', 'success');
+        showToast(t('toastPageInfoCopied'), 'success');
       } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : 'Unknown error';
+        const msg = error instanceof Error ? error.message : t('toastUnknownError');
         showToast(msg, 'error');
       }
     });
@@ -272,9 +276,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       const command = document.getElementById('setup-command-text')?.textContent ?? '';
       try {
         await navigator.clipboard.writeText(command);
-        showToast('Copied!', 'success');
+        showToast(t('toastCopied'), 'success');
       } catch {
-        showToast('Copy failed: select the command and copy it by hand', 'error');
+        showToast(t('toastCopyFailed'), 'error');
       }
     });
   }
