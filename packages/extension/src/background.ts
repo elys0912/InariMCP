@@ -134,6 +134,38 @@ function waitForTabComplete(tabId: number, timeoutMs = TIMEOUTS.NAVIGATION): Pro
   });
 }
 
+/**
+ * Wait until a tab satisfies `isLoaded`, checked on every onUpdated event and
+ * once against the current state. The listener is added before that check,
+ * so a load that finishes in between is not missed. Resolves on timeout too.
+ */
+function waitForTabState(
+  tabId: number,
+  isLoaded: (tab: browser.tabs.Tab) => boolean,
+  timeoutMs = TIMEOUTS.NAVIGATION,
+): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (): void => {
+      if (done) return;
+      done = true;
+      browser.tabs.onUpdated.removeListener(listener);
+      clearTimeout(timer);
+      resolve();
+    };
+    const listener = (
+      updatedTabId: number,
+      _changeInfo: browser.tabs.TabChangeInfo,
+      tab: browser.tabs.Tab,
+    ): void => {
+      if (updatedTabId === tabId && isLoaded(tab)) finish();
+    };
+    browser.tabs.onUpdated.addListener(listener);
+    const timer = setTimeout(finish, timeoutMs);
+    browser.tabs.get(tabId).then((tab) => { if (isLoaded(tab)) finish(); }, finish);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -1016,8 +1048,15 @@ async function navigateNewTab(
   if (!created.success || tabId === undefined) return created;
   try {
     if (data.waitForLoad !== false) {
-      const tab = await browser.tabs.get(tabId);
-      if (tab.status !== "complete") await waitForTabComplete(tabId);
+      // A tab from tabs.create({ url }) can first report status "complete"
+      // while still on the initial about:blank, before the requested URL
+      // starts loading (seen on the first new tab after Firefox starts).
+      // Treat about:blank as loaded only when it is what was asked for.
+      const wantsBlank = data.url === "about:blank";
+      await waitForTabState(
+        tabId,
+        (tab) => tab.status === "complete" && (wantsBlank || tab.url !== "about:blank"),
+      );
     }
     // Same shape as navigateTo (url after redirects), plus the new tab's id.
     const updated = await browser.tabs.get(tabId);
