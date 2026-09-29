@@ -38,7 +38,7 @@
   },
   "setupHostOutdatedTitle": { "message": "Native host is out of date" },
   "setupHostOutdatedText": {
-    "message": "Browser tools still work, but your KitsuneMCP folder is older than this extension. Update it there (this rebuilds locally; no new npm packages are downloaded):"
+    "message": "Browser tools still work, but your KitsuneMCP folder is older than this extension. Pull the latest version there and re-run the installer (it also rebuilds and updates the native host):"
   },
   "setupHostOutdatedNote": { "message": "Then restart Firefox." },
   "setupDetails": {
