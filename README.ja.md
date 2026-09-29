@@ -201,7 +201,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 
 登録される41本の`fox_*`ツールのうち10本は、拡張機能経路ではまだ未実装（`fox_snapshot`、`fox_run_workflow`、`fox_audit_page`、`fox_inject_observer`、`fox_remove_observer`、`fox_handle_dialog`、`fox_wait_for_navigation`、`fox_wait_for_url`、`fox_eval_chain`、`fox_wait_and_act`） — 呼び出すと黙って失敗するのではなく「未実装」という明確なエラーが返る。一部はヘッドレスモードでは既に動く。
 
-進捗は`docs/design.md`と`docs/引き継ぎ.md`で追跡している。
+現行版の制約は[`docs/known-issues.md`](docs/known-issues.md)にまとめている。
 
 ## Credits
 
