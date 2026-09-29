@@ -11,6 +11,7 @@ export const OBSERVE_TOOLS: ReadonlySet<string> = new Set([
   'fox_get_page_info', 'fox_get_elements', 'fox_get_value',
   'fox_get_text', 'fox_find_text', 'fox_get_tabs', 'fox_get_tab_info',
   'fox_find_tabs', 'fox_wait_for_element', 'fox_wait_for_change',
+  'fox_wait_for_navigation', 'fox_wait_for_url',
   'fox_wait_for_network_idle', 'fox_observe_element',
   'fox_stop_observing', 'fox_scroll_and_capture',
   'fox_start_logging', 'fox_stop_logging',

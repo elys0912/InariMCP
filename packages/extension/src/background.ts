@@ -166,6 +166,118 @@ function waitForTabState(
   });
 }
 
+/** A positive number from the command data, or the fallback. */
+function positiveOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * fox_wait_for_navigation: wait for the tab's next top-level navigation to
+ * finish ("load" = webNavigation.onCompleted, "domcontentloaded" =
+ * onDOMContentLoaded). With urlPattern, navigations to other URLs are
+ * skipped. As on the headless backend (Playwright waitForNavigation), a
+ * navigation that finished before the command arrived does not count.
+ */
+async function waitForNavigation(
+  tabId: number | undefined,
+  data: Record<string, unknown> = {},
+): Promise<CommandResult> {
+  const tab = await resolveTab(tabId);
+  if (!tab?.id) return { success: false, error: "No target tab" };
+  const targetId = tab.id;
+  const timeoutMs = positiveOr(data.timeout, TIMEOUTS.NAVIGATION);
+  const patternSrc = typeof data.urlPattern === "string" && data.urlPattern ? data.urlPattern : null;
+  const pattern = patternSrc ? new RegExp(patternSrc) : null;
+  const event =
+    data.waitUntil === "domcontentloaded"
+      ? browser.webNavigation.onDOMContentLoaded
+      : browser.webNavigation.onCompleted;
+
+  const url = await new Promise<string | null>((resolve) => {
+    const listener = (details: browser.webNavigation.NavigationDetails): void => {
+      if (details.tabId !== targetId || details.frameId !== 0) return;
+      if (pattern && !pattern.test(details.url)) return;
+      finish(details.url);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    function finish(value: string | null): void {
+      clearTimeout(timer);
+      event.removeListener(listener);
+      resolve(value);
+    }
+    event.addListener(listener);
+  });
+
+  if (url === null) {
+    return {
+      success: false,
+      error:
+        `No navigation${patternSrc ? ` to a URL matching /${patternSrc}/` : ""} ` +
+        `finished within ${timeoutMs}ms`,
+    };
+  }
+  const now = await browser.tabs.get(targetId);
+  return { success: true, url, title: now.title };
+}
+
+/**
+ * fox_wait_for_url: wait until the tab's URL equals `url` (exact) or matches
+ * `urlPattern` (regex) and the page has finished loading. Returns at once if
+ * that is already the case. URL changes through the History API count too.
+ */
+async function waitForUrl(
+  tabId: number | undefined,
+  data: Record<string, unknown> = {},
+): Promise<CommandResult> {
+  const exact = typeof data.url === "string" && data.url ? data.url : null;
+  const patternSrc = typeof data.urlPattern === "string" && data.urlPattern ? data.urlPattern : null;
+  if (!exact && !patternSrc) return { success: false, error: "Must provide url or urlPattern" };
+  const pattern = !exact && patternSrc ? new RegExp(patternSrc) : null;
+  const matches = (u: string | undefined): boolean =>
+    !!u && (exact ? u === exact : pattern!.test(u));
+
+  const tab = await resolveTab(tabId);
+  if (!tab?.id) return { success: false, error: "No target tab" };
+  const targetId = tab.id;
+  const timeoutMs = positiveOr(data.timeout, 15_000);
+
+  const reached = await new Promise<browser.tabs.Tab | null>((resolve) => {
+    let done = false;
+    const finish = (value: browser.tabs.Tab | null): void => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      browser.tabs.onUpdated.removeListener(listener);
+      resolve(value);
+    };
+    const check = (t: browser.tabs.Tab): void => {
+      if (matches(t.url) && t.status === "complete") finish(t);
+    };
+    const listener = (
+      updatedTabId: number,
+      _changeInfo: browser.tabs.TabChangeInfo,
+      t: browser.tabs.Tab,
+    ): void => {
+      if (updatedTabId === targetId) check(t);
+    };
+    // Listener first, then the current state, so a change in between is not missed.
+    browser.tabs.onUpdated.addListener(listener);
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    browser.tabs.get(targetId).then(check, () => finish(null));
+  });
+
+  if (!reached) {
+    const current = await browser.tabs.get(targetId).catch(() => undefined);
+    return {
+      success: false,
+      error:
+        `URL did not ${exact ? `become ${exact}` : `match /${patternSrc}/`} within ` +
+        `${timeoutMs}ms (current: ${current?.url ?? "unknown"})`,
+    };
+  }
+  return { success: true, url: reached.url };
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -727,6 +839,12 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
       // there -- not to whichever frame happens to answer first.
       case "waitForNetworkIdle":
         result = await sendToContentScript(tabId, { action, ...data }, TOP_FRAME_ID);
+        break;
+      case "waitForNavigation":
+        result = await waitForNavigation(tabId, data);
+        break;
+      case "waitForUrl":
+        result = await waitForUrl(tabId, data);
         break;
       case "startLogging": {
         const tab = await resolveTab(tabId);

@@ -10,7 +10,7 @@ KitsuneMCP の現行版（v0.1.x）で分かっている制約・注意点をま
 
 ## ツール
 
-- **Extension 経路で未実装のツールが10本ある**: `fox_snapshot`, `fox_run_workflow`, `fox_audit_page`, `fox_inject_observer`, `fox_remove_observer`, `fox_handle_dialog`, `fox_wait_for_navigation`, `fox_wait_for_url`, `fox_eval_chain`, `fox_wait_and_act`。呼ぶと `Not implemented in extension` が返る（headless では動くものもある）
+- **Extension 経路で未実装のツールが8本ある**: `fox_snapshot`, `fox_run_workflow`, `fox_audit_page`, `fox_inject_observer`, `fox_remove_observer`, `fox_handle_dialog`, `fox_eval_chain`, `fox_wait_and_act`。呼ぶと `Not implemented in extension` が返る（headless では動くものもある）
 - **ネイティブダイアログ（alert / confirm / prompt）の表示中は、そのタブへのコマンドがタイムアウトする**: Extension 経路ではダイアログを検知・操作できない
 - **headless の `fox_handle_dialog` はクリックと組み合わせられない**: headless のコマンドは1本ずつ順に実行されるので、`fox_handle_dialog` で待っている間は `fox_click` が後ろで待たされる。拾えるのは、ページ自身のタイマーなどで出るダイアログだけ
 - **content script が入れないページでは、読み取り・操作系のツールが使えない**: Firefox の JSON ビューア、`about:` ページ、addons.mozilla.org など。`fox_screenshot` や `fox_get_tabs` のようにタブ API だけで動くツールは使える

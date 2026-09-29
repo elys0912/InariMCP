@@ -91,8 +91,8 @@ const WIRE_ACTION_MAP: ReadonlyMap<string, string | null> = new Map<string, stri
   ["handle_dialog", null],
   ["list_containers", "list_containers"],
   ["open_in_container", "open_in_container"],
-  ["wait_for_navigation", null],
-  ["wait_for_url", null],
+  ["wait_for_navigation", "waitForNavigation"],
+  ["wait_for_url", "waitForUrl"],
   ["remove_observer", null],
 ]);
 

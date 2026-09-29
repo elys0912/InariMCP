@@ -199,7 +199,7 @@ This project is **under active, incremental development** — not ready for gene
 **Not done yet:**
 - AMO signing and distributing the signed package via GitHub Releases
 
-Of the 41 registered `fox_*` tools, 10 aren't implemented on the extension path yet (`fox_snapshot`, `fox_run_workflow`, `fox_audit_page`, `fox_inject_observer`, `fox_remove_observer`, `fox_handle_dialog`, `fox_wait_for_navigation`, `fox_wait_for_url`, `fox_eval_chain`, `fox_wait_and_act`) — calling one returns a clear "not implemented" error rather than doing nothing silently; some of these already work under headless mode.
+Of the 41 registered `fox_*` tools, 8 aren't implemented on the extension path yet (`fox_snapshot`, `fox_run_workflow`, `fox_audit_page`, `fox_inject_observer`, `fox_remove_observer`, `fox_handle_dialog`, `fox_eval_chain`, `fox_wait_and_act`) — calling one returns a clear "not implemented" error rather than doing nothing silently; some of these already work under headless mode.
 
 Current limitations are listed in [`docs/known-issues.md`](docs/known-issues.md) (in Japanese).
 

@@ -199,7 +199,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 **未完了:**
 - AMOでの署名と、GitHub Releasesでの署名済みパッケージの配布
 
-登録される41本の`fox_*`ツールのうち10本は、拡張機能経路ではまだ未実装（`fox_snapshot`、`fox_run_workflow`、`fox_audit_page`、`fox_inject_observer`、`fox_remove_observer`、`fox_handle_dialog`、`fox_wait_for_navigation`、`fox_wait_for_url`、`fox_eval_chain`、`fox_wait_and_act`） — 呼び出すと黙って失敗するのではなく「未実装」という明確なエラーが返る。一部はヘッドレスモードでは既に動く。
+登録される41本の`fox_*`ツールのうち8本は、拡張機能経路ではまだ未実装（`fox_snapshot`、`fox_run_workflow`、`fox_audit_page`、`fox_inject_observer`、`fox_remove_observer`、`fox_handle_dialog`、`fox_eval_chain`、`fox_wait_and_act`） — 呼び出すと黙って失敗するのではなく「未実装」という明確なエラーが返る。一部はヘッドレスモードでは既に動く。
 
 現行版の制約は[`docs/known-issues.md`](docs/known-issues.md)にまとめている。
 
