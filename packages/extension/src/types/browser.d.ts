@@ -140,6 +140,14 @@ declare namespace browser {
     const onCommitted: {
       addListener(callback: (details: CommittedDetails) => void): void;
     };
+    /** onCompleted / onDOMContentLoaded details (same shape as onCommitted). */
+    type NavigationDetails = CommittedDetails;
+    interface NavigationEvent {
+      addListener(callback: (details: NavigationDetails) => void): void;
+      removeListener(callback: (details: NavigationDetails) => void): void;
+    }
+    const onCompleted: NavigationEvent;
+    const onDOMContentLoaded: NavigationEvent;
   }
 
   namespace windows {

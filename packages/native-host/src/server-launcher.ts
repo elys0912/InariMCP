@@ -19,7 +19,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
-import { log } from './logger.js';
+import { log, rotateIfLarge } from './logger.js';
 import { spawnDaemonBreakaway } from './breakaway.js';
 
 function resolveHost(): string {
@@ -129,6 +129,8 @@ export class ServerLauncher {
     } catch {
       // Logging is best-effort
     }
+    // Both start paths below open daemon.log for appending.
+    rotateIfLarge(daemonLogPath());
 
     // Windows: outside Firefox's job object, or closing Firefox kills the
     // daemon (see breakaway.ts). Falls back to a plain spawn on failure.

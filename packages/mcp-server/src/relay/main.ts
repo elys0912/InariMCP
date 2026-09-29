@@ -50,7 +50,21 @@ export async function runRelay(): Promise<void> {
 
   const toolCount = registerTools(
     mcpServer,
-    (toolName) => (args, extra) => client.callTool(toolName, args, extra.signal),
+    (toolName) => async (args, extra) => {
+      const result = await client.callTool(toolName, args, extra.signal);
+      if (toolName !== 'fox_safety_status' || result.isError) return result;
+      // Re-check on every status call: the daemon may have been restarted
+      // by another session since this relay started.
+      const mismatch = await client.settingsMismatch();
+      if (mismatch.length === 0) return result;
+      return {
+        ...result,
+        content: [
+          ...result.content,
+          ...mismatch.map((w) => ({ type: 'text' as const, text: `WARNING: ${w}` })),
+        ],
+      };
+    },
   );
 
   const transport = new StdioServerTransport();

@@ -166,6 +166,118 @@ function waitForTabState(
   });
 }
 
+/** A positive number from the command data, or the fallback. */
+function positiveOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * fox_wait_for_navigation: wait for the tab's next top-level navigation to
+ * finish ("load" = webNavigation.onCompleted, "domcontentloaded" =
+ * onDOMContentLoaded). With urlPattern, navigations to other URLs are
+ * skipped. As on the headless backend (Playwright waitForNavigation), a
+ * navigation that finished before the command arrived does not count.
+ */
+async function waitForNavigation(
+  tabId: number | undefined,
+  data: Record<string, unknown> = {},
+): Promise<CommandResult> {
+  const tab = await resolveTab(tabId);
+  if (!tab?.id) return { success: false, error: "No target tab" };
+  const targetId = tab.id;
+  const timeoutMs = positiveOr(data.timeout, TIMEOUTS.NAVIGATION);
+  const patternSrc = typeof data.urlPattern === "string" && data.urlPattern ? data.urlPattern : null;
+  const pattern = patternSrc ? new RegExp(patternSrc) : null;
+  const event =
+    data.waitUntil === "domcontentloaded"
+      ? browser.webNavigation.onDOMContentLoaded
+      : browser.webNavigation.onCompleted;
+
+  const url = await new Promise<string | null>((resolve) => {
+    const listener = (details: browser.webNavigation.NavigationDetails): void => {
+      if (details.tabId !== targetId || details.frameId !== 0) return;
+      if (pattern && !pattern.test(details.url)) return;
+      finish(details.url);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    function finish(value: string | null): void {
+      clearTimeout(timer);
+      event.removeListener(listener);
+      resolve(value);
+    }
+    event.addListener(listener);
+  });
+
+  if (url === null) {
+    return {
+      success: false,
+      error:
+        `No navigation${patternSrc ? ` to a URL matching /${patternSrc}/` : ""} ` +
+        `finished within ${timeoutMs}ms`,
+    };
+  }
+  const now = await browser.tabs.get(targetId);
+  return { success: true, url, title: now.title };
+}
+
+/**
+ * fox_wait_for_url: wait until the tab's URL equals `url` (exact) or matches
+ * `urlPattern` (regex) and the page has finished loading. Returns at once if
+ * that is already the case. URL changes through the History API count too.
+ */
+async function waitForUrl(
+  tabId: number | undefined,
+  data: Record<string, unknown> = {},
+): Promise<CommandResult> {
+  const exact = typeof data.url === "string" && data.url ? data.url : null;
+  const patternSrc = typeof data.urlPattern === "string" && data.urlPattern ? data.urlPattern : null;
+  if (!exact && !patternSrc) return { success: false, error: "Must provide url or urlPattern" };
+  const pattern = !exact && patternSrc ? new RegExp(patternSrc) : null;
+  const matches = (u: string | undefined): boolean =>
+    !!u && (exact ? u === exact : pattern!.test(u));
+
+  const tab = await resolveTab(tabId);
+  if (!tab?.id) return { success: false, error: "No target tab" };
+  const targetId = tab.id;
+  const timeoutMs = positiveOr(data.timeout, 15_000);
+
+  const reached = await new Promise<browser.tabs.Tab | null>((resolve) => {
+    let done = false;
+    const finish = (value: browser.tabs.Tab | null): void => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      browser.tabs.onUpdated.removeListener(listener);
+      resolve(value);
+    };
+    const check = (t: browser.tabs.Tab): void => {
+      if (matches(t.url) && t.status === "complete") finish(t);
+    };
+    const listener = (
+      updatedTabId: number,
+      _changeInfo: browser.tabs.TabChangeInfo,
+      t: browser.tabs.Tab,
+    ): void => {
+      if (updatedTabId === targetId) check(t);
+    };
+    // Listener first, then the current state, so a change in between is not missed.
+    browser.tabs.onUpdated.addListener(listener);
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    browser.tabs.get(targetId).then(check, () => finish(null));
+  });
+
+  if (!reached) {
+    const current = await browser.tabs.get(targetId).catch(() => undefined);
+    return {
+      success: false,
+      error:
+        `URL did not ${exact ? `become ${exact}` : `match /${patternSrc}/`} within ` +
+        `${timeoutMs}ms (current: ${current?.url ?? "unknown"})`,
+    };
+  }
+  return { success: true, url: reached.url };
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -584,15 +696,13 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
   }
   const protectedPatterns = parseProtectedPatterns(message.protectedUrlPatterns);
 
-  // Protected-domain check for single-tab captures (screenshot and
-  // scroll_and_capture), against the real URL of the target tab (not the
-  // server's last navigated URL). The server only attaches the patterns when
-  // confirm_protected_actions is true.
-  if (
-    (action === "screenshot" || action === "scrollAndCapture") &&
-    protectedPatterns.length > 0
-  ) {
-    const refusal = await checkProtectedScreenshot(tabId, protectedPatterns);
+  // Protected-domain check against the real URL of the target tab (not the
+  // server's last-seen URL, which is shared by every session). The server
+  // attaches the patterns, when confirm_protected_actions is true, to
+  // single-tab captures and to every acting tool without a `url` argument;
+  // the logging actions and screenshot_all_tabs apply them themselves below.
+  if (protectedPatterns.length > 0 && !SELF_PROTECTED_ACTIONS.has(action ?? "")) {
+    const refusal = await checkProtectedTarget(tabId, protectedPatterns);
     if (refusal) {
       result = refusal;
       postWireResponse(message, result);
@@ -694,10 +804,17 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         result = await navigateHistory(tabId, "forward");
         break;
       case "requestApproval":
-        result = await requestApproval(tabId, data);
+        result = await trackHumanWait(message.requestId, tabId, (id) =>
+          requestApproval(id, data),
+        );
         break;
       case "solveCaptcha":
-        result = await solveCaptcha(tabId, data as { detectOnly?: boolean });
+        result = await trackHumanWait(message.requestId, tabId, (id) =>
+          solveCaptcha(id, data as { detectOnly?: boolean }),
+        );
+        break;
+      case "cancelHumanWait":
+        result = await cancelHumanWait(data);
         break;
       // Content-script-forwarded actions
       case "getValue":
@@ -723,11 +840,17 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
       case "waitForNetworkIdle":
         result = await sendToContentScript(tabId, { action, ...data }, TOP_FRAME_ID);
         break;
+      case "waitForNavigation":
+        result = await waitForNavigation(tabId, data);
+        break;
+      case "waitForUrl":
+        result = await waitForUrl(tabId, data);
+        break;
       case "startLogging": {
         const tab = await resolveTab(tabId);
         // Same rule as a single-tab screenshot: refuse on a protected page,
         // judged by the tab's real URL.
-        const refusal = await checkProtectedScreenshot(tab.id, protectedPatterns);
+        const refusal = await checkProtectedTarget(tab.id, protectedPatterns);
         if (refusal) {
           result = refusal;
           break;
@@ -894,11 +1017,23 @@ function postWireResponse(message: NativeMessage, result: CommandResult): void {
 }
 
 /**
- * Refuse a screenshot when the target tab (same resolution as the container
- * scope check / takeScreenshot) is on a protected domain. Returns null when
- * the capture may proceed. Fails closed if the tab cannot be resolved.
+ * Actions that apply `protectedUrlPatterns` in their own handler instead of
+ * being refused up front: all_tabs excludes protected tabs, start_logging
+ * refuses on its own tab, get_*_logs report a pause.
  */
-async function checkProtectedScreenshot(
+const SELF_PROTECTED_ACTIONS: ReadonlySet<string> = new Set([
+  "screenshotAllTabs",
+  "startLogging",
+  "getConsoleLogs",
+  "getNetworkLogs",
+]);
+
+/**
+ * Refuse a command when its target tab (same resolution as the container
+ * scope check and the handlers) is on a protected domain. Returns null when
+ * the command may proceed. Fails closed if the tab cannot be resolved.
+ */
+async function checkProtectedTarget(
   tabId: number | undefined,
   patterns: RegExp[],
 ): Promise<CommandResult | null> {
@@ -991,8 +1126,8 @@ async function takeScreenshot(
 /**
  * Full-page capture. The content script only reports the page dimensions
  * ("captureFullPage"), so the image itself is taken with captureTab's `rect`
- * option (Firefox 82+). If that fails (older Firefox, page too large for a
- * single canvas, content script unavailable), the visible-area capture is
+ * option. If that fails (page too large for a single canvas, content script
+ * unavailable), the visible-area capture is
  * returned instead and `fullPageCaptured` is false.
  */
 async function captureFullPageImage(
@@ -1113,6 +1248,47 @@ async function screenshotAllTabs(
 // ---------------------------------------------------------------------------
 // Approval & captcha
 // ---------------------------------------------------------------------------
+
+/**
+ * Tabs showing a banner for a server command (requestId → tabId), so that
+ * cancel_human_wait can withdraw it after the server stopped waiting.
+ */
+const humanWaits = new Map<string, number>();
+
+/**
+ * Run a banner-showing handler on a pinned tab and remember that tab under
+ * the command's requestId while the handler waits for the human.
+ */
+async function trackHumanWait(
+  requestId: number | string | undefined,
+  tabId: number | undefined,
+  run: (tabId: number | undefined) => Promise<CommandResult>,
+): Promise<CommandResult> {
+  let pinned = tabId;
+  try {
+    pinned = (await resolveTab(tabId))?.id ?? tabId;
+  } catch {
+    // run() reports the missing tab itself
+  }
+  const key = requestId === undefined ? undefined : String(requestId);
+  if (key !== undefined && pinned !== undefined) humanWaits.set(key, pinned);
+  try {
+    return await run(pinned);
+  } finally {
+    if (key !== undefined) humanWaits.delete(key);
+  }
+}
+
+/** Withdraw the approval / captcha banner of a command the server gave up on. */
+async function cancelHumanWait(data: Record<string, unknown> = {}): Promise<CommandResult> {
+  const target = data.requestId;
+  const tabId =
+    typeof target === "string" || typeof target === "number"
+      ? humanWaits.get(String(target))
+      : undefined;
+  if (tabId === undefined) return { success: true, cancelled: false };
+  return sendToContentScript(tabId, { action: "cancelHumanWait" });
+}
 
 async function requestApproval(
   tabId: number | undefined,
@@ -1332,6 +1508,15 @@ async function getAllTabs(
     let tabs = (await browser.tabs.query(queryOpts)).filter((t) => isTabInScope(t, scope));
     const windows = await browser.windows.getAll();
     const windowMap = new Map(windows.map((w) => [w.id, w]));
+    // Under container scope, count only windows holding an in-scope tab, so
+    // the result says nothing about windows outside the scope.
+    const windowCount = scope
+      ? new Set(
+          (await browser.tabs.query({}))
+            .filter((t) => isTabInScope(t, scope))
+            .map((t) => t.windowId),
+        ).size
+      : windows.length;
 
     const totalMatched = urlPattern
       ? tabs.filter((t) => t.url && urlPattern.test(t.url)).length
@@ -1368,7 +1553,7 @@ async function getAllTabs(
       returnedTabs: pageTabs.length,
       truncated,
       scope: currentWindowOnly ? "current_window" : "all_windows",
-      windowCount: windows.length,
+      windowCount,
       totalTabs: totalMatched,
       summary: {
         active: tabs.filter((t) => t.active).length,

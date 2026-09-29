@@ -81,6 +81,7 @@ const WIRE_ACTION_MAP: ReadonlyMap<string, string | null> = new Map<string, stri
   ["request_approval", "requestApproval"],
   ["run_workflow", null],
   ["solve_captcha", "solveCaptcha"],
+  ["cancel_human_wait", "cancelHumanWait"],
   ["audit_page", null],
   ["inject_observer", null],
 
@@ -90,8 +91,8 @@ const WIRE_ACTION_MAP: ReadonlyMap<string, string | null> = new Map<string, stri
   ["handle_dialog", null],
   ["list_containers", "list_containers"],
   ["open_in_container", "open_in_container"],
-  ["wait_for_navigation", null],
-  ["wait_for_url", null],
+  ["wait_for_navigation", "waitForNavigation"],
+  ["wait_for_url", "waitForUrl"],
   ["remove_observer", null],
 ]);
 

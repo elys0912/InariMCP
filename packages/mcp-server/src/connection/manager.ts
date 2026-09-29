@@ -63,9 +63,10 @@ const ACTION_TIMEOUT_MS: Partial<Record<BrowserAction, number>> = {
  * (content.ts: the `timeout` argument, which the tool schemas always fill
  * in — 60 s / 180 s by default — falling back to TIMEOUTS.APPROVAL /
  * TIMEOUTS.CAPTCHA) is always shorter than ours: ours is max(90 s / 200 s,
- * argument + 5 s). The server cannot cancel the browser side, though (v0.2),
- * so when our timer fires first anyway (lost message, stalled tab) the
- * banner may still be on screen.
+ * argument + 5 s). When our timer fires first anyway (lost message, stalled
+ * tab), we send `cancel_human_wait` so the Extension withdraws the banner.
+ * That is best-effort; an answer arriving after the timeout is dropped by
+ * handleResponse() either way.
  */
 const HUMAN_WAIT_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAction>([
   'request_approval',
@@ -73,9 +74,27 @@ const HUMAN_WAIT_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAction>([
 ]);
 
 const HUMAN_WAIT_TIMEOUT_NOTE =
-  '. Note: if an approval / captcha banner is still shown in the browser, ' +
-  'the action may still be carried out later when someone responds to it — ' +
-  'the browser side is not cancelled.';
+  '. The browser was asked to withdraw the approval / captcha banner; an ' +
+  'answer given after this timeout is ignored, so ask again if still needed.';
+
+/**
+ * Ask the Extension to withdraw the banner of a timed-out human wait.
+ * Fire-and-forget: the reply carries a `cancel-` requestId that is never
+ * pending, so handleResponse() drops it.
+ */
+function cancelHumanWait(conn: BrowserConnection, requestId: string): void {
+  const cancel: BrowserCommand = {
+    action: 'cancel_human_wait',
+    requestId: `cancel-${requestId}`,
+    data: { requestId },
+  };
+  try {
+    const maybePromise = conn.send(JSON.stringify(cancel));
+    if (maybePromise instanceof Promise) maybePromise.catch(() => { /* best-effort */ });
+  } catch {
+    // Connection gone — nothing left to withdraw from
+  }
+}
 
 /**
  * Headroom added on top of a tool's own `timeout` / `timeoutMs` argument, so
@@ -258,10 +277,12 @@ export class BrowserConnectionManager {
       };
 
       const timer = setTimeout(() => {
+        const humanWait = HUMAN_WAIT_ACTIONS.has(command.action);
         fail(
           `Command '${command.action}' timed out after ${effectiveTimeout}ms` +
-          (HUMAN_WAIT_ACTIONS.has(command.action) ? HUMAN_WAIT_TIMEOUT_NOTE : ''),
+          (humanWait ? HUMAN_WAIT_TIMEOUT_NOTE : ''),
         );
+        if (humanWait && conn.kind !== 'headless') cancelHumanWait(conn, requestId);
       }, effectiveTimeout);
 
       this.pending.set(requestId, { resolve, timer, connectionId: conn.id });

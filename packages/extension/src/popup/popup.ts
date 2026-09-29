@@ -81,8 +81,9 @@ function guideFor(state: SetupState, os: string): SetupGuide | null {
       return {
         title: t('setupHostOutdatedTitle'),
         text: t('setupHostOutdatedText'),
-        // Windows PowerShell 5.1 has no &&
-        command: os === 'win' ? 'git pull; npm run build' : 'git pull && npm run build',
+        // Re-running the installer also runs npm install / build and
+        // rewrites the Native Host. Windows PowerShell 5.1 has no &&.
+        command: `git pull${os === 'win' ? ';' : ' &&'} ${installerCommand(os)}`,
         note: t('setupHostOutdatedNote'),
         notice: true,
       };

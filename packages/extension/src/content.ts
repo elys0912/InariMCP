@@ -1040,6 +1040,8 @@
         return requestApproval(message as unknown as ApprovalOptions);
       case "solveCaptcha":
         return solveCaptcha(message as unknown as CaptchaOptions);
+      case "cancelHumanWait":
+        return cancelHumanWait();
       case "getBoundingRect":
         return getBoundingRect(message as unknown as FindElementOptions);
       case "startLogging":
@@ -1294,6 +1296,25 @@
   // Overlay banner helper
   // ---------------------------------------------------------------------------
 
+  /** finish() of each banner on screen, by banner id. */
+  const activeBanners = new Map<string, (value: string) => void>();
+
+  /**
+   * The server stopped waiting (cancel_human_wait): close the banners as if
+   * they had timed out, so a late click cannot look like an answer.
+   */
+  function cancelHumanWait(): Record<string, unknown> {
+    let cancelled = 0;
+    for (const id of ["__fox_approval_banner", "__fox_captcha_banner"]) {
+      const finish = activeBanners.get(id);
+      if (finish) {
+        finish("timeout");
+        cancelled++;
+      }
+    }
+    return { success: true, cancelled: cancelled > 0 };
+  }
+
   function createOverlayBanner(config: {
     id: string;
     title: string;
@@ -1346,9 +1367,11 @@
       function finish(value: string): void {
         if (settled) return;
         settled = true;
+        if (activeBanners.get(config.id) === finish) activeBanners.delete(config.id);
         banner.remove();
         resolve(value);
       }
+      activeBanners.set(config.id, finish);
 
       for (const btn of config.buttons) {
         const b = document.createElement("button");
