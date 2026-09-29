@@ -126,7 +126,7 @@ function buildCommandData(
   }
 
   // fox_detect_captcha → solve_captcha always runs in detect-only mode: the
-  // project never tries to get past a CAPTCHA (design.md 4.1), and the
+  // project never tries to get past a CAPTCHA, and the
   // caller cannot override this (set after camelize, so it wins over any
   // argument of the same name).
   if (toolName === 'fox_detect_captcha') {
@@ -256,7 +256,7 @@ function safetyDenialToCallResult(
 }
 
 // ---------------------------------------------------------------------------
-// Screenshot post-processing (design.md 5.5: resource_link, never base64)
+// Screenshot post-processing (resource_link, never base64)
 // ---------------------------------------------------------------------------
 
 function isRecord(v: unknown): v is Record<string, unknown> {

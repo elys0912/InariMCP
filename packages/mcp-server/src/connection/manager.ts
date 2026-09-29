@@ -22,7 +22,7 @@ import type { BrowserAction, BrowserCommand, BrowserResponse } from '@kitsune-mc
 export type SendFn = (message: string) => void | Promise<void>;
 
 /**
- * Kind of browser connection. Selection priority (design.md 6.2):
+ * Kind of browser connection. Selection priority:
  *   1. 'native-host' — Extension ⇔ Native Messaging ⇔ Native Host ⇔ WS
  *   2. 'headless'    — Playwright Firefox (Advanced, FOX_HEADLESS=1)
  */
@@ -44,12 +44,12 @@ interface PendingRequest {
 }
 
 // ---------------------------------------------------------------------------
-// Timeouts (design.md 6.2 / 8.2)
+// Timeouts
 // ---------------------------------------------------------------------------
 
 /** Ordinary commands over the Native Host path. */
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
-/** Ordinary commands on the headless backend (design.md 6.2 table). */
+/** Ordinary commands on the headless backend. */
 const HEADLESS_COMMAND_TIMEOUT_MS = 35_000;
 
 /** Long-running actions that wait for a human. */

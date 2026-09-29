@@ -3,7 +3,7 @@
  *
  * The Extension returns screenshots as data URLs (`data.imageData`, and
  * `data.screenshots[i].imageData` for all_tabs). Base64 images must not
- * travel to the MCP Server and on into the model context (design.md 5.5),
+ * travel to the MCP Server and on into the model context,
  * so the Native Host writes them to disk here and hands the server only
  * `imagePath`.
  *

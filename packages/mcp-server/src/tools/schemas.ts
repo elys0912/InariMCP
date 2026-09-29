@@ -661,7 +661,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
     classification: 'human',
   },
 
-  // --- Container (Firefox contextualIdentities; design.md 7.2) ---
+  // --- Container (Firefox contextualIdentities) ---
   fox_list_containers: {
     name: 'fox_list_containers',
     description:

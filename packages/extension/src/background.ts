@@ -564,7 +564,7 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
   const navigateInNewTab = resolved.action === "navigate" && data?.newTab === true;
   const action = navigateInNewTab ? "createTab" : resolved.action;
 
-  // Container scope check (Layer 0, design.md 7.1). The MCP Server attaches
+  // Container scope check (Layer 0). The MCP Server attaches
   // `containerScope` to every command when container_scope.enabled is true.
   const containerScope = parseContainerScope(message.containerScope);
   let scope: ScopeFilter | null = null;

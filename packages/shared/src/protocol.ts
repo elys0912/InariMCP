@@ -26,7 +26,7 @@ export const BrowserCommandSchema = z.object({
   data: z.record(z.unknown()).optional(),
   requestId: z.string(),
   /**
-   * Layer 0 container scope (design.md 7.1). Attached to EVERY command when
+   * Layer 0 container scope. Attached to EVERY command when
    * safety.json `container_scope.enabled` is true. The Extension enforces it
    * against the target tab's cookieStoreId (the MCP Server cannot see tabs).
    */

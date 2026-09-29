@@ -5,7 +5,7 @@
  *
  * v0.1 client: the Native Host (packages/native-host/src/ws-client.ts),
  * which relays commands to the Extension over Native Messaging. A direct
- * Extension → WS connection is a future option (design.md 5.3); the Origin
+ * Extension → WS connection is a future option; the Origin
  * rule below already admits it.
  *
  * Fork-source: server.py L1479-1540
@@ -17,8 +17,8 @@
  *     cannot pose as an Origin-less client; and every client, with or
  *     without Origin, must still pass step 2.
  *  2. Client sends `{ "token": "<API_TOKEN>" }` as its first frame within
- *     10 s (design.md 8.2). Compared with crypto.timingSafeEqual
- *     (design.md 7.3). Failure / timeout → close 1008 (Policy Violation).
+ *     10 s. Compared with crypto.timingSafeEqual.
+ *     Failure / timeout → close 1008 (Policy Violation).
  *  3. Server replies `{ "type": "auth_ok" }` and registers the connection
  *     as a 'native-host' browser in the connection manager.
  *
@@ -35,7 +35,7 @@ import { parseBrowserResponse } from '@kitsune-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
 
 // ---------------------------------------------------------------------------
-// Constants (design.md 8.2)
+// Constants
 // ---------------------------------------------------------------------------
 
 const AUTH_TIMEOUT_MS = 10_000; // 10 seconds for first-frame auth

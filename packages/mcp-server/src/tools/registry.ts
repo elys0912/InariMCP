@@ -3,7 +3,7 @@
  *
  * Uses the FOX_CAPS environment variable to control which tools are
  * registered, keeping token budgets manageable when other MCP servers
- * are co-resident.  See design.md 4.1.1 for rationale.
+ * are co-resident.
  *
  * Fork-source: server.py register_tools() (simplified — Python version
  * registered tools inline; here we separate schema, handler, and
@@ -26,7 +26,7 @@ export type ToolCallHandler = (
 ) => Promise<CallToolResult>;
 
 // ---------------------------------------------------------------------------
-// Profile definitions (design.md 4.1.1)
+// Profile definitions
 // ---------------------------------------------------------------------------
 
 /**

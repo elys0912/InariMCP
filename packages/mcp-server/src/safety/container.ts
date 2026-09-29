@@ -49,7 +49,7 @@ function isHeadlessBackend(): boolean {
 /**
  * Server-side part of Layer 0.
  *
- * The headless backend has no Firefox containers (design.md 4.3), so no tab
+ * The headless backend has no Firefox containers, so no tab
  * can ever be "inside the agent container". With container scope enabled we
  * fail closed and refuse every command instead of silently ignoring the scope.
  *

@@ -15,7 +15,7 @@
  * createToolHandler (SafetyGuard.check, containerScope /
  * protectedUrlPatterns attachment, post-processing). Every tool is
  * reachable: FOX_CAPS is a per-session tools/list setting applied by each
- * relay, not a daemon-side restriction (design.md 4.1.1). Policy
+ * relay, not a daemon-side restriction. Policy
  * restrictions live in the SafetyGuard (safety.json / FOX_READ_ONLY /
  * FOX_ALLOW_SCRIPTS) and apply to every caller alike.
  *
@@ -59,7 +59,7 @@ const MAX_BODY_BYTES = 1_048_576; // 1 MB — generous for any JSON payload
  * Constant-time comparison of the provided key against the server token.
  *
  * When lengths differ, performs a dummy comparison to prevent timing leaks
- * from the length check itself (design.md 7.3).
+ * from the length check itself.
  */
 function verifyApiKey(provided: string | undefined, expected: string): boolean {
   if (!provided) return false;
