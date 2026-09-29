@@ -67,7 +67,11 @@ function tighten(filePath: string): void {
   }
 }
 
-function rotateIfLarge(filePath: string): void {
+/**
+ * Rename `filePath` to `<file>.old` when it is larger than MAX_LOG_BYTES.
+ * Also used for daemon.log before a daemon is started (server-launcher.ts).
+ */
+export function rotateIfLarge(filePath: string): void {
   try {
     const st = fs.statSync(filePath);
     if (st.size <= MAX_LOG_BYTES) return;

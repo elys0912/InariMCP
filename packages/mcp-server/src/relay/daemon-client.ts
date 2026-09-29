@@ -23,6 +23,7 @@ import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 import { maxCommandTimeoutMs } from '../connection/manager.js';
+import { rotateLogIfLarge } from '../utils/log-file.js';
 import { RELAY_HEARTBEAT_MS } from '../daemon/activity.js';
 import {
   DAEMON_SETTING_KEYS,
@@ -128,6 +129,7 @@ export class DaemonClient {
     let logFd: number | 'ignore' = 'ignore';
     try {
       fs.mkdirSync(path.dirname(daemonLogPath()), { recursive: true, mode: 0o700 });
+      rotateLogIfLarge(daemonLogPath());
       logFd = fs.openSync(daemonLogPath(), 'a', 0o600);
     } catch {
       // Logging is best-effort

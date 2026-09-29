@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getAuditLogPath } from './config.js';
 import { maskSensitiveArgs } from './sanitizer.js';
+import { rotateLogIfLarge } from '../utils/log-file.js';
 
 export type AuditDecision =
   | 'allowed'
@@ -47,6 +48,7 @@ export function audit(
   try {
     const dir = path.dirname(logPath);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    rotateLogIfLarge(logPath);
     fs.appendFileSync(logPath, JSON.stringify(entry) + '\n', { mode: 0o600 });
   } catch (e) {
     process.stderr.write(
