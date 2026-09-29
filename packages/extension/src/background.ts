@@ -1390,6 +1390,15 @@ async function getAllTabs(
     let tabs = (await browser.tabs.query(queryOpts)).filter((t) => isTabInScope(t, scope));
     const windows = await browser.windows.getAll();
     const windowMap = new Map(windows.map((w) => [w.id, w]));
+    // Under container scope, count only windows holding an in-scope tab, so
+    // the result says nothing about windows outside the scope.
+    const windowCount = scope
+      ? new Set(
+          (await browser.tabs.query({}))
+            .filter((t) => isTabInScope(t, scope))
+            .map((t) => t.windowId),
+        ).size
+      : windows.length;
 
     const totalMatched = urlPattern
       ? tabs.filter((t) => t.url && urlPattern.test(t.url)).length
@@ -1426,7 +1435,7 @@ async function getAllTabs(
       returnedTabs: pageTabs.length,
       truncated,
       scope: currentWindowOnly ? "current_window" : "all_windows",
-      windowCount: windows.length,
+      windowCount,
       totalTabs: totalMatched,
       summary: {
         active: tabs.filter((t) => t.active).length,
