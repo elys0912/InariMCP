@@ -1,5 +1,5 @@
 // web-ext reads this file from the current working directory, so run web-ext
-// from the repository root (see docs/release.md).
+// from the repository root.
 export default {
   sourceDir: 'packages/extension',
   artifactsDir: 'web-ext-artifacts',

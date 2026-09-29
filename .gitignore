@@ -21,6 +21,6 @@ packages/extension/.amo-upload-uuid
 # test coverage
 coverage/
 
-# local native-messaging manifests with real paths (see docs/e2e-test-plan.md);
+# local native-messaging manifests with real paths;
 # the tracked template is packages/native-host/kitsune-mcp.json
 packages/native-host/kitsune-mcp.*.json

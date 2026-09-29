@@ -71,7 +71,7 @@ bash scripts/install.sh
 
 ### Firefoxへの拡張機能の読み込み
 
-署名済みでワンクリックインストールできる`.xpi`はまだ配布していない（AMO署名 + GitHub Releasesでの配布は準備中 — [docs/release.md](docs/release.md)参照）。今のところは一時的なアドオンとして読み込む。
+署名済みでワンクリックインストールできる`.xpi`はまだ配布していない（AMO署名 + GitHub Releasesでの配布は準備中）。今のところは一時的なアドオンとして読み込む。
 
 1. Firefoxで`about:debugging#/runtime/this-firefox`を開く
 2. 「一時的なアドオンを読み込む」→ `packages/extension/manifest.json`を選択
@@ -86,8 +86,6 @@ curl -s http://127.0.0.1:8765/health
 拡張機能が接続すると（読み込みから数秒後）`browsers_connected`が`1`になる。
 
 ### 手動セットアップ・詳細な確認手順
-
-インストーラが何をしているか正確に知りたい場合や、インストーラを使わず手動でセットアップしたい場合、および全ツールを1本ずつ確認する完全な手順は[`docs/e2e-test-plan.md`](docs/e2e-test-plan.md)を参照。
 
 ### アンインストール
 
@@ -150,8 +148,6 @@ FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
 
 `claude mcp add`のコマンドは変わらない。中継が最初の利用時に共有サーバーを起動し（Firefoxが先ならNative Hostが起動する）、共有サーバーは10分使われなければ自分で終了する。セッションごとに中継が1つずつ立ち、全員が1つの共有サーバーを使うので、Claude Codeを複数セッション同時に使ってもポートがぶつからない。安全ガードの状態（レート制限、監査ログ、現在のURL）もセッション間で共有される。
 
-完全な設計ドキュメント（アーキテクチャ図、プロトコル仕様、全ツール一覧、安全レイヤーの内訳）は`docs/design.md`を参照。
-
 ## 設定
 
 ### 環境変数
@@ -174,7 +170,7 @@ FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
 
 ### `safety.json`
 
-初回実行時に`~/.kitsune-mcp/safety.json`に妥当なデフォルト値で自動生成される（安全ガード有効、スクリプト実行許可、保護対象ドメインの確認有効、パスワード入力無効、レート制限120アクション/分、銀行や`.gov`などの保護対象ドメインの初期リスト）。独自のブロック/許可URLパターンを追加したり、コンテナスコープを有効にしたりする場合は編集する。完全なスキーマは`docs/design.md` §9.1に記載。
+初回実行時に`~/.kitsune-mcp/safety.json`に妥当なデフォルト値で自動生成される（安全ガード有効、スクリプト実行許可、保護対象ドメインの確認有効、パスワード入力無効、レート制限120アクション/分、銀行や`.gov`などの保護対象ドメインの初期リスト）。独自のブロック/許可URLパターンを追加したり、コンテナスコープを有効にしたりする場合は編集する。
 
 ### 先に daemon を起動した側の設定が勝つ
 
@@ -187,7 +183,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 このプロジェクトは**活発かつ段階的に開発中** — まだ一般利用の準備は整っていない。とはいえ「読んでビルドできるソースコード」の段階は過ぎていて、拡張機能を自分で読み込めば（`about:debugging`の一時的なアドオン）実際のFirefoxをエンドツーエンドで動かせる。足りないのは、それを手作業なしで誰でもインストールできるようにするパッケージングの部分だけ。
 
 **完了済み:**
-- 設計ドキュメント + 多角的レビュー（`docs/design.md`）
+- 設計ドキュメント + 多角的レビュー
 - モノレポの雛形構築（P1）
 - 安全ガード、8層（P2）
 - MCPサーバーのコア + 全41ツールのスキーマ/ハンドラ（P3）
@@ -196,7 +192,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 - 拡張機能のTypeScript移植（P6）
 - Firefoxネイティブapi: コンテナタブ、`browser.find`、`tabs.captureTab`（P7）
 - 拡張機能経路のエンドツーエンド結合、および中継＋共有サーバー構成への移行（Claude Codeを複数セッション同時に使ってもポートを取り合わない）（P7.5）
-- Windows 11 + Firefoxでの実機E2E（2026-09-27） — 手順は[`docs/e2e-test-plan.md`](docs/e2e-test-plan.md)
+- Windows 11 + Firefoxでの実機E2E（2026-09-27）
 - インストーラー（Windows用`scripts/install.ps1` / `scripts/uninstall.ps1`、macOS/Linux用`scripts/install.sh` / `scripts/uninstall.sh`） — 実機Windows 11と、Linux（WSL2のUbuntu 24.04、deb版Firefox 156）で結線を確認済み（2026-09-28）。macOS固有の経路は実機のmacOSではまだ動かしていない。Linuxの確認に使ったスモークテストは`scripts/e2e/`にある
 - 配布準備: 正式なExtension ID確定（`kitsune-mcp@elys0912.github.io`）、AMOの`data_collection_permissions`設定、`web-ext lint`がエラー・警告0件（P8）
 
@@ -205,7 +201,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 
 登録される41本の`fox_*`ツールのうち10本は、拡張機能経路ではまだ未実装（`fox_snapshot`、`fox_run_workflow`、`fox_audit_page`、`fox_inject_observer`、`fox_remove_observer`、`fox_handle_dialog`、`fox_wait_for_navigation`、`fox_wait_for_url`、`fox_eval_chain`、`fox_wait_and_act`） — 呼び出すと黙って失敗するのではなく「未実装」という明確なエラーが返る。一部はヘッドレスモードでは既に動く。
 
-設計の詳細は[`docs/design.md`](docs/design.md)、現行版の制約は[`docs/known-issues.md`](docs/known-issues.md)にまとめている。
+現行版の制約は[`docs/known-issues.md`](docs/known-issues.md)にまとめている。
 
 ## Credits
 
