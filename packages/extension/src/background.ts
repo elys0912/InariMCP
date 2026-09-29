@@ -694,10 +694,17 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         result = await navigateHistory(tabId, "forward");
         break;
       case "requestApproval":
-        result = await requestApproval(tabId, data);
+        result = await trackHumanWait(message.requestId, tabId, (id) =>
+          requestApproval(id, data),
+        );
         break;
       case "solveCaptcha":
-        result = await solveCaptcha(tabId, data as { detectOnly?: boolean });
+        result = await trackHumanWait(message.requestId, tabId, (id) =>
+          solveCaptcha(id, data as { detectOnly?: boolean }),
+        );
+        break;
+      case "cancelHumanWait":
+        result = await cancelHumanWait(data);
         break;
       // Content-script-forwarded actions
       case "getValue":
@@ -1113,6 +1120,47 @@ async function screenshotAllTabs(
 // ---------------------------------------------------------------------------
 // Approval & captcha
 // ---------------------------------------------------------------------------
+
+/**
+ * Tabs showing a banner for a server command (requestId → tabId), so that
+ * cancel_human_wait can withdraw it after the server stopped waiting.
+ */
+const humanWaits = new Map<string, number>();
+
+/**
+ * Run a banner-showing handler on a pinned tab and remember that tab under
+ * the command's requestId while the handler waits for the human.
+ */
+async function trackHumanWait(
+  requestId: number | string | undefined,
+  tabId: number | undefined,
+  run: (tabId: number | undefined) => Promise<CommandResult>,
+): Promise<CommandResult> {
+  let pinned = tabId;
+  try {
+    pinned = (await resolveTab(tabId))?.id ?? tabId;
+  } catch {
+    // run() reports the missing tab itself
+  }
+  const key = requestId === undefined ? undefined : String(requestId);
+  if (key !== undefined && pinned !== undefined) humanWaits.set(key, pinned);
+  try {
+    return await run(pinned);
+  } finally {
+    if (key !== undefined) humanWaits.delete(key);
+  }
+}
+
+/** Withdraw the approval / captcha banner of a command the server gave up on. */
+async function cancelHumanWait(data: Record<string, unknown> = {}): Promise<CommandResult> {
+  const target = data.requestId;
+  const tabId =
+    typeof target === "string" || typeof target === "number"
+      ? humanWaits.get(String(target))
+      : undefined;
+  if (tabId === undefined) return { success: true, cancelled: false };
+  return sendToContentScript(tabId, { action: "cancelHumanWait" });
+}
 
 async function requestApproval(
   tabId: number | undefined,

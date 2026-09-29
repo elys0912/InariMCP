@@ -70,6 +70,12 @@ export const BROWSER_ACTIONS = [
   'request_approval',
   'run_workflow',
   'solve_captcha',
+  /**
+   * Internal, not a tool: sent by the MCP Server when it gave up waiting on
+   * request_approval / solve_captcha, so the Extension withdraws the banner.
+   * data.requestId = the timed-out command's requestId.
+   */
+  'cancel_human_wait',
   'audit_page',
   'inject_observer',
 

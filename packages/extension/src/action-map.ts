@@ -81,6 +81,7 @@ const WIRE_ACTION_MAP: ReadonlyMap<string, string | null> = new Map<string, stri
   ["request_approval", "requestApproval"],
   ["run_workflow", null],
   ["solve_captcha", "solveCaptcha"],
+  ["cancel_human_wait", "cancelHumanWait"],
   ["audit_page", null],
   ["inject_observer", null],
 
