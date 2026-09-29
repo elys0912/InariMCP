@@ -15,6 +15,9 @@ web-ext-artifacts/
 # written by `web-ext sign` (AMO upload tracking)
 packages/extension/.amo-upload-uuid
 
+# local-only working notes (session handoff etc.)
+.local/
+
 # test coverage
 coverage/
 
