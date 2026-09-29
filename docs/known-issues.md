@@ -28,7 +28,7 @@ KitsuneMCP の現行版（v0.1.x）で分かっている制約・注意点をま
 
 ## インストール・運用
 
-- **Node.js を入れ替えたらインストーラを再実行する**: Native Host のラッパー（`run-host.cmd` / `run-host.sh`）には、インストール時点の node の絶対パスが埋め込まれる。Node をアップグレード・切り替えた後は `scripts/install.ps1` / `scripts/install.sh` を再実行する
+- **Node.js を入れ替えたらインストーラを再実行する**: Native Host のラッパー（`run-host.cmd` / `run-host.sh`）には、インストール時点の node の絶対パスが埋め込まれる。そのパスが無くなった場合は PATH 上の `node` で起動する（v0.1.4 以降のインストーラで作ったラッパー）が、Firefox を起動した環境の PATH に node が無いと起動できない。Node をアップグレード・切り替えた後は `scripts/install.ps1` / `scripts/install.sh` を再実行する
 - **Ubuntu の Snap 版 Firefox では Native Messaging が動かない可能性がある**: `apt install firefox` で入るのは Snap 版。Mozilla の APT リポジトリから deb 版を入れること（`install.sh` も警告を出す）
 - **macOS は未検証**: `install.sh` / `uninstall.sh` は Linux（WSL2 の Ubuntu 24.04）では確認済みだが、macOS 固有のパス（`~/Library/Application Support/...`）の処理は実機の macOS で動かしたことがない
 - **daemon.log は共有サーバーの起動時にしか切り替わらない**: `~/.kitsune-mcp/logs/` のログは 5 MB を超えると `<ファイル名>.old` に退避される（1世代だけ残る）。`native-host.log` と監査ログは書き込みのたびに確認するが、`daemon.log` は共有サーバー（daemon）の出力をそのままつないでいるので、確認するのは daemon を起動するときだけ。daemon を再起動しないまま長く動かすと、それまで 5 MB を超えて伸び続ける
