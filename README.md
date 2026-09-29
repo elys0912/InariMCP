@@ -71,7 +71,7 @@ Run `-SkipBuild`/`--skip-build`, `-NoRegisterClaude`/`--no-register-claude`, or 
 
 ### Load the extension in Firefox
 
-A signed, one-click-install `.xpi` isn't published yet (AMO signing + GitHub Releases distribution is still in progress — see [docs/release.md](docs/release.md)). For now, load it as a temporary add-on:
+A signed, one-click-install `.xpi` isn't published yet (AMO signing + GitHub Releases distribution is still in progress). For now, load it as a temporary add-on:
 
 1. Open `about:debugging#/runtime/this-firefox` in Firefox.
 2. "Load Temporary Add-on..." → select `packages/extension/manifest.json`.
@@ -86,8 +86,6 @@ curl -s http://127.0.0.1:8765/health
 `browsers_connected` should be `1` once the extension has connected (takes a few seconds after loading it).
 
 ### Manual setup / detailed verification
-
-For the full manual, step-by-step setup (useful if you want to know exactly what the installer does, or need to work around it) and a complete tool-by-tool verification walkthrough, see [`docs/e2e-test-plan.md`](docs/e2e-test-plan.md).
 
 ### Uninstall
 
@@ -150,8 +148,6 @@ Command flow: Claude Code → stdio relay → HTTP → shared daemon → safety 
 
 The `claude mcp add` command stays the same: the relay starts the daemon on first use (and the Native Host does the same when Firefox starts first), and the daemon exits by itself after 10 minutes unused. Because every session gets its own relay and they all share one daemon, you can run several Claude Code sessions at the same time without port conflicts. They share the safety guard state too (rate limit, audit log, current URL).
 
-See `docs/design.md` for the full design doc (architecture diagrams, protocol specs, the complete tool list, and the safety-layer breakdown).
-
 ## Configuration
 
 ### Environment variables
@@ -174,7 +170,7 @@ All prefixed `FOX_`; the old `CLAUDE_BROWSER_*` names (inherited from the fork) 
 
 ### `safety.json`
 
-Auto-generated on first run at `~/.kitsune-mcp/safety.json` with sane defaults (safety guard on, scripts allowed, protected-domain confirmation on, password typing off, 120 actions/minute rate limit, a starter list of protected domains like banks and `.gov`). Edit it to add your own blocked/allowed URL patterns or to turn on container scoping. Full schema is documented in `docs/design.md` §9.1.
+Auto-generated on first run at `~/.kitsune-mcp/safety.json` with sane defaults (safety guard on, scripts allowed, protected-domain confirmation on, password typing off, 120 actions/minute rate limit, a starter list of protected domains like banks and `.gov`). Edit it to add your own blocked/allowed URL patterns or to turn on container scoping.
 
 ### Whichever side starts the daemon first, its config wins
 
@@ -187,7 +183,7 @@ The daemon isn't started fresh per session — whoever gets there first (your Cl
 This project is **under active, incremental development** — not ready for general use yet. It has moved past "source you can read and build": you can now load the extension yourself (`about:debugging` temporary add-on) and drive your real Firefox end-to-end. What's missing is packaging it up so anyone can install it without doing that by hand.
 
 **Done:**
-- Design doc + multi-angle review (`docs/design.md`)
+- Design doc + multi-angle review
 - Monorepo scaffolding (P1)
 - Safety guard, 8 layers (P2)
 - MCP server core + all 41 tool schemas/handlers (P3)
@@ -196,7 +192,7 @@ This project is **under active, incremental development** — not ready for gene
 - Extension ported to TypeScript (P6)
 - Firefox-native APIs: container tabs, `browser.find`, `tabs.captureTab` (P7)
 - Extension path wired end-to-end, plus the relay + shared-daemon split so several Claude Code sessions can drive Firefox at the same time without fighting over ports (P7.5)
-- Real-device E2E on Windows 11 + Firefox (2026-09-27) — walkthrough in [`docs/e2e-test-plan.md`](docs/e2e-test-plan.md)
+- Real-device E2E on Windows 11 + Firefox (2026-09-27)
 - Installer (`scripts/install.ps1` / `scripts/uninstall.ps1` for Windows, `scripts/install.sh` / `scripts/uninstall.sh` for macOS/Linux) — verified end-to-end on real Windows 11 hardware and on Linux (WSL2 Ubuntu 24.04 with the deb build of Firefox 156, 2026-09-28); the macOS paths haven't been run on real macOS yet. `scripts/e2e/` has the smoke tests used for the Linux check
 - Distribution prep: the real Extension ID is confirmed (`kitsune-mcp@elys0912.github.io`), AMO's `data_collection_permissions` is set, and `web-ext lint` passes with 0 errors/warnings (P8)
 
