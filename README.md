@@ -205,7 +205,7 @@ This project is **under active, incremental development** — not ready for gene
 
 Of the 41 registered `fox_*` tools, 10 aren't implemented on the extension path yet (`fox_snapshot`, `fox_run_workflow`, `fox_audit_page`, `fox_inject_observer`, `fox_remove_observer`, `fox_handle_dialog`, `fox_wait_for_navigation`, `fox_wait_for_url`, `fox_eval_chain`, `fox_wait_and_act`) — calling one returns a clear "not implemented" error rather than doing nothing silently; some of these already work under headless mode.
 
-Track progress in `docs/design.md` and `docs/引き継ぎ.md`.
+Design details are in [`docs/design.md`](docs/design.md); current limitations are listed in [`docs/known-issues.md`](docs/known-issues.md) (both in Japanese).
 
 ## Credits
 
