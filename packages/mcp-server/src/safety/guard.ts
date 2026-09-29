@@ -148,8 +148,9 @@ export class SafetyGuard {
       error:
         `${toolName} targets a protected site ('${protectedUrl}' matches ` +
         `pattern '${matched}' in safety.json, as checked by the browser). ` +
-        'This is a guard against capturing sensitive sites (banking, payments, ' +
-        'health, government). Human confirmation is required via MCP elicitation.',
+        'This is a guard against unintended actions on, or captures of, sensitive ' +
+        'sites (banking, payments, health, government). Human confirmation is ' +
+        'required via MCP elicitation.',
     };
   }
 

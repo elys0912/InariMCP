@@ -584,15 +584,13 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
   }
   const protectedPatterns = parseProtectedPatterns(message.protectedUrlPatterns);
 
-  // Protected-domain check for single-tab captures (screenshot and
-  // scroll_and_capture), against the real URL of the target tab (not the
-  // server's last navigated URL). The server only attaches the patterns when
-  // confirm_protected_actions is true.
-  if (
-    (action === "screenshot" || action === "scrollAndCapture") &&
-    protectedPatterns.length > 0
-  ) {
-    const refusal = await checkProtectedScreenshot(tabId, protectedPatterns);
+  // Protected-domain check against the real URL of the target tab (not the
+  // server's last-seen URL, which is shared by every session). The server
+  // attaches the patterns, when confirm_protected_actions is true, to
+  // single-tab captures and to every acting tool without a `url` argument;
+  // the logging actions and screenshot_all_tabs apply them themselves below.
+  if (protectedPatterns.length > 0 && !SELF_PROTECTED_ACTIONS.has(action ?? "")) {
+    const refusal = await checkProtectedTarget(tabId, protectedPatterns);
     if (refusal) {
       result = refusal;
       postWireResponse(message, result);
@@ -734,7 +732,7 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         const tab = await resolveTab(tabId);
         // Same rule as a single-tab screenshot: refuse on a protected page,
         // judged by the tab's real URL.
-        const refusal = await checkProtectedScreenshot(tab.id, protectedPatterns);
+        const refusal = await checkProtectedTarget(tab.id, protectedPatterns);
         if (refusal) {
           result = refusal;
           break;
@@ -901,11 +899,23 @@ function postWireResponse(message: NativeMessage, result: CommandResult): void {
 }
 
 /**
- * Refuse a screenshot when the target tab (same resolution as the container
- * scope check / takeScreenshot) is on a protected domain. Returns null when
- * the capture may proceed. Fails closed if the tab cannot be resolved.
+ * Actions that apply `protectedUrlPatterns` in their own handler instead of
+ * being refused up front: all_tabs excludes protected tabs, start_logging
+ * refuses on its own tab, get_*_logs report a pause.
  */
-async function checkProtectedScreenshot(
+const SELF_PROTECTED_ACTIONS: ReadonlySet<string> = new Set([
+  "screenshotAllTabs",
+  "startLogging",
+  "getConsoleLogs",
+  "getNetworkLogs",
+]);
+
+/**
+ * Refuse a command when its target tab (same resolution as the container
+ * scope check and the handlers) is on a protected domain. Returns null when
+ * the command may proceed. Fails closed if the tab cannot be resolved.
+ */
+async function checkProtectedTarget(
   tabId: number | undefined,
   patterns: RegExp[],
 ): Promise<CommandResult | null> {

@@ -16,7 +16,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserAction, BrowserCommand, ToolResult } from '@kitsune-mcp/shared';
-import { getSafetyGuard } from '../safety/guard.js';
+import { getSafetyGuard, OBSERVE_TOOLS } from '../safety/guard.js';
 import type { SafetyConfig } from '../safety/config.js';
 import { getContainerConfig } from '../safety/container.js';
 import { sanitizeResult } from '../safety/sanitizer.js';
@@ -159,6 +159,11 @@ function buildCommandData(
  *     condition: the Extension refuses start_logging on a protected tab
  *     (confirmation_required), keeps the patterns with the tab and pauses
  *     recording while the tab is on a protected page.
+ *     Also on every acting tool (not in OBSERVE_TOOLS) without a `url`
+ *     argument: the guard's Layer 7 can only check the last URL it saw,
+ *     which is shared by every session and tab, so the Extension refuses
+ *     the command when the actual target tab is protected. Tools with a
+ *     `url` are checked by the guard against that URL instead.
  */
 const PROTECTED_CAPTURE_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAction>([
   'screenshot',
@@ -169,14 +174,21 @@ const PROTECTED_CAPTURE_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAct
   'get_network_logs',
 ]);
 
-function attachSafetyMetadata(command: BrowserCommand, config: SafetyConfig): void {
+function attachSafetyMetadata(
+  command: BrowserCommand,
+  config: SafetyConfig,
+  toolName: string,
+  args: Record<string, unknown>,
+): void {
   const containerCfg = getContainerConfig(config);
   if (containerCfg.enabled) {
     command.containerScope = { containerName: containerCfg.containerName };
   }
 
+  const hasUrl = typeof args['url'] === 'string' && args['url'] !== '';
+  const actsOnCurrentTab = !OBSERVE_TOOLS.has(toolName) && !hasUrl;
   if (
-    PROTECTED_CAPTURE_ACTIONS.has(command.action) &&
+    (PROTECTED_CAPTURE_ACTIONS.has(command.action) || actsOnCurrentTab) &&
     config.enabled &&
     config.confirmProtectedActions &&
     config.protectedUrlPatterns.length > 0
@@ -378,7 +390,7 @@ export function createToolHandler(
       data,
       requestId: '', // Will be assigned by connectionManager.sendCommand()
     };
-    attachSafetyMetadata(command, guard.config);
+    attachSafetyMetadata(command, guard.config, toolName, args);
 
     // -----------------------------------------------------------------------
     // 4. Send command to browser
@@ -386,8 +398,8 @@ export function createToolHandler(
     const connectionManager = getConnectionManager();
     const response = await connectionManager.sendCommand(command);
 
-    // Extension-side refusal: the target tab matched protectedUrlPatterns
-    // (single-tab screenshot). Same elicitation result as guard Layer 7.
+    // Extension-side refusal: the actual target tab of a capture or acting
+    // tool matched protectedUrlPatterns. Same elicitation result as guard Layer 7.
     if (!response.success && response.safetyDecision === 'confirmation_required') {
       const reportedUrl = response.data?.['url'];
       const reportedPattern = response.data?.['matchedPattern'];
