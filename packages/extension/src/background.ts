@@ -991,8 +991,8 @@ async function takeScreenshot(
 /**
  * Full-page capture. The content script only reports the page dimensions
  * ("captureFullPage"), so the image itself is taken with captureTab's `rect`
- * option (Firefox 82+). If that fails (older Firefox, page too large for a
- * single canvas, content script unavailable), the visible-area capture is
+ * option. If that fails (page too large for a single canvas, content script
+ * unavailable), the visible-area capture is
  * returned instead and `fullPageCaptured` is false.
  */
 async function captureFullPageImage(
