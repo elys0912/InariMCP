@@ -23,6 +23,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserAction, BrowserCommand, ToolResult } from '@kitsune-mcp/shared';
+import { ErrorCode } from '@kitsune-mcp/shared';
 import { getSafetyGuard, OBSERVE_TOOLS } from '../safety/guard.js';
 import type { SafetyDenial } from '../safety/guard.js';
 import {
@@ -37,6 +38,7 @@ import type { SafetyConfig } from '../safety/config.js';
 import { getContainerConfig } from '../safety/container.js';
 import { sanitizeResult, sanitizeString } from '../safety/sanitizer.js';
 import { compileUrlPatterns } from '../safety/url-pattern.js';
+import { applyPasswordPolicy, passwordSelectorRefusal } from '../safety/password-guard.js';
 import { audit } from '../safety/audit.js';
 import type { AuditDecision } from '../safety/audit.js';
 import { camelizeArgs } from '../utils/camelize.js';
@@ -154,6 +156,32 @@ function buildCommandData(
   // (already there from args, just verify)
 
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Argument validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Arguments the backends compile with `new RegExp()`. Case sensitivity is
+ * the backend's (Extension: case-sensitive for tabs / wait_for_url /
+ * wait_for_navigation / screenshot all_tabs, case-insensitive for
+ * get_network_logs; headless wait_for_url: case-sensitive).
+ */
+const REGEX_ARGUMENTS = ['urlPattern'] as const;
+
+/** Error message for the first regex argument that does not compile, or null. */
+export function invalidRegexArgument(args: Record<string, unknown>): string | null {
+  for (const key of REGEX_ARGUMENTS) {
+    const value = args[key];
+    if (typeof value !== 'string') continue;
+    try {
+      new RegExp(value);
+    } catch (e) {
+      return `Invalid ${key} '${value}': ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -486,20 +514,22 @@ export function createToolHandler(
     }
 
     // -----------------------------------------------------------------------
-    // 2. fox_type password protection
+    // 2. Password-field protection (fox_type / fox_set_value)
     // -----------------------------------------------------------------------
-    if (toolName === 'fox_type' && !guard.config.allowPasswordTyping) {
-      const selector = (args['selector'] as string) ?? '';
-      if (/type\s*=\s*["']?password/i.test(selector)) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: 'Typing into password fields is blocked by safety policy ' +
-                  '(allowPasswordTyping is false in safety config).',
-          }],
-          isError: true,
-        };
-      }
+    const passwordRefusal = passwordSelectorRefusal(
+      toolName, args, guard.config.allowPasswordTyping,
+    );
+    if (passwordRefusal !== null) {
+      return { content: [{ type: 'text' as const, text: passwordRefusal }], isError: true };
+    }
+
+    // Regex arguments are compiled by the backends; refuse invalid ones here.
+    const regexError = invalidRegexArgument(args);
+    if (regexError !== null) {
+      return {
+        content: [{ type: 'text' as const, text: `${regexError} [${ErrorCode.INVALID_ARGUMENTS}]` }],
+        isError: true,
+      };
     }
 
     // -----------------------------------------------------------------------
@@ -507,6 +537,8 @@ export function createToolHandler(
     // -----------------------------------------------------------------------
     const action = resolveAction(toolName, args);
     const data = buildCommandData(toolName, args);
+    // Set after camelize, so it wins over any argument of the same name.
+    applyPasswordPolicy(toolName, data, guard.config.allowPasswordTyping);
 
     // Extract tabId before sending (it goes at BrowserCommand level)
     const tabId = typeof data['tabId'] === 'number' ? data['tabId'] as number : undefined;
