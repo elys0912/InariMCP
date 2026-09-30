@@ -22,10 +22,12 @@
     "test": "vitest run --project=!e2e",
     "test:e2e": "vitest run --project=e2e",
     "e2e:extension": "node scripts/e2e/extension-load.mjs",
-    "install:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1",
-    "uninstall:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/uninstall.ps1",
-    "install:unix": "bash scripts/install.sh",
-    "uninstall:unix": "bash scripts/uninstall.sh"
+    "setup": "node scripts/install.mjs",
+    "teardown": "node scripts/uninstall.mjs",
+    "install:windows": "node scripts/install.mjs --build",
+    "install:unix": "node scripts/install.mjs --build",
+    "uninstall:windows": "node scripts/uninstall.mjs",
+    "uninstall:unix": "node scripts/uninstall.mjs"
   },
   "engines": {
     "node": ">=18.0.0"
