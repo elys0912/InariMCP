@@ -172,15 +172,21 @@ declare namespace browser {
     function setBadgeText(details: { text: string | null; tabId?: number }): Promise<void>;
     function setBadgeBackgroundColor(details: { color: string; tabId?: number }): Promise<void>;
     function setTitle(details: { title: string | null; tabId?: number }): Promise<void>;
+    /** Firefox may refuse it outside a user action. */
+    const openPopup: (() => Promise<void>) | undefined;
   }
 
   namespace notifications {
-    function create(options: {
+    interface NotificationOptions {
       type: string;
       title: string;
       message: string;
       iconUrl?: string;
-    }): Promise<string>;
+    }
+    function create(options: NotificationOptions): Promise<string>;
+    function create(notificationId: string, options: NotificationOptions): Promise<string>;
+    const clear: ((notificationId: string) => Promise<boolean>) | undefined;
+    const onClicked: { addListener(callback: (notificationId: string) => void): void } | undefined;
   }
 
   interface ContextualIdentity {

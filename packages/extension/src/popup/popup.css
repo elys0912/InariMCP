@@ -304,3 +304,108 @@ footer {
     transform: translateY(0);
   }
 }
+
+/* Approval requests (answered here, never in the page) */
+.approvals {
+  background: #313244;
+  border-left: 3px solid #f9e2af;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.approvals h2 {
+  color: #f9e2af;
+}
+
+.approval-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.approval-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.approval-key {
+  flex: 0 0 80px;
+  color: #a6adc8;
+}
+
+.approval-value {
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.approval-value.mono {
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow: auto;
+  background: #1e1e2e;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.approval-card.protected_action .approval-row:first-of-type .approval-value {
+  font-weight: 600;
+  color: #f9e2af;
+}
+
+.approval-message {
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.approval-detail,
+.approval-note,
+.approval-queued {
+  font-size: 11px;
+  color: #a6adc8;
+  line-height: 1.5;
+  margin: 6px 0;
+}
+
+.approval-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn-approve,
+.btn-deny {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #1e1e2e;
+}
+
+.btn-approve {
+  background: #a6e3a1;
+}
+
+.btn-deny {
+  background: #f38ba8;
+}
+
+.btn-approve:disabled,
+.btn-deny:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Keep the request and its buttons within the popup height */
+#approvals:not([hidden]) ~ .quick-actions,
+#approvals:not([hidden]) ~ .current-tab {
+  display: none;
+}

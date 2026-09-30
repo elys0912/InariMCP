@@ -159,12 +159,6 @@
     maxLength?: number;
   }
 
-  interface ApprovalOptions {
-    message?: string;
-    detail?: string;
-    timeout?: number;
-  }
-
   interface CaptchaOptions {
     detectOnly?: boolean;
     timeout?: number;
@@ -272,7 +266,6 @@
     DEFAULT: 10_000,
     WAIT_ELEMENT: 10_000,
     NETWORK_IDLE: 10_000,
-    APPROVAL: 60_000,
     CAPTCHA: 180_000,
     SCROLL_STEP: 500,
   } as const;
@@ -1036,8 +1029,6 @@
         return pressKey(message as unknown as PressKeyOptions);
       case "getText":
         return getText(message as unknown as TextOptions);
-      case "requestApproval":
-        return requestApproval(message as unknown as ApprovalOptions);
       case "solveCaptcha":
         return solveCaptcha(message as unknown as CaptchaOptions);
       case "cancelHumanWait":
@@ -1300,12 +1291,14 @@
   const activeBanners = new Map<string, (value: string) => void>();
 
   /**
-   * The server stopped waiting (cancel_human_wait): close the banners as if
-   * they had timed out, so a late click cannot look like an answer.
+   * The server stopped waiting (cancel_human_wait): close the captcha banner
+   * as if it had timed out, so a late click cannot look like an answer.
+   * (Approval requests are never shown in the page: the background keeps
+   * them for the toolbar popup.)
    */
   function cancelHumanWait(): Record<string, unknown> {
     let cancelled = 0;
-    for (const id of ["__fox_approval_banner", "__fox_captcha_banner"]) {
+    for (const id of ["__fox_captcha_banner"]) {
       const finish = activeBanners.get(id);
       if (finish) {
         finish("timeout");
@@ -1387,33 +1380,6 @@
       (document.body || document.documentElement).appendChild(banner);
       setTimeout(() => finish("timeout"), config.timeoutMs);
     });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Approval banner
-  // ---------------------------------------------------------------------------
-
-  async function requestApproval(options: ApprovalOptions): Promise<Record<string, unknown>> {
-    const timeoutMs = options.timeout || TIMEOUTS.APPROVAL;
-    const result = await createOverlayBanner({
-      id: "__fox_approval_banner",
-      title: msg("bannerApprovalTitle", options.message || msg("bannerApprovalDefault")),
-      detail: options.detail,
-      buttons: [
-        { label: msg("bannerApprove"), value: "approve", color: "#16a34a" },
-        { label: msg("bannerDeny"), value: "deny", color: "#dc2626" },
-      ],
-      timeoutMs,
-      borderColor: "#e94560",
-      background: "#1a1a2e",
-    });
-
-    return {
-      success: true,
-      approved: result === "approve",
-      timedOut: result === "timeout",
-      decidedAt: new Date().toISOString(),
-    };
   }
 
   // ---------------------------------------------------------------------------

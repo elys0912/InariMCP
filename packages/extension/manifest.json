@@ -21,7 +21,7 @@
   ],
 
   "background": {
-    "scripts": ["dist/i18n.js", "dist/action-map.js", "dist/background.js"],
+    "scripts": ["dist/i18n.js", "dist/action-map.js", "dist/approval.js", "dist/background.js"],
     "persistent": true
   },
 

@@ -23,6 +23,12 @@
     </header>
 
     <main>
+      <!-- Approval requests are answered here, outside any web page. -->
+      <section id="approvals" class="approvals" hidden>
+        <h2 data-i18n="popupApprovalsTitle">Approval requests</h2>
+        <div id="approval-list"></div>
+      </section>
+
       <section id="setup" class="setup" hidden>
         <h2 id="setup-title"></h2>
         <p id="setup-text" class="setup-text"></p>
@@ -78,6 +84,7 @@
   </div>
 
   <script src="../i18n.js"></script>
+  <script src="../approval.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

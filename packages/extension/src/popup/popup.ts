@@ -202,6 +202,165 @@ function showToast(message: string, type: ToastType = 'info'): void {
   setTimeout(() => toast.remove(), 3000);
 }
 
+// ---------------------------------------------------------------------------
+// Approval requests
+// ---------------------------------------------------------------------------
+//
+// The background keeps approval requests (request_approval commands) until
+// they are answered here. Pages and content scripts cannot reach this popup,
+// so a decision made here is the human's. ApprovalView / APPROVAL_MESSAGE:
+// approval.ts (loaded before this script by popup.html).
+
+interface ApprovalListResponse {
+  success: boolean;
+  approvals?: ApprovalView[];
+}
+
+const APPROVAL_POLL_MS = 1_000;
+
+function approvalRow(label: string, value: string, mono = false): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'approval-row';
+  const key = document.createElement('span');
+  key.className = 'approval-key';
+  key.textContent = label;
+  const val = document.createElement(mono ? 'pre' : 'span');
+  val.className = mono ? 'approval-value mono' : 'approval-value';
+  val.textContent = value;
+  row.append(key, val);
+  return row;
+}
+
+function approvalCard(view: ApprovalView, onDecide: (id: string, approved: boolean) => void): HTMLElement {
+  const card = document.createElement('div');
+  card.className = `approval-card ${view.kind}`;
+
+  const title = document.createElement('p');
+  title.className = 'approval-title';
+  title.textContent = view.kind === 'protected_action' ? t('approvalProtectedTitle') : t('approvalMessageTitle');
+  card.appendChild(title);
+
+  if (view.kind === 'protected_action') {
+    card.appendChild(approvalRow(t('approvalSite'), view.host ?? ''));
+    card.appendChild(approvalRow(t('approvalTool'), view.toolName ?? ''));
+    if (view.url) card.appendChild(approvalRow(t('approvalPage'), view.url));
+    if (view.matchedPattern) card.appendChild(approvalRow(t('approvalPattern'), view.matchedPattern));
+    if (view.summary) card.appendChild(approvalRow(t('approvalArgs'), view.summary, true));
+  } else {
+    const message = document.createElement('p');
+    message.className = 'approval-message';
+    message.textContent = view.message || t('notifyApprovalDefault');
+    card.appendChild(message);
+    if (view.detail) {
+      const detail = document.createElement('p');
+      detail.className = 'approval-detail';
+      detail.textContent = view.detail;
+      card.appendChild(detail);
+    }
+  }
+
+  const secondsLeft = String(Math.max(0, Math.round((view.deadline - Date.now()) / 1000)));
+  const note = document.createElement('p');
+  note.className = 'approval-note';
+  note.textContent = view.kind === 'protected_action'
+    ? t('approvalProtectedNote', secondsLeft)
+    : t('approvalMessageNote', secondsLeft);
+  card.appendChild(note);
+
+  const buttons = document.createElement('div');
+  buttons.className = 'approval-buttons';
+  const approve = document.createElement('button');
+  approve.className = 'btn-approve';
+  approve.textContent = t('approvalApprove');
+  approve.addEventListener('click', () => onDecide(view.id, true));
+  const deny = document.createElement('button');
+  deny.className = 'btn-deny';
+  deny.textContent = t('approvalDeny');
+  deny.addEventListener('click', () => onDecide(view.id, false));
+  buttons.append(deny, approve);
+  card.appendChild(buttons);
+  return card;
+}
+
+/**
+ * Buttons of a newly shown request stay disabled this long, so a click
+ * meant for the previous request (or made while the card changes) cannot
+ * land on a different one.
+ */
+const APPROVAL_ARM_DELAY_MS = 800;
+
+/** The request on screen, since when, and how many others are queued. */
+let shownApproval: { id: string; more: number; shownAt: number } | null = null;
+
+/**
+ * Show the oldest pending request (one at a time: the buttons never move
+ * under the cursor), with a count of the others. The card is rebuilt only
+ * when the request on screen changes; otherwise just the countdown updates.
+ */
+async function refreshApprovals(): Promise<void> {
+  let approvals: ApprovalView[] = [];
+  try {
+    const reply = await browser.runtime.sendMessage({ type: APPROVAL_MESSAGE.LIST }) as ApprovalListResponse;
+    approvals = reply?.success && Array.isArray(reply.approvals) ? reply.approvals : [];
+  } catch {
+    approvals = [];
+  }
+
+  const list = document.getElementById('approval-list');
+  setHidden('approvals', approvals.length === 0);
+  if (!list) return;
+  const view = approvals[0];
+  if (!view) {
+    shownApproval = null;
+    list.replaceChildren();
+    return;
+  }
+
+  const more = approvals.length - 1;
+  if (shownApproval?.id === view.id && shownApproval.more === more) {
+    const secondsLeft = String(Math.max(0, Math.round((view.deadline - Date.now()) / 1000)));
+    const note = list.querySelector('.approval-note');
+    if (note) {
+      note.textContent = view.kind === 'protected_action'
+        ? t('approvalProtectedNote', secondsLeft)
+        : t('approvalMessageNote', secondsLeft);
+    }
+    return;
+  }
+
+  const shownAt = shownApproval?.id === view.id ? shownApproval.shownAt : Date.now();
+  shownApproval = { id: view.id, more, shownAt };
+  const card = approvalCard(view, (id, approved) => { void decide(id, approved); });
+  const armIn = shownAt + APPROVAL_ARM_DELAY_MS - Date.now();
+  if (armIn > 0) {
+    const buttons = card.querySelectorAll('button');
+    buttons.forEach((b) => { b.disabled = true; });
+    setTimeout(() => buttons.forEach((b) => { b.disabled = false; }), armIn);
+  }
+  const children: HTMLElement[] = [card];
+  if (more > 0) {
+    const queued = document.createElement('p');
+    queued.className = 'approval-queued';
+    queued.textContent = t('approvalMore', String(more));
+    children.push(queued);
+  }
+  list.replaceChildren(...children);
+}
+
+async function decide(id: string, approved: boolean): Promise<void> {
+  try {
+    const reply = await browser.runtime.sendMessage({
+      type: APPROVAL_MESSAGE.DECIDE,
+      id,
+      approved,
+    }) as { success?: boolean; error?: string };
+    if (!reply?.success) showToast(reply?.error || t('toastApprovalGone'), 'warning');
+  } catch (error: unknown) {
+    showToast(error instanceof Error ? error.message : t('toastUnknownError'), 'error');
+  }
+  await refreshApprovals();
+}
+
 /** Fill every [data-i18n] element with its localized message. */
 function localizePage(): void {
   document.documentElement.lang = browser.i18n.getUILanguage();
@@ -297,4 +456,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   void refreshStatus(os, false);
+
+  // Pending approval requests: shown first, refreshed while the popup is open
+  // (new requests arrive, others time out).
+  void refreshApprovals();
+  setInterval(() => { void refreshApprovals(); }, APPROVAL_POLL_MS);
 });
