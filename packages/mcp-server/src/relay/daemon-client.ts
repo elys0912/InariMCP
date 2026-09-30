@@ -39,12 +39,13 @@ import { rotateLogIfLarge } from '../utils/log-file.js';
 import { RELAY_HEARTBEAT_MS } from '../daemon/activity.js';
 import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, signRequest, verifyResponse } from '../transport/auth.js';
 import {
-  DAEMON_SETTING_KEYS,
   RELAY_ID_HEADER,
+  daemonSettingsFromInfo,
+  diffDaemonSettings,
+  effectiveDaemonSettings,
   readApiTokenFile,
   resolveHost,
   resolveHttpPort,
-  snapshotDaemonSettings,
 } from '../utils/endpoint.js';
 
 /** How long a relay waits for a daemon it started to answer /health. */
@@ -184,7 +185,7 @@ export class DaemonClient {
 
     try {
       // env is inherited as-is: daemon settings such as FOX_HEADLESS come
-      // from the relay that starts it (DAEMON_SETTING_KEYS).
+      // from the relay that starts it (DAEMON_SETTINGS).
       const child = spawn(process.execPath, [entry, '--daemon'], {
         detached: true,
         stdio: ['ignore', 'ignore', logFd],
@@ -274,18 +275,12 @@ export class DaemonClient {
       return null;
     }
     if (reply.status !== 200 || !reply.verified || !isRecord(reply.body)) return null;
-    const daemonSettings = reply.body['settings'];
-    if (!isRecord(daemonSettings)) return null;
+    const theirs = daemonSettingsFromInfo(reply.body);
+    if (theirs === null) return null;
     const pid = typeof reply.body['pid'] === 'number' ? reply.body['pid'] : 'unknown';
 
-    const mine = snapshotDaemonSettings();
-    const diffs: string[] = [];
-    for (const key of DAEMON_SETTING_KEYS) {
-      const theirs = typeof daemonSettings[key] === 'string' ? daemonSettings[key] : '';
-      if ((mine[key] ?? '') !== theirs) {
-        diffs.push(`${key}: this session '${mine[key] || '(unset)'}', daemon '${theirs || '(unset)'}'`);
-      }
-    }
+    // Effective values, so `true` / `1` and old / new variable names compare equal.
+    const diffs = diffDaemonSettings(effectiveDaemonSettings(process.env), theirs);
     if (diffs.length === 0) return [];
     return [
       `The shared KitsuneMCP daemon (PID ${pid}) was started with different settings ` +

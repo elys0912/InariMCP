@@ -26,13 +26,14 @@ import { startWebSocketServer } from '../transport/ws-bridge.js';
 import { getConnectionManager } from '../connection/manager.js';
 import { isHeadlessEnabled, unrecognizedHeadlessValue } from '../utils/headless-env.js';
 import { getSafetyGuard } from '../safety/guard.js';
-import { getContainerConfig } from '../safety/container.js';
+import { headlessContainerScopeWarning } from '../safety/container.js';
 import {
   isLoopbackHost,
   loadOrCreateApiToken,
   resolveHost,
   resolveHttpPort,
   resolveWsPort,
+  effectiveDaemonSettings,
   snapshotDaemonSettings,
 } from '../utils/endpoint.js';
 import { DaemonActivity, resolveIdleTimeoutMs } from './activity.js';
@@ -77,14 +78,8 @@ async function startHeadless(): Promise<void> {
 
   // Layer 0 cannot be honoured without Firefox containers: the guard
   // refuses every command (checkHeadlessContainerScope). Say so up front.
-  const containerCfg = getContainerConfig(getSafetyGuard().config);
-  if (containerCfg.enabled) {
-    log(
-      `WARNING: container_scope is enabled ('${containerCfg.containerName}') ` +
-      'but the headless backend has no containers — all browser commands will be ' +
-      'refused as out_of_scope.',
-    );
-  }
+  const containerWarning = headlessContainerScopeWarning(getSafetyGuard().config);
+  if (containerWarning !== null) log(`WARNING: ${containerWarning}`);
 
   connectionManager.registerBrowser('headless', (message: string) => {
     const command = JSON.parse(message) as { action: string; tabId?: number; data?: Record<string, unknown>; requestId: string };
@@ -121,6 +116,7 @@ export async function runDaemon(): Promise<void> {
   }
   const activity = new DaemonActivity();
   const settings = snapshotDaemonSettings();
+  const effectiveSettings = effectiveDaemonSettings(process.env);
 
   if (!isLoopbackHost(host)) {
     log(
@@ -150,6 +146,7 @@ export async function runDaemon(): Promise<void> {
         headless: headlessMode,
         nativeHosts: connectionManager.nativeHostCount,
         settings,
+        effectiveSettings,
       }),
     });
   } catch (err: unknown) {

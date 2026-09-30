@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { z } from 'zod';
 import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { isFalsyEnv, isTruthyEnv, resolveFoxEnv } from '../utils/headless-env.js';
 
 const ContainerScopeSchema = z.object({
   enabled: z.boolean(),
@@ -176,10 +177,11 @@ export function loadConfig(): LoadedSafetyConfig {
     }
   }
 
-  if (resolveEnv(ENV.FOX_READ_ONLY, LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY) === '1') {
+  // Both only tighten the policy, so the values beyond 1 / 0 (true, yes, off, …) are safe to accept.
+  if (isTruthyEnv(resolveFoxEnv(process.env, ENV.FOX_READ_ONLY, LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY))) {
     config = { ...config, readOnly: true };
   }
-  if (resolveEnv(ENV.FOX_ALLOW_SCRIPTS, LEGACY_ENV.CLAUDE_BROWSER_ALLOW_SCRIPTS) === '0') {
+  if (isFalsyEnv(resolveFoxEnv(process.env, ENV.FOX_ALLOW_SCRIPTS, LEGACY_ENV.CLAUDE_BROWSER_ALLOW_SCRIPTS))) {
     config = { ...config, allowScriptExecution: false };
   }
 

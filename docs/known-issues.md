@@ -12,7 +12,8 @@ KitsuneMCP の現行版（v0.1.x）で分かっている制約・注意点をま
 
 - **Extension 経路で未実装のツールが8本ある**: `fox_snapshot`, `fox_run_workflow`, `fox_audit_page`, `fox_inject_observer`, `fox_remove_observer`, `fox_handle_dialog`, `fox_eval_chain`, `fox_wait_and_act`。呼ぶと `Not implemented in extension` が返る（headless では動くものもある）
 - **ネイティブダイアログ（alert / confirm / prompt）の表示中は、そのタブへのコマンドがタイムアウトする**: Extension 経路ではダイアログを検知・操作できない
-- **headless の `fox_handle_dialog` はクリックと組み合わせられない**: headless のコマンドは1本ずつ順に実行されるので、`fox_handle_dialog` で待っている間は `fox_click` が後ろで待たされる。拾えるのは、ページ自身のタイマーなどで出るダイアログだけ
+- **headless の `fox_handle_dialog` は待機中に他の操作を止めない**: 待っている間にダイアログが出なければ、次のダイアログ（30 秒以内）を指定の動作で処理する「予約」になる。予約も待機もないダイアログは 2 秒後に自動で dismiss され、そのとき実行中の操作の結果に `dialogs` と警告が付く。承認したいときは、ダイアログを開く操作の前に `fox_handle_dialog` を呼ぶ
+- **headless では `container_scope` が有効だと全コマンドが拒否される**: headless に Firefox のコンテナがないため、安全側（fail-closed）で拒否する。headless 用に `container_scope.enabled: false` の `safety.json` を別に作り、`FOX_SAFETY_CONFIG` で指定して daemon を起動し直すか、Extension 経路を使う。`fox_safety_status` は拒否されない
 - **content script が入れないページでは、読み取り・操作系のツールが使えない**: Firefox の JSON ビューア、`about:` ページ、addons.mozilla.org など。`fox_screenshot` や `fox_get_tabs` のようにタブ API だけで動くツールは使える
 - **`fox_execute_script` は content script の隔離された環境で実行される**:
   - スクリプト内の `console.log` はログに残らない。結果は戻り値で返す
