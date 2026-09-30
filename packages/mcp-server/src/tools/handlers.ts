@@ -217,8 +217,41 @@ export function attachSafetyMetadata(
 // ToolResult → MCP CallToolResult conversion
 // ---------------------------------------------------------------------------
 
-function toolResultToCallResult(result: ToolResult): CallToolResult {
+/** Headless fox_snapshot result: the tree is text and is shown as such, not as an escaped JSON string. */
+function isAriaSnapshot(
+  data: unknown,
+): data is Record<string, unknown> & { format: 'aria-yaml'; snapshot: string } {
+  return (
+    typeof data === 'object' && data !== null && !Array.isArray(data) &&
+    (data as Record<string, unknown>)['format'] === 'aria-yaml' &&
+    typeof (data as Record<string, unknown>)['snapshot'] === 'string'
+  );
+}
+
+/**
+ * Keys of a failed browser result that the model needs to fix the call
+ * (the option list of a select, dialogs handled meanwhile, warnings). Only
+ * these are forwarded, under a fixed top-level key, so page-derived data can
+ * not pose as e.g. a confirmation request (relay/approval.ts reads
+ * `confirmationRequired` from top-level JSON blocks).
+ */
+const FAILURE_DETAIL_KEYS = ['availableOptions', 'dialogs', 'warnings'] as const;
+
+export function toolResultToCallResult(result: ToolResult): CallToolResult {
   if (result.success) {
+    if (isAriaSnapshot(result.data)) {
+      const { snapshot, ...meta } = result.data;
+      const truncated = meta['truncated'] === true
+        ? `\n[truncated: ${snapshot.length} of ${String(meta['totalLength'])} chars]`
+        : '';
+      return {
+        content: [
+          { type: 'text' as const, text: JSON.stringify(meta, null, 2) },
+          { type: 'text' as const, text: `${snapshot}${truncated}` },
+        ],
+      };
+    }
+
     const textContent = typeof result.data === 'string'
       ? result.data
       : JSON.stringify(result.data ?? { success: true }, null, 2);
@@ -233,10 +266,21 @@ function toolResultToCallResult(result: ToolResult): CallToolResult {
   const details = result.details ? `\n\nDetails: ${JSON.stringify(result.details)}` : '';
   const code = result.code ? ` [${result.code}]` : '';
 
-  return {
-    content: [{ type: 'text' as const, text: `${errorText}${code}${details}` }],
-    isError: true,
-  };
+  const content: CallToolResult['content'] = [
+    { type: 'text' as const, text: `${errorText}${code}${details}` },
+  ];
+  const data = result.data;
+  if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+    const kept: Record<string, unknown> = {};
+    for (const key of FAILURE_DETAIL_KEYS) {
+      if (key in data) kept[key] = (data as Record<string, unknown>)[key];
+    }
+    if (Object.keys(kept).length > 0) {
+      content.push({ type: 'text' as const, text: JSON.stringify({ browser: kept }) });
+    }
+  }
+
+  return { content, isError: true };
 }
 
 /**

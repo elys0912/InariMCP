@@ -133,6 +133,8 @@ FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
 
 Note this loses your real sessions/cookies/logged-in state — it's a disposable profile, same tradeoff as Playwright MCP. Use the extension path if you want your actual logged-in Firefox.
 
+Headless has no Firefox containers, so with `container_scope.enabled` every command is refused (fail-closed). For a headless daemon, point `FOX_SAFETY_CONFIG` at a separate `safety.json` with `container_scope.enabled: false`. Parameters the headless backend ignores are listed in the `warnings` of each result.
+
 ## Architecture
 
 A monorepo of four TypeScript packages:
@@ -160,8 +162,8 @@ All prefixed `FOX_`; the old `CLAUDE_BROWSER_*` names (inherited from the fork) 
 | `FOX_HTTP_PORT` | `8765` | HTTP server port |
 | `FOX_WS_PORT` | `8766` | WebSocket server port |
 | `FOX_CAPS` | (all tools) | Tool profile: `core`, `logs`, `script`, `workflow`, `human`, `container`, `wait` — comma-separated. **Not a safety boundary** — it only trims which tool schemas get registered to save context tokens. Actual restrictions (read-only, no scripts, URL limits, container scope) come from `safety.json` / the SafetyGuard below, and a client can always register a wider `FOX_CAPS` to reach any tool anyway |
-| `FOX_HEADLESS` | `0` | `1` to enable the headless Playwright backend |
-| `FOX_HEADLESS_STARTUP_TIMEOUT` | `45` | Headless browser startup timeout (seconds) |
+| `FOX_HEADLESS` | `0` | `1`, `true` or `yes` to enable the headless Playwright backend (anything else, e.g. `0`, is off) |
+| `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | Headless browser startup timeout (milliseconds) |
 | `FOX_EXECUTABLE` | — | Explicit path to a Firefox binary |
 | `FOX_SCREENSHOTS_DIR` | OS temp dir | Where screenshots are saved |
 | `FOX_READ_ONLY` | — | `1` to force read-only mode |

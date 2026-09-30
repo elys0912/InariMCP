@@ -6,7 +6,7 @@ import {
   isTruthyEnv,
   unrecognizedHeadlessValue,
 } from '../src/utils/headless-env.js';
-import { checkHeadlessContainerScope } from '../src/safety/container.js';
+import { checkHeadlessContainerScope, headlessContainerScopeWarning } from '../src/safety/container.js';
 import type { SafetyConfig } from '../src/safety/config.js';
 
 describe('isTruthyEnv', () => {
@@ -68,6 +68,27 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
   } as unknown as SafetyConfig;
 
   afterEach(() => { vi.unstubAllEnvs(); });
+
+  // TODO(test): headless で container_scope 有効なら observe 系ツールも拒否される（fail-closed）
+  // TODO(test): fox_safety_status は拒否されない
+  // TODO(test): 旧名 CLAUDE_BROWSER_HEADLESS でも同じ判定になる
+  // TODO(test): 監査ログに out_of_scope が記録される
+
+  it('keeps refusing, and says how to get out (own safety.json via FOX_SAFETY_CONFIG)', () => {
+    vi.stubEnv('FOX_HEADLESS', '1');
+    const denial = checkHeadlessContainerScope(config);
+    expect(denial?.safetyDecision).toBe('out_of_scope');
+    expect(denial?.error).toContain('FOX_SAFETY_CONFIG');
+  });
+
+  it('headlessContainerScopeWarning is null unless headless and enabled', () => {
+    vi.stubEnv('FOX_HEADLESS', '1');
+    expect(headlessContainerScopeWarning(config)).toContain('headless');
+    expect(headlessContainerScopeWarning({ ...config, containerScope: { enabled: false, containerName: 'agent' } } as SafetyConfig)).toBeNull();
+    expect(headlessContainerScopeWarning({ ...config, enabled: false } as SafetyConfig)).toBeNull();
+    vi.stubEnv('FOX_HEADLESS', '0');
+    expect(headlessContainerScopeWarning(config)).toBeNull();
+  });
 
   it('denies only when headless is really on', () => {
     vi.stubEnv('FOX_HEADLESS', '1');
