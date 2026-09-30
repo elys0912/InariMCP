@@ -49,12 +49,35 @@ describe('host patterns', () => {
     expect(sub('https://example.test/')).toBe(false);
   });
 
-  it('a path matches at a segment boundary', () => {
-    const p = matcher('example.test/admin');
+  it('an allowed path matches as written, at a segment boundary', () => {
+    const p = matcher('example.test/admin', 'allowed');
     expect(p('https://example.test/admin')).toBe(true);
     expect(p('https://example.test/admin/users?x=1')).toBe(true);
     expect(p('https://example.test/administrator')).toBe(false);
+    expect(p('https://example.test/%61dmin')).toBe(false);
     expect(p('https://example.test/')).toBe(false);
+  });
+
+  it('a blocked / protected path matches any spelling and continuation of it', () => {
+    for (const list of ['blocked', 'protected'] as const) {
+      const p = matcher('example.test/admin', list);
+      for (const path of ['/admin', '/ADMIN', '//admin', '/%61dmin', '/admin;x', '/administrator', '/admin/x']) {
+        expect(p(`https://example.test${path}`), `${list} ${path}`).toBe(true);
+      }
+      expect(p('https://example.test/docs/admin')).toBe(false);
+    }
+  });
+
+  it('a trailing /* means any path; * elsewhere in a path is fatal', () => {
+    const any = matcher('blocked.test/*');
+    expect(any('https://blocked.test/login')).toBe(true);
+    expect(any('https://blocked.test')).toBe(true);
+    const below = matcher('blocked.test/app/*');
+    expect(below('https://blocked.test/app/x')).toBe(true);
+    expect(below('https://blocked.test/other')).toBe(false);
+    for (const list of ['blocked', 'allowed', 'protected'] as const) {
+      expect(compileUrlPatterns(['blocked.test/a*b'], list).issues[0]?.fatal).toBe(true);
+    }
   });
 
   it('paths compare case-insensitively except in the allowlist', () => {
@@ -76,6 +99,13 @@ describe('host patterns', () => {
 });
 
 describe('re: patterns', () => {
+  it('in blocked / protected lists also test the raw URL (what the Extension sees)', () => {
+    const r = matcher('re:^https://bank\\.test/', 'protected');
+    expect(r('https://bank.test./x')).toBe(true);
+    const allowed = matcher('re:^https://u@', 'allowed');
+    expect(allowed('https://u@example.test/')).toBe(false);
+  });
+
   it('test the normalised URL, case-insensitively', () => {
     const r = matcher('re:^https://mychart\\.');
     expect(r('https://MyChart.clinic.test/')).toBe(true);
@@ -98,7 +128,10 @@ describe('legacy regex patterns', () => {
     ['\\.gov(/|$)', 'https://irs.gov/', 'https://gov.attacker.test/'],
     ['stripe\\.com/dashboard', 'https://stripe.com/dashboard/x', 'https://stripe.com/docs'],
     ['^https://a\\.example/', 'https://a.example/x', 'http://a.example/x'],
-  ])('%s is read as a host pattern', (source, hit, miss) => {
+    ['^https://a\\.example/', 'https://a.example/x', 'https://sub.a.example/x'],
+    ['^https?://a\\.example(/|$)', 'http://a.example', 'https://sub.a.example/'],
+    ['\\.a\\.example', 'https://sub.a.example/', 'https://a.example/'],
+  ])('%s is read as a host pattern (%s yes, %s no)', (source, hit, miss) => {
     const { patterns, issues } = compileUrlPatterns([source], 'allowed');
     expect(issues).toEqual([]);
     expect(patterns[0]!.kind).toBe('host');
@@ -140,12 +173,17 @@ describe('other issues', () => {
 
 describe('wireSource (sent to the Extension, compiled there with flag i)', () => {
   it('matches the same URLs as test() for host patterns', () => {
-    const { patterns } = compileUrlPatterns(['example.test', '*.sub.test', 'example.test/admin'], 'protected');
+    const { patterns } = compileUrlPatterns(
+      ['example.test', '*.sub.test', 'example.test/admin', '^https://exact\\.test/'],
+      'protected',
+    );
     const urls = [
       'https://example.test/', 'https://a.example.test/x', 'https://example.test.attacker.test/',
       'https://attacker.test/?example.test', 'https://example.test@attacker.test/',
       'https://sub.test/', 'https://a.sub.test/', 'https://example.test/admin/x',
       'https://example.test/administrator', 'https://example.test:8443/admin',
+      'https://example.test//admin', 'https://EXAMPLE.test/ADMIN', 'https://exact.test/',
+      'https://www.exact.test/', 'http://exact.test/',
     ];
     for (const p of patterns) {
       const re = new RegExp(p.wireSource, 'i');
@@ -161,3 +199,6 @@ describe('DEFAULT_CONFIG protectedUrlPatterns', () => {
     expect(compileUrlPatterns(DEFAULT_CONFIG.protectedUrlPatterns, 'protected').issues).toEqual([]);
   });
 });
+
+// TODO(test): wireSource vs test() for percent-encoded paths (/%61dmin): test() decodes, the Extension regex does not.
+// TODO(test): IPv6 hosts and ports in patterns (not supported; legacy fallback / fatal paths).

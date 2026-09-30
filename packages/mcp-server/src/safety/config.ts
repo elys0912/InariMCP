@@ -53,7 +53,9 @@ export const DEFAULT_CONFIG: SafetyConfig = {
     'stripe.com/dashboard',
     '*.gov',
     'healthcare.gov',
-    're:^https?://mychart\\.',
+    // Any host with a `mychart` label (patient portals: mychart.<org>.org,
+    // www.mychart.<org>.com ...).
+    're:^https?://(?:[^/?#@]+\\.)?mychart\\.',
   ],
   containerScope: {
     enabled: false,

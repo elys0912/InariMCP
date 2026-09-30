@@ -601,9 +601,11 @@ export function createToolHandler(
     // data.tab.url) per tab, so the guard's checks see the current page on
     // both the Extension and headless paths. Then check the URL the command
     // ended on: a redirect or a clicked link may have reached a blocked site.
-    if (response.success && response.data) {
-      guard.noteUrl(response.data, args, toolName);
-      const reached = guard.checkReachedUrl(toolName, args, response.data, transport);
+    // (Without data too: fox_close_tab answers {success: true} alone.)
+    if (response.success) {
+      const resultData = response.data ?? {};
+      guard.noteUrl(resultData, args, toolName);
+      const reached = guard.checkReachedUrl(toolName, args, resultData, transport);
       if (reached !== null) {
         return safetyDenialToCallResult({ ...reached, decision: reached.safetyDecision });
       }

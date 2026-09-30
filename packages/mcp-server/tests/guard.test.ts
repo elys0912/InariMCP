@@ -221,3 +221,23 @@ describe('confirmationFromBrowser', () => {
     expect(g.urlFor(5)).toBe('https://bank.test/');
   });
 });
+
+describe('review follow-ups', () => {
+  it("fox_wait_for_url's url is not a navigation target: the tab URL is checked", () => {
+    const g = guard({ blockedUrlPatterns: ['blocked.test'] });
+    g.noteUrl({ url: 'https://blocked.test/' }, { tabId: 1 }, 'fox_click');
+    expect(decision(g, 'fox_wait_for_url', { tabId: 1, url: 'https://fine.test/' })).toBe('blocked_url');
+  });
+
+  it('the default protected list covers mychart portals on any host label', () => {
+    const g = guard({ protectedUrlPatterns: DEFAULT_CONFIG.protectedUrlPatterns });
+    expect(decision(g, 'fox_click', { tabId: 1, url: 'https://www.mychart.clinic.test/' }))
+      .toBe('confirmation_required');
+    expect(decision(g, 'fox_click', { tabId: 1, url: 'https://mychart.clinic.test/' }))
+      .toBe('confirmation_required');
+    expect(decision(g, 'fox_click', { tabId: 1, url: 'https://notmychart.clinic.test/' })).toBeNull();
+  });
+});
+
+// TODO(test): handlers.ts calls noteUrl() for data-less successes (fox_close_tab returns {success:true} only) — cover through createToolHandler with a fake browser.
+// TODO(test): checkReachedUrl through createToolHandler: result withheld and the tab URL recorded.

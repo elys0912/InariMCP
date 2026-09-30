@@ -9,7 +9,7 @@
  *   host           `example.com`         the host and every subdomain
  *   subdomains     `*.example.com`       subdomains only
  *   host + path    `example.com/admin`   ... whose path starts with /admin
- *                                        (at a segment boundary)
+ *                                        (`example.com/*` = any path)
  *   scheme         `https://example.com` ... over that scheme only
  *   regex          `re:<regex>`          tested (case-insensitive) against the
  *                                        normalised URL: scheme://host[:port]
@@ -18,17 +18,21 @@
  *
  * Earlier releases treated every pattern as an unanchored regex over the raw
  * URL. Such legacy patterns keep working where possible:
- *   - simple ones (`paypal\.com`, `\.gov(/|$)`, `^https://a\.example/`) are
- *     read as the equivalent host pattern;
+ *   - simple ones are read as the equivalent host pattern: `paypal\.com`
+ *     (host and subdomains), `\.gov(/|$)` (subdomains only),
+ *     `^https://a\.example/` (that host only, as the anchor meant);
  *   - any other legacy regex keeps its old meaning in blocked/protected lists
  *     (over-matching errs on the safe side there), with a warning;
  *   - in the allowed list it is an error: an unanchored allowlist regex is
  *     exactly the bypass this module exists to close.
  *
  * Host and scheme compare case-insensitively (the URL parser lower-cases
- * them, IDN hosts become punycode). Paths compare case-insensitively in the
- * blocked and protected lists and case-sensitively in the allowed list, so
- * each list errs towards refusing.
+ * them, IDN hosts become punycode). Each list errs towards refusing:
+ *   - allowed: the path matches as written (case-sensitive, at a segment
+ *     boundary: /admin does not cover /administrator);
+ *   - blocked / protected: the path matches any continuation after
+ *     percent-escapes are decoded, repeated slashes collapsed and case
+ *     folded (/admin covers /ADMIN, //admin, /%61dmin, /admin;x, /administrator).
  */
 
 export type PatternListName = 'blocked' | 'allowed' | 'protected';
@@ -113,28 +117,41 @@ function canonicalHost(host: string): string | null {
 
 interface HostSpec {
   scheme: string | null;
-  subdomainsOnly: boolean;
+  /** 'tree': the host and its subdomains; 'sub': subdomains only; 'exact': the host only. */
+  hosts: 'tree' | 'sub' | 'exact';
   host: string;
+  /** Path prefix, or null for any path. */
   path: string | null;
 }
 
-function parseHostForm(s: string): HostSpec | null {
+/** Why a host-form pattern is unusable, or a spec. */
+type ParseResult = HostSpec | { error: string } | null;
+
+function parseHostForm(s: string): ParseResult {
   const m = HOST_FORM_RE.exec(s);
   if (!m) return null;
   const host = canonicalHost(m[3]!);
   if (host === null) return null;
+  let path: string | null = m[4] ?? null;
+  // A trailing `/*` is the usual way to write "any path below".
+  if (path !== null && path.endsWith('/*')) path = path.slice(0, -1);
+  if (path !== null && path.includes('*')) {
+    return { error: "'*' in a path is only supported as a trailing '/*'" };
+  }
+  if (path === '/') path = null;
   return {
     scheme: m[1] ? m[1].toLowerCase() : null,
-    subdomainsOnly: m[2] !== undefined,
+    hosts: m[2] !== undefined ? 'sub' : 'tree',
     host,
-    path: m[4] ?? null,
+    path,
   };
 }
 
 /**
  * Read a legacy regex as a host pattern when that keeps its intent:
- * `\.` → `.`, `\/` → `/`, a trailing `(/|$)`, a leading `^https?://` and a
- * leading `\.` (the old "any host ending in") are understood.
+ * `\.` → `.`, `\/` → `/`, a trailing `(/|$)`, a leading `^https?://`
+ * (then the host is exact, as the anchor meant) and a leading `\.` (then
+ * subdomains only, as the old "any host ending in .x") are understood.
  */
 function convertLegacy(s: string): HostSpec | null {
   let t = s;
@@ -146,39 +163,74 @@ function convertLegacy(s: string): HostSpec | null {
   }
   t = t.replace(/\((?:\/\|\$|\$\|\/)\)$/, '');
   t = t.replace(/\\([./-])/g, '$1');
-  if (!anchored && t.startsWith('.')) t = t.slice(1);
+  let subdomainsOnly = false;
+  if (!anchored && t.startsWith('.')) {
+    t = t.slice(1);
+    subdomainsOnly = true;
+  }
   if (REGEX_META_RE.test(t)) return null;
   const spec = parseHostForm(t);
-  if (spec === null) return null;
-  return { ...spec, scheme: spec.scheme ?? scheme };
+  if (spec === null || 'error' in spec) return null;
+  return {
+    ...spec,
+    scheme: spec.scheme ?? scheme,
+    hosts: anchored ? 'exact' : subdomainsOnly ? 'sub' : spec.hosts,
+  };
+}
+
+/**
+ * Path as compared by blocked/protected entries: percent-escapes decoded,
+ * repeated slashes collapsed, lower case, so `/%61dmin`, `//admin` and
+ * `/ADMIN` all read as `/admin`.
+ */
+function loosePath(pathname: string): string {
+  let p = pathname;
+  try {
+    p = decodeURIComponent(p);
+  } catch {
+    // Malformed escapes: compare as written.
+  }
+  return p.replace(/\/{2,}/g, '/').toLowerCase();
 }
 
 function hostPattern(source: string, spec: HostSpec, list: PatternListName): UrlPattern {
-  const caseSensitivePath = list === 'allowed';
+  // Each list errs towards refusing: an allowed entry matches its path
+  // exactly (case-sensitive, at a segment boundary); a blocked or protected
+  // entry matches any path that starts with it once normalised.
+  const strictPath = list === 'allowed';
   const path = spec.path;
-  const pathBoundary = path !== null && !path.endsWith('/');
+  const wantPath = path === null ? null : strictPath ? path : loosePath(path);
+  const pathBoundary = strictPath && path !== null && !path.endsWith('/');
 
   const test = (raw: string): boolean => {
     const n = normalizeUrl(raw);
     if (n === null || n.hostname === '') return false;
     if (spec.scheme !== null && n.url.protocol !== `${spec.scheme}:`) return false;
     const h = n.hostname;
-    const hostOk = spec.subdomainsOnly
-      ? h.endsWith(`.${spec.host}`)
-      : h === spec.host || h.endsWith(`.${spec.host}`);
+    const isSub = h.endsWith(`.${spec.host}`);
+    const hostOk =
+      spec.hosts === 'exact' ? h === spec.host
+        : spec.hosts === 'sub' ? isSub
+          : h === spec.host || isSub;
     if (!hostOk) return false;
-    if (path === null) return true;
-    const actual = caseSensitivePath ? n.url.pathname : n.url.pathname.toLowerCase();
-    const want = caseSensitivePath ? path : path.toLowerCase();
-    if (!actual.startsWith(want)) return false;
-    return !pathBoundary || actual.length === want.length || actual[want.length] === '/';
+    if (wantPath === null) return true;
+    const actual = strictPath ? n.url.pathname : loosePath(n.url.pathname);
+    if (!actual.startsWith(wantPath)) return false;
+    return !pathBoundary || actual.length === wantPath.length || actual[wantPath.length] === '/';
   };
 
   const scheme = spec.scheme !== null ? escapeRegex(spec.scheme) : '[a-z][a-z0-9+.-]*';
-  const sub = spec.subdomainsOnly ? '(?:[^/?#@]+\\.)' : '(?:[^/?#@]+\\.)?';
-  const tail = path === null
-    ? '(?:[/?#]|$)'
-    : escapeRegex(path) + (pathBoundary ? '(?:[/?#]|$)' : '');
+  const sub =
+    spec.hosts === 'exact' ? '' : spec.hosts === 'sub' ? '(?:[^/?#@]+\\.)' : '(?:[^/?#@]+\\.)?';
+  let tail: string;
+  if (wantPath === null) {
+    tail = '(?:[/?#]|$)';
+  } else {
+    // Repeated slashes as in loosePath(); percent-escapes cannot be decoded
+    // in a regex and are matched as written.
+    const pathRe = wantPath.split('/').map(escapeRegex).join('\\/+');
+    tail = pathRe + (pathBoundary ? '(?:[/?#]|$)' : '');
+  }
   const wireSource =
     `^${scheme}:\\/\\/(?:[^/?#]*@)?${sub}${escapeRegex(spec.host)}\\.?(?::\\d+)?${tail}`;
 
@@ -189,6 +241,7 @@ function regexPattern(
   source: string,
   regexSource: string,
   kind: 'regex' | 'legacy',
+  list: PatternListName,
 ): UrlPattern | string {
   let re: RegExp;
   try {
@@ -199,9 +252,12 @@ function regexPattern(
   return {
     source,
     kind,
+    // Allowed: the normalised URL only. Blocked / protected: either form
+    // (the Extension tests the raw tab URL with wireSource).
     test: (raw: string) => {
       const n = normalizeUrl(raw);
-      return re.test(n ? n.normalized : raw);
+      if (n === null) return list !== 'allowed' && re.test(raw);
+      return re.test(n.normalized) || (list !== 'allowed' && re.test(raw));
     },
     wireSource: regexSource,
   };
@@ -222,7 +278,7 @@ export function compileUrlPatterns(
     }
 
     if (s.startsWith('re:')) {
-      const compiled = regexPattern(source, s.slice(3), 'regex');
+      const compiled = regexPattern(source, s.slice(3), 'regex', list);
       if (typeof compiled === 'string') {
         issues.push({ pattern: source, message: `invalid regex: ${compiled}`, fatal: true });
       } else {
@@ -231,10 +287,15 @@ export function compileUrlPatterns(
       continue;
     }
 
-    const spec = parseHostForm(s) ?? (REGEX_META_RE.test(s) ? convertLegacy(s) : null);
+    const parsed = parseHostForm(s);
+    if (parsed !== null && 'error' in parsed) {
+      issues.push({ pattern: source, message: parsed.error, fatal: true });
+      continue;
+    }
+    const spec = parsed ?? (REGEX_META_RE.test(s) ? convertLegacy(s) : null);
     if (spec !== null) {
       patterns.push(hostPattern(source, spec, list));
-      if (list !== 'allowed' && !spec.host.includes('.') && !spec.subdomainsOnly && s === spec.host) {
+      if (list !== 'allowed' && !spec.host.includes('.') && spec.hosts === 'tree' && s === spec.host) {
         issues.push({
           pattern: source,
           message:
@@ -258,7 +319,7 @@ export function compileUrlPatterns(
       continue;
     }
 
-    const legacy = regexPattern(source, s, 'legacy');
+    const legacy = regexPattern(source, s, 'legacy', list);
     if (typeof legacy === 'string') {
       issues.push({ pattern: source, message: `invalid pattern: ${legacy}`, fatal: true });
       continue;

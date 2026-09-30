@@ -162,31 +162,30 @@ export class HeadlessBrowser {
   // -----------------------------------------------------------------------
 
   /**
-   * Refuse a password field unless the command carries allowPassword: true
-   * (set by handlers.ts from safety.json, see safety/password-guard.ts).
-   * Without a selector the focused element is the target.
+   * Password guard: refuse a password field unless the command carries
+   * allowPassword: true (set by handlers.ts from safety.json, see
+   * safety/password-guard.ts).
    */
-  private async _assertNotPassword(
-    page: Page,
-    selector: string | undefined,
-    args: Record<string, unknown>,
-  ): Promise<void> {
-    if (args['allowPassword'] === true) return;
-    let isPassword = false;
-    try {
-      if (selector) {
-        const target = await page.$(selector);
-        isPassword = target !== null && await target.evaluate(isPasswordElement);
-      } else {
-        const focused = await page.evaluateHandle(() => document.activeElement);
-        isPassword = await focused.evaluate(isPasswordElement);
-      }
-    } catch {
-      // Selector resolution failures surface from the action itself.
-    }
-    if (isPassword) {
+  private _refusePassword(isPassword: boolean, args: Record<string, unknown>): void {
+    if (isPassword && args['allowPassword'] !== true) {
       throw new Error(PASSWORD_REFUSAL);
     }
+  }
+
+  /**
+   * Fill the element `selector` resolves to, after the password guard.
+   * The element is resolved once (waiting like page.fill() would), so the
+   * element checked is the element filled.
+   */
+  private async _guardedFill(
+    page: Page,
+    selector: string,
+    value: string,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    const target = await page.waitForSelector(selector, { state: 'attached' });
+    this._refusePassword(await target.evaluate(isPasswordElement), args);
+    await target.fill(value);
   }
 
   // -----------------------------------------------------------------------
@@ -477,10 +476,12 @@ export class HeadlessBrowser {
       case 'type': {
         const selector = args['selector'] as string | undefined;
         const text = (args['text'] as string) ?? '';
-        await this._assertNotPassword(page, selector, args);
         if (selector) {
-          await page.fill(selector, text);
+          await this._guardedFill(page, selector, text, args);
         } else {
+          // Keyboard input goes to the focused element.
+          const focused = await page.evaluateHandle(() => document.activeElement);
+          this._refusePassword(await focused.evaluate(isPasswordElement), args);
           await page.keyboard.type(text);
         }
         return { success: true };
@@ -681,8 +682,7 @@ export class HeadlessBrowser {
       case 'set_value': {
         const selector = (args['selector'] as string) ?? '';
         const value = (args['value'] as string) ?? '';
-        await this._assertNotPassword(page, selector, args);
-        await page.fill(selector, value);
+        await this._guardedFill(page, selector, value, args);
         return { success: true };
       }
 

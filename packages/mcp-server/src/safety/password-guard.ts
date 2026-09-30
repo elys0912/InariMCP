@@ -28,8 +28,10 @@ const PASSWORD_SELECTOR_RE =
  * references), so Playwright can serialise it into the page.
  */
 export function isPasswordElement(el: Element | null): boolean {
-  if (!el || el.tagName !== 'INPUT') return false;
-  const input = el as HTMLInputElement;
+  // Playwright's fill() on a <label> fills its control.
+  const target = el && el.tagName === 'LABEL' ? (el as HTMLLabelElement).control : el;
+  if (!target || target.tagName !== 'INPUT') return false;
+  const input = target as HTMLInputElement;
   const autocomplete = input.getAttribute('autocomplete');
   return (
     input.type === 'password' ||

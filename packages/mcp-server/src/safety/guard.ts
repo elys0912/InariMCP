@@ -104,7 +104,7 @@ export class SafetyGuard {
     transport?: string,
     grant?: ApprovalGrant | null,
   ): SafetyDenial | null {
-    const targetUrl = this._targetUrl(args);
+    const targetUrl = this._targetUrl(toolName, args);
     const currentUrl = this.urlFor(this._tabIdArg(args));
 
     // Fail closed: a policy that could not be loaded refuses everything,
@@ -291,15 +291,6 @@ export class SafetyGuard {
         'sites (banking, payments, health, government). Human confirmation is ' +
         'required via MCP elicitation.',
     };
-  }
-
-  /**
-   * Regex sources for the Extension's own protected-tab checks
-   * (BrowserCommand.protectedUrlPatterns). Host patterns are sent as the
-   * equivalent anchored regex, so the Extension matches the same hosts.
-   */
-  protectedWireSources(): string[] {
-    return this._protected.map((p) => p.wireSource);
   }
 
   status(): SafetyStatus {
@@ -492,7 +483,12 @@ export class SafetyGuard {
     return null;
   }
 
-  private _targetUrl(args: Record<string, unknown>): string | null {
+  /**
+   * The URL a tool goes to or opens. fox_wait_for_url's `url` is only the
+   * URL it waits for, so the tab's own URL is checked instead.
+   */
+  private _targetUrl(toolName: string, args: Record<string, unknown>): string | null {
+    if (toolName === 'fox_wait_for_url') return null;
     const url = args['url'];
     return typeof url === 'string' && url ? url : null;
   }

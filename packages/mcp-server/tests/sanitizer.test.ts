@@ -198,3 +198,39 @@ describe('sanitizeResult: network log bodies', () => {
     });
   });
 });
+
+describe('review follow-ups', () => {
+  const ch = (...codes: number[]) => String.fromCodePoint(...codes);
+
+  it('masks secrets in URL fragments and camelCase JSON fields', () => {
+    expect(sanitizeString('https://a.test/cb#access_token=abc&state=s')).toBe(
+      'https://a.test/cb#access_token=[MASKED]&state=s',
+    );
+    expect(sanitizeString('{"accessToken":"a","refreshToken":"b","user":"u"}')).toBe(
+      '{"accessToken":"[MASKED]","refreshToken":"[MASKED]","user":"u"}',
+    );
+    expect(sanitizeString('?api-key=k&csrf_token=c')).toBe('?api-key=[MASKED]&csrf_token=[MASKED]');
+  });
+
+  it('masks token / private-token / secret-key / subscription-key keys', () => {
+    expect(sanitizeResult({ token: 't', 'Private-Token': 'p', secretKey: 's', 'Ocp-Apim-Subscription-Key': 'o' }))
+      .toEqual({ token: '[MASKED]', 'Private-Token': '[MASKED]', secretKey: '[MASKED]', 'Ocp-Apim-Subscription-Key': '[MASKED]' });
+  });
+
+  it('masks secrets inside non-sensitive audit arguments such as url', () => {
+    expect(maskSensitiveArgs({ url: 'https://a.test/?token=abc' })).toEqual({ url: 'https://a.test/?token=[MASKED]' });
+  });
+
+  it('keeps ZWJ / ZWNJ and emoji variation selectors, strips supplementary variation selectors', () => {
+    const family = ch(0x1f468, 0x200d, 0x1f469);
+    const heart = ch(0x2764, 0xfe0f);
+    const zwnj = 'a' + ch(0x200c) + 'b';
+    expect(sanitizeString(family + heart + zwnj)).toBe(family + heart + zwnj);
+    expect(sanitizeString('x' + ch(0xe0100, 0xe01ef) + 'y' + ch(0x00ad) + 'z')).toBe('xyz');
+  });
+
+  it('does not let a stripped key overwrite another key', () => {
+    const zw = ch(0x200b);
+    expect(sanitizeResult({ ['a' + zw]: 'page', a: 'real' })).toEqual({ ['a' + zw]: 'page', a: 'real' });
+  });
+});

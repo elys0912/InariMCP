@@ -20,6 +20,8 @@ describe('isPasswordElement', () => {
     ['text input', fakeElement('INPUT', 'text', 'username'), false],
     ['textarea', fakeElement('TEXTAREA', 'textarea'), false],
     ['nothing focused', null, false],
+    ['label of a password input', { tagName: 'LABEL', control: fakeElement('INPUT', 'password') } as unknown as Element, true],
+    ['label without control', { tagName: 'LABEL', control: null } as unknown as Element, false],
   ])('%s → %s', (_label, el, expected) => {
     expect(isPasswordElement(el)).toBe(expected);
   });
@@ -88,3 +90,5 @@ describe('invalidRegexArgument (5.10)', () => {
     expect(invalidRegexArgument({})).toBeNull();
   });
 });
+
+// TODO(test): headless _guardedFill with Playwright: element appearing late, <label for> retargeting, focused element inside an iframe / shadow root (not detected).
