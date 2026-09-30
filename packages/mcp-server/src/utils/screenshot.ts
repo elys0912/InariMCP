@@ -41,21 +41,31 @@ export function getScreenshotsDir(): string {
  * List saved screenshot filenames in the screenshots directory.
  *
  * @returns Array of filenames (not full paths), sorted newest-first by mtime.
- *          Returns an empty array if the directory does not exist.
+ *          Returns an empty array if the directory does not exist or cannot
+ *          be read. Files that vanish while listing (deleted by another
+ *          process) are left out instead of throwing.
  */
 export function listScreenshots(): string[] {
   const dir = getScreenshotsDir();
 
-  if (!fs.existsSync(dir)) return [];
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir).filter((f) => f.endsWith('.png'));
+  } catch {
+    return [];
+  }
 
-  const entries = fs.readdirSync(dir).filter((f) => f.endsWith('.png'));
+  // stat each file once, outside the sort comparator
+  const entries: { name: string; mtimeMs: number }[] = [];
+  for (const name of names) {
+    try {
+      entries.push({ name, mtimeMs: fs.statSync(path.join(dir, name)).mtimeMs });
+    } catch {
+      // Gone since readdir
+    }
+  }
 
   // Sort newest-first by modification time
-  entries.sort((a, b) => {
-    const sa = fs.statSync(path.join(dir, a));
-    const sb = fs.statSync(path.join(dir, b));
-    return sb.mtimeMs - sa.mtimeMs;
-  });
-
-  return entries;
+  entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return entries.map((e) => e.name);
 }

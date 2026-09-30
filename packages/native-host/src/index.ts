@@ -18,6 +18,7 @@ import { HealthMonitor } from './health-monitor.js';
 import { handleServerCommand, runStdinLoop } from './host.js';
 import { activeLogPath, log, rotateIfLarge } from './logger.js';
 import { pruneScreenshots, screenshotsDirNeedsAclCheck, getScreenshotsDir } from './screenshot-store.js';
+import { installProcessHandlers } from './process-handlers.js';
 
 let running = true;
 
@@ -105,12 +106,8 @@ async function main(): Promise<void> {
   process.exit(0);
 }
 
-process.on('unhandledRejection', (reason) => {
-  const msg = reason instanceof Error
-    ? `${reason.message}\n${reason.stack ?? ''}`
-    : String(reason);
-  log(`unhandledRejection: ${msg}`);
-});
+// uncaughtException / unhandledRejection / stdout errors (policy: process-handlers.ts)
+installProcessHandlers(log);
 
 main().catch((err: unknown) => {
   const msg = err instanceof Error ? err.message : String(err);

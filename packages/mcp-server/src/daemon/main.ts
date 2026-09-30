@@ -28,6 +28,7 @@ import { getHeadlessBrowser } from '../headless/backend.js';
 import { getSafetyGuard } from '../safety/guard.js';
 import { getContainerConfig } from '../safety/container.js';
 import {
+  isLoopbackHost,
   loadOrCreateApiToken,
   resolveHost,
   resolveHttpPort,
@@ -52,7 +53,16 @@ function probeHealth(host: string, port: number): Promise<boolean> {
     const req = http.get({ host, port, path: '/health', timeout: 2_000 }, (res) => {
       let body = '';
       res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-      res.on('end', () => resolve(res.statusCode === 200 && body.includes('"ok"')));
+      res.on('end', () => {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(body);
+        } catch {
+          parsed = undefined;
+        }
+        const health = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
+        resolve(res.statusCode === 200 && health['status'] === 'ok' && health['service'] === 'kitsune-mcp');
+      });
     });
     req.on('error', () => resolve(false));
     req.on('timeout', () => { req.destroy(); resolve(false); });
@@ -107,6 +117,14 @@ export async function runDaemon(): Promise<void> {
   const headlessMode = Boolean(process.env[ENV.FOX_HEADLESS]);
   const activity = new DaemonActivity();
   const settings = snapshotDaemonSettings();
+
+  if (!isLoopbackHost(host)) {
+    log(
+      `WARNING: ${ENV.FOX_HOST}=${host} is not a loopback address — the HTTP and WebSocket ` +
+      'ports are reachable from other machines. Every endpoint except /health still needs ' +
+      'the API token, but browser control should stay local: unset it unless you really need this.',
+    );
+  }
 
   // Only the daemon generates the token (race-safe, see loadOrCreateApiToken).
   const apiToken = loadOrCreateApiToken();
