@@ -22,5 +22,26 @@ packages/extension/.amo-upload-uuid
 coverage/
 
 # local native-messaging manifests with real paths;
-# the tracked template is packages/native-host/kitsune-mcp.json
+# the tracked template is packages/native-host/kitsune_mcp.json
+packages/native-host/kitsune_mcp.*.json
 packages/native-host/kitsune-mcp.*.json
+# host wrappers belong in ~/.kitsune-mcp/native-host (scripts/install.mjs)
+packages/native-host/run-host*
+
+# local environment / secrets
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Claude Code: project-scope registration and local settings hold absolute paths
+.mcp.json
+.claude/settings.local.json
+
+# web-ext sign (older versions) / npm pack
+.web-extension-id
+*.tgz
+
+# editors
+.vscode/
+.idea/
