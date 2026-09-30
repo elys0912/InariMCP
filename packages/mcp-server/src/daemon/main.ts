@@ -37,8 +37,7 @@ import {
   snapshotDaemonSettings,
 } from '../utils/endpoint.js';
 import { DaemonActivity, resolveIdleTimeoutMs } from './activity.js';
-
-const PACKAGE_VERSION = '0.1.0';
+import { PACKAGE_VERSION } from '../version.js';
 
 function log(msg: string): void {
   process.stderr.write(`[KitsuneMCP:daemon] ${msg}\n`);

@@ -24,8 +24,8 @@ import { callWithApproval, canElicit } from './approval.js';
 import { isElicitationApprovalEnabled } from '../safety/approval.js';
 import type { ApprovalDeps } from './approval.js';
 import { createRelayHandlers } from './handler.js';
+import { PACKAGE_VERSION } from '../version.js';
 
-const PACKAGE_VERSION = '0.1.0';
 const SERVER_NAME = 'kitsune-mcp';
 /** Longest wait, before the MCP connect, for an already-running daemon's settings. */
 const PRECHECK_BUDGET_MS = 800;

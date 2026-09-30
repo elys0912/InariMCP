@@ -9,6 +9,7 @@ import { serverEntryPath, type DaemonInfo, type ServerLauncher } from './server-
 import type { ServerConnection } from './ws-client.js';
 import { externalizeScreenshots, saveScreenshot } from './screenshot-store.js';
 import { log } from './logger.js';
+import { HOST_VERSION } from './version.js';
 
 // ---------------------------------------------------------------------------
 // In-flight command bookkeeping (for screenshot filenames)
@@ -138,7 +139,7 @@ export function processMessage(
           ...(daemon?.version !== undefined ? { version: daemon.version } : {}),
         },
         native_host: {
-          version: '0.1.0',
+          version: HOST_VERSION,
           pid: process.pid,
         },
         // Shown by the popup when no Claude Code session is connected.

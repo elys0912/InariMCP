@@ -19,6 +19,7 @@ import { handleServerCommand, runStdinLoop } from './host.js';
 import { activeLogPath, log, rotateIfLarge } from './logger.js';
 import { pruneScreenshots, screenshotsDirNeedsAclCheck, getScreenshotsDir } from './screenshot-store.js';
 import { installProcessHandlers } from './process-handlers.js';
+import { HOST_VERSION } from './version.js';
 
 let running = true;
 
@@ -57,7 +58,7 @@ function housekeeping(): void {
 
 async function main(): Promise<void> {
   log('========================================');
-  log('KitsuneMCP Native Host starting');
+  log(`KitsuneMCP Native Host v${HOST_VERSION} starting (PID ${process.pid})`);
   log(`log file: ${activeLogPath() ?? '(disabled by FOX_NATIVE_HOST_LOG)'}`);
 
   const launcher = new ServerLauncher();
