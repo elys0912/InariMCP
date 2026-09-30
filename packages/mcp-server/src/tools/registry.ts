@@ -13,6 +13,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { TOOL_SCHEMAS } from './schemas.js';
+import { toolAnnotations } from './classification.js';
 import { ENV } from '@kitsune-mcp/shared';
 
 /**
@@ -201,11 +202,8 @@ export function registerTools(
       {
         description: def.description,
         inputSchema: zodShape,
-        annotations: {
-          // MCP tool annotations for client-side hints
-          readOnlyHint: def.classification === 'observe' || def.classification === 'wait',
-          destructiveHint: def.classification === 'act' || def.classification === 'script',
-        },
+        // MCP tool annotations for client-side hints
+        annotations: toolAnnotations(def),
       },
       handler,
     );

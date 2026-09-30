@@ -1,6 +1,8 @@
 export { loadConfig, getAuditLogPath, SafetyConfigSchema, DEFAULT_CONFIG } from './config.js';
-export type { SafetyConfig } from './config.js';
-export { maskSensitiveArgs, sanitizeResult } from './sanitizer.js';
+export type { SafetyConfig, LoadedSafetyConfig } from './config.js';
+export { compileUrlPatterns, normalizeUrl } from './url-pattern.js';
+export type { UrlPattern, PatternIssue, PatternListName } from './url-pattern.js';
+export { maskSensitiveArgs, sanitizeResult, sanitizeString, stripInvisible } from './sanitizer.js';
 export { audit } from './audit.js';
 export type { AuditDecision, AuditEntry } from './audit.js';
 export { checkHeadlessContainerScope, getContainerConfig } from './container.js';

@@ -35,23 +35,27 @@ export const DEFAULT_CONFIG: SafetyConfig = {
   auditLog: true,
   blockedUrlPatterns: [],
   allowedUrlPatterns: [],
+  // Host patterns (safety/url-pattern.ts): a host matches itself and its
+  // subdomains; `re:` marks a regex over the normalised URL.
   protectedUrlPatterns: [
-    'paypal\\.com',
-    'venmo\\.com',
-    'coinbase\\.com',
-    'binance\\.com',
-    'kraken\\.com',
-    'chase\\.com',
-    'bankofamerica\\.com',
-    'wellsfargo\\.com',
-    'schwab\\.com',
-    'fidelity\\.com',
-    'vanguard\\.com',
-    'robinhood\\.com',
-    'stripe\\.com/dashboard',
-    '\\.gov(/|$)',
-    'healthcare\\.gov',
-    'mychart\\.',
+    'paypal.com',
+    'venmo.com',
+    'coinbase.com',
+    'binance.com',
+    'kraken.com',
+    'chase.com',
+    'bankofamerica.com',
+    'wellsfargo.com',
+    'schwab.com',
+    'fidelity.com',
+    'vanguard.com',
+    'robinhood.com',
+    'stripe.com/dashboard',
+    '*.gov',
+    'healthcare.gov',
+    // Any host with a `mychart` label (patient portals: mychart.<org>.org,
+    // www.mychart.<org>.com ...).
+    're:^https?://(?:[^/?#@]+\\.)?mychart\\.',
   ],
   containerScope: {
     enabled: false,
@@ -108,12 +112,20 @@ export function getAuditLogPath(): string {
   return path.join(getConfigDir(), 'logs', 'audit.jsonl');
 }
 
-export function loadConfig(): SafetyConfig {
-  const configPath = getConfigPath();
-  let config: SafetyConfig = { ...DEFAULT_CONFIG };
+/**
+ * The loaded policy. `configError` is set when the config file exists but
+ * cannot be used (unreadable, invalid JSON, schema violation); the
+ * SafetyGuard then refuses every tool (fail-closed) instead of silently
+ * running with DEFAULT_CONFIG.
+ */
+export type LoadedSafetyConfig = SafetyConfig & { configError?: string };
 
-  try {
-    if (fs.existsSync(configPath)) {
+export function loadConfig(): LoadedSafetyConfig {
+  const configPath = getConfigPath();
+  let config: LoadedSafetyConfig = { ...DEFAULT_CONFIG };
+
+  if (fs.existsSync(configPath)) {
+    try {
       const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
       if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
         throw new Error('safety.json must contain a JSON object');
@@ -124,9 +136,20 @@ export function loadConfig(): SafetyConfig {
         merged.containerScope = { ...DEFAULT_CONFIG.containerScope, ...(camelized['containerScope'] as object) };
       }
       config = SafetyConfigSchema.parse(merged);
-    } else {
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      process.stderr.write(
+        `[KitsuneMCP] WARNING: cannot use ${configPath} (${reason}). ` +
+        'The safety guard refuses every tool until the file is fixed and the daemon restarted.\n',
+      );
+      return { ...DEFAULT_CONFIG, configError: `${configPath}: ${reason}` };
+    }
+  } else {
+    // No config yet: write the defaults. Failing to write them is not a
+    // policy problem, so the defaults stay in force.
+    try {
       const dir = path.dirname(configPath);
-      fs.mkdirSync(dir, { recursive: true });
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
       const fileConfig: Record<string, unknown> = {
         enabled: DEFAULT_CONFIG.enabled,
         read_only: DEFAULT_CONFIG.readOnly,
@@ -145,12 +168,12 @@ export function loadConfig(): SafetyConfig {
       };
       fs.writeFileSync(configPath, JSON.stringify(fileConfig, null, 2) + '\n');
       process.stderr.write(`[KitsuneMCP] Wrote default safety config to ${configPath}\n`);
+    } catch (e) {
+      process.stderr.write(
+        `[KitsuneMCP] Failed to write default ${configPath}, using defaults: ` +
+        `${e instanceof Error ? e.message : String(e)}\n`,
+      );
     }
-  } catch (e) {
-    process.stderr.write(
-      `[KitsuneMCP] Failed to load ${configPath}, using defaults: ${e instanceof Error ? e.message : String(e)}\n`,
-    );
-    config = { ...DEFAULT_CONFIG };
   }
 
   if (resolveEnv(ENV.FOX_READ_ONLY, LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY) === '1') {

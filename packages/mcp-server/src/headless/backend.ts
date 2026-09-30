@@ -2,7 +2,7 @@ import type { Browser, BrowserContext, Page, ConsoleMessage, Dialog } from 'play
 import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { headlessStartupTimeoutMs } from '../utils/headless-env.js';
 import { argTimeout, filterAriaSnapshot, ignoredParamWarnings } from './helpers.js';
-import { getSafetyGuard } from '../safety/guard.js';
+import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
 import { getScreenshotsDir } from '../utils/screenshot.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -161,33 +161,31 @@ export class HeadlessBrowser {
   // Password guard
   // -----------------------------------------------------------------------
 
-  private async _assertNotPassword(page: Page, selector: string): Promise<void> {
-    if (getSafetyGuard().config.allowPasswordTyping) return;
-    try {
-      const isPassword = await page.$eval(
-        selector,
-        (el: Element) => {
-          const input = el as HTMLInputElement;
-          return (
-            input.tagName === 'INPUT' &&
-            (input.type === 'password' ||
-              ['current-password', 'new-password'].includes(
-                input.getAttribute('autocomplete') ?? '',
-              ))
-          );
-        },
-      );
-      if (isPassword) {
-        throw new Error(
-          'Refused: target is a password field. Credentials belong in a ' +
-          'password manager, not automated typing. Set ' +
-          '"allowPasswordTyping": true in ~/.kitsune-mcp/safety.json to override.',
-        );
-      }
-    } catch (e) {
-      // Re-throw our own refusal; swallow selector resolution failures
-      if (e instanceof Error && e.message.startsWith('Refused:')) throw e;
+  /**
+   * Password guard: refuse a password field unless the command carries
+   * allowPassword: true (set by handlers.ts from safety.json, see
+   * safety/password-guard.ts).
+   */
+  private _refusePassword(isPassword: boolean, args: Record<string, unknown>): void {
+    if (isPassword && args['allowPassword'] !== true) {
+      throw new Error(PASSWORD_REFUSAL);
     }
+  }
+
+  /**
+   * Fill the element `selector` resolves to, after the password guard.
+   * The element is resolved once (waiting like page.fill() would), so the
+   * element checked is the element filled.
+   */
+  private async _guardedFill(
+    page: Page,
+    selector: string,
+    value: string,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    const target = await page.waitForSelector(selector, { state: 'attached' });
+    this._refusePassword(await target.evaluate(isPasswordElement), args);
+    await target.fill(value);
   }
 
   // -----------------------------------------------------------------------
@@ -479,9 +477,11 @@ export class HeadlessBrowser {
         const selector = args['selector'] as string | undefined;
         const text = (args['text'] as string) ?? '';
         if (selector) {
-          await this._assertNotPassword(page, selector);
-          await page.fill(selector, text);
+          await this._guardedFill(page, selector, text, args);
         } else {
+          // Keyboard input goes to the focused element.
+          const focused = await page.evaluateHandle(() => document.activeElement);
+          this._refusePassword(await focused.evaluate(isPasswordElement), args);
           await page.keyboard.type(text);
         }
         return { success: true };
@@ -682,8 +682,7 @@ export class HeadlessBrowser {
       case 'set_value': {
         const selector = (args['selector'] as string) ?? '';
         const value = (args['value'] as string) ?? '';
-        await this._assertNotPassword(page, selector);
-        await page.fill(selector, value);
+        await this._guardedFill(page, selector, value, args);
         return { success: true };
       }
 

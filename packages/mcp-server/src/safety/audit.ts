@@ -19,7 +19,10 @@ export type AuditDecision =
   | 'out_of_scope'
   /** A human approved / declined a protected-site action (tools/approval-flow.ts). */
   | 'approval_granted'
-  | 'approval_denied';
+  | 'approval_denied'
+  | 'invalid_url'
+  | 'blocked_after_navigation'
+  | 'config_error';
 
 export interface AuditEntry {
   ts: string;

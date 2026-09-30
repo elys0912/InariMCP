@@ -4,6 +4,10 @@ import { attachSafetyMetadata } from '../src/tools/handlers.js';
 import { DEFAULT_CONFIG, type SafetyConfig } from '../src/safety/config.js';
 
 const PATTERNS = ['protected\\.example\\.test'];
+// What the Extension receives: the anchored regex equivalent of the pattern.
+const WIRE = [
+  '^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?protected\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)',
+];
 
 function config(overrides: Partial<SafetyConfig> = {}): SafetyConfig {
   return {
@@ -61,7 +65,19 @@ describe('attachSafetyMetadata: protectedUrlPatterns', () => {
   ] as const)('is attached to capture / logging action %s (%s)', (action, tool) => {
     const cmd = command(action);
     attachSafetyMetadata(cmd, config(), tool, {});
-    expect(cmd.protectedUrlPatterns).toEqual(PATTERNS);
+    expect(cmd.protectedUrlPatterns).toEqual(WIRE);
+  });
+
+  it('sends patterns the Extension matches by host, as it compiles them (flag i)', () => {
+    const cmd = command('screenshot');
+    attachSafetyMetadata(cmd, config(), 'fox_screenshot', {});
+    const re = new RegExp(cmd.protectedUrlPatterns![0]!, 'i');
+    expect(re.test('https://protected.example.test/')).toBe(true);
+    expect(re.test('https://WWW.Protected.Example.Test:8443/a?b')).toBe(true);
+    expect(re.test('https://protected.example.test.attacker.test/')).toBe(false);
+    expect(re.test('https://attacker.test/?next=protected.example.test')).toBe(false);
+    expect(re.test('https://protected.example.test@attacker.test/')).toBe(false);
+    expect(re.test('https://notprotected.example.test/')).toBe(false);
   });
 
   it('is a copy, not the config array itself', () => {
@@ -74,7 +90,7 @@ describe('attachSafetyMetadata: protectedUrlPatterns', () => {
   it('is attached to an acting tool without a url argument', () => {
     const cmd = command('click');
     attachSafetyMetadata(cmd, config(), 'fox_click', { selector: '#go' });
-    expect(cmd.protectedUrlPatterns).toEqual(PATTERNS);
+    expect(cmd.protectedUrlPatterns).toEqual(WIRE);
   });
 
   it('is not attached to an acting tool with a url argument (the guard checks that url)', () => {
@@ -86,7 +102,7 @@ describe('attachSafetyMetadata: protectedUrlPatterns', () => {
   it('treats an empty url argument as no url', () => {
     const cmd = command('navigate');
     attachSafetyMetadata(cmd, config(), 'fox_navigate', { url: '' });
-    expect(cmd.protectedUrlPatterns).toEqual(PATTERNS);
+    expect(cmd.protectedUrlPatterns).toEqual(WIRE);
   });
 
   it('is not attached to an observe tool outside the capture / logging actions', () => {

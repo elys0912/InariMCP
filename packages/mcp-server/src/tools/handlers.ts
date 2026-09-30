@@ -23,6 +23,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserAction, BrowserCommand, ToolResult } from '@kitsune-mcp/shared';
+import { ErrorCode } from '@kitsune-mcp/shared';
 import { getSafetyGuard, OBSERVE_TOOLS } from '../safety/guard.js';
 import type { SafetyDenial } from '../safety/guard.js';
 import {
@@ -35,7 +36,9 @@ import {
 import type { ApprovalGrant } from '../safety/approval.js';
 import type { SafetyConfig } from '../safety/config.js';
 import { getContainerConfig } from '../safety/container.js';
-import { sanitizeResult } from '../safety/sanitizer.js';
+import { sanitizeResult, sanitizeString } from '../safety/sanitizer.js';
+import { compileUrlPatterns } from '../safety/url-pattern.js';
+import { applyPasswordPolicy, passwordSelectorRefusal } from '../safety/password-guard.js';
 import { audit } from '../safety/audit.js';
 import type { AuditDecision } from '../safety/audit.js';
 import { camelizeArgs } from '../utils/camelize.js';
@@ -156,6 +159,32 @@ function buildCommandData(
 }
 
 // ---------------------------------------------------------------------------
+// Argument validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Arguments the backends compile with `new RegExp()`. Case sensitivity is
+ * the backend's (Extension: case-sensitive for tabs / wait_for_url /
+ * wait_for_navigation / screenshot all_tabs, case-insensitive for
+ * get_network_logs; headless wait_for_url: case-sensitive).
+ */
+const REGEX_ARGUMENTS = ['urlPattern'] as const;
+
+/** Error message for the first regex argument that does not compile, or null. */
+export function invalidRegexArgument(args: Record<string, unknown>): string | null {
+  for (const key of REGEX_ARGUMENTS) {
+    const value = args[key];
+    if (typeof value !== 'string') continue;
+    try {
+      new RegExp(value);
+    } catch (e) {
+      return `Invalid ${key} '${value}': ${e instanceof Error ? e.message : String(e)}`;
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Safety metadata forwarded to the Extension
 // ---------------------------------------------------------------------------
 
@@ -176,8 +205,8 @@ function buildCommandData(
  *     (confirmation_required), keeps the patterns with the tab and pauses
  *     recording while the tab is on a protected page.
  *     Also on every acting tool (not in OBSERVE_TOOLS) without a `url`
- *     argument: the guard's Layer 7 can only check the last URL it saw,
- *     which is shared by every session and tab, so the Extension refuses
+ *     argument: the guard's Layer 7 can only check the last URL it saw for
+ *     the tab, which may be stale or unknown, so the Extension refuses
  *     the command when the actual target tab is protected. Tools with a
  *     `url` are checked by the guard against that URL instead.
  */
@@ -209,7 +238,10 @@ export function attachSafetyMetadata(
     config.confirmProtectedActions &&
     config.protectedUrlPatterns.length > 0
   ) {
-    command.protectedUrlPatterns = [...config.protectedUrlPatterns];
+    // The Extension tests each entry as a case-insensitive regex against the
+    // raw tab URL: send the anchored equivalent of each host pattern.
+    command.protectedUrlPatterns = compileUrlPatterns(config.protectedUrlPatterns, 'protected')
+      .patterns.map((p) => p.wireSource);
   }
 }
 
@@ -274,10 +306,11 @@ function safetyDenialToCallResult(
     details.elicitation = denial.elicitation;
   }
 
+  // URLs and browser error text in a denial come from the page.
   return {
     content: [
-      { type: 'text' as const, text: parts.join('') },
-      { type: 'text' as const, text: JSON.stringify(details) },
+      { type: 'text' as const, text: sanitizeString(parts.join('')) },
+      { type: 'text' as const, text: JSON.stringify(sanitizeResult(details)) },
     ],
     isError: true,
   };
@@ -481,20 +514,22 @@ export function createToolHandler(
     }
 
     // -----------------------------------------------------------------------
-    // 2. fox_type password protection
+    // 2. Password-field protection (fox_type / fox_set_value)
     // -----------------------------------------------------------------------
-    if (toolName === 'fox_type' && !guard.config.allowPasswordTyping) {
-      const selector = (args['selector'] as string) ?? '';
-      if (/type\s*=\s*["']?password/i.test(selector)) {
-        return {
-          content: [{
-            type: 'text' as const,
-            text: 'Typing into password fields is blocked by safety policy ' +
-                  '(allowPasswordTyping is false in safety config).',
-          }],
-          isError: true,
-        };
-      }
+    const passwordRefusal = passwordSelectorRefusal(
+      toolName, args, guard.config.allowPasswordTyping,
+    );
+    if (passwordRefusal !== null) {
+      return { content: [{ type: 'text' as const, text: passwordRefusal }], isError: true };
+    }
+
+    // Regex arguments are compiled by the backends; refuse invalid ones here.
+    const regexError = invalidRegexArgument(args);
+    if (regexError !== null) {
+      return {
+        content: [{ type: 'text' as const, text: `${regexError} [${ErrorCode.INVALID_ARGUMENTS}]` }],
+        isError: true,
+      };
     }
 
     // -----------------------------------------------------------------------
@@ -502,6 +537,8 @@ export function createToolHandler(
     // -----------------------------------------------------------------------
     const action = resolveAction(toolName, args);
     const data = buildCommandData(toolName, args);
+    // Set after camelize, so it wins over any argument of the same name.
+    applyPasswordPolicy(toolName, data, guard.config.allowPasswordTyping);
 
     // Extract tabId before sending (it goes at BrowserCommand level)
     const tabId = typeof data['tabId'] === 'number' ? data['tabId'] as number : undefined;
@@ -561,10 +598,17 @@ export function createToolHandler(
     // -----------------------------------------------------------------------
 
     // Track the page URL after every successful operation (data.url, or
-    // data.tab.url), so Layer 4/7 protected-domain checks see the current
-    // page on both the Extension and headless paths.
-    if (response.success && response.data) {
-      guard.noteUrl(response.data);
+    // data.tab.url) per tab, so the guard's checks see the current page on
+    // both the Extension and headless paths. Then check the URL the command
+    // ended on: a redirect or a clicked link may have reached a blocked site.
+    // (Without data too: fox_close_tab answers {success: true} alone.)
+    if (response.success) {
+      const resultData = response.data ?? {};
+      guard.noteUrl(resultData, args, toolName);
+      const reached = guard.checkReachedUrl(toolName, args, resultData, transport);
+      if (reached !== null) {
+        return safetyDenialToCallResult({ ...reached, decision: reached.safetyDecision });
+      }
     }
 
     // Saved screenshot files → resource_link blocks (both backends).
@@ -589,7 +633,12 @@ export function createToolHandler(
     // -----------------------------------------------------------------------
     const toolResult: ToolResult = response.success
       ? { success: true, data: sanitizedData }
-      : { success: false, error: response.error ?? 'Browser command failed', data: sanitizedData };
+      : {
+        success: false,
+        // Error text can carry page-derived content (script exceptions, URLs).
+        error: sanitizeString(response.error ?? 'Browser command failed'),
+        data: sanitizedData,
+      };
 
     const callResult = toolResultToCallResult(toolResult);
     if (imagePaths.length > 0) {

@@ -1,11 +1,22 @@
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
-// Tool classification (used by SafetyGuard)
+// Tool classification (used by SafetyGuard and the MCP annotations)
 // ---------------------------------------------------------------------------
 
+/**
+ * The single source of the tool classes; see tools/classification.ts for
+ * what the SafetyGuard and the MCP annotations derive from it.
+ *   - observe:  reads the page or browser state, changes nothing
+ *   - interact: changes UI state only (hover, scroll, overlay, active tab),
+ *               never page data; allowed in read-only mode
+ *   - act:      changes page or browser state (input, navigation, tabs)
+ *   - script:   runs caller-supplied JavaScript
+ *   - wait / logging / workflow / human: as named
+ */
 export type ToolClassification =
   | 'observe'
+  | 'interact'
   | 'act'
   | 'script'
   | 'wait'
@@ -26,6 +37,11 @@ export interface ToolDefinition {
   inputSchema: z.ZodType;
   /** Safety classification */
   classification: ToolClassification;
+  /**
+   * Per-tool exceptions to the MCP annotations derived from
+   * `classification` (tools/classification.ts toolAnnotations()).
+   */
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
 }
 
 // ---------------------------------------------------------------------------
@@ -484,27 +500,28 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
     description:
       'Hover over an element to trigger hover effects, tooltips, or dropdown menus.',
     inputSchema: foxHoverSchema,
-    classification: 'observe',
+    classification: 'interact',
   },
   fox_scroll: {
     name: 'fox_scroll',
     description:
       'Scroll the page or a specific element in any direction, or scroll a target element into view.',
     inputSchema: foxScrollSchema,
-    classification: 'observe',
+    classification: 'interact',
   },
   fox_highlight: {
     name: 'fox_highlight',
     description:
       'Highlight an element on the page with a colored overlay for visual debugging. Optionally show a label.',
     inputSchema: foxHighlightSchema,
-    classification: 'observe',
+    classification: 'interact',
   },
   fox_create_tab: {
     name: 'fox_create_tab',
     description: 'Create a new browser tab, optionally with a URL.',
     inputSchema: foxCreateTabSchema,
     classification: 'act',
+    annotations: { destructiveHint: false },
   },
   fox_close_tab: {
     name: 'fox_close_tab',
@@ -516,7 +533,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
     name: 'fox_switch_tab',
     description: 'Focus/activate a browser tab by its tab ID.',
     inputSchema: foxSwitchTabSchema,
-    classification: 'observe',
+    classification: 'interact',
   },
 
   // --- Wait ---
@@ -570,6 +587,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
       'Retrieve captured console logs (log, error, warn, info, debug). Filter by level or search text.',
     inputSchema: foxGetConsoleLogsSchema,
     classification: 'logging',
+    annotations: { readOnlyHint: true },
   },
   fox_get_network_logs: {
     name: 'fox_get_network_logs',
@@ -577,6 +595,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
       'Retrieve captured network requests and responses (fetch/XHR). Filter by URL pattern, HTTP method, status code, or errors only.',
     inputSchema: foxGetNetworkLogsSchema,
     classification: 'logging',
+    annotations: { readOnlyHint: true },
   },
   fox_clear_logs: {
     name: 'fox_clear_logs',
@@ -613,6 +632,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
       'Remove a previously injected MutationObserver and get all accumulated changes since it was injected.',
     inputSchema: foxRemoveObserverSchema,
     classification: 'script',
+    annotations: { destructiveHint: false },
   },
 
   // --- Workflow ---
@@ -659,6 +679,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
       'Detect captchas on the page (reCAPTCHA, hCaptcha, Cloudflare Turnstile, generic image captchas). Reports what was found so the human can be asked to solve it. Does NOT auto-solve.',
     inputSchema: foxDetectCaptchaSchema,
     classification: 'human',
+    annotations: { readOnlyHint: true },
   },
 
   // --- Container (Firefox contextualIdentities) ---
@@ -675,6 +696,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
       'Open a URL in a Firefox container tab. Specify the container by containerName (created if not found) or by cookieStoreId (must already exist). Provides isolated cookies/storage via the contextualIdentities API. When container scope is enabled in safety.json, only the agent container is allowed.',
     inputSchema: foxOpenInContainerSchema,
     classification: 'act',
+    annotations: { destructiveHint: false },
   },
 
   // --- Safety (always registered) ---
