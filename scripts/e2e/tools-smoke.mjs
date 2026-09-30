@@ -4,8 +4,16 @@
 //
 // Prerequisites: installer run, Firefox running with the extension loaded
 // (`curl -s http://127.0.0.1:8765/health` shows "browsers_connected":1).
-// For a throwaway profile with the extension loaded as a temporary add-on:
-//   npx web-ext@8 run --source-dir packages/extension --start-url about:blank
+// For a throwaway profile with the extension loaded as a temporary add-on
+// (web-ext is a devDependency; run from the repository root):
+//   npx web-ext run --start-url about:blank
+//
+// Related checks that need no installed extension:
+//   npm run test:e2e        relay → daemon → headless Firefox over MCP
+//                           (tests/e2e/relay-headless.e2e.test.ts)
+//   npm run e2e:extension   the extension loads as a temporary add-on
+//                           (scripts/e2e/extension-load.mjs)
+// This script covers the remaining path: daemon → Native Host → Extension.
 //
 // It opens https://example.com/ in the active tab and https://example.org/
 // in a new tab (closed again at the end). Needs internet access.
