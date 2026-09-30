@@ -11,15 +11,48 @@
 // Firefox is not needed. The daemon is started by the host when it is missing
 // and keeps running afterwards (it exits on its own when idle).
 //
-// Usage: node scripts/e2e/nm-probe.mjs   (after running the installer)
-// Exit code: 0 = pass, 1 = fail
+// Usage: node scripts/e2e/nm-probe.mjs [manifest.json]   (after running the installer)
+//        node scripts/e2e/nm-probe.mjs --help
+// Exit code: 0 = pass, 1 = fail, 2 = bad arguments
 
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
-function manifestPath() {
+const USAGE = `Usage: node scripts/e2e/nm-probe.mjs [manifest.json]
+
+Starts the Native Messaging host the way Firefox does, sends ping and status,
+and checks that it reaches the daemon and exits when stdin closes.
+
+  manifest.json  host manifest to test (default: the one the installer writes,
+                 ${defaultManifestPath()})
+  -h, --help     show this help
+
+Exit code: 0 = pass, 1 = fail, 2 = bad arguments.
+Note: the host starts the daemon when none is running (it exits when idle).
+`;
+
+/** Parse argv: at most one positional (manifest path) and --help. */
+function parseArgs(argv) {
+  if (argv.some((a) => a === '-h' || a === '--help')) return { help: true };
+  const flags = argv.filter((a) => a.startsWith('-'));
+  if (flags.length > 0) return { error: `unknown option: ${flags.join(' ')}` };
+  if (argv.length > 1) return { error: `expected at most one manifest path, got ${argv.length} arguments` };
+  return { manifest: argv[0] };
+}
+
+const args = parseArgs(process.argv.slice(2));
+if (args.help) {
+  process.stdout.write(USAGE);
+  process.exit(0);
+}
+if (args.error) {
+  process.stderr.write(`nm-probe: ${args.error}\n\n${USAGE}`);
+  process.exit(2);
+}
+
+function defaultManifestPath() {
   const home = homedir();
   switch (process.platform) {
     case 'win32': return path.join(home, '.kitsune-mcp', 'native-host', 'kitsune_mcp.json');
@@ -28,9 +61,9 @@ function manifestPath() {
   }
 }
 
-const mPath = manifestPath();
+const mPath = args.manifest !== undefined ? path.resolve(args.manifest) : defaultManifestPath();
 if (!existsSync(mPath)) {
-  console.error(`host manifest not found: ${mPath} (run the installer first)`);
+  console.error(`host manifest not found: ${mPath}${args.manifest !== undefined ? '' : ' (run the installer first)'}`);
   process.exit(1);
 }
 const manifest = JSON.parse(readFileSync(mPath, 'utf8'));

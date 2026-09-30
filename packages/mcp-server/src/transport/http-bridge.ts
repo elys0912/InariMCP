@@ -79,12 +79,12 @@ import {
   responseMac,
   sha256Hex,
 } from './auth.js';
+import { PACKAGE_VERSION } from '../version.js';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const PACKAGE_VERSION = '0.1.0';
 const MAX_BODY_BYTES = 1_048_576; // 1 MB — generous for any JSON payload
 /** How much of an oversized body is read (and dropped) so the 413 gets through. */
 const MAX_DRAIN_BYTES = 16 * MAX_BODY_BYTES;

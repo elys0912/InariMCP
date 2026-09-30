@@ -1,6 +1,6 @@
 {
   "name": "kitsune-mcp",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "private": true,
   "description": "Firefox MCP addon for Claude Code — browser automation via extension + native messaging",
   "license": "MIT",
