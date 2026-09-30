@@ -1,6 +1,7 @@
 import type { Browser, BrowserContext, Page, ConsoleMessage, Dialog } from 'playwright';
-import { firefox } from 'playwright';
-import { ENV, LEGACY_ENV, ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { headlessStartupTimeoutMs } from '../utils/headless-env.js';
+import { argTimeout, filterAriaSnapshot, ignoredParamWarnings } from './helpers.js';
 import { getSafetyGuard } from '../safety/guard.js';
 import { getScreenshotsDir } from '../utils/screenshot.js';
 import * as fs from 'node:fs';
@@ -36,7 +37,28 @@ function log(msg: string): void {
   process.stderr.write(`[KitsuneMCP:Headless] ${msg}\n`);
 }
 
+/** Longest a dialog nobody asked for may stay open before it is dismissed (it blocks the page). */
+const DIALOG_GRACE_MS = 2_000;
+/** An armed fox_handle_dialog applies to the next dialog within this time only. */
+const ARM_TTL_MS = 30_000;
+/** fox_snapshot text is cut at this many characters. */
+const SNAPSHOT_MAX_CHARS = 50_000;
+
+interface DialogEvent {
+  type: string;
+  message: string;
+  handled: 'accept' | 'dismiss';
+  /** Dismissed by the backend because no fox_handle_dialog was waiting or armed. */
+  auto: boolean;
+}
+
 export class HeadlessBrowser {
+  // Dialogs are tracked per tab outside the execute() lock: a fox_handle_dialog
+  // waiting for a dialog must not block the click that opens it.
+  private _pendingDialog = new Map<number, Dialog>();
+  private _dialogWaiters = new Map<number, { deliver: (d: Dialog) => void; cancel: () => void }>();
+  private _armed = new Map<number, { action: 'accept' | 'dismiss'; promptText?: string; until: number }>();
+  private _dialogEvents = new Map<number, DialogEvent[]>();
   private _browser: Browser | null = null;
   private _context: BrowserContext | null = null;
   private _page: Page | null = null;
@@ -55,12 +77,13 @@ export class HeadlessBrowser {
       process.env[LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE] ??
       undefined;
 
-    const timeout =
-      Number(process.env[ENV.FOX_HEADLESS_STARTUP_TIMEOUT]) ||
-      ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT;
+    const timeout = headlessStartupTimeoutMs();
 
+    // Loaded on demand, so the daemon and relay start without playwright installed.
+    const { firefox } = await import('playwright');
     this._browser = await firefox.launch({
       headless: true,
+      timeout,
       ...(executablePath ? { executablePath } : {}),
     });
 
@@ -75,10 +98,19 @@ export class HeadlessBrowser {
   }
 
   async stop(): Promise<void> {
-    if (this._browser) {
-      await this._browser.close();
-      this._browser = null;
-    }
+    const browser = this._browser;
+    // isReady() is false from here on, also when close() throws.
+    this._browser = null;
+    this._context = null;
+    this._page = null;
+    this._tabs.clear();
+    this._activeTabId = null;
+    this._pendingDialog.clear();
+    for (const w of this._dialogWaiters.values()) w.cancel();
+    this._dialogWaiters.clear();
+    this._armed.clear();
+    this._dialogEvents.clear();
+    if (browser) await browser.close();
     log('stopped');
   }
 
@@ -95,11 +127,17 @@ export class HeadlessBrowser {
     this._tabs.set(tabId, page);
     this._activeTabId = tabId;
     page.on('close', () => this._forgetTab(tabId));
+    page.on('dialog', (d: Dialog) => this._onDialog(tabId, d));
     return tabId;
   }
 
   private _forgetTab(tabId: number): void {
     this._tabs.delete(tabId);
+    this._pendingDialog.delete(tabId);
+    this._dialogWaiters.get(tabId)?.cancel();
+    this._dialogWaiters.delete(tabId);
+    this._armed.delete(tabId);
+    this._dialogEvents.delete(tabId);
     if (this._activeTabId === tabId) {
       const first = this._tabs.keys().next();
       this._activeTabId = first.done ? null : first.value;
@@ -161,19 +199,182 @@ export class HeadlessBrowser {
     tabId: number | undefined,
     args: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
+    // Not serialised: it waits for a dialog that a queued action may be about to open.
+    if (action === 'handle_dialog') {
+      return this._finish(action, tabId ?? this._activeTabId, args, await this._run(action, () => this._handleDialog(tabId, args)));
+    }
+
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
     const prev = this._lockChain;
     this._lockChain = gate;
     await prev;
     try {
-      return await this._dispatch(action, tabId, args);
-    } catch (e) {
-      log(`${action} failed: ${e instanceof Error ? e.message : String(e)}`);
-      return { success: false, error: e instanceof Error ? e.message : String(e) };
+      // The tab this action targets, fixed before it can change the active tab.
+      const target = tabId ?? this._activeTabId;
+      return this._finish(action, target, args, await this._run(action, () => this._dispatch(action, tabId, args)));
     } finally {
       release();
     }
+  }
+
+  private async _run(
+    action: string,
+    fn: () => Promise<Record<string, unknown>>,
+  ): Promise<Record<string, unknown>> {
+    try {
+      return await fn();
+    } catch (e) {
+      log(`${action} failed: ${e instanceof Error ? e.message : String(e)}`);
+      return { success: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /**
+   * Add what the caller should know to a result: parameters that were ignored,
+   * and dialogs that were handled (or auto-dismissed) on this tab meanwhile.
+   * A failed result only carries text, so its warnings are appended to `error`.
+   */
+  private _finish(
+    action: string,
+    id: number | null,
+    args: Record<string, unknown>,
+    result: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const warnings = [
+      ...(Array.isArray(result['warnings']) ? (result['warnings'] as string[]) : []),
+      ...ignoredParamWarnings(action, args),
+    ];
+    const drain = id !== null && action !== 'handle_dialog';
+    const events = drain ? this._dialogEvents.get(id) : undefined;
+    if (drain) this._dialogEvents.delete(id);
+    if (events && events.length > 0) {
+      result['dialogs'] = events;
+      for (const ev of events.filter((e) => e.auto)) {
+        warnings.push(
+          `dialog "${ev.message.slice(0, 80)}" was dismissed automatically; ` +
+          'call fox_handle_dialog before the action that opens a dialog to accept it',
+        );
+      }
+    }
+    delete result['warnings'];
+    if (warnings.length > 0) {
+      if (result['success'] === false && typeof result['error'] === 'string') {
+        result['error'] = `${result['error']} (warnings: ${warnings.join('; ')})`;
+      } else {
+        result['warnings'] = warnings;
+      }
+    }
+    return result;
+  }
+
+  // -----------------------------------------------------------------------
+  // Dialogs
+  // -----------------------------------------------------------------------
+
+  private _onDialog(tabId: number, dialog: Dialog): void {
+    const waiter = this._dialogWaiters.get(tabId);
+    if (waiter) {
+      this._dialogWaiters.delete(tabId);
+      waiter.deliver(dialog);
+      return;
+    }
+    const armed = this._armed.get(tabId);
+    this._armed.delete(tabId);
+    if (armed && Date.now() <= armed.until) {
+      void this._settle(dialog, armed.action, armed.promptText, (info) => {
+        this._recordDialog(tabId, { ...info, auto: false });
+      });
+      return;
+    }
+    // Nobody asked for it (or the request expired): an open dialog blocks the
+    // page and the action that opened it, so give fox_handle_dialog a moment,
+    // then dismiss.
+    this._pendingDialog.set(tabId, dialog);
+    setTimeout(() => {
+      if (this._pendingDialog.get(tabId) !== dialog) return;
+      this._pendingDialog.delete(tabId);
+      void this._settle(dialog, 'dismiss', undefined, (info) => {
+        this._recordDialog(tabId, { ...info, auto: true });
+      });
+    }, DIALOG_GRACE_MS).unref();
+  }
+
+  private _recordDialog(tabId: number, ev: DialogEvent): void {
+    const list = this._dialogEvents.get(tabId) ?? [];
+    list.push(ev);
+    this._dialogEvents.set(tabId, list);
+  }
+
+  private async _settle(
+    dialog: Dialog,
+    action: 'accept' | 'dismiss',
+    promptText?: string,
+    /** Called before the dialog is settled, so a result that waits for it already finds the record. */
+    onInfo?: (info: { type: string; message: string; handled: 'accept' | 'dismiss' }) => void,
+  ): Promise<{ type: string; message: string; handled: 'accept' | 'dismiss' }> {
+    const info = { type: dialog.type(), message: dialog.message(), handled: action };
+    onInfo?.(info);
+    try {
+      if (action === 'accept') await dialog.accept(promptText);
+      else await dialog.dismiss();
+    } catch (e) {
+      log(`dialog ${action} failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    return info;
+  }
+
+  private async _handleDialog(
+    tabId: number | undefined,
+    args: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const id = tabId ?? this._activeTabId;
+    if (id === null || !this._tabs.has(id)) {
+      return { success: false, error: `No headless tab with id ${tabId ?? 'active'}` };
+    }
+    const action = args['action'] === 'accept' ? 'accept' : 'dismiss';
+    const promptText = args['promptText'] as string | undefined;
+    const timeout = argTimeout(args, 10_000);
+
+    const settle = async (d: Dialog): Promise<Record<string, unknown>> => {
+      const info = await this._settle(d, action, promptText);
+      return { success: true, type: info.type, message: info.message, handled: info.handled };
+    };
+
+    const pending = this._pendingDialog.get(id);
+    if (pending) {
+      this._pendingDialog.delete(id);
+      return settle(pending);
+    }
+
+    const dialog = await new Promise<Dialog | null>((resolve) => {
+      const waiter = {
+        deliver: (d: Dialog): void => { clearTimeout(timer); resolve(d); },
+        // the tab was closed or the browser stopped
+        cancel: (): void => { clearTimeout(timer); resolve(null); },
+      };
+      const timer = setTimeout(() => {
+        if (this._dialogWaiters.get(id) === waiter) this._dialogWaiters.delete(id);
+        resolve(null);
+      }, timeout);
+      this._dialogWaiters.set(id, waiter);
+    });
+    if (dialog) return settle(dialog);
+    if (!this._tabs.has(id)) return { success: false, error: `Tab ${id} was closed while waiting for a dialog` };
+
+    this._armed.set(id, {
+      action,
+      ...(promptText !== undefined ? { promptText } : {}),
+      until: Date.now() + ARM_TTL_MS,
+    });
+    return {
+      success: true,
+      handled: false,
+      armed: action,
+      message:
+        `No dialog open; the next dialog on this tab within ${ARM_TTL_MS / 1000}s will be ` +
+        `${action === 'accept' ? 'accepted' : 'dismissed'}`,
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -231,17 +432,27 @@ export class HeadlessBrowser {
         };
       }
 
-      // --- snapshot (base64, no file) ---
+      // --- snapshot (accessibility tree as text; images are fox_screenshot's job) ---
       case 'snapshot': {
-        const buf = await page.screenshot({
-          fullPage: (args['fullPage'] as boolean) ?? false,
+        const sel = (args['selector'] as string) || 'body';
+        const loc = page.locator(sel);
+        const matches = await loc.count();
+        if (matches === 0) return { success: false, error: `No element matches selector: ${sel}` };
+        const raw = await loc.first().ariaSnapshot({ timeout: 10_000 });
+        const text = filterAriaSnapshot(raw, {
+          ...(typeof args['maxDepth'] === 'number' ? { maxDepth: args['maxDepth'] } : {}),
+          ...(args['includeText'] === false ? { includeText: false } : {}),
+          ...(Array.isArray(args['roles']) ? { roles: args['roles'] as string[] } : {}),
         });
         return {
           success: true,
-          base64: buf.toString('base64'),
-          size: buf.length,
           url: page.url(),
           title: await page.title(),
+          format: 'aria-yaml',
+          snapshot: text.slice(0, SNAPSHOT_MAX_CHARS),
+          truncated: text.length > SNAPSHOT_MAX_CHARS,
+          totalLength: text.length,
+          ...(matches > 1 ? { warnings: [`selector matched ${matches} elements; only the first is shown`] } : {}),
         };
       }
 
@@ -255,7 +466,10 @@ export class HeadlessBrowser {
         } else if (x !== undefined && y !== undefined) {
           await page.mouse.click(x, y);
         } else {
-          return { success: false, error: 'click requires selector or x+y coordinates' };
+          return {
+            success: false,
+            error: 'click requires selector or x+y in headless mode (xpath and text are not supported)',
+          };
         }
         return { success: true };
       }
@@ -275,10 +489,64 @@ export class HeadlessBrowser {
 
       // --- scroll ---
       case 'scroll': {
-        const deltaX = Number(args['deltaX'] ?? 0);
-        const deltaY = Number(args['deltaY'] ?? 300);
-        await page.mouse.wheel(deltaX, deltaY);
-        return { success: true };
+        // Same precedence as the extension: toElement, then direction (of selector or window).
+        const toElement = args['toElement'] as string | undefined;
+        if (toElement) {
+          const found = await page.evaluate((sel: string) => {
+            const el = document.querySelector(sel);
+            if (!el) return null;
+            el.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
+            const r = el.getBoundingClientRect();
+            return {
+              tag: el.tagName.toLowerCase(),
+              text: (el.textContent ?? '').trim().slice(0, 100),
+              box: { x: r.x, y: r.y, width: r.width, height: r.height },
+              position: { x: window.scrollX, y: window.scrollY },
+            };
+          }, toElement);
+          if (!found) return { success: false, error: `No element matches toElement: ${toElement}` };
+          return { success: true, scrolled: true, element: { tag: found.tag, text: found.text, box: found.box }, position: found.position, url: page.url() };
+        }
+
+        const direction = (args['direction'] as string | undefined) ?? 'down';
+        const rawAmount = Number(args['amount'] ?? 300);
+        const amount = Number.isFinite(rawAmount) ? Math.abs(rawAmount) : 300;
+        const moved = await page.evaluate(
+          ({ sel, dir, amt }: { sel: string | null; dir: string; amt: number }) => {
+            const el = sel ? document.querySelector(sel) : null;
+            if (sel && !el) return null;
+            const doc = document.scrollingElement ?? document.documentElement;
+            const pos = (): { x: number; y: number } =>
+              el ? { x: el.scrollLeft, y: el.scrollTop } : { x: window.scrollX, y: window.scrollY };
+            const by = (x: number, y: number): void => {
+              const opts = { left: x, top: y, behavior: 'instant' as ScrollBehavior };
+              if (el) el.scrollBy(opts); else window.scrollBy(opts);
+            };
+            const to = (y: number): void => {
+              const opts = { top: y, behavior: 'instant' as ScrollBehavior };
+              if (el) el.scrollTo(opts); else window.scrollTo(opts);
+            };
+            const before = pos();
+            if (dir === 'up') by(0, -amt);
+            else if (dir === 'down') by(0, amt);
+            else if (dir === 'left') by(-amt, 0);
+            else if (dir === 'right') by(amt, 0);
+            else if (dir === 'top') to(0);
+            else if (dir === 'bottom') to(el ? el.scrollHeight : doc.scrollHeight);
+            const after = pos();
+            return { scrolled: before.x !== after.x || before.y !== after.y, position: after };
+          },
+          { sel: (args['selector'] as string | undefined) ?? null, dir: direction, amt: amount },
+        );
+        if (!moved) return { success: false, error: `No element matches selector: ${String(args['selector'])}` };
+        return {
+          success: true,
+          scrolled: moved.scrolled,
+          position: moved.position,
+          target: args['selector'] ? 'element' : 'window',
+          direction,
+          url: page.url(),
+        };
       }
 
       // --- hover ---
@@ -340,14 +608,14 @@ export class HeadlessBrowser {
       // --- wait_for_element ---
       case 'wait_for_element': {
         const selector = (args['selector'] as string) ?? '';
-        const timeout = (args['timeout'] as number) ?? 10_000;
+        const timeout = argTimeout(args, 10_000);
         await page.waitForSelector(selector, { timeout });
         return { success: true };
       }
 
       // --- wait_for_network_idle ---
       case 'wait_for_network_idle': {
-        const timeout = (args['timeout'] as number) ?? 10_000;
+        const timeout = argTimeout(args, 10_000);
         await page.waitForLoadState('networkidle', { timeout });
         return { success: true };
       }
@@ -422,16 +690,51 @@ export class HeadlessBrowser {
       // --- select_option ---
       case 'select_option': {
         const selector = (args['selector'] as string) ?? '';
-        if (args['value'] !== undefined) {
-          await page.selectOption(selector, { value: args['value'] as string });
-        } else if (args['text'] !== undefined) {
-          await page.selectOption(selector, { label: args['text'] as string });
-        } else if (args['index'] !== undefined) {
-          await page.selectOption(selector, { index: Number(args['index']) });
-        } else {
+        const want = {
+          value: args['value'] as string | undefined,
+          index: args['index'] === undefined ? undefined : Number(args['index']),
+          text: args['text'] as string | undefined,
+        };
+        if (want.value === undefined && want.index === undefined && want.text === undefined) {
           return { success: false, error: 'select_option requires value, text, or index' };
         }
-        return { success: true };
+        // Look the option up first (value, then index, then exact text, as the
+        // extension does): selectOption() alone reports a miss as success.
+        const info = await page.locator(selector).first().evaluate(
+          (el: Element, w: { value?: string; index?: number; text?: string }) => {
+            if (!(el instanceof HTMLSelectElement)) return { kind: 'not-select' as const };
+            const options = Array.from(el.options).map((o) => ({ value: o.value, text: o.text }));
+            let idx = -1;
+            if (w.value !== undefined) idx = options.findIndex((o) => o.value === w.value);
+            else if (w.index !== undefined) idx = w.index >= 0 && w.index < options.length ? w.index : -1;
+            else if (w.text !== undefined) idx = options.findIndex((o) => o.text === w.text);
+            return { kind: 'ok' as const, idx, options };
+          },
+          {
+            ...(want.value !== undefined ? { value: want.value } : {}),
+            ...(want.index !== undefined ? { index: want.index } : {}),
+            ...(want.text !== undefined ? { text: want.text } : {}),
+          },
+          { timeout: 5_000 },
+        );
+        if (info.kind === 'not-select') {
+          return { success: false, error: `Element is not a <select>: ${selector}` };
+        }
+        if (info.idx < 0) {
+          const what = want.value !== undefined ? `value "${want.value}"`
+            : want.index !== undefined ? `index ${want.index}` : `text "${want.text}"`;
+          return {
+            success: false,
+            error: `No option matches ${what}`,
+            availableOptions: info.options.slice(0, 20),
+          };
+        }
+        const chosen = await page.selectOption(selector, { index: info.idx }, { timeout: 5_000 });
+        if (chosen.length === 0) {
+          return { success: false, error: `Option was not selected: ${selector}` };
+        }
+        const picked = info.options[info.idx]!;
+        return { success: true, selected: true, value: picked.value, text: picked.text };
       }
 
       // --- go_back ---
@@ -529,7 +832,7 @@ export class HeadlessBrowser {
         const condition = (args['condition'] as string) ?? 'true';
         const actionScript = (args['actionScript'] as string) ?? '';
         const pollMs = (args['pollIntervalMs'] as number) ?? 200;
-        const timeoutMs = (args['timeoutMs'] as number) ?? 15_000;
+        const timeoutMs = argTimeout(args, 15_000);
         let elapsed = 0;
         while (elapsed < timeoutMs) {
           try {
@@ -632,41 +935,11 @@ export class HeadlessBrowser {
         };
       }
 
-      // --- handle_dialog ---
-      case 'handle_dialog': {
-        const dialogAction = (args['action'] as string) ?? 'dismiss';
-        const promptText = args['promptText'] as string | undefined;
-        const timeout = (args['timeout'] as number) ?? 10_000;
-        return new Promise<Record<string, unknown>>((resolve) => {
-          const timer = setTimeout(() => {
-            page.removeListener('dialog', onDialog);
-            resolve({ success: false, error: `No dialog appeared within ${timeout}ms` });
-          }, timeout);
-          const onDialog = async (dialog: Dialog) => {
-            clearTimeout(timer);
-            const info = { type: dialog.type(), message: dialog.message() };
-            try {
-              if (dialogAction === 'accept') {
-                await dialog.accept(promptText);
-              } else {
-                await dialog.dismiss();
-              }
-              resolve({ success: true, ...info, handled: dialogAction });
-            } catch (e) {
-              resolve({
-                success: false,
-                ...info,
-                error: e instanceof Error ? e.message : String(e),
-              });
-            }
-          };
-          page.once('dialog', onDialog);
-        });
-      }
+      // handle_dialog is handled in execute() (outside the lock), see _handleDialog()
 
       // --- wait_for_navigation ---
       case 'wait_for_navigation': {
-        const timeout = (args['timeout'] as number) ?? 30_000;
+        const timeout = argTimeout(args, 30_000);
         await page.waitForNavigation({ timeout });
         return { success: true, url: page.url(), title: await page.title() };
       }
@@ -679,7 +952,7 @@ export class HeadlessBrowser {
         if (!exact && !regex) {
           return { success: false, error: 'Must provide url or urlPattern' };
         }
-        const timeout = (args['timeout'] as number) ?? 15_000;
+        const timeout = argTimeout(args, 15_000);
         // A plain string would be read as a glob ('?' and '*' in query
         // strings), so compare the exact URL with a predicate instead.
         await page.waitForURL(

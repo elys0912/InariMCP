@@ -1,4 +1,4 @@
-import { ENV } from '@kitsune-mcp/shared';
+import { isHeadlessEnabled } from '../utils/headless-env.js';
 import type { SafetyConfig } from './config.js';
 
 export interface ContainerScope {
@@ -43,7 +43,7 @@ export function getContainerConfig(
 
 /** Whether the MCP Server runs the headless (Playwright) backend. */
 function isHeadlessBackend(): boolean {
-  return Boolean(process.env[ENV.FOX_HEADLESS]);
+  return isHeadlessEnabled();
 }
 
 /**

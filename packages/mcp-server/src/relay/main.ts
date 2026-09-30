@@ -23,9 +23,13 @@ import { DaemonClient } from './daemon-client.js';
 import { callWithApproval, canElicit } from './approval.js';
 import { isElicitationApprovalEnabled } from '../safety/approval.js';
 import type { ApprovalDeps } from './approval.js';
+import { createRelayHandlers } from './handler.js';
 
 const PACKAGE_VERSION = '0.1.0';
 const SERVER_NAME = 'kitsune-mcp';
+/** Longest wait, before the MCP connect, for an already-running daemon's settings. */
+const PRECHECK_BUDGET_MS = 800;
+const PRECHECK_TIMEOUT_MS = 400;
 
 function log(msg: string): void {
   process.stderr.write(`[KitsuneMCP:relay] ${msg}\n`);
@@ -35,23 +39,25 @@ export async function runRelay(): Promise<void> {
   const relayId = crypto.randomBytes(4).toString('hex');
   const client = new DaemonClient(relayId);
 
-  // Start (or find) the daemon before answering initialize, so settings
-  // mismatches can be reported in the server instructions. On failure the
-  // relay still comes up; each tool call retries ensureDaemon().
-  const up = await client.ensureDaemon();
-  if (!up) {
-    log(`shared daemon unavailable at ${client.baseUrl} — tool calls will retry`);
-  }
-  const protocolWarning = up ? client.protocolMismatch() : undefined;
-  const warnings =
-    protocolWarning !== undefined ? [protocolWarning] : up ? await client.settingsMismatch() : [];
-  for (const w of warnings) log(`WARNING: ${w}`);
+  // Answer initialize at once: starting a daemon can take many seconds. Only a
+  // daemon that is already running is checked first (briefly), so a settings
+  // mismatch can still go into the server instructions. Otherwise the first
+  // tool call waits for the daemon (client.ready()) and carries the warning.
+  const known = await Promise.race([
+    (async (): Promise<string[] | null> => {
+      if (!(await client.checkHealth(PRECHECK_TIMEOUT_MS))) return null;
+      const protocol = client.protocolMismatch();
+      return protocol !== undefined ? [protocol] : client.checkSettings(PRECHECK_TIMEOUT_MS);
+    })(),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), PRECHECK_BUDGET_MS)),
+  ]);
+  for (const w of known ?? []) log(`WARNING: ${w}`);
 
   const mcpServer = new McpServer(
     { name: SERVER_NAME, version: PACKAGE_VERSION },
     {
       capabilities: { tools: {} },
-      ...(warnings.length > 0 ? { instructions: warnings.join('\n') } : {}),
+      ...(known !== null && known.length > 0 ? { instructions: known.join('\n') } : {}),
     },
   );
 
@@ -64,31 +70,21 @@ export async function runRelay(): Promise<void> {
     log,
   });
 
-  const toolCount = registerTools(
-    mcpServer,
-    (toolName) => async (args, extra) => {
-      const result = await callWithApproval(
-        (approvalToken) => client.callTool(toolName, args, extra.signal, approvalToken),
-        approvalDeps(extra.signal),
-      );
-      if (toolName !== 'fox_safety_status' || result.isError) return result;
-      // Re-check on every status call: the daemon may have been restarted
-      // by another session since this relay started.
-      const mismatch = await client.settingsMismatch();
-      if (mismatch.length === 0) return result;
-      return {
-        ...result,
-        content: [
-          ...result.content,
-          ...mismatch.map((w) => ({ type: 'text' as const, text: `WARNING: ${w}` })),
-        ],
-      };
-    },
+  const handlers = createRelayHandlers(
+    client,
+    known,
+    log,
+    (toolName, args, signal) => callWithApproval(
+      (approvalToken) => client.callTool(toolName, args, signal, approvalToken),
+      approvalDeps(signal ?? new AbortController().signal),
+    ),
   );
+  const toolCount = registerTools(mcpServer, handlers.handlerFor);
 
   const transport = new StdioServerTransport();
   await mcpServer.connect(transport);
   client.startHeartbeat();
+  handlers.startNotice();
 
   log(
     `relay ${relayId} ready: ${toolCount} tools (FOX_CAPS=${process.env[ENV.FOX_CAPS] || 'all'}), ` +

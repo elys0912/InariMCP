@@ -70,7 +70,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function errorResult(text: string): CallToolResult {
+export function errorResult(text: string): CallToolResult {
   return { content: [{ type: 'text', text }], isError: true };
 }
 
@@ -97,6 +97,7 @@ export class DaemonClient {
   private readonly port: number;
   private readonly readToken: () => string | undefined;
   private ensuring: Promise<boolean> | null = null;
+  private readyPromise: Promise<boolean> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   /** A KitsuneMCP daemon answered the last /health. */
   private daemonSeen = false;
@@ -127,6 +128,21 @@ export class DaemonClient {
       this.ensuring = this.doEnsure().finally(() => { this.ensuring = null; });
     }
     return this.ensuring;
+  }
+
+  /**
+   * Resolves true once a daemon answers (starting one if needed). A success is
+   * remembered, so later calls return at once; a failure is not, so the next
+   * call tries again. Concurrent callers share one attempt.
+   */
+  ready(): Promise<boolean> {
+    if (this.readyPromise === null) {
+      this.readyPromise = this.ensureDaemon().then((ok) => {
+        if (!ok) this.readyPromise = null;
+        return ok;
+      });
+    }
+    return this.readyPromise;
   }
 
   private async doEnsure(): Promise<boolean> {
@@ -194,9 +210,9 @@ export class DaemonClient {
    * KitsuneMCP daemon answers — even an incompatible one: it holds the port,
    * so starting another would not help (see protocolMismatch()).
    */
-  async checkHealth(): Promise<boolean> {
+  async checkHealth(timeoutMs: number = HEALTH_TIMEOUT_MS): Promise<boolean> {
     try {
-      const reply = await this.request('GET', '/health', undefined, HEALTH_TIMEOUT_MS);
+      const reply = await this.request('GET', '/health', undefined, timeoutMs);
       const ok =
         reply.status === 200 &&
         isRecord(reply.body) &&
@@ -243,18 +259,23 @@ export class DaemonClient {
    *
    * @returns human-readable warnings (empty when the settings agree)
    */
-  async settingsMismatch(): Promise<string[]> {
+  async settingsMismatch(timeoutMs: number = HEALTH_TIMEOUT_MS): Promise<string[]> {
+    return (await this.checkSettings(timeoutMs)) ?? [];
+  }
+
+  /** Like settingsMismatch(), but null when the daemon's settings could not be read (unknown, not "equal"). */
+  async checkSettings(timeoutMs: number = HEALTH_TIMEOUT_MS): Promise<string[] | null> {
     const token = this.readToken();
-    if (token === undefined) return [];
+    if (token === undefined) return null;
     let reply: HttpReply;
     try {
-      reply = await this.request('GET', '/daemon/info', undefined, HEALTH_TIMEOUT_MS, token);
+      reply = await this.request('GET', '/daemon/info', undefined, timeoutMs, token);
     } catch {
-      return [];
+      return null;
     }
-    if (reply.status !== 200 || !reply.verified || !isRecord(reply.body)) return [];
+    if (reply.status !== 200 || !reply.verified || !isRecord(reply.body)) return null;
     const daemonSettings = reply.body['settings'];
-    if (!isRecord(daemonSettings)) return [];
+    if (!isRecord(daemonSettings)) return null;
     const pid = typeof reply.body['pid'] === 'number' ? reply.body['pid'] : 'unknown';
 
     const mine = snapshotDaemonSettings();

@@ -24,7 +24,7 @@ import { ENV } from '@kitsune-mcp/shared';
 import { startHttpBridge } from '../transport/http-bridge.js';
 import { startWebSocketServer } from '../transport/ws-bridge.js';
 import { getConnectionManager } from '../connection/manager.js';
-import { getHeadlessBrowser } from '../headless/backend.js';
+import { isHeadlessEnabled, unrecognizedHeadlessValue } from '../utils/headless-env.js';
 import { getSafetyGuard } from '../safety/guard.js';
 import { getContainerConfig } from '../safety/container.js';
 import {
@@ -114,7 +114,11 @@ export async function runDaemon(): Promise<void> {
   const host = resolveHost();
   const httpPort = resolveHttpPort();
   const wsPort = resolveWsPort();
-  const headlessMode = Boolean(process.env[ENV.FOX_HEADLESS]);
+  const headlessMode = isHeadlessEnabled();
+  const odd = unrecognizedHeadlessValue();
+  if (odd !== undefined) {
+    log(`WARNING: ${ENV.FOX_HEADLESS}='${odd}' is not 1/true/yes — headless mode is OFF`);
+  }
   const activity = new DaemonActivity();
   const settings = snapshotDaemonSettings();
 
@@ -198,10 +202,11 @@ export async function runDaemon(): Promise<void> {
     activity.stop();
     httpServer.close();
     wsServer.close();
-    const headless = getHeadlessBrowser();
-    if (headless) {
+    if (headlessMode) {
       try {
-        await headless.stop();
+        // Loaded on demand: playwright is only needed in headless mode.
+        const { getHeadlessBrowser } = await import('../headless/backend.js');
+        await getHeadlessBrowser()?.stop();
       } catch {
         // Best-effort
       }
