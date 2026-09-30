@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskSensitiveArgs, sanitizeResult } from '../src/safety/sanitizer.js';
+import { maskSensitiveArgs, sanitizeResult, sanitizeString } from '../src/safety/sanitizer.js';
 
 // Built at runtime so no token-shaped literal sits in the repository.
 const FAKE_JWT = `eyJ${'a'.repeat(12)}.${'b'.repeat(10)}.${'c'.repeat(10)}`;
@@ -36,8 +36,9 @@ describe('maskSensitiveArgs', () => {
     expect(args).toEqual({ text: 'hello' });
   });
 
-  it('matches keys exactly (camelCase actionScript is not in the list)', () => {
-    expect(maskSensitiveArgs({ actionScript: 'x()' })).toEqual({ actionScript: 'x()' });
+  it('matches keys whatever their case or separator (actionScript as in the schema)', () => {
+    expect(maskSensitiveArgs({ actionScript: 'x()', promptText: 'p', Password: 'q', selector: 's' }))
+      .toEqual({ actionScript: '***', promptText: '***', Password: '***', selector: 's' });
   });
 });
 
@@ -98,5 +99,102 @@ describe('sanitizeResult', () => {
     const input = { title: 'Example page', count: 2 };
     expect(sanitizeResult(input)).toEqual({ title: 'Example page', count: 2 });
     expect(sanitizeResult(input)).not.toBe(input);
+  });
+});
+
+describe('sanitizeResult: secret keys', () => {
+  it('masks API-key and token headers in any spelling', () => {
+    expect(
+      sanitizeResult({
+        'X-API-Key': 'k',
+        'x-auth-token': 't',
+        'Proxy-Authorization': 'p',
+        'X-CSRF-Token': 'c',
+        accessToken: 'a',
+        'x-request-id': 'keep',
+      }),
+    ).toEqual({
+      'X-API-Key': '[MASKED]',
+      'x-auth-token': '[MASKED]',
+      'Proxy-Authorization': '[MASKED]',
+      'X-CSRF-Token': '[MASKED]',
+      accessToken: '[MASKED]',
+      'x-request-id': 'keep',
+    });
+  });
+});
+
+describe('sanitizeString', () => {
+  it('masks Basic credentials', () => {
+    expect(sanitizeString('Authorization: Basic dXNlcjpwYXNzd29yZA==')).toBe(
+      'Authorization: Basic [MASKED]',
+    );
+  });
+
+  it('masks secret query parameters and form fields', () => {
+    expect(sanitizeString('https://a.test/cb?code=1&access_token=abc&state=s')).toBe(
+      'https://a.test/cb?code=1&access_token=[MASKED]&state=s',
+    );
+    expect(sanitizeString('user=me&password=hunter2&remember=1')).toBe(
+      'user=me&password=[MASKED]&remember=1',
+    );
+  });
+
+  it('masks secret JSON fields, including escaped quotes', () => {
+    expect(sanitizeString('{"user":"me","password":"a\\"b","api_key": "k1"}')).toBe(
+      '{"user":"me","password":"[MASKED]","api_key": "[MASKED]"}',
+    );
+  });
+
+  it('leaves prose that mentions a secret name alone', () => {
+    expect(sanitizeString('Enter your password: at least 8 characters')).toBe(
+      'Enter your password: at least 8 characters',
+    );
+    expect(sanitizeString('pageToken=abc')).toBe('pageToken=abc');
+  });
+
+  it('strips bidi controls, zero-width characters, tag characters and C0/C1 controls', () => {
+    const ch = (...codes: number[]) => String.fromCodePoint(...codes);
+    const hidden =
+      'pay' + ch(0x202e) + 'lapyap' + ch(0x202c) + ch(0x200b) + ch(0x2066) + 'x' + ch(0x2069) +
+      ch(0xfeff) + ch(0xe0041, 0xe0042) + ch(0x0007) + ch(0x009b) + 'end';
+    expect(sanitizeString(hidden)).toBe('paylapyapxend');
+  });
+
+  it('keeps tab, newline, carriage return and ordinary non-ASCII text', () => {
+    const [tab, lf, cr] = [0x09, 0x0a, 0x0d].map((c) => String.fromCharCode(c));
+    const text = `a${tab}b${lf}c${cr}${lf}d ` + String.fromCodePoint(0x65e5, 0x672c) + ' caf' +
+      String.fromCodePoint(0xe9);
+    expect(sanitizeString(text)).toBe(text);
+  });
+
+  it('is applied to strings and keys inside results', () => {
+    const zw = String.fromCodePoint(0x200b);
+    expect(sanitizeResult({ ['ti' + zw + 'tle']: 'a' + zw + 'b', logs: ['?token=x'] })).toEqual({
+      title: 'ab',
+      logs: ['?token=[MASKED]'],
+    });
+  });
+});
+
+describe('sanitizeResult: network log bodies', () => {
+  it('masks secrets in request and response bodies and headers', () => {
+    expect(
+      sanitizeResult({
+        logs: [{
+          url: 'https://a.test/login',
+          requestHeaders: { 'Content-Type': 'application/json', 'X-Auth-Token': 't' },
+          requestBody: '{"username":"me","password":"pw"}',
+          responseBody: '{"access_token":"tok","expires_in":3600}',
+        }],
+      }),
+    ).toEqual({
+      logs: [{
+        url: 'https://a.test/login',
+        requestHeaders: { 'Content-Type': 'application/json', 'X-Auth-Token': '[MASKED]' },
+        requestBody: '{"username":"me","password":"[MASKED]"}',
+        responseBody: '{"access_token":"[MASKED]","expires_in":3600}',
+      }],
+    });
   });
 });

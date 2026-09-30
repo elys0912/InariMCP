@@ -35,7 +35,7 @@ import {
 import type { ApprovalGrant } from '../safety/approval.js';
 import type { SafetyConfig } from '../safety/config.js';
 import { getContainerConfig } from '../safety/container.js';
-import { sanitizeResult } from '../safety/sanitizer.js';
+import { sanitizeResult, sanitizeString } from '../safety/sanitizer.js';
 import { compileUrlPatterns } from '../safety/url-pattern.js';
 import { audit } from '../safety/audit.js';
 import type { AuditDecision } from '../safety/audit.js';
@@ -278,10 +278,11 @@ function safetyDenialToCallResult(
     details.elicitation = denial.elicitation;
   }
 
+  // URLs and browser error text in a denial come from the page.
   return {
     content: [
-      { type: 'text' as const, text: parts.join('') },
-      { type: 'text' as const, text: JSON.stringify(details) },
+      { type: 'text' as const, text: sanitizeString(parts.join('')) },
+      { type: 'text' as const, text: JSON.stringify(sanitizeResult(details)) },
     ],
     isError: true,
   };
@@ -598,7 +599,12 @@ export function createToolHandler(
     // -----------------------------------------------------------------------
     const toolResult: ToolResult = response.success
       ? { success: true, data: sanitizedData }
-      : { success: false, error: response.error ?? 'Browser command failed', data: sanitizedData };
+      : {
+        success: false,
+        // Error text can carry page-derived content (script exceptions, URLs).
+        error: sanitizeString(response.error ?? 'Browser command failed'),
+        data: sanitizedData,
+      };
 
     const callResult = toolResultToCallResult(toolResult);
     if (imagePaths.length > 0) {
