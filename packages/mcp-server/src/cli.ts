@@ -9,13 +9,16 @@ import { PACKAGE_VERSION } from './version.js';
 export type CliCommand =
   | { kind: 'relay' }
   | { kind: 'daemon' }
+  | { kind: 'doctor' }
   | { kind: 'help' }
   | { kind: 'version' }
   | { kind: 'error'; message: string };
 
 /** Arguments selecting what the process runs; at most one may be given. */
-const MODES: Record<string, 'daemon'> = {
+const MODES: Record<string, 'daemon' | 'doctor'> = {
   '--daemon': 'daemon',
+  '--doctor': 'doctor',
+  doctor: 'doctor',
 };
 
 const HELP_FLAGS = new Set(['-h', '--help']);
@@ -50,6 +53,10 @@ Usage: node packages/mcp-server/dist/index.js [option]
                  Starts the shared daemon when none is running.
   --daemon       shared daemon (HTTP/WebSocket ports). Normally started
                  automatically by a relay or by the Native Host.
+  --doctor       check the installation and the running daemon; prints
+                 OK / WARN / FAIL / SKIP per item with a fix. Read-only:
+                 creates no token, starts no daemon. Exit code 1 when an
+                 item FAILs. ("doctor" works too: kitsune-mcp doctor)
   -h, --help     show this help
   -v, --version  print the version
 

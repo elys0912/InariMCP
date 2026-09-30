@@ -15,6 +15,9 @@
  *                                 Started on demand by a relay or by the
  *                                 Native Host. See daemon/main.ts.
  *
+ *   node dist/index.js --doctor   read-only installation / daemon check
+ *                                 (doctor/). Also `doctor`.
+ *
  * `--help` / `--version` print and exit before anything else happens (no
  * daemon, token or log file); an unknown argument exits with code 2
  * (cli.ts).
@@ -44,6 +47,12 @@ async function main(): Promise<void> {
       process.stderr.write(`kitsune-mcp: ${command.message}\n\n${helpText()}`);
       process.exitCode = 2;
       return;
+    case 'doctor': {
+      // Read-only checks; no process handlers, no daemon (doctor/checks.ts)
+      const { runDoctor } = await import('./doctor/run.js');
+      process.exitCode = await runDoctor();
+      return;
+    }
     case 'daemon': {
       // stderr is daemon.log: timestamp every line (utils/log-file.ts)
       installStderrTimestamps();
