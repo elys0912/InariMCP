@@ -1,6 +1,6 @@
 import type { Browser, BrowserContext, Page, ConsoleMessage, Dialog } from 'playwright';
-import { firefox } from 'playwright';
-import { ENV, LEGACY_ENV, ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { headlessStartupTimeoutMs } from '../utils/headless-env.js';
 import { getSafetyGuard } from '../safety/guard.js';
 import { getScreenshotsDir } from '../utils/screenshot.js';
 import * as fs from 'node:fs';
@@ -55,12 +55,13 @@ export class HeadlessBrowser {
       process.env[LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE] ??
       undefined;
 
-    const timeout =
-      Number(process.env[ENV.FOX_HEADLESS_STARTUP_TIMEOUT]) ||
-      ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT;
+    const timeout = headlessStartupTimeoutMs();
 
+    // Loaded on demand, so the daemon and relay start without playwright installed.
+    const { firefox } = await import('playwright');
     this._browser = await firefox.launch({
       headless: true,
+      timeout,
       ...(executablePath ? { executablePath } : {}),
     });
 
@@ -75,10 +76,14 @@ export class HeadlessBrowser {
   }
 
   async stop(): Promise<void> {
-    if (this._browser) {
-      await this._browser.close();
-      this._browser = null;
-    }
+    const browser = this._browser;
+    // isReady() is false from here on, also when close() throws.
+    this._browser = null;
+    this._context = null;
+    this._page = null;
+    this._tabs.clear();
+    this._activeTabId = null;
+    if (browser) await browser.close();
     log('stopped');
   }
 

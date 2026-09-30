@@ -80,7 +80,7 @@ function snakeToCamelConfig(raw: Record<string, unknown>): Record<string, unknow
     if (key === 'container_scope' && value && typeof value === 'object' && !Array.isArray(value)) {
       const cs = value as Record<string, unknown>;
       result[camelKey] = {
-        enabled: cs['enabled'] ?? cs['enabled'],
+        enabled: cs['enabled'],
         containerName: cs['container_name'] ?? cs['containerName'],
       };
     } else {
