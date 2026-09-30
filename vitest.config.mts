@@ -40,6 +40,9 @@ export default defineConfig({
       { extends: true, test: { name: 'mcp-server', include: ['packages/mcp-server/tests/**/*.test.ts'] } },
       { extends: true, test: { name: 'native-host', include: ['packages/native-host/tests/**/*.test.ts'] } },
       { extends: true, test: { name: 'contract', include: ['tests/contract/**/*.test.ts'] } },
+      // Real processes and a real (headless) Firefox; `npm run test:e2e`.
+      // Excluded from `npm test` by its --project filter.
+      { extends: true, test: { name: 'e2e', include: ['tests/e2e/**/*.e2e.test.ts'] } },
     ],
   },
 });
