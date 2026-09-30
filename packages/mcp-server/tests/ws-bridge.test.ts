@@ -120,6 +120,18 @@ describe('ws-bridge handshake (challenge-response)', () => {
   });
 });
 
+describe('ws-bridge unauthenticated connection cap', () => {
+  it('refuses a 9th connection that is still waiting for auth with 1013', async () => {
+    const { port } = await startBridge();
+    const pending = await Promise.all(Array.from({ length: 8 }, () => connect(port)));
+    const extra = new WebSocket(`ws://127.0.0.1:${port}`);
+    extra.on('error', () => { /* surfaced through close */ });
+    expect(await closed(extra)).toBe(1013);
+    for (const p of pending) p.ws.close();
+  });
+  // TODO(test): a slot is freed after auth success / failure / close, and the 5 s auth timeout frees it too
+});
+
 describe('ws-bridge robustness', () => {
   it('survives an invalid frame before auth and keeps serving', async () => {
     const { port } = await startBridge();

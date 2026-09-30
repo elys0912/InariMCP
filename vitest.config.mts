@@ -26,6 +26,11 @@ export default defineConfig({
     alias: [{ find: /^@kitsune-mcp\/shared$/, replacement: sharedSrc }],
   },
   test: {
+    // forks, not threads: tests/setup/isolate-home.ts changes HOME/USERPROFILE
+    // for os.homedir(), which worker threads would not see.
+    pool: 'forks',
+    setupFiles: ['./tests/setup/isolate-home.ts'],
+    globalSetup: ['./tests/setup/real-home-watch.ts'],
     env: {
       // Keep the Native Host logger away from ~/.kitsune-mcp/logs.
       FOX_NATIVE_HOST_LOG: 'off',

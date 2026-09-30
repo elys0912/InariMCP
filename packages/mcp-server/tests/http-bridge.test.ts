@@ -1,10 +1,7 @@
-import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as net from 'node:net';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { isAllowedHostHeader, startHttpBridge } from '../src/transport/http-bridge.js';
 import {
@@ -18,19 +15,7 @@ import {
 } from '../src/transport/auth.js';
 import { TOKEN, waitFor } from './helpers/ws.js';
 
-// Keep the SafetyGuard's safety.json / audit log away from the real home.
-let home: string;
-const savedEnv = { ...process.env };
-beforeAll(() => {
-  home = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-http-'));
-  process.env['HOME'] = home;
-  process.env['USERPROFILE'] = home;
-  delete process.env['FOX_SAFETY_CONFIG'];
-});
-afterAll(() => {
-  process.env = savedEnv;
-  fs.rmSync(home, { recursive: true, force: true });
-});
+// HOME / USERPROFILE point at a temporary directory: tests/setup/isolate-home.ts
 
 let server: http.Server | undefined;
 let port = 0;
