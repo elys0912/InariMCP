@@ -20,7 +20,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { log, rotateIfLarge } from './logger.js';
-import { spawnDaemonBreakaway } from './breakaway.js';
+import { daemonEnvFrom, defaultDeps, startOutsideJob } from './outside-job.js';
 
 function resolveHost(): string {
   return (
@@ -176,16 +176,26 @@ export class ServerLauncher {
     // Windows: outside Firefox's job object, or closing Firefox kills the
     // daemon (see breakaway.ts). Falls back to a plain spawn on failure.
     if (process.platform === 'win32') {
-      try {
-        const pid = await spawnDaemonBreakaway(serverEntry, daemonLogPath());
+      const result = await startOutsideJob(
+        {
+          exe: process.execPath,
+          args: [serverEntry, '--daemon'],
+          env: daemonEnvFrom(process.env),
+          log: daemonLogPath(),
+          cwd: daemonCwd(),
+        },
+        defaultDeps(path.join(daemonCwd(), 'run')),
+      );
+      if (!('errors' in result)) {
         this.restartAttempts++;
         this.lastStableTime = Date.now();
-        log(`started daemon outside the job object (PID: ${pid}, attempt #${this.restartAttempts})`);
+        log(`started daemon outside the job object via ${result.via} (attempt #${this.restartAttempts})`);
         return this.waitUntilHealthy();
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        log(`breakaway start failed (${msg}); starting the daemon inside the job instead`);
       }
+      log(
+        `WARNING: could not start the daemon outside Firefox's job object (${result.errors.join('; ')}); ` +
+        'starting it inside the job: it will stop when Firefox closes, together with the Claude Code sessions using it',
+      );
     }
 
     let logFd: number | 'ignore' = 'ignore';

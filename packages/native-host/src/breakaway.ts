@@ -13,6 +13,9 @@
  * The daemon inherits the Native Host's environment (FOX_* settings) through
  * PowerShell. Paths go through environment variables, never through the
  * command line, so no quoting is involved.
+ *
+ * PowerShell can be unavailable (blocked by policy): outside-job.ts tries it
+ * first and falls back to PowerShell-free routes.
  */
 
 import { spawn } from 'node:child_process';
@@ -113,7 +116,7 @@ const BREAKAWAY_TIMEOUT_MS = 20_000;
  * fails (e.g. a job that does not allow breakaway), so the caller can fall
  * back to a plain detached spawn.
  */
-export function spawnDaemonBreakaway(entry: string, logPath: string): Promise<number> {
+export function spawnDaemonBreakaway(entry: string, logPath: string, cwd?: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const encoded = Buffer.from(SCRIPT, 'utf16le').toString('base64');
     const ps = spawn(
@@ -124,6 +127,8 @@ export function spawnDaemonBreakaway(entry: string, logPath: string): Promise<nu
         // so 'close' comes when PowerShell exits, not when the daemon does.
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
+        // CreateProcess gets a null cwd, so the daemon inherits PowerShell's.
+        ...(cwd !== undefined ? { cwd } : {}),
         env: {
           ...process.env,
           KITSUNE_DAEMON_NODE: process.execPath,

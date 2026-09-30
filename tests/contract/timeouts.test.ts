@@ -7,7 +7,7 @@
  *   daemon       transport timeout          resolveCommandTimeout(command, kind)
  *                                           (mcp-server/src/connection/manager.ts)
  *   native-host  no command timer; forwards frames. In-flight bookkeeping
- *                expires after IN_FLIGHT_TTL_MS (native-host/src/index.ts)
+ *                expires after IN_FLIGHT_TTL_MS (native-host/src/host.ts)
  *   extension    browser-side wait          the tool's timeout argument, else
  *                                           content.ts TIMEOUTS.* fallbacks
  *
@@ -152,9 +152,9 @@ describe('5. daemon waits longer than the content-script fallbacks', () => {
 
 describe('6. native-host in-flight bookkeeping outlives the daemon timeout', () => {
   it('IN_FLIGHT_TTL_MS > longest base command timeout', () => {
-    // index.ts starts the host on import, so read the constant from source.
+    // host.ts keeps the constant module-private, so read it from source.
     const source = readFileSync(
-      fileURLToPath(new URL('../../packages/native-host/src/index.ts', import.meta.url)),
+      fileURLToPath(new URL('../../packages/native-host/src/host.ts', import.meta.url)),
       'utf-8',
     );
     const m = /const IN_FLIGHT_TTL_MS = ([0-9_ *]+);/.exec(source);
