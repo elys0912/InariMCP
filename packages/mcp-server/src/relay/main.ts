@@ -42,7 +42,9 @@ export async function runRelay(): Promise<void> {
   if (!up) {
     log(`shared daemon unavailable at ${client.baseUrl} — tool calls will retry`);
   }
-  const warnings = up ? await client.settingsMismatch() : [];
+  const protocolWarning = up ? client.protocolMismatch() : undefined;
+  const warnings =
+    protocolWarning !== undefined ? [protocolWarning] : up ? await client.settingsMismatch() : [];
   for (const w of warnings) log(`WARNING: ${w}`);
 
   const mcpServer = new McpServer(

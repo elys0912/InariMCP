@@ -12,7 +12,28 @@
  *   TypeScript uses Promise + Map<requestId, { resolve, timer, connectionId }>.
  */
 
+import * as crypto from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { BrowserAction, BrowserCommand, BrowserResponse } from '@kitsune-mcp/shared';
+
+// ---------------------------------------------------------------------------
+// Call context (client abort)
+// ---------------------------------------------------------------------------
+
+/**
+ * The AbortSignal of the tool call being executed, if its transport has one
+ * (http-bridge.ts: the HTTP client went away). sendCommand() reads it, so
+ * the tool handlers between the transport and the connection manager do not
+ * need to pass it along.
+ */
+const callSignal = new AsyncLocalStorage<AbortSignal>();
+
+/** Run `fn` so that every sendCommand() it makes is cancelled when `signal` aborts. */
+export function runWithCallSignal<T>(signal: AbortSignal, fn: () => T): T {
+  return callSignal.run(signal, fn);
+}
+
+const CANCELLED_ERROR = 'Cancelled: the client abandoned the tool call';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -160,6 +181,13 @@ export class BrowserConnectionManager {
   /** Monotonically increasing counter used to generate request IDs. */
   private requestCounter = 0;
 
+  /**
+   * Random per-process prefix of request IDs (`<bootId>-<n>`). The Native
+   * Host keeps requestIds for up to 10 minutes (its inFlight map), so IDs
+   * must not repeat when the daemon restarts and counts from 1 again.
+   */
+  readonly bootId = crypto.randomBytes(4).toString('hex');
+
   // -----------------------------------------------------------------------
   // Connection lifecycle
   // -----------------------------------------------------------------------
@@ -192,16 +220,18 @@ export class BrowserConnectionManager {
 
   /**
    * Pick the connection to use, by explicit priority:
-   * native-host first, then headless. Within one kind the most recently
-   * registered connection wins (an older one is more likely to be stale,
-   * e.g. a Firefox that was restarted).
+   * native-host first, then headless. Within one kind the earliest
+   * registered connection wins: a later client holding the token must not
+   * take over the command stream of a working browser. Stale connections
+   * (a restarted Firefox, a half-open socket after sleep) are removed by
+   * the ws-bridge's close handling, heartbeat and newcomer probe.
    */
   getActiveBrowser(): BrowserConnection | undefined {
     for (const kind of KIND_PRIORITY) {
       let best: BrowserConnection | undefined;
       for (const conn of this.connections.values()) {
         if (conn.kind !== kind) continue;
-        if (!best || conn.registeredAt >= best.registeredAt) best = conn;
+        if (!best || conn.registeredAt < best.registeredAt) best = conn;
       }
       if (best) return best;
     }
@@ -262,22 +292,36 @@ export class BrowserConnectionManager {
 
     const effectiveTimeout = timeoutMs ?? resolveCommandTimeout(command, conn.kind);
 
+    const signal = callSignal.getStore();
+    if (signal?.aborted) {
+      return { requestId: command.requestId, success: false, error: CANCELLED_ERROR };
+    }
+
     this.requestCounter += 1;
-    const requestId = String(this.requestCounter);
+    const requestId = `${this.bootId}-${this.requestCounter}`;
     // Rewrite the command's requestId so caller and browser agree.
     const outgoing: BrowserCommand = { ...command, requestId };
+    const humanWait = HUMAN_WAIT_ACTIONS.has(command.action);
 
     return new Promise<BrowserResponse>((resolve) => {
+      const onAbort = (): void => {
+        if (!this.pending.has(requestId)) return;
+        fail(CANCELLED_ERROR);
+        if (humanWait && conn.kind !== 'headless') cancelHumanWait(conn, requestId);
+      };
+      const settle = (response: BrowserResponse): void => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve(response);
+      };
       const fail = (error: string): void => {
         const entry = this.pending.get(requestId);
         if (!entry) return;
         clearTimeout(entry.timer);
         this.pending.delete(requestId);
-        resolve({ requestId, success: false, error });
+        entry.resolve({ requestId, success: false, error });
       };
 
       const timer = setTimeout(() => {
-        const humanWait = HUMAN_WAIT_ACTIONS.has(command.action);
         fail(
           `Command '${command.action}' timed out after ${effectiveTimeout}ms` +
           (humanWait ? HUMAN_WAIT_TIMEOUT_NOTE : ''),
@@ -285,7 +329,8 @@ export class BrowserConnectionManager {
         if (humanWait && conn.kind !== 'headless') cancelHumanWait(conn, requestId);
       }, effectiveTimeout);
 
-      this.pending.set(requestId, { resolve, timer, connectionId: conn.id });
+      this.pending.set(requestId, { resolve: settle, timer, connectionId: conn.id });
+      signal?.addEventListener('abort', onAbort, { once: true });
 
       try {
         const maybePromise = conn.send(JSON.stringify(outgoing));

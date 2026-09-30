@@ -10,6 +10,11 @@
  *
  * A daemon that is alive but slow to answer is never killed: other sessions
  * depend on it. (The fork source killed whatever held the port.)
+ *
+ * /health is judged strictly (evaluateHealth): valid JSON from service
+ * 'kitsune-mcp', the same protocol version, and — once we have the token —
+ * a proof over our nonce, so a program squatting on the port is reported
+ * instead of being trusted. The token never travels (auth.ts).
  */
 
 import { spawn } from 'node:child_process';
@@ -21,6 +26,16 @@ import * as os from 'node:os';
 import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { log, rotateIfLarge } from './logger.js';
 import { daemonEnvFrom, defaultDeps, startOutsideJob, sweepRunDir } from './outside-job.js';
+import {
+  AUTH_HEADER,
+  DAEMON_PROTOCOL_VERSION,
+  MAC_LABEL,
+  computeMac,
+  macMatches,
+  newNonce,
+  signRequest,
+  verifyResponse,
+} from './auth.js';
 
 function resolveHost(): string {
   return (
@@ -30,26 +45,93 @@ function resolveHost(): string {
   );
 }
 
+/**
+ * A TCP port from the environment: an integer in 1..65535, else the default
+ * (with a log line). Same rule as the daemon's utils/endpoint.ts, so both
+ * sides end up on the same port.
+ */
+export function parsePort(raw: string | undefined, fallback: number, name: string): number {
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (Number.isInteger(n) && n > 0 && n < 65536) return n;
+  log(`ignoring ${name}='${raw}' (not a port number 1-65535) — using ${fallback}`);
+  return fallback;
+}
+
 function resolvePort(): number {
-  const raw =
-    process.env[ENV.FOX_HTTP_PORT] ??
-    process.env[LEGACY_ENV.CLAUDE_BROWSER_HTTP_PORT];
-  if (raw) {
-    const parsed = Number(raw);
-    if (!Number.isNaN(parsed) && parsed > 0) return parsed;
-  }
-  return ENV_DEFAULTS.FOX_HTTP_PORT;
+  const name = process.env[ENV.FOX_HTTP_PORT] !== undefined ? ENV.FOX_HTTP_PORT : LEGACY_ENV.CLAUDE_BROWSER_HTTP_PORT;
+  return parsePort(process.env[name], ENV_DEFAULTS.FOX_HTTP_PORT, name);
 }
 
 function resolveWsPort(): number {
-  const raw =
-    process.env[ENV.FOX_WS_PORT] ??
-    process.env[LEGACY_ENV.CLAUDE_BROWSER_WS_PORT];
-  if (raw) {
-    const parsed = Number(raw);
-    if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+  const name = process.env[ENV.FOX_WS_PORT] !== undefined ? ENV.FOX_WS_PORT : LEGACY_ENV.CLAUDE_BROWSER_WS_PORT;
+  return parsePort(process.env[name], ENV_DEFAULTS.FOX_WS_PORT, name);
+}
+
+// ---------------------------------------------------------------------------
+// /health evaluation
+// ---------------------------------------------------------------------------
+
+/**
+ * What answered GET /health:
+ *  down         nothing (connection refused, timeout)
+ *  foreign      something that is not a KitsuneMCP daemon
+ *  incompatible a KitsuneMCP daemon of another protocol (an older build)
+ *  impostor     claims to be the daemon but cannot prove it holds the token
+ *  unverified   a compatible daemon; no token yet to check its proof
+ *  ok           a compatible daemon that proved it holds our token
+ */
+export type HealthVerdict =
+  | { kind: 'down' }
+  | { kind: 'foreign' }
+  | { kind: 'incompatible'; protocol: unknown; version?: string }
+  | { kind: 'impostor' }
+  | { kind: 'unverified'; version?: string }
+  | { kind: 'ok'; version?: string };
+
+/** Classify a /health answer: strict JSON, protocol, and the nonce proof when we have a token. */
+export function evaluateHealth(
+  statusCode: number | undefined,
+  body: string,
+  token: string | undefined,
+  nonce: string,
+): HealthVerdict {
+  if (statusCode !== 200) return { kind: 'foreign' };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return { kind: 'foreign' };
   }
-  return ENV_DEFAULTS.FOX_WS_PORT;
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return { kind: 'foreign' };
+  const health = parsed as Record<string, unknown>;
+  if (health['status'] !== 'ok' || health['service'] !== 'kitsune-mcp') return { kind: 'foreign' };
+
+  const version = typeof health['version'] === 'string' ? health['version'] : undefined;
+  const withVersion = version === undefined ? {} : { version };
+  if (health['protocol'] !== DAEMON_PROTOCOL_VERSION) {
+    return { kind: 'incompatible', protocol: health['protocol'], ...withVersion };
+  }
+  if (token === undefined) return { kind: 'unverified', ...withVersion };
+  if (!macMatches(health['proof'], computeMac(token, MAC_LABEL.health, nonce))) return { kind: 'impostor' };
+  return { kind: 'ok', ...withVersion };
+}
+
+/** A daemon we can use: compatible, and not caught failing its proof. */
+export function isUsable(verdict: HealthVerdict): boolean {
+  return verdict.kind === 'ok' || verdict.kind === 'unverified';
+}
+
+/** Version of the mcp-server package next to us, i.e. of a daemon we would start. */
+function installedDaemonVersion(): string | undefined {
+  try {
+    const pkg = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, '..', '..', 'mcp-server', 'package.json'), 'utf-8'),
+    ) as Record<string, unknown>;
+    return typeof pkg['version'] === 'string' ? pkg['version'] : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Same file the relays use for a detached daemon's stderr. */
@@ -104,12 +186,24 @@ export class ServerLauncher {
 
   private restartAttempts = 0;
   private lastStableTime = Date.now();
+  /** Last problem that was logged, so repeated checks do not flood the log. */
+  private lastReported: string | undefined;
+  private readonly expectedVersion = installedDaemonVersion();
 
-  constructor() {
-    this.host = resolveHost();
-    this.httpPort = resolvePort();
-    this.wsPort = resolveWsPort();
-    this.cachedApiToken = this.loadApiToken();
+  private readonly readTokenFile: () => string | undefined;
+
+  /** The options exist for tests; the Native Host uses the environment. */
+  constructor(options: {
+    host?: string;
+    httpPort?: number;
+    wsPort?: number;
+    readToken?: () => string | undefined;
+  } = {}) {
+    this.host = options.host ?? resolveHost();
+    this.httpPort = options.httpPort ?? resolvePort();
+    this.wsPort = options.wsPort ?? resolveWsPort();
+    this.readTokenFile = options.readToken ?? (() => this.loadApiToken());
+    this.cachedApiToken = this.readTokenFile();
   }
 
   /**
@@ -120,7 +214,7 @@ export class ServerLauncher {
    */
   private get apiToken(): string | undefined {
     if (this.cachedApiToken === undefined) {
-      this.cachedApiToken = this.loadApiToken();
+      this.cachedApiToken = this.readTokenFile();
     }
     return this.cachedApiToken;
   }
@@ -267,8 +361,14 @@ export class ServerLauncher {
    *   port free        → start a daemon
    */
   async ensureRunning(): Promise<void> {
-    if (await this.checkHealth()) {
+    const verdict = await this.probeHealth();
+    if (isUsable(verdict)) {
       log('daemon already running and responding');
+      return;
+    }
+    if (verdict.kind !== 'down') {
+      // Something holds the port (probeHealth logged what): a daemon we
+      // start could not bind it anyway.
       return;
     }
 
@@ -310,7 +410,65 @@ export class ServerLauncher {
     });
   }
 
-  checkHealth(): Promise<boolean> {
+  /** True when a daemon we can use answers /health (see probeHealth()). */
+  async checkHealth(): Promise<boolean> {
+    return isUsable(await this.probeHealth());
+  }
+
+  /**
+   * GET /health with a fresh nonce and classify the answer. A failed proof
+   * is retried once with the token re-read from disk (it may have been
+   * regenerated). Problems are logged when they change.
+   */
+  async probeHealth(): Promise<HealthVerdict> {
+    let verdict = await this.requestHealth();
+    if (verdict.kind === 'impostor') {
+      this.reloadApiToken();
+      verdict = await this.requestHealth();
+    }
+    this.report(verdict);
+    return verdict;
+  }
+
+  private report(verdict: HealthVerdict): void {
+    let line: string | undefined;
+    switch (verdict.kind) {
+      case 'incompatible':
+        line =
+          `the daemon on ${this.host}:${this.httpPort} speaks protocol ${String(verdict.protocol ?? '1')} ` +
+          `(version ${verdict.version ?? 'unknown'}); this Native Host needs ${DAEMON_PROTOCOL_VERSION}. ` +
+          'Stop that daemon process — a matching one is started automatically.';
+        break;
+      case 'impostor':
+        line =
+          `the program on ${this.host}:${this.httpPort} claims to be the KitsuneMCP daemon but cannot ` +
+          'prove it holds the API token — not connecting to it. Check which process owns the port.';
+        break;
+      case 'foreign':
+        line = `port ${this.host}:${this.httpPort} answers, but not as a KitsuneMCP daemon`;
+        break;
+      case 'ok':
+      case 'unverified':
+        if (
+          this.expectedVersion !== undefined &&
+          verdict.version !== undefined &&
+          verdict.version !== this.expectedVersion
+        ) {
+          line =
+            `the running daemon is version ${verdict.version}, the installed one ${this.expectedVersion} ` +
+            '(it keeps running until it is idle; restart it to use the installed one)';
+        }
+        break;
+      case 'down':
+        break;
+    }
+    if (line !== undefined && line !== this.lastReported) log(line);
+    this.lastReported = line;
+  }
+
+  private requestHealth(): Promise<HealthVerdict> {
+    const token = this.apiToken;
+    const nonce = newNonce();
     return new Promise((resolve) => {
       const req = http.request(
         {
@@ -319,20 +477,20 @@ export class ServerLauncher {
           path: '/health',
           method: 'GET',
           timeout: 3_000,
+          headers: { [AUTH_HEADER.nonce]: nonce },
         },
         (res) => {
           let body = '';
           res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-          res.on('end', () => {
-            resolve(res.statusCode === 200 && body.toLowerCase().includes('ok'));
-          });
+          res.on('end', () => resolve(evaluateHealth(res.statusCode, body, token, nonce)));
+          res.on('error', () => resolve({ kind: 'down' }));
         },
       );
 
-      req.on('error', () => resolve(false));
+      req.on('error', () => resolve({ kind: 'down' }));
       req.on('timeout', () => {
         req.destroy();
-        resolve(false);
+        resolve({ kind: 'down' });
       });
 
       req.end();
@@ -340,12 +498,14 @@ export class ServerLauncher {
   }
 
   /**
-   * GET /daemon/info (authenticated). Null when the daemon is unreachable,
-   * the token is missing / rejected, or the reply is not what we expect.
+   * GET /daemon/info (signed request, see auth.ts). Null when the daemon is
+   * unreachable, the token is missing / rejected, the answer is not signed
+   * by the daemon, or the reply is not what we expect.
    */
   fetchDaemonInfo(): Promise<DaemonInfo | null> {
     const token = this.apiToken;
     if (token === undefined) return Promise.resolve(null);
+    const signed = signRequest(token, 'GET', '/daemon/info');
 
     return new Promise((resolve) => {
       const req = http.request(
@@ -355,12 +515,14 @@ export class ServerLauncher {
           path: '/daemon/info',
           method: 'GET',
           timeout: 3_000,
-          headers: { 'x-api-key': token },
+          headers: signed.headers,
         },
         (res) => {
-          let body = '';
-          res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => { chunks.push(chunk); });
+          res.on('error', () => resolve(null));
           res.on('end', () => {
+            const raw = Buffer.concat(chunks);
             if (res.statusCode === 403) {
               // Token regenerated since we cached it: re-read next time.
               this.reloadApiToken();
@@ -369,8 +531,13 @@ export class ServerLauncher {
               resolve(null);
               return;
             }
+            if (!verifyResponse(token, signed.nonce, 200, raw, res.headers[AUTH_HEADER.signature])) {
+              log('GET /daemon/info: answer not signed by the daemon — ignored');
+              resolve(null);
+              return;
+            }
             try {
-              const parsed = JSON.parse(body) as Record<string, unknown>;
+              const parsed = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
               const relays = parsed['relays'];
               if (typeof relays !== 'number') {
                 resolve(null);

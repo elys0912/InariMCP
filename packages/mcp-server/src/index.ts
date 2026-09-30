@@ -20,30 +20,13 @@
  * is reserved for the MCP JSON-RPC stream.
  */
 
-export {};
+import { installProcessHandlers } from './utils/process-handlers.js';
 
 const isDaemon = process.argv.slice(2).includes('--daemon');
 const role = isDaemon ? 'daemon' : 'relay';
 
-// ---------------------------------------------------------------------------
-// Global error handlers
-// ---------------------------------------------------------------------------
-
-process.on('uncaughtException', (err) => {
-  process.stderr.write(
-    `[KitsuneMCP:${role}] FATAL uncaughtException: ${err.message}\n${err.stack ?? ''}\n`,
-  );
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason) => {
-  const msg =
-    reason instanceof Error
-      ? `${reason.message}\n${reason.stack ?? ''}`
-      : String(reason);
-  process.stderr.write(`[KitsuneMCP:${role}] FATAL unhandledRejection: ${msg}\n`);
-  process.exit(1);
-});
+// Global error handlers (policy: utils/process-handlers.ts)
+installProcessHandlers(role);
 
 // ---------------------------------------------------------------------------
 // Launch — each role loads only its own modules (the relay never loads

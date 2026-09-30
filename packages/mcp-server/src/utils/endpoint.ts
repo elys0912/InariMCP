@@ -39,6 +39,16 @@ export function resolveHost(): string {
   );
 }
 
+/**
+ * True for addresses only this machine can reach (127.0.0.0/8, ::1,
+ * localhost). Anything else — 0.0.0.0 in particular — exposes the daemon's
+ * ports to the network.
+ */
+export function isLoopbackHost(host: string): boolean {
+  const h = host.trim().toLowerCase().replace(/^\[(.*)\]$/, '$1');
+  return h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h) || h === '::ffff:127.0.0.1';
+}
+
 /** HTTP header a relay uses to identify itself to the daemon (audit log, idle tracking). */
 export const RELAY_ID_HEADER = 'x-kitsune-relay';
 
@@ -104,7 +114,7 @@ export function loadOrCreateApiToken(): string {
   // moment, only one of them writes a token and the other reads it, so the
   // token on disk always matches the one the surviving daemon holds.
   const token = crypto.randomBytes(32).toString('hex');
-  fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
+  fs.mkdirSync(path.dirname(tokenPath), { recursive: true, mode: 0o700 });
   try {
     fs.writeFileSync(tokenPath, token, { mode: 0o600, flag: 'wx' });
     process.stderr.write(`[KitsuneMCP] Generated new API token at ${tokenPath}\n`);

@@ -6,10 +6,18 @@
  *    stderr appended to ~/.kitsune-mcp/logs/daemon.log) and wait until it is
  *    healthy. Several relays (and the Native Host) may do this at the same
  *    time: the daemon that cannot bind the HTTP port exits by itself.
- *  - callTool(): POST /mcp/call with X-API-Key (read from
+ *  - callTool(): POST /mcp/call, signed with the API token (read from
  *    ~/.kitsune-mcp/api_token *after* the daemon is healthy — only the daemon
- *    creates the token) and X-Kitsune-Relay (audit transport `relay:<id>`).
- *    The daemon's CallToolResult is returned unchanged.
+ *    creates the token; the token itself is never sent, see
+ *    transport/auth.ts) and X-Kitsune-Relay (audit transport `relay:<id>`).
+ *    The daemon signs its answer; an unsigned or wrongly signed answer
+ *    means another program holds the port, and is refused. Aborting the
+ *    call (MCP cancellation) closes the request, which the daemon turns
+ *    into cancelling the browser command. The daemon's CallToolResult is
+ *    returned unchanged.
+ *  - A daemon whose /health reports another `protocol` (an older build
+ *    still running) is not used: every call fails with a message telling
+ *    the user to stop it. There is no fallback to sending the token.
  *  - heartbeat: GET /health with X-Kitsune-Relay every 30 s, so the daemon
  *    knows this session is alive (idle shutdown, daemon/activity.ts).
  *  - approvals (relay/approval.ts): POST /approval/elicitation and
@@ -29,6 +37,7 @@ import { maxCommandTimeoutMs } from '../connection/manager.js';
 import type { ApprovalReply } from './approval.js';
 import { rotateLogIfLarge } from '../utils/log-file.js';
 import { RELAY_HEARTBEAT_MS } from '../daemon/activity.js';
+import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, signRequest, verifyResponse } from '../transport/auth.js';
 import {
   DAEMON_SETTING_KEYS,
   RELAY_ID_HEADER,
@@ -68,19 +77,37 @@ function errorResult(text: string): CallToolResult {
 interface HttpReply {
   status: number;
   body: unknown;
+  /** The answer carries a valid daemon signature (signed requests only). */
+  verified: boolean;
 }
 
 class ConnectionRefusedError extends Error {}
 
+export interface DaemonClientOptions {
+  /** Defaults: FOX_HOST / FOX_HTTP_PORT (utils/endpoint.ts). */
+  host?: string;
+  port?: number;
+  /** Defaults to reading ~/.kitsune-mcp/api_token. */
+  readToken?: () => string | undefined;
+}
+
 export class DaemonClient {
   readonly relayId: string;
-  private readonly host = resolveHost();
-  private readonly port = resolveHttpPort();
+  private readonly host: string;
+  private readonly port: number;
+  private readonly readToken: () => string | undefined;
   private ensuring: Promise<boolean> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  /** A KitsuneMCP daemon answered the last /health. */
+  private daemonSeen = false;
+  /** `protocol` of the last healthy /health answer (undefined from an old daemon). */
+  private daemonProtocol: unknown = undefined;
 
-  constructor(relayId: string) {
+  constructor(relayId: string, options: DaemonClientOptions = {}) {
     this.relayId = relayId;
+    this.host = options.host ?? resolveHost();
+    this.port = options.port ?? resolveHttpPort();
+    this.readToken = options.readToken ?? (() => readApiTokenFile());
   }
 
   get baseUrl(): string {
@@ -162,14 +189,37 @@ export class DaemonClient {
     }
   }
 
-  /** GET /health (also serves as this relay's heartbeat). */
+  /**
+   * GET /health (also serves as this relay's heartbeat). True when a
+   * KitsuneMCP daemon answers — even an incompatible one: it holds the port,
+   * so starting another would not help (see protocolMismatch()).
+   */
   async checkHealth(): Promise<boolean> {
     try {
       const reply = await this.request('GET', '/health', undefined, HEALTH_TIMEOUT_MS);
-      return reply.status === 200 && isRecord(reply.body) && reply.body['status'] === 'ok';
+      const ok =
+        reply.status === 200 &&
+        isRecord(reply.body) &&
+        reply.body['status'] === 'ok' &&
+        reply.body['service'] === 'kitsune-mcp';
+      this.daemonSeen = ok;
+      if (ok && isRecord(reply.body)) this.daemonProtocol = reply.body['protocol'];
+      return ok;
     } catch {
+      this.daemonSeen = false;
       return false;
     }
+  }
+
+  /** Error text when the running daemon speaks another protocol, else undefined. */
+  protocolMismatch(): string | undefined {
+    if (!this.daemonSeen || this.daemonProtocol === DAEMON_PROTOCOL_VERSION) return undefined;
+    return (
+      `The KitsuneMCP daemon running at ${this.baseUrl} is from another version ` +
+      `(protocol ${this.daemonProtocol === undefined ? '1 or older' : String(this.daemonProtocol)}, ` +
+      `this session needs ${DAEMON_PROTOCOL_VERSION}). Stop that daemon process (and restart ` +
+      'Firefox if it was started by the Native Host); the next tool call starts a matching one.'
+    );
   }
 
   startHeartbeat(): void {
@@ -194,7 +244,7 @@ export class DaemonClient {
    * @returns human-readable warnings (empty when the settings agree)
    */
   async settingsMismatch(): Promise<string[]> {
-    const token = readApiTokenFile();
+    const token = this.readToken();
     if (token === undefined) return [];
     let reply: HttpReply;
     try {
@@ -202,7 +252,7 @@ export class DaemonClient {
     } catch {
       return [];
     }
-    if (reply.status !== 200 || !isRecord(reply.body)) return [];
+    if (reply.status !== 200 || !reply.verified || !isRecord(reply.body)) return [];
     const daemonSettings = reply.body['settings'];
     if (!isRecord(daemonSettings)) return [];
     const pid = typeof reply.body['pid'] === 'number' ? reply.body['pid'] : 'unknown';
@@ -245,7 +295,13 @@ export class DaemonClient {
     let restarted = false;
     let tokenReloaded = false;
     for (;;) {
-      const token = readApiTokenFile();
+      // Look again before refusing: the user may have stopped the old
+      // daemon since (then nothing answers, and the request below starts one).
+      if (this.protocolMismatch() !== undefined) await this.checkHealth();
+      const mismatch = this.protocolMismatch();
+      if (mismatch !== undefined) return errorResult(mismatch);
+
+      const token = this.readToken();
       if (token === undefined) {
         if (!restarted && (await this.ensureDaemon())) {
           restarted = true;
@@ -272,10 +328,37 @@ export class DaemonClient {
         return errorResult(`KitsuneMCP daemon request failed (${this.baseUrl}): ${msg}`);
       }
 
-      if (reply.status === 403 && !tokenReloaded) {
-        // Token file replaced since we read it: read it again once.
+      if (reply.status === 403 && !reply.verified && !tokenReloaded) {
+        // Signature refused: token file replaced since we read it (or the
+        // daemon was replaced by an older build): read it again once, after
+        // a fresh /health.
         tokenReloaded = true;
+        await this.checkHealth();
         continue;
+      }
+
+      if (reply.status === 413) {
+        // Answered before the signature could be checked (the body is too
+        // big to read), hence unsigned. Not using its text.
+        return errorResult(
+          `The arguments of ${name} exceed the daemon's request size limit (1 MB); send less data per call.`,
+        );
+      }
+
+      if (!reply.verified && reply.status !== 403) {
+        return errorResult(
+          `The answer from ${this.baseUrl} is not signed by the KitsuneMCP daemon: another ` +
+          'program may be using its port, or the daemon uses a different API token. ' +
+          'The result was discarded.',
+        );
+      }
+
+      if (restarted) {
+        // A daemon started by someone else (another session, the Native Host)
+        // may have won the race: report its settings if they differ.
+        void this.settingsMismatch().then((warnings) => {
+          for (const w of warnings) log(`WARNING: ${w}`);
+        });
       }
 
       return this.toCallToolResult(name, reply);
@@ -313,10 +396,19 @@ export class DaemonClient {
   ): Promise<ApprovalReply> {
     const body = JSON.stringify(payload);
     for (let attempt = 0; attempt < 2; attempt++) {
-      const token = readApiTokenFile();
+      const token = this.readToken();
       if (token === undefined) break;
       const reply = await this.request('POST', urlPath, body, timeoutMs, token, signal);
-      if (reply.status === 403 && attempt === 0) continue; // token file replaced: read it again
+      // Unsigned 403: our signature was refused (token file replaced): read it
+      // again. A signed 403 is the daemon's answer (e.g. elicitation disabled).
+      if (reply.status === 403 && !reply.verified && attempt === 0) continue;
+      if (!reply.verified) {
+        return {
+          success: false,
+          approved: false,
+          error: `The answer from ${this.baseUrl} is not signed by the KitsuneMCP daemon — ignored.`,
+        };
+      }
       const b = isRecord(reply.body) ? reply.body : {};
       if (reply.status !== 200) {
         const error = typeof b['error'] === 'string' ? b['error'] : `HTTP ${reply.status}`;
@@ -341,6 +433,8 @@ export class DaemonClient {
       return errorResult(`KitsuneMCP daemon returned a malformed result for ${name}`);
     }
 
+    const mismatch = reply.status === 403 ? this.protocolMismatch() : undefined;
+    if (mismatch !== undefined) return errorResult(mismatch);
     const error = typeof body['error'] === 'string' ? body['error'] : `HTTP ${reply.status}`;
     const issues = Array.isArray(body['issues'])
       ? `\n\nDetails: ${JSON.stringify(body['issues'])}`
@@ -363,7 +457,8 @@ export class DaemonClient {
   ): Promise<HttpReply> {
     return new Promise<HttpReply>((resolve, reject) => {
       const headers: http.OutgoingHttpHeaders = { [RELAY_ID_HEADER]: this.relayId };
-      if (token !== undefined) headers['X-API-Key'] = token;
+      const signed = token === undefined ? undefined : signRequest(token, method, urlPath, body ?? '');
+      if (signed !== undefined) Object.assign(headers, signed.headers);
       if (body !== undefined) {
         headers['Content-Type'] = 'application/json';
         headers['Content-Length'] = Buffer.byteLength(body);
@@ -376,14 +471,20 @@ export class DaemonClient {
           res.on('data', (chunk: Buffer) => chunks.push(chunk));
           res.on('end', () => {
             clearTimeout(timer);
-            const text = Buffer.concat(chunks).toString('utf-8');
+            const raw = Buffer.concat(chunks);
+            const status = res.statusCode ?? 0;
+            const verified =
+              token !== undefined &&
+              signed !== undefined &&
+              verifyResponse(token, signed.nonce, status, raw, res.headers[AUTH_HEADER.signature]);
+            const text = raw.toString('utf-8');
             let parsed: unknown = text;
             try {
               parsed = JSON.parse(text);
             } catch {
               // keep raw text
             }
-            resolve({ status: res.statusCode ?? 0, body: parsed });
+            resolve({ status, body: parsed, verified });
           });
           res.on('error', (err) => { clearTimeout(timer); reject(err); });
         },
