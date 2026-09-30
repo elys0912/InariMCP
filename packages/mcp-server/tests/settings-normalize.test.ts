@@ -27,6 +27,17 @@ describe('effective daemon settings', () => {
     expect(diffDaemonSettings(effectiveDaemonSettings(variants[1]!), effectiveDaemonSettings(variants[2]!))).toEqual([]);
   });
 
+  it('an old daemon started with the old names only still matches (raw settings hold "" for unset keys)', () => {
+    const theirs = daemonSettingsFromInfo({
+      settings: { FOX_READ_ONLY: '', CLAUDE_BROWSER_READ_ONLY: '1', FOX_SAFETY_CONFIG: '', CLAUDE_BROWSER_SAFETY_CONFIG: 'strict.json' },
+    })!;
+    expect(theirs.FOX_READ_ONLY).toBe('on');
+    expect(diffDaemonSettings(effectiveDaemonSettings({ CLAUDE_BROWSER_READ_ONLY: '1', CLAUDE_BROWSER_SAFETY_CONFIG: 'strict.json' }), theirs)).toEqual([]);
+    // a different config file is still noticed
+    expect(diffDaemonSettings(effectiveDaemonSettings({ CLAUDE_BROWSER_READ_ONLY: '1' }), theirs))
+      .toEqual(["FOX_SAFETY_CONFIG: this session '(default)', daemon 'strict.json'"]);
+  });
+
   it('an old daemon (raw settings only) is compared by how it read them', () => {
     // it read FOX_READ_ONLY=true as "not 1" = off; this session means it as on
     const theirs = daemonSettingsFromInfo({ settings: { FOX_READ_ONLY: 'true' } });

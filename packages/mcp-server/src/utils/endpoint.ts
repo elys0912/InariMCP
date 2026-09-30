@@ -119,7 +119,8 @@ export function effectiveDaemonSettings(
 ): EffectiveDaemonSettings {
   const cur = rules === 'current';
   const pick = (fox: string, legacy: string): string | undefined =>
-    cur ? resolveFoxEnv(env, fox, legacy) : (env[fox] ?? env[legacy]);
+    // legacy: a raw `settings` from an old daemon holds '' for unset keys, which is "unset" here
+    cur ? resolveFoxEnv(env, fox, legacy) : ((env[fox] || undefined) ?? (env[legacy] || undefined));
   const onOff = (v: boolean): string => (v ? 'on' : 'off');
   return {
     FOX_HEADLESS: onOff(cur ? isHeadlessEnabled(env) : Boolean(env[ENV.FOX_HEADLESS])),
