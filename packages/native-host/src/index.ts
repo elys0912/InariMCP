@@ -12,11 +12,12 @@
  * replaced by `imagePath` before they go back to the server.
  */
 
-import { ServerLauncher } from './server-launcher.js';
+import { ServerLauncher, daemonLogPath } from './server-launcher.js';
 import { ServerConnection } from './ws-client.js';
 import { HealthMonitor } from './health-monitor.js';
 import { handleServerCommand, runStdinLoop } from './host.js';
-import { activeLogPath, log } from './logger.js';
+import { activeLogPath, log, rotateIfLarge } from './logger.js';
+import { pruneScreenshots, screenshotsDirNeedsAclCheck, getScreenshotsDir } from './screenshot-store.js';
 
 let running = true;
 
@@ -28,6 +29,26 @@ function shutdown(connection: ServerConnection, monitor: HealthMonitor): void {
   monitor.stop();
   // Never stop the daemon: it also serves the Claude Code sessions (relays),
   // and exits on its own once nobody uses it.
+}
+
+/** daemon.log is written by a long-lived daemon, so it is also checked while we run. */
+const DAEMON_LOG_CHECK_MS = 60 * 60_000;
+
+/** Data retention and log housekeeping; never throws. */
+function housekeeping(): void {
+  try {
+    const removed = pruneScreenshots();
+    if (removed > 0) log(`removed ${removed} screenshot(s) past the retention period`);
+    if (screenshotsDirNeedsAclCheck()) {
+      log(
+        `screenshots directory ${getScreenshotsDir()} is outside the user profile: ` +
+        'file modes (0o600) have no effect on Windows, check the directory ACL',
+      );
+    }
+    setInterval(() => rotateIfLarge(daemonLogPath(), true), DAEMON_LOG_CHECK_MS).unref();
+  } catch (err: unknown) {
+    log(`housekeeping failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 async function main(): Promise<void> {
@@ -52,6 +73,8 @@ async function main(): Promise<void> {
 
   process.on('SIGINT', onSignal);
   process.on('SIGTERM', onSignal);
+
+  housekeeping();
 
   // Connect to the shared daemon, starting it if nothing listens on the port.
   // This can take up to ~35 s, so it runs beside the stdin loop below: the
