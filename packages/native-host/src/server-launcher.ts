@@ -20,7 +20,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { log, rotateIfLarge } from './logger.js';
-import { spawnDaemonBreakaway } from './breakaway.js';
+import { daemonEnvFrom, defaultDeps, startOutsideJob, sweepRunDir } from './outside-job.js';
 
 function resolveHost(): string {
   return (
@@ -53,8 +53,31 @@ function resolveWsPort(): number {
 }
 
 /** Same file the relays use for a detached daemon's stderr. */
-function daemonLogPath(): string {
+export function daemonLogPath(): string {
   return path.join(os.homedir(), '.kitsune-mcp', 'logs', 'daemon.log');
+}
+
+/** Policy settings the daemon reads from its environment (mcp-server/src/safety/config.ts). */
+const DAEMON_POLICY_VARS = [ENV.FOX_READ_ONLY, ENV.FOX_ALLOW_SCRIPTS, ENV.FOX_SAFETY_CONFIG] as const;
+
+/**
+ * Environment for a daemon started by the Native Host. It is Firefox's own
+ * environment, not the one of any Claude Code session, so a FOX_READ_ONLY /
+ * FOX_ALLOW_SCRIPTS set in `claude mcp add --env` is not seen by it (the relay
+ * warns about such a mismatch, see relay/daemon-client.ts). The policy
+ * settings actually inherited are therefore logged, by name only.
+ */
+export function daemonEnvNote(env: NodeJS.ProcessEnv = process.env): string {
+  const set = DAEMON_POLICY_VARS.filter((name) => env[name] !== undefined && env[name] !== '');
+  return set.length === 0
+    ? 'daemon inherits no FOX_READ_ONLY / FOX_ALLOW_SCRIPTS / FOX_SAFETY_CONFIG from the Native Host environment'
+    : `daemon inherits ${set.join(', ')} from the Native Host environment ` +
+      '(settings of a Claude Code session are not applied to a daemon started here)';
+}
+
+/** Working directory of a daemon we start: stable, never Firefox's (may be locked or removable). */
+function daemonCwd(): string {
+  return path.dirname(path.dirname(daemonLogPath()));
 }
 
 /** How long start() waits for a daemon it spawned to answer /health. */
@@ -129,22 +152,52 @@ export class ServerLauncher {
     } catch {
       // Logging is best-effort
     }
-    // Both start paths below open daemon.log for appending.
-    rotateIfLarge(daemonLogPath());
+    // A daemon that cannot bind its WS port exits at once; say why instead.
+    if (await this.isPortInUse(this.wsPort)) {
+      // Counts as an attempt, so the health monitor's limit and backoff apply.
+      this.restartAttempts++;
+      log(`WS port ${this.host}:${this.wsPort} is in use by another process — not starting the daemon`);
+      return false;
+    }
+
+    // Both start paths below open daemon.log for appending. A daemon from an
+    // earlier start may still hold it open, hence copy-truncate.
+    rotateIfLarge(daemonLogPath(), true);
+    try {
+      fs.appendFileSync(
+        daemonLogPath(),
+        `${new Date().toISOString()} --- daemon start requested by Native Host (PID ${process.pid}) ---\n`,
+        { mode: 0o600 },
+      );
+    } catch {
+      // Logging is best-effort
+    }
+    log(daemonEnvNote());
 
     // Windows: outside Firefox's job object, or closing Firefox kills the
     // daemon (see breakaway.ts). Falls back to a plain spawn on failure.
     if (process.platform === 'win32') {
-      try {
-        const pid = await spawnDaemonBreakaway(serverEntry, daemonLogPath());
+      sweepRunDir(path.join(daemonCwd(), 'run'));
+      const result = await startOutsideJob(
+        {
+          exe: process.execPath,
+          args: [serverEntry, '--daemon'],
+          env: daemonEnvFrom(process.env),
+          log: daemonLogPath(),
+          cwd: daemonCwd(),
+        },
+        defaultDeps(path.join(daemonCwd(), 'run')),
+      );
+      if (!('errors' in result)) {
         this.restartAttempts++;
         this.lastStableTime = Date.now();
-        log(`started daemon outside the job object (PID: ${pid}, attempt #${this.restartAttempts})`);
+        log(`started daemon outside the job object via ${result.via} (attempt #${this.restartAttempts})`);
         return this.waitUntilHealthy();
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        log(`breakaway start failed (${msg}); starting the daemon inside the job instead`);
       }
+      log(
+        `WARNING: could not start the daemon outside Firefox's job object (${result.errors.join('; ')}); ` +
+        'starting it inside the job: it will stop when Firefox closes, together with the Claude Code sessions using it',
+      );
     }
 
     let logFd: number | 'ignore' = 'ignore';
@@ -159,6 +212,7 @@ export class ServerLauncher {
         stdio: ['ignore', 'ignore', logFd],
         detached: true,
         windowsHide: true,
+        cwd: daemonCwd(),
       });
       child.on('error', (err) => log(`daemon spawn error: ${err.message}`));
       // Don't keep the Native Host alive for the daemon, nor the other way round.
@@ -188,12 +242,21 @@ export class ServerLauncher {
       if (await this.checkHealth()) {
         log('daemon is now available');
         this.restartAttempts = 0;
+        // The WS bridge may bind a moment after the HTTP server.
+        let wsUp = false;
+        for (let i = 0; i < 5 && !wsUp; i++) {
+          if (i > 0) await this.sleep(500);
+          wsUp = await this.isPortInUse(this.wsPort);
+        }
+        if (!wsUp) {
+          log(`daemon answers /health but nothing listens on WS port ${this.wsPort} — check FOX_WS_PORT`);
+        }
         return true;
       }
     }
 
-    log(`daemon started but not yet responding (see ${daemonLogPath()})`);
-    return true;
+    log(`daemon started but not responding within ${STARTUP_WAIT_MS} ms (see ${daemonLogPath()})`);
+    return false;
   }
 
   /**
@@ -218,11 +281,11 @@ export class ServerLauncher {
     }
 
     log('daemon not running, starting it');
-    await this.start();
+    if (!(await this.start())) log('daemon is not available yet; the health monitor keeps watching');
   }
 
-  /** True when something accepts TCP connections on the HTTP port. */
-  isPortInUse(): Promise<boolean> {
+  /** True when something accepts TCP connections on the port (default: the HTTP port). */
+  isPortInUse(port: number = this.httpPort): Promise<boolean> {
     return new Promise((resolve) => {
       const sock = new net.Socket();
       sock.setTimeout(1_000);
@@ -243,7 +306,7 @@ export class ServerLauncher {
         resolve(false);
       });
 
-      sock.connect(this.httpPort, this.host);
+      sock.connect(port, this.host);
     });
   }
 

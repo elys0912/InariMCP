@@ -15,6 +15,8 @@
  *  - when the file exceeds MAX_LOG_BYTES it is renamed to `<file>.old`
  *    (replacing an older one) and a new file is started, as the fork source
  *    did. Checked at startup and while writing.
+ *  - a failed rotation (e.g. another process holds the file open on Windows)
+ *    is retried at most once per ROTATE_RETRY_MS, not on every line.
  *  - a failure to open / write the file never breaks the host: file logging
  *    is switched off and a note goes to stderr.
  *
@@ -29,6 +31,8 @@ import { ENV } from '@kitsune-mcp/shared';
 const PREFIX = '[KitsuneMCP:NativeHost]';
 /** Rotate once the file grows beyond this (5 MB). */
 export const MAX_LOG_BYTES = 5 * 1_048_576;
+/** After a failed rotation, try again no sooner than this (not on every line). */
+export const ROTATE_RETRY_MS = 60_000;
 
 const DISABLED_VALUES = new Set(['0', 'off', 'false', 'no', 'none']);
 
@@ -50,6 +54,8 @@ interface FileSink {
 
 /** undefined = not opened yet, null = disabled (by config or after an error). */
 let sink: FileSink | null | undefined;
+/** Earliest time (ms) the next rotation attempt is allowed after a failed one. */
+let nextRotateAttempt = 0;
 
 function stderrNote(msg: string): void {
   try {
@@ -69,12 +75,16 @@ function tighten(filePath: string): void {
 
 /**
  * Rename `filePath` to `<file>.old` when it is larger than MAX_LOG_BYTES.
- * Also used for daemon.log before a daemon is started (server-launcher.ts).
+ * Also used for daemon.log (server-launcher.ts), which a running daemon keeps
+ * open for appending: with `copyTruncate` the content is copied to
+ * `<file>.old` and the file truncated in place, so the daemon keeps writing to
+ * the right file (lines written in between are lost, which is acceptable).
+ * Returns true when the file is small enough afterwards (or does not exist).
  */
-export function rotateIfLarge(filePath: string): void {
+export function rotateIfLarge(filePath: string, copyTruncate = false): boolean {
   try {
     const st = fs.statSync(filePath);
-    if (st.size <= MAX_LOG_BYTES) return;
+    if (st.size <= MAX_LOG_BYTES) return true;
     // rename replaces an existing .old on POSIX; on Windows remove it first.
     const old = `${filePath}.old`;
     try {
@@ -82,14 +92,22 @@ export function rotateIfLarge(filePath: string): void {
     } catch {
       // ignore — rename below reports the real problem
     }
-    fs.renameSync(filePath, old);
+    if (copyTruncate) {
+      // The file is held open by another process: a rename would only make it
+      // keep writing to `.old` (Node opens files with delete sharing).
+      fs.copyFileSync(filePath, old);
+      fs.truncateSync(filePath, 0);
+    } else {
+      fs.renameSync(filePath, old);
+    }
+    return true;
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code !== 'ENOENT') {
-      // e.g. another host process (second Firefox profile) holds the file
-      // open on Windows. Keep appending; the next start tries again.
-      stderrNote(`log rotation skipped: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    if (code === 'ENOENT') return true;
+    // e.g. another host process (second Firefox profile) holds the file
+    // open on Windows. Keep appending; the caller decides when to retry.
+    stderrNote(`log rotation skipped: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
   }
 }
 
@@ -100,6 +118,8 @@ function openSink(filePath: string): FileSink | null {
     const fd = fs.openSync(filePath, 'a', 0o600);
     tighten(filePath);
     const size = fs.fstatSync(fd).size;
+    // Still too large: the rotation failed, so do not retry on every line.
+    if (size > MAX_LOG_BYTES) nextRotateAttempt = Date.now() + ROTATE_RETRY_MS;
     return { path: filePath, fd, size };
   } catch (err: unknown) {
     stderrNote(
@@ -129,7 +149,7 @@ function writeToFile(line: string): void {
   let s = getSink();
   if (s === null) return;
 
-  if (s.size > MAX_LOG_BYTES) {
+  if (s.size > MAX_LOG_BYTES && Date.now() >= nextRotateAttempt) {
     closeSink(s);
     sink = openSink(s.path);
     s = sink;
@@ -156,6 +176,13 @@ export function log(msg: string): void {
     // stderr closed
   }
   writeToFile(`${new Date().toISOString()} [${process.pid}] ${line}`);
+}
+
+/** Forget the open file and any retry delay (tests). */
+export function resetLoggerForTests(): void {
+  if (sink) closeSink(sink);
+  sink = undefined;
+  nextRotateAttempt = 0;
 }
 
 /** Path of the active log file (undefined when disabled). For the startup banner. */
