@@ -26,7 +26,8 @@
  *  - POST /mcp/call may carry `approvalToken` next to `arguments` (never a
  *    tool argument, so the LLM does not see or pass it).
  *  - POST /approval/elicitation { requestId, approved } — the relay reports
- *    the human's answer to its MCP elicitation.
+ *    the human's answer to its MCP elicitation. 403 when
+ *    FOX_APPROVAL_ELICITATION is off.
  *  - POST /approval/browser { requestId } — ask in the Extension's popup
  *    and wait for the answer.
  *  Both answer { success, approved, reason, approvalToken?, expiresAt? }.
@@ -444,7 +445,8 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
         sendError(res, 400, 'Missing boolean "approved"');
         return;
       }
-      sendJson(res, 200, { ...answerFromElicitation(requestId, data['approved'], caller.transport) });
+      const reply = answerFromElicitation(requestId, data['approved'], caller.transport);
+      sendJson(res, reply.reason === 'elicitation_disabled' ? 403 : 200, { ...reply });
       return;
     }
 

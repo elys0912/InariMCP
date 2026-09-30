@@ -26,7 +26,25 @@
  */
 
 import * as crypto from 'node:crypto';
+import { ENV, ENV_DEFAULTS } from '@kitsune-mcp/shared';
 import type { SafetyDenial } from './guard.js';
+
+/**
+ * FOX_APPROVAL_ELICITATION: `0` / `false` / `off` / `no` (any case) turn
+ * elicitation approvals off (the relay always asks in the Extension's popup,
+ * the daemon refuses POST /approval/elicitation); any other non-empty value
+ * turns them on; unset or empty means ENV_DEFAULTS.FOX_APPROVAL_ELICITATION.
+ *
+ * Accepted risk while on: elicitation answers reach the daemon over local
+ * HTTP, so a process holding the API token can approve its own requests.
+ */
+export function isElicitationApprovalEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const raw = (env[ENV.FOX_APPROVAL_ELICITATION] ?? '').trim().toLowerCase();
+  if (raw === '') return ENV_DEFAULTS.FOX_APPROVAL_ELICITATION;
+  return !['0', 'false', 'off', 'no'].includes(raw);
+}
 
 /** How long a human has to answer an approval request. */
 export const REQUEST_TTL_MS = 120_000;

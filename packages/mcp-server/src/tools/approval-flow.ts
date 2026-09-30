@@ -18,7 +18,7 @@
 
 import type { ApprovalPrompt, BrowserResponse } from '@kitsune-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
-import { getApprovalStore } from '../safety/approval.js';
+import { getApprovalStore, isElicitationApprovalEnabled } from '../safety/approval.js';
 import type { ApprovalRequest, ApprovalStore } from '../safety/approval.js';
 import { getSafetyGuard } from '../safety/guard.js';
 import { audit } from '../safety/audit.js';
@@ -32,6 +32,7 @@ export type ApprovalReason =
   | 'timeout'
   | 'cancelled'
   | 'unknown_request'
+  | 'elicitation_disabled'
   | 'no_browser'
   | 'browser_error';
 
@@ -93,7 +94,16 @@ export function answerFromElicitation(
   approved: boolean,
   transport?: string,
   store: ApprovalStore = getApprovalStore(),
+  env: Record<string, string | undefined> = process.env,
 ): ApprovalReply {
+  if (!isElicitationApprovalEnabled(env)) {
+    return {
+      success: false,
+      approved: false,
+      reason: 'elicitation_disabled',
+      error: 'Approval by MCP elicitation is turned off (FOX_APPROVAL_ELICITATION); ask in the browser popup',
+    };
+  }
   const request = store.getRequest(requestId);
   if (!request) return unknownRequest();
   if (approved) return grant(store, request, 'elicitation', transport);

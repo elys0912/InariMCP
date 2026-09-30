@@ -17,6 +17,13 @@ export const ENV = {
   FOX_SAFETY_CONFIG: 'FOX_SAFETY_CONFIG',
   FOX_NATIVE_HOST_LOG: 'FOX_NATIVE_HOST_LOG',
   FOX_DAEMON_IDLE_TIMEOUT: 'FOX_DAEMON_IDLE_TIMEOUT',
+  /**
+   * `0` / `false` / `off` / `no`: never approve protected-site actions via
+   * MCP elicitation; always ask in the Extension's toolbar popup. Read by the
+   * relay (skips elicitation) and by the daemon (refuses
+   * POST /approval/elicitation). Default: ENV_DEFAULTS.FOX_APPROVAL_ELICITATION.
+   */
+  FOX_APPROVAL_ELICITATION: 'FOX_APPROVAL_ELICITATION',
 } as const;
 
 export const LEGACY_ENV = {
@@ -44,6 +51,14 @@ export const ENV_DEFAULTS = {
   BACKOFF_BASE_MS: 2_000,
   BACKOFF_MAX_MS: 60_000,
   STABLE_THRESHOLD_MS: 300_000,
+  /**
+   * Whether protected-site approvals may be given through MCP elicitation
+   * when FOX_APPROVAL_ELICITATION is unset. The single place to change the
+   * default: elicitation answers reach the daemon through a local HTTP call
+   * that any process holding the API token can make, while the popup needs a
+   * person in Firefox.
+   */
+  FOX_APPROVAL_ELICITATION: true,
   /**
    * Native Messaging size limits (MDN "Native messaging", App side):
    *   - host → extension: "The maximum size of a single message from the

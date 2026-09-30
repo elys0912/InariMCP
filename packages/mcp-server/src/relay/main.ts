@@ -21,6 +21,7 @@ import { ENV } from '@kitsune-mcp/shared';
 import { registerTools } from '../tools/registry.js';
 import { DaemonClient } from './daemon-client.js';
 import { callWithApproval, canElicit } from './approval.js';
+import { isElicitationApprovalEnabled } from '../safety/approval.js';
 import type { ApprovalDeps } from './approval.js';
 
 const PACKAGE_VERSION = '0.1.0';
@@ -53,7 +54,8 @@ export async function runRelay(): Promise<void> {
   );
 
   const approvalDeps = (signal: AbortSignal): ApprovalDeps => ({
-    canElicit: canElicit(mcpServer.server.getClientCapabilities()),
+    // FOX_APPROVAL_ELICITATION off: always the Extension's popup.
+    canElicit: isElicitationApprovalEnabled() && canElicit(mcpServer.server.getClientCapabilities()),
     elicit: (params, timeoutMs) => mcpServer.server.elicitInput(params, { timeout: timeoutMs, signal }),
     reportElicitation: (requestId, approved) => client.reportElicitation(requestId, approved),
     askBrowser: (requestId) => client.askBrowser(requestId, signal),

@@ -1,6 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { answerFromElicitation } from '../src/tools/approval-flow.js';
+import { DAEMON_SETTING_KEYS } from '../src/utils/endpoint.js';
 import {
   ApprovalStore,
+  isElicitationApprovalEnabled,
   approvalTargetFor,
   canonicalJson,
   hashArgs,
@@ -129,5 +136,48 @@ describe('ApprovalStore: requests', () => {
     expect(store.getRequest(b.id)).toBeDefined();
     expect(store.getRequest(c.id)).toBeDefined();
     expect(store.pendingCount).toBe(2);
+  });
+});
+
+describe('FOX_APPROVAL_ELICITATION', () => {
+  // answerFromElicitation audits through the guard singleton: keep it off
+  // the real ~/.kitsune-mcp (no audit log, temp safety.json).
+  let dir: string;
+  beforeAll(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-elicit-'));
+    const file = path.join(dir, 'safety.json');
+    fs.writeFileSync(file, JSON.stringify({ audit_log: false }));
+    process.env['FOX_SAFETY_CONFIG'] = file;
+  });
+  afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it('defaults to ENV_DEFAULTS.FOX_APPROVAL_ELICITATION (currently on)', () => {
+    expect(ENV_DEFAULTS.FOX_APPROVAL_ELICITATION).toBe(true);
+    expect(isElicitationApprovalEnabled({})).toBe(ENV_DEFAULTS.FOX_APPROVAL_ELICITATION);
+    expect(isElicitationApprovalEnabled({ FOX_APPROVAL_ELICITATION: '  ' })).toBe(ENV_DEFAULTS.FOX_APPROVAL_ELICITATION);
+  });
+
+  it.each(['0', 'false', 'FALSE', 'off', 'No'])('%s turns it off', (v) => {
+    expect(isElicitationApprovalEnabled({ FOX_APPROVAL_ELICITATION: v })).toBe(false);
+  });
+
+  it.each(['1', 'true', 'on', 'yes'])('%s turns it on', (v) => {
+    expect(isElicitationApprovalEnabled({ FOX_APPROVAL_ELICITATION: v })).toBe(true);
+  });
+
+  it('when off, the daemon refuses elicitation answers and issues no token', () => {
+    const store = new ApprovalStore();
+    const request = store.createRequest(TARGET, INFO);
+    const off = answerFromElicitation(request.id, true, 'relay:r1', store, { FOX_APPROVAL_ELICITATION: '0' });
+    expect(off).toMatchObject({ success: false, approved: false, reason: 'elicitation_disabled' });
+    expect(off.approvalToken).toBeUndefined();
+    // The request stays open for the popup.
+    expect(store.getRequest(request.id)).toBeDefined();
+    const on = answerFromElicitation(request.id, true, 'relay:r1', store, { FOX_APPROVAL_ELICITATION: '1' });
+    expect(on).toMatchObject({ success: true, approved: true });
+  });
+
+  it('is a daemon setting (reported when a session differs from the running daemon)', () => {
+    expect(DAEMON_SETTING_KEYS).toContain('FOX_APPROVAL_ELICITATION');
   });
 });
