@@ -6,6 +6,7 @@ import { defineConfig } from 'vitest/config';
  *
  *   packages/<pkg>/tests/**\/*.test.ts  unit tests of one workspace
  *   tests/contract/**\/*.test.ts        contracts spanning several packages
+ *   tests/scripts/**\/*.test.ts         scripts/*.mjs (install / uninstall)
  *
  * Tests live outside `src/`, so each package's tsconfig (`include: ["src"]`,
  * `rootDir: "src"`) never compiles them into `dist/`. Vitest transpiles them
@@ -40,6 +41,7 @@ export default defineConfig({
       { extends: true, test: { name: 'mcp-server', include: ['packages/mcp-server/tests/**/*.test.ts'] } },
       { extends: true, test: { name: 'native-host', include: ['packages/native-host/tests/**/*.test.ts'] } },
       { extends: true, test: { name: 'contract', include: ['tests/contract/**/*.test.ts'] } },
+      { extends: true, test: { name: 'scripts', include: ['tests/scripts/**/*.test.ts'] } },
       // Real processes and a real (headless) Firefox; `npm run test:e2e`.
       // Excluded from `npm test` by its --project filter.
       { extends: true, test: { name: 'e2e', include: ['tests/e2e/**/*.e2e.test.ts'] } },
