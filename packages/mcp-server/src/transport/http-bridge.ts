@@ -22,6 +22,15 @@
  * A relay identifies itself with the `X-Kitsune-Relay: <id>` header; its
  * calls are audited with transport `relay:<id>` (other callers: `http`).
  *
+ * Human approval of protected-site actions (tools/approval-flow.ts):
+ *  - POST /mcp/call may carry `approvalToken` next to `arguments` (never a
+ *    tool argument, so the LLM does not see or pass it).
+ *  - POST /approval/elicitation { requestId, approved } — the relay reports
+ *    the human's answer to its MCP elicitation.
+ *  - POST /approval/browser { requestId } — ask in the Extension's popup
+ *    and wait for the answer.
+ *  Both answer { success, approved, reason, approvalToken?, expiresAt? }.
+ *
  * Fork-source: server.py L885-1460 MCPHTTPHandler
  *
  * Security:
@@ -41,6 +50,7 @@ import { getScreenshotsDir, listScreenshots } from '../utils/screenshot.js';
 import { TOOL_SCHEMAS } from '../tools/schemas.js';
 import { getRegisteredToolNames } from '../tools/registry.js';
 import { createToolHandler } from '../tools/handlers.js';
+import { answerFromElicitation, askBrowser } from '../tools/approval-flow.js';
 import { RELAY_ID_HEADER, isValidRelayId } from '../utils/endpoint.js';
 import type { DaemonActivity } from '../daemon/activity.js';
 
@@ -323,6 +333,11 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
           return;
         }
 
+        if (pathname === '/approval/elicitation' || pathname === '/approval/browser') {
+          handleApproval(pathname, data, req, res);
+          return;
+        }
+
         sendError(res, 404, 'Not found');
       })
       .catch((err: unknown) => {
@@ -386,16 +401,60 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
       return;
     }
 
+    const approvalToken =
+      typeof data['approvalToken'] === 'string' ? data['approvalToken'] : undefined;
+
     const handler = createToolHandler(toolName, caller.transport);
     activity?.beginCall();
     ready
-      .then(() => handler(args as Record<string, unknown>))
+      .then(() => handler(args as Record<string, unknown>, { approvalToken }))
       .then((result) => {
         sendJson(res, 200, { success: result.isError !== true, result });
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         sendError(res, 500, `Tool execution failed: ${msg}`);
+      })
+      .finally(() => {
+        activity?.endCall();
+        if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
+      });
+  }
+
+  // -----------------------------------------------------------------------
+  // Human approval (POST /approval/elicitation, POST /approval/browser)
+  // -----------------------------------------------------------------------
+  function handleApproval(
+    pathname: string,
+    data: Record<string, unknown>,
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): void {
+    const caller = callerOf(req);
+    if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
+
+    const requestId = data['requestId'];
+    if (typeof requestId !== 'string' || requestId === '') {
+      sendError(res, 400, 'Missing requestId');
+      return;
+    }
+
+    if (pathname === '/approval/elicitation') {
+      if (typeof data['approved'] !== 'boolean') {
+        sendError(res, 400, 'Missing boolean "approved"');
+        return;
+      }
+      sendJson(res, 200, { ...answerFromElicitation(requestId, data['approved'], caller.transport) });
+      return;
+    }
+
+    activity?.beginCall();
+    ready
+      .then(() => askBrowser(requestId, connectionManager, caller.transport))
+      .then((reply) => sendJson(res, 200, { ...reply }))
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        sendError(res, 500, `Approval request failed: ${msg}`);
       })
       .finally(() => {
         activity?.endCall();

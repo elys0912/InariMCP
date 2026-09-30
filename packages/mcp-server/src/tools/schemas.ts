@@ -649,7 +649,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_request_approval: {
     name: 'fox_request_approval',
     description:
-      'Ask the human at the browser to approve or deny an action. Shows a banner on the page with an OS notification and waits for their decision. Unavailable in headless mode.',
+      'Ask the human at the browser a yes/no question and wait for the answer. Shown in the KitsuneMCP toolbar popup in Firefox (badge + OS notification), never in the page. The answer is for you only: it does not unlock protected-site actions — those ask the human on their own when you call the tool. Unavailable in headless mode.',
     inputSchema: foxRequestApprovalSchema,
     classification: 'human',
   },

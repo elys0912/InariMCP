@@ -12,6 +12,9 @@
  *    The daemon's CallToolResult is returned unchanged.
  *  - heartbeat: GET /health with X-Kitsune-Relay every 30 s, so the daemon
  *    knows this session is alive (idle shutdown, daemon/activity.ts).
+ *  - approvals (relay/approval.ts): POST /approval/elicitation and
+ *    /approval/browser; a retried call sends `approvalToken` in the
+ *    /mcp/call body.
  */
 
 import * as http from 'node:http';
@@ -23,6 +26,7 @@ import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 import { maxCommandTimeoutMs } from '../connection/manager.js';
+import type { ApprovalReply } from './approval.js';
 import { rotateLogIfLarge } from '../utils/log-file.js';
 import { RELAY_HEARTBEAT_MS } from '../daemon/activity.js';
 import {
@@ -229,9 +233,14 @@ export class DaemonClient {
     name: string,
     args: Record<string, unknown>,
     signal?: AbortSignal,
+    approvalToken?: string,
   ): Promise<CallToolResult> {
     const timeoutMs = maxCommandTimeoutMs(args) + RELAY_TIMEOUT_MARGIN_MS;
-    const body = JSON.stringify({ name, arguments: args });
+    const body = JSON.stringify(
+      approvalToken === undefined
+        ? { name, arguments: args }
+        : { name, arguments: args, approvalToken },
+    );
 
     let restarted = false;
     let tokenReloaded = false;
@@ -271,6 +280,57 @@ export class DaemonClient {
 
       return this.toCallToolResult(name, reply);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Approvals
+  // -------------------------------------------------------------------------
+
+  /** Report the human's answer to this relay's MCP elicitation. */
+  reportElicitation(requestId: string, approved: boolean): Promise<ApprovalReply> {
+    return this.postApproval('/approval/elicitation', { requestId, approved }, HEALTH_TIMEOUT_MS * 5);
+  }
+
+  /** Ask in the Extension's popup; resolves when the human answered or it timed out. */
+  askBrowser(requestId: string, signal?: AbortSignal): Promise<ApprovalReply> {
+    return this.postApproval(
+      '/approval/browser',
+      { requestId },
+      maxCommandTimeoutMs({}) + RELAY_TIMEOUT_MARGIN_MS,
+      signal,
+    );
+  }
+
+  /**
+   * POST to an approval endpoint. No daemon restart on failure: a new
+   * daemon would not know the request anyway.
+   */
+  private async postApproval(
+    urlPath: string,
+    payload: Record<string, unknown>,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<ApprovalReply> {
+    const body = JSON.stringify(payload);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const token = readApiTokenFile();
+      if (token === undefined) break;
+      const reply = await this.request('POST', urlPath, body, timeoutMs, token, signal);
+      if (reply.status === 403 && attempt === 0) continue; // token file replaced: read it again
+      const b = isRecord(reply.body) ? reply.body : {};
+      if (reply.status !== 200) {
+        const error = typeof b['error'] === 'string' ? b['error'] : `HTTP ${reply.status}`;
+        return { success: false, approved: false, error };
+      }
+      return {
+        success: b['success'] === true,
+        approved: b['approved'] === true,
+        ...(typeof b['reason'] === 'string' ? { reason: b['reason'] } : {}),
+        ...(typeof b['approvalToken'] === 'string' ? { approvalToken: b['approvalToken'] } : {}),
+        ...(typeof b['error'] === 'string' ? { error: b['error'] } : {}),
+      };
+    }
+    return { success: false, approved: false, error: 'KitsuneMCP daemon is not available (no API token)' };
   }
 
   private toCallToolResult(name: string, reply: HttpReply): CallToolResult {

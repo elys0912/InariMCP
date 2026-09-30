@@ -598,7 +598,8 @@ export class HeadlessBrowser {
           success: false,
           approved: false,
           error:
-            'No human is present in headless mode. Use MCP elicitation for protected actions.',
+            'No human is present in headless mode. Protected-site actions are approved ' +
+            "through the MCP client's confirmation dialog (MCP elicitation) when it supports one.",
         };
       }
 
