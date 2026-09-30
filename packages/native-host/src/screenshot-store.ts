@@ -122,6 +122,19 @@ function sanitizeFilename(requested: string | undefined, ext: string, suffix: st
  * @returns Absolute path of the written file.
  */
 export function saveScreenshot(imageData: string, filename?: string, suffix = ''): string {
+  return saveScreenshotFile(imageData, filename, suffix).path;
+}
+
+/**
+ * saveScreenshot(), also telling whether a file of that name existed and was
+ * replaced (only possible with a caller-chosen filename; generated names are
+ * unique).
+ */
+export function saveScreenshotFile(
+  imageData: string,
+  filename?: string,
+  suffix = '',
+): { path: string; overwritten: boolean } {
   const match = DATA_URL_RE.exec(imageData);
   const mime = match?.[1]?.toLowerCase() ?? 'image/png';
   const ext = EXT_BY_MIME[mime] ?? '.png';
@@ -141,6 +154,7 @@ export function saveScreenshot(imageData: string, filename?: string, suffix = ''
     throw new Error(`refusing to write outside the screenshots directory: ${name}`);
   }
 
+  const overwritten = fs.existsSync(filePath);
   fs.writeFileSync(filePath, bytes, { mode: 0o600 });
   // `mode` only applies on creation; tighten an overwritten file too.
   try {
@@ -148,7 +162,11 @@ export function saveScreenshot(imageData: string, filename?: string, suffix = ''
   } catch {
     // Non-POSIX filesystems
   }
-  return filePath;
+  return { path: filePath, overwritten };
+}
+
+function overwriteWarning(filePath: string): string {
+  return `${path.basename(filePath)} already existed in the screenshots directory and was overwritten`;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -161,7 +179,11 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  *
  * - Single image that cannot be saved → the response becomes a failure
  *   (the server would otherwise report success without a file).
- * - An all_tabs entry that cannot be saved → that entry gets `imageError`.
+ * - An all_tabs entry that cannot be saved → that entry gets `imageError`;
+ *   when no entry with an image could be saved, the response becomes a
+ *   failure too.
+ * - A caller-chosen filename that replaced an existing file → `imageOverwritten`
+ *   (on the data or the entry) and a line in `data.warnings`.
  * `imageData` is always removed, saved or not.
  */
 export function externalizeScreenshots(
@@ -172,12 +194,18 @@ export function externalizeScreenshots(
   const data = response['data'];
   if (!isRecord(data)) return;
 
+  const warnings: string[] = [];
   const single = data['imageData'];
   if (typeof single === 'string') {
     delete data['imageData'];
     try {
-      data['imagePath'] = saveScreenshot(single, filename);
-      log(`screenshot saved: ${String(data['imagePath'])}`);
+      const saved = saveScreenshotFile(single, filename);
+      data['imagePath'] = saved.path;
+      if (saved.overwritten) {
+        data['imageOverwritten'] = true;
+        warnings.push(overwriteWarning(saved.path));
+      }
+      log(`screenshot saved: ${saved.path}${saved.overwritten ? ' (overwritten)' : ''}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       log(`failed to save screenshot: ${msg}`);
@@ -188,20 +216,38 @@ export function externalizeScreenshots(
 
   const shots = data['screenshots'];
   if (Array.isArray(shots)) {
+    let withImage = 0;
+    let saved = 0;
     shots.forEach((shot: unknown, i: number) => {
       if (!isRecord(shot)) return;
       const img = shot['imageData'];
       if (typeof img !== 'string') return;
+      withImage++;
       delete shot['imageData'];
       const tabId = shot['tabId'];
       const suffix = typeof tabId === 'number' ? `_tab${tabId}` : `_${i}`;
       try {
-        shot['imagePath'] = saveScreenshot(img, filename, suffix);
+        const file = saveScreenshotFile(img, filename, suffix);
+        shot['imagePath'] = file.path;
+        saved++;
+        if (file.overwritten) {
+          shot['imageOverwritten'] = true;
+          warnings.push(overwriteWarning(file.path));
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         log(`failed to save all_tabs screenshot #${i}: ${msg}`);
         shot['imageError'] = `Native Host failed to save screenshot: ${msg}`;
       }
     });
+    if (withImage > 0 && saved === 0 && response['success'] === true) {
+      response['success'] = false;
+      response['error'] = 'Native Host failed to save every all_tabs screenshot (see screenshots[].imageError)';
+    }
+  }
+
+  if (warnings.length > 0) {
+    const existing = Array.isArray(data['warnings']) ? (data['warnings'] as unknown[]) : [];
+    data['warnings'] = [...existing, ...warnings];
   }
 }

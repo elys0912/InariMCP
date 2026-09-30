@@ -415,9 +415,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (btnPageinfo && currentTab) {
     btnPageinfo.addEventListener('click', async () => {
       try {
-        const result = await browser.tabs.sendMessage(currentTab.id, {
-          action: 'getPageInfo',
-        }) as PageInfoResponse;
+        const result = await browser.tabs.sendMessage(
+          currentTab.id,
+          { action: 'getPageInfo' },
+          { frameId: 0 },
+        ) as PageInfoResponse;
 
         console.log('Page Info:', result);
         const count = result.interactiveElements?.length ?? 0;

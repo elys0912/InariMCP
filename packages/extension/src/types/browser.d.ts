@@ -106,10 +106,6 @@ declare namespace browser {
     }
 
     function captureTab(tabId: number, options?: ImageDetails): Promise<string>;
-    function captureVisibleTab(
-      windowId: number,
-      options?: { format?: string; quality?: number },
-    ): Promise<string>;
     function executeScript(
       tabId: number,
       details: { code?: string; file?: string; runAt?: string; frameId?: number },
@@ -126,6 +122,9 @@ declare namespace browser {
     };
     const onRemoved: {
       addListener(
+        callback: (tabId: number, removeInfo: { windowId: number; isWindowClosing: boolean }) => void,
+      ): void;
+      removeListener(
         callback: (tabId: number, removeInfo: { windowId: number; isWindowClosing: boolean }) => void,
       ): void;
     };
@@ -246,7 +245,7 @@ declare namespace browser {
     const onClicked: {
       addListener(
         callback: (
-          info: { menuItemId: string; pageX?: number; pageY?: number },
+          info: { menuItemId: string; pageX?: number; pageY?: number; frameId?: number },
           tab: tabs.Tab,
         ) => void,
       ): void;

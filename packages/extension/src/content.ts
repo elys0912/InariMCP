@@ -117,6 +117,10 @@
   interface ObserveOptions {
     selector: string;
     observerId?: string;
+    /** fox_inject_observer switches (default true each). */
+    observeAttributes?: boolean;
+    observeChildList?: boolean;
+    observeSubtree?: boolean;
   }
 
   interface ScrollCaptureOptions {
@@ -143,10 +147,6 @@
     text?: string;
   }
 
-  interface ComputedStylesOptions extends FindElementOptions {
-    properties?: string[];
-  }
-
   interface PressKeyOptions extends FindElementOptions {
     key: string;
     ctrl?: boolean;
@@ -167,20 +167,6 @@
   interface LoggingOptions {
     clearExisting?: boolean;
     protectedPatterns?: unknown;
-  }
-
-  interface ConsoleLogOptions {
-    level?: string;
-    search?: string;
-    limit?: number;
-  }
-
-  interface NetworkLogOptions {
-    urlPattern?: string;
-    method?: string;
-    status?: number;
-    errorsOnly?: boolean;
-    limit?: number;
   }
 
   interface ClearLogsOptions {
@@ -268,11 +254,8 @@
     NETWORK_IDLE: 10_000,
     CAPTCHA: 180_000,
     SCROLL_STEP: 500,
-  } as const;
-
-  const DEFAULTS = {
-    SCREENSHOT_FORMAT: "png" as const,
-    SCREENSHOT_QUALITY: 90,
+    /** fox_type: all per-character delays together (see typingDelay). */
+    TYPING_BUDGET: 10_000,
   } as const;
 
   const INTERACTIVE_SELECTORS = [
@@ -332,9 +315,21 @@
   function shouldRecord(): boolean {
     return loggingEnabled && !onProtectedPage();
   }
+  // Entries recorded here but not yet handed to the background script,
+  // which keeps each tab's logs so that they survive reloads / navigations
+  // (background.ts "Console / network log buffers"). A timer sends them in
+  // batches (scheduleLogFlush); flushLogs / stopLogging hand over the rest.
   let consoleLogs: ConsoleLogEntry[] = [];
   let networkLogs: NetworkLogEntry[] = [];
   const MAX_LOG_ENTRIES = 500;
+  /** Longest a recorded entry waits before it is sent to the background. */
+  const LOG_FLUSH_DELAY_MS = 250;
+  /** Same string as LOG_RECORD_MESSAGE in background.ts. */
+  const LOG_RECORD_MESSAGE = "kitsune:logRecords";
+  /** Console message length kept per argument / per entry. */
+  const MAX_CONSOLE_ARG_CHARS = 2000;
+  const MAX_CONSOLE_MESSAGE_CHARS = 5000;
+  let logFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Bumped by every startLogging / stopLogging, so a late reply to the
   // resume query cannot override a newer explicit command.
@@ -364,8 +359,10 @@
   //   - they only record strings into this script's buffers and forward the
   //     call to the page's ORIGINAL function (never this sandbox's fetch /
   //     XHR, which carry extension privileges);
-  //   - they never touch browser.* APIs and never hand sandbox objects to
-  //     the page (return values are the page's own objects or undefined);
+  //   - they never touch browser.* APIs (recorded entries are sent to the
+  //     background later, by a timer of this script) and never hand sandbox
+  //     objects to the page (return values are the page's own objects or
+  //     undefined);
   //   - page values are read through Xrays (page getters / toJSON do not
   //     run), inside try/catch, and stored only as strings / numbers.
   // A page can therefore inject fake log entries or skew the in-flight
@@ -392,6 +389,39 @@
     if (consoleLogs.length > MAX_LOG_ENTRIES) {
       consoleLogs.shift();
     }
+    scheduleLogFlush();
+  }
+
+  /** Send the pending entries to the background soon (one timer at a time). */
+  function scheduleLogFlush(): void {
+    if (logFlushTimer === null) logFlushTimer = setTimeout(sendLogBatch, LOG_FLUSH_DELAY_MS);
+  }
+
+  /** The pending entries, removed from this script (the caller passes them on). */
+  function takePendingLogs(): { console: ConsoleLogEntry[]; network: NetworkLogEntry[] } {
+    const batch = { console: consoleLogs, network: networkLogs };
+    consoleLogs = [];
+    networkLogs = [];
+    if (logFlushTimer !== null) {
+      clearTimeout(logFlushTimer);
+      logFlushTimer = null;
+    }
+    return batch;
+  }
+
+  /**
+   * Hand the pending entries to the background. It keeps them only while
+   * logging is on for this tab and the page is not protected, so a batch
+   * from a provisional early-injection recording is dropped there if the
+   * tab turns out not to be logging.
+   */
+  function sendLogBatch(): void {
+    logFlushTimer = null;
+    if (consoleLogs.length === 0 && networkLogs.length === 0) return;
+    const batch = takePendingLogs();
+    browser.runtime.sendMessage({ type: LOG_RECORD_MESSAGE, ...batch }).catch(() => {
+      // Background unreachable (extension reloading): the batch is lost
+    });
   }
 
   function pushNetworkLog(entry: NetworkLogEntry): void {
@@ -403,6 +433,7 @@
     if (networkLogs.length > MAX_LOG_ENTRIES) {
       networkLogs.shift();
     }
+    scheduleLogFlush();
   }
 
   /** Count one in-flight request; the returned function settles it (once). */
@@ -755,7 +786,10 @@
             pushConsoleLog({
               level: method,
               timestamp: new Date().toISOString(),
-              message: args.map(stringifyArg).join(" "),
+              message: args
+                .map((arg) => stringifyArg(arg).slice(0, MAX_CONSOLE_ARG_CHARS))
+                .join(" ")
+                .slice(0, MAX_CONSOLE_MESSAGE_CHARS),
               url: window.location.href,
             });
           } catch {
@@ -853,103 +887,40 @@
     protectedPatterns = compilePatterns(options.protectedPatterns);
     installPageHooks();
     loggingEnabled = true;
-    if (options.clearExisting) {
-      consoleLogs = [];
-      networkLogs = [];
-    }
+    if (options.clearExisting) takePendingLogs();
     return {
       success: true,
       message: "Logging started",
-      consoleLogsCount: consoleLogs.length,
-      networkLogsCount: networkLogs.length,
       interception: { ...interception },
     };
   }
 
+  /** Stop recording; the reply carries the entries not sent yet. */
   function stopLogging(): Record<string, unknown> {
     loggingControlVersion++;
     loggingEnabled = false;
-    return {
-      success: true,
-      message: "Logging stopped",
-      consoleLogsCount: consoleLogs.length,
-      networkLogsCount: networkLogs.length,
-    };
+    return { success: true, message: "Logging stopped", ...takePendingLogs() };
   }
 
-  function getConsoleLogs(options: ConsoleLogOptions = {}): Record<string, unknown> {
-    let logs = [...consoleLogs];
-
-    if (options.level) {
-      logs = logs.filter((log) => log.level === options.level);
-    }
-    if (options.search) {
-      const searchLower = options.search.toLowerCase();
-      logs = logs.filter((log) =>
-        log.message.toLowerCase().includes(searchLower),
-      );
-    }
-
-    const limit = options.limit || 100;
-    if (logs.length > limit) {
-      logs = logs.slice(-limit);
-    }
-
+  /**
+   * get_console_logs / get_network_logs: the background serves the logs from
+   * its buffer and asks here first for the entries not sent yet, and for
+   * this document's hook status.
+   */
+  function flushLogs(): Record<string, unknown> {
     return {
       success: true,
-      logs,
-      totalCount: consoleLogs.length,
-      returnedCount: logs.length,
+      ...takePendingLogs(),
       loggingEnabled,
-      interceptionAvailable: interception.console,
+      interception: { ...interception },
       injection: { ...injectionInfo },
     };
   }
 
-  function getNetworkLogs(options: NetworkLogOptions = {}): Record<string, unknown> {
-    let logs = [...networkLogs];
-
-    if (options.urlPattern) {
-      const pattern = new RegExp(options.urlPattern, "i");
-      logs = logs.filter((log) => pattern.test(log.url));
-    }
-    if (options.method) {
-      logs = logs.filter(
-        (log) => log.method.toUpperCase() === options.method!.toUpperCase(),
-      );
-    }
-    if (options.status) {
-      logs = logs.filter((log) => log.status === options.status);
-    }
-    if (options.errorsOnly) {
-      logs = logs.filter(
-        (log) => log.error || (log.status !== undefined && log.status >= 400),
-      );
-    }
-
-    const limit = options.limit || 100;
-    if (logs.length > limit) {
-      logs = logs.slice(-limit);
-    }
-
-    return {
-      success: true,
-      logs,
-      totalCount: networkLogs.length,
-      returnedCount: logs.length,
-      loggingEnabled,
-      interceptionAvailable: interception.fetch || interception.xhr,
-      interception: { fetch: interception.fetch, xhr: interception.xhr },
-    };
-  }
-
+  /** clear_logs: the background empties its buffer; drop what is pending here. */
   function clearLogs(options: ClearLogsOptions = {}): Record<string, unknown> {
-    if (options.console !== false) {
-      consoleLogs = [];
-    }
-    if (options.network !== false) {
-      networkLogs = [];
-    }
+    if (options.console !== false) consoleLogs = [];
+    if (options.network !== false) networkLogs = [];
     return { success: true, message: "Logs cleared" };
   }
 
@@ -1013,18 +984,10 @@
         return getValue(message as unknown as FindElementOptions);
       case "setValue":
         return setValue(message as unknown as SetValueOptions);
-      case "getAttribute":
-        return getAttribute(
-          message as unknown as FindElementOptions & { attribute: string },
-        );
-      case "focus":
-        return focusElement(message as unknown as FindElementOptions);
       case "hover":
         return hoverElement(message as unknown as FindElementOptions);
       case "selectOption":
         return selectOption(message as unknown as SelectOptionOptions);
-      case "getComputedStyles":
-        return getComputedStyles(message as unknown as ComputedStylesOptions);
       case "pressKey":
         return pressKey(message as unknown as PressKeyOptions);
       case "getText":
@@ -1033,16 +996,12 @@
         return solveCaptcha(message as unknown as CaptchaOptions);
       case "cancelHumanWait":
         return cancelHumanWait();
-      case "getBoundingRect":
-        return getBoundingRect(message as unknown as FindElementOptions);
       case "startLogging":
         return startLogging(message as unknown as LoggingOptions);
       case "stopLogging":
         return stopLogging();
-      case "getConsoleLogs":
-        return getConsoleLogs(message as unknown as ConsoleLogOptions);
-      case "getNetworkLogs":
-        return getNetworkLogs(message as unknown as NetworkLogOptions);
+      case "flushLogs":
+        return flushLogs();
       case "clearLogs":
         return clearLogs(message as unknown as ClearLogsOptions);
       default:
@@ -1126,6 +1085,91 @@
     return `concat(${parts.join(", ")})`;
   }
 
+  /**
+   * XPath of the innermost elements under <body> whose whole text (all
+   * descendant text nodes, whitespace collapsed) contains `text` -- unlike
+   * contains(text(), ...), which only looks at the first text node, so
+   * "<button><b>Sign</b> in</button>" is found by "Sign in". Contents of
+   * script / style / noscript / template never match. Case-sensitive.
+   * Null when `text` is only whitespace.
+   */
+  function textLocatorXPath(text: string): string | null {
+    const needle = text.replace(/\s+/g, " ").trim();
+    if (needle === "") return null;
+    const literal = escapeXPathString(needle);
+    const skip = "self::script or self::style or self::noscript or self::template";
+    const has = `contains(normalize-space(.), ${literal})`;
+    return `//body//*[not(${skip})][${has}][not(*[not(${skip})][${has}])]`;
+  }
+
+  /** Disabled itself, or inside a disabled control / aria-disabled element. */
+  function isDisabled(element: Element): boolean {
+    try {
+      return element.closest(':disabled, [aria-disabled="true"]') !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Element by its text (textLocatorXPath). Of the matches, the first that
+   * is visible and enabled wins; else the first visible (disabled) one; else
+   * the first. The top document only: text inside iframes or shadow roots
+   * is not searched.
+   */
+  function findByText(text: string): Element | null {
+    const xpath = textLocatorXPath(text);
+    if (xpath === null) return null;
+    const matches = document.evaluate(
+      xpath,
+      document,
+      null,
+      XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+      null,
+    );
+    let firstVisible: Element | null = null;
+    let first: Element | null = null;
+    for (let i = 0; i < Math.min(matches.snapshotLength, 50); i++) {
+      const el = matches.snapshotItem(i) as Element;
+      first ??= el;
+      if (!isVisible(el)) continue;
+      if (!isDisabled(el)) return el;
+      firstVisible ??= el;
+    }
+    return firstVisible ?? first;
+  }
+
+  /** The locator fields of `options` only (for messages: never typed text or values). */
+  function locatorOf(options: FindElementOptions): FindElementOptions {
+    const keys = [
+      "selector", "xpath", "text", "x", "y", "id", "name", "ariaLabel", "placeholder", "role",
+    ] as const;
+    const locator: Record<string, unknown> = {};
+    for (const key of keys) {
+      if (options[key] !== undefined && options[key] !== "") locator[key] = options[key];
+    }
+    return locator as FindElementOptions;
+  }
+
+  /**
+   * For tools whose `text` argument is data, not a locator (fox_type: the
+   * text to type, fox_select_option: the option text): the locator without
+   * `text`, so e.g. a placeholder-only fox_type is not searched by the text
+   * it is about to type.
+   */
+  function locatorWithoutText(options: FindElementOptions): FindElementOptions {
+    const { text: _data, ...locator } = locatorOf(options);
+    return locator;
+  }
+
+  function hasLocator(locator: FindElementOptions): boolean {
+    return Object.keys(locatorOf(locator)).length > 0;
+  }
+
+  function notFoundError(locator: FindElementOptions): Error {
+    return new Error(`Element not found: ${JSON.stringify(locatorOf(locator))}`);
+  }
+
   function findElement(options: FindElementOptions): Element | null {
     if (options.selector) {
       return document.querySelector(options.selector);
@@ -1141,15 +1185,7 @@
       return result.singleNodeValue as Element | null;
     }
     if (options.text) {
-      const xpath = `//*[contains(text(), ${escapeXPathString(options.text)})]`;
-      const result = document.evaluate(
-        xpath,
-        document,
-        null,
-        XPathResult.FIRST_ORDERED_NODE_TYPE,
-        null,
-      );
-      return result.singleNodeValue as Element | null;
+      return findByText(options.text);
     }
     if (options.x !== undefined && options.y !== undefined) {
       return document.elementFromPoint(options.x, options.y);
@@ -1220,29 +1256,29 @@
     return path.join(" > ");
   }
 
+  /**
+   * XPath locating `element`. Values are quoted as XPath string literals
+   * (escapeXPathString) -- CSS.escape produces CSS escapes, which XPath does
+   * not understand. Elements outside the HTML namespace (SVG, MathML) are
+   * matched by local-name(), since a plain name test does not find them.
+   */
   function generateXPath(element: Element): string {
-    if (element.id) return `//*[@id="${CSS.escape(element.id)}"]`;
+    if (element.id) return `//*[@id=${escapeXPathString(element.id)}]`;
 
+    const HTML_NS = "http://www.w3.org/1999/xhtml";
     const parts: string[] = [];
-    let current: Node | null = element;
+    let current: Element | null = element;
 
-    while (current && current.nodeType === Node.ELEMENT_NODE) {
+    while (current) {
       let index = 1;
-      let sibling: Node | null = current.previousSibling;
-
-      while (sibling) {
-        if (
-          sibling.nodeType === Node.ELEMENT_NODE &&
-          (sibling as Element).tagName === (current as Element).tagName
-        ) {
-          index++;
-        }
-        sibling = sibling.previousSibling;
+      for (let sib = current.previousElementSibling; sib; sib = sib.previousElementSibling) {
+        if (sib.localName === current.localName && sib.namespaceURI === current.namespaceURI) index++;
       }
-
-      const tagName = (current as Element).tagName.toLowerCase();
-      parts.unshift(`${tagName}[${index}]`);
-      current = current.parentNode;
+      const step = current.namespaceURI === HTML_NS
+        ? current.localName
+        : `*[local-name()=${escapeXPathString(current.localName)}]`;
+      parts.unshift(`${step}[${index}]`);
+      current = current.parentElement;
     }
 
     return "/" + parts.join("/");
@@ -1523,10 +1559,11 @@
     options: ClickOptions,
   ): Promise<Record<string, unknown>> {
     const element = findElement(options);
-    if (!element) {
-      throw new Error(
-        `Element not found with options: ${JSON.stringify(options)}`,
-      );
+    if (!element) throw notFoundError(options);
+    // A real click on a disabled control does nothing; say so instead of
+    // reporting a click that had no effect.
+    if (isDisabled(element)) {
+      throw new Error(`Element is disabled: ${JSON.stringify(locatorOf(options))}`);
     }
 
     element.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1601,19 +1638,103 @@
   // Type
   // ---------------------------------------------------------------------------
 
+  /**
+   * Delay between typed characters: the requested one (0 allowed; default
+   * 50 ms), reduced so that the delays of all `length` characters add up to
+   * at most `budgetMs` -- a long text must finish well inside the command
+   * timeout (30 s), where 600 characters at 50 ms used to take over 30 s.
+   */
+  function typingDelay(length: number, requested: unknown, budgetMs: number): number {
+    const base =
+      typeof requested === "number" && Number.isFinite(requested) && requested >= 0
+        ? requested
+        : 50;
+    if (length <= 0) return base;
+    return Math.min(base, Math.floor(budgetMs / length));
+  }
+
+  function isEditable(el: Element): boolean {
+    return isTextInput(el) || (el as HTMLElement).isContentEditable === true;
+  }
+
+  const IMPLICIT_SUBMIT_BLOCKING_TYPES: ReadonlySet<string> = new Set([
+    "text", "search", "email", "url", "tel", "password", "number",
+    "date", "month", "week", "time", "datetime-local",
+  ]);
+
+  /**
+   * Submit `form` the way pressing Enter in one of its fields does (HTML
+   * "implicit submission"), since synthetic key events have no default
+   * action: through the default (first) submit button, or without one when
+   * the form has a single text-like field. requestSubmit() fires the submit
+   * event and runs constraint validation like a real submission.
+   */
+  function implicitSubmit(form: HTMLFormElement): "submitted" | "invalid" | "blocked" {
+    const controls = Array.from(form.elements);
+    const submitter = controls.find((el) =>
+      (el.tagName === "BUTTON" && (el as HTMLButtonElement).type === "submit") ||
+      (el.tagName === "INPUT" && ["submit", "image"].includes((el as HTMLInputElement).type)),
+    ) as HTMLButtonElement | HTMLInputElement | undefined;
+    if (submitter?.disabled) return "blocked";
+    if (!submitter) {
+      const fields = controls.filter((el) =>
+        el.tagName === "INPUT" && IMPLICIT_SUBMIT_BLOCKING_TYPES.has((el as HTMLInputElement).type),
+      );
+      if (fields.length > 1) return "blocked";
+    }
+    const skipValidation = form.noValidate || submitter?.formNoValidate === true;
+    const valid = skipValidation || form.checkValidity();
+    if (typeof form.requestSubmit === "function") {
+      form.requestSubmit(submitter);
+    } else if (valid) {
+      form.submit();
+    }
+    return valid ? "submitted" : "invalid";
+  }
+
+  /**
+   * Enter key on `target` (keydown / keypress / keyup), then implicit form
+   * submission for a text field of a form -- unless a keydown handler
+   * cancelled the key (as a page does to stop the submission) or `submit`
+   * is false. Textareas and editable regions are never submitted.
+   * Returns "submitted" | "invalid" | "blocked" | "prevented" | "none".
+   */
+  function pressEnterOn(target: Element, submit: boolean): string {
+    const init: KeyboardEventInit = {
+      key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true,
+    };
+    const proceed = target.dispatchEvent(new KeyboardEvent("keydown", init));
+    if (proceed) target.dispatchEvent(new KeyboardEvent("keypress", init));
+    target.dispatchEvent(new KeyboardEvent("keyup", init));
+    if (!proceed) return "prevented";
+    const form = target.tagName === "INPUT" ? (target as HTMLInputElement).form : null;
+    if (!submit || !form) return "none";
+    return implicitSubmit(form);
+  }
+
   async function performType(
     options: TypeOptions,
   ): Promise<Record<string, unknown>> {
-    let element: Element | null = findElement(options);
+    // `text` is what to type, never a locator (see locatorWithoutText).
+    const locator = locatorWithoutText(options);
+    const located = hasLocator(locator);
+    let element: Element | null = located ? findElement(locator) : null;
 
-    if (!element && options.focusFirst === false) {
-      element = document.activeElement;
+    // No locator (or focusFirst: false and nothing found): the focused field.
+    if (!element && (!located || options.focusFirst === false)) {
+      const active = document.activeElement;
+      if (active && active !== document.body && isEditable(active)) element = active;
     }
 
     if (!element) {
-      throw new Error(
-        `Element not found with options: ${JSON.stringify(options)}`,
-      );
+      throw located
+        ? notFoundError(locator)
+        : new Error(
+          "No element to type into: pass selector, placeholder, name or id, or focus a field first",
+        );
+    }
+    if (isDisabled(element)) {
+      throw new Error(`Element is disabled: ${JSON.stringify(locator)}`);
     }
 
     assertNotPasswordField(element, options);
@@ -1634,6 +1755,7 @@
       element.dispatchEvent(new Event("input", { bubbles: true }));
     }
 
+    const delay = typingDelay(text.length, options.delay, TIMEOUTS.TYPING_BUDGET);
     if (options.instant) {
       if (isTextInput(element)) {
         htmlEl.value = options.clear ? text : htmlEl.value + text;
@@ -1646,20 +1768,9 @@
       element.dispatchEvent(new Event("change", { bubbles: true }));
     } else {
       for (const char of text) {
-        element.dispatchEvent(
-          new KeyboardEvent("keydown", {
-            key: char,
-            code: `Key${char.toUpperCase()}`,
-            bubbles: true,
-          }),
-        );
-        element.dispatchEvent(
-          new KeyboardEvent("keypress", {
-            key: char,
-            code: `Key${char.toUpperCase()}`,
-            bubbles: true,
-          }),
-        );
+        const keyInit: KeyboardEventInit = { key: char, bubbles: true, cancelable: true };
+        element.dispatchEvent(new KeyboardEvent("keydown", keyInit));
+        element.dispatchEvent(new KeyboardEvent("keypress", keyInit));
 
         if (isTextInput(element)) {
           htmlEl.value += char;
@@ -1668,49 +1779,24 @@
         }
 
         element.dispatchEvent(new Event("input", { bubbles: true }));
-        element.dispatchEvent(
-          new KeyboardEvent("keyup", {
-            key: char,
-            code: `Key${char.toUpperCase()}`,
-            bubbles: true,
-          }),
-        );
+        element.dispatchEvent(new KeyboardEvent("keyup", keyInit));
 
-        await sleep(options.delay || 50);
+        if (delay > 0) await sleep(delay);
       }
       element.dispatchEvent(new Event("change", { bubbles: true }));
     }
 
-    if (options.pressEnter) {
-      element.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Enter",
-          code: "Enter",
-          keyCode: 13,
-          bubbles: true,
-        }),
-      );
-      element.dispatchEvent(
-        new KeyboardEvent("keyup", {
-          key: "Enter",
-          code: "Enter",
-          keyCode: 13,
-          bubbles: true,
-        }),
-      );
+    const enter = options.pressEnter
+      ? pressEnterOn(element, options.submitForm !== false)
+      : undefined;
 
-      const form = (element as HTMLElement).closest("form");
-      if (form && options.submitForm !== false) {
-        form.dispatchEvent(
-          new Event("submit", { bubbles: true, cancelable: true }),
-        );
-      }
-    }
-
+    // The typed text is not echoed back (it may be sensitive): its length only.
     return {
       typed: true,
       element: getElementInfo(element),
-      text,
+      length: text.length,
+      ...(options.instant ? {} : { delay }),
+      ...(enter !== undefined ? { enter } : {}),
     };
   }
 
@@ -2113,7 +2199,13 @@
       await sleep(100);
     }
 
+    // A timeout is a failure (success: false overrides the background's
+    // success: true), with the details kept for the caller.
     return {
+      success: false,
+      error:
+        `Network did not become idle within ${timeout}ms ` +
+        `(${__fox_activeRequests} request(s) still in flight)`,
       idle: false,
       timedOut: true,
       waitedMs: timeout,
@@ -2162,12 +2254,13 @@
       }
     });
 
+    const attributes = options.observeAttributes !== false;
     observer.observe(target, {
-      childList: true,
-      subtree: true,
-      attributes: true,
+      childList: options.observeChildList !== false,
+      subtree: options.observeSubtree !== false,
+      attributes,
       characterData: true,
-      attributeOldValue: true,
+      attributeOldValue: attributes,
     });
 
     activeObservers.set(observerId, {
@@ -2185,7 +2278,10 @@
     const observerId = options.observerId;
 
     if (!activeObservers.has(observerId)) {
-      return { found: false, observerId };
+      throw new Error(
+        `No observer '${observerId}' on this page (observers end when the page ` +
+        "reloads or navigates)",
+      );
     }
 
     const record = activeObservers.get(observerId)!;
@@ -2281,7 +2377,9 @@
       snapshots,
       totalScrolls: scrollCount,
       documentHeight: document.documentElement.scrollHeight,
-      message: "Use browser_screenshot after each scroll position for images",
+      message:
+        "Element positions only, no images: scroll with fox_scroll and take " +
+        "fox_screenshot (scope viewport) at each position for images",
     };
   }
 
@@ -2402,7 +2500,7 @@
     options: FindElementOptions,
   ): Record<string, unknown> {
     const element = findElement(options);
-    if (!element) throw new Error("Element not found");
+    if (!element) throw notFoundError(options);
 
     let value: string | null;
 
@@ -2424,7 +2522,7 @@
     options: SetValueOptions,
   ): Record<string, unknown> {
     const element = findElement(options);
-    if (!element) throw new Error("Element not found");
+    if (!element) throw notFoundError(options);
 
     assertNotPasswordField(element, options);
 
@@ -2442,33 +2540,11 @@
     return { set: true, element: getElementInfo(element) };
   }
 
-  function getAttribute(
-    options: FindElementOptions & { attribute: string },
-  ): Record<string, unknown> {
-    const element = findElement(options);
-    if (!element) throw new Error("Element not found");
-
-    const value = element.getAttribute(options.attribute);
-    return { value, element: getElementInfo(element) };
-  }
-
-  function focusElement(
-    options: FindElementOptions,
-  ): Record<string, unknown> {
-    const element = findElement(options);
-    if (!element) throw new Error("Element not found");
-
-    (element as HTMLElement).focus();
-    element.scrollIntoView({ behavior: "smooth", block: "center" });
-
-    return { focused: true, element: getElementInfo(element) };
-  }
-
   async function hoverElement(
     options: FindElementOptions,
   ): Promise<Record<string, unknown>> {
     const element = findElement(options);
-    if (!element) throw new Error("Element not found");
+    if (!element) throw notFoundError(options);
 
     element.scrollIntoView({ behavior: "smooth", block: "center" });
     await sleep(100);
@@ -2517,24 +2593,16 @@
       metaKey: !!options.meta,
     };
 
+    // Synthetic key events have no default action (isTrusted is false):
+    // plain Enter gets the implicit form submission emulated, nothing else.
+    if (options.key === "Enter" && !options.ctrl && !options.shift && !options.alt && !options.meta) {
+      const enter = pressEnterOn(target, true);
+      return { pressed: options.key, enter, element: getElementInfo(target) };
+    }
+
     target.dispatchEvent(new KeyboardEvent("keydown", eventInit));
     target.dispatchEvent(new KeyboardEvent("keypress", eventInit));
     target.dispatchEvent(new KeyboardEvent("keyup", eventInit));
-
-    // Synthetic key events don't trigger default actions; emulate Enter→submit
-    if (
-      options.key === "Enter" &&
-      !options.ctrl &&
-      !options.shift &&
-      (target as HTMLInputElement).form
-    ) {
-      const form = (target as HTMLInputElement).form!;
-      if (form.requestSubmit) {
-        form.requestSubmit();
-      } else {
-        form.submit();
-      }
-    }
 
     return { pressed: options.key, element: getElementInfo(target) };
   }
@@ -2565,23 +2633,28 @@
   function selectOption(
     options: SelectOptionOptions,
   ): Record<string, unknown> {
-    const element = findElement(options);
+    const element = findElement(locatorWithoutText(options));
     if (!element || element.tagName !== "SELECT") {
       throw new Error("Select element not found");
     }
 
     const sel = element as HTMLSelectElement;
-
+    const all = Array.from(sel.options);
+    let option: HTMLOptionElement | undefined;
     if (options.value !== undefined) {
-      sel.value = options.value;
+      option = all.find((o) => o.value === options.value);
     } else if (options.index !== undefined) {
-      sel.selectedIndex = options.index;
-    } else if (options.text) {
-      const option = Array.from(sel.options).find(
-        (o) => o.text === options.text,
-      );
-      if (option) sel.value = option.value;
+      option = all[options.index];
+    } else if (options.text !== undefined) {
+      option = all.find((o) => o.text === options.text) ??
+        all.find((o) => o.text.trim() === options.text!.trim());
+    } else {
+      throw new Error("Pass value, text or index of the option to select");
     }
+    if (!option) {
+      throw new Error("No such option in the select element (by the given value / text / index)");
+    }
+    option.selected = true;
 
     sel.dispatchEvent(new Event("change", { bubbles: true }));
 
@@ -2592,62 +2665,14 @@
     };
   }
 
-  function getComputedStyles(
-    options: ComputedStylesOptions,
-  ): Record<string, unknown> {
-    const element = findElement(options);
-    if (!element) throw new Error("Element not found");
-
-    const styles = window.getComputedStyle(element);
-    const properties = options.properties || [
-      "display",
-      "visibility",
-      "opacity",
-      "position",
-      "width",
-      "height",
-      "color",
-      "backgroundColor",
-      "fontSize",
-      "fontFamily",
-      "margin",
-      "padding",
-    ];
-
-    const result: Record<string, string> = {};
-    properties.forEach((prop) => {
-      result[prop] = styles.getPropertyValue(prop);
-    });
-
-    return { styles: result, element: getElementInfo(element) };
-  }
-
-  function getBoundingRect(
-    options: FindElementOptions,
-  ): Record<string, unknown> {
-    const element = findElement(options);
-    if (!element) throw new Error("Element not found");
-
-    const rect = element.getBoundingClientRect();
-    return {
-      rect: {
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-        top: rect.top,
-        right: rect.right,
-        bottom: rect.bottom,
-        left: rect.left,
-      },
-      element: getElementInfo(element),
-    };
-  }
-
   // ---------------------------------------------------------------------------
   // Init
   // ---------------------------------------------------------------------------
 
   resumeLoggingFromBackground();
+  if (window === window.top) {
+    // Send what is pending before the document goes away (best effort).
+    window.addEventListener("pagehide", sendLogBatch);
+  }
   console.log("[KitsuneMCP] Content script loaded");
 })();

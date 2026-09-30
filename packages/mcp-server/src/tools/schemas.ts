@@ -52,7 +52,10 @@ export interface ToolDefinition {
 const elementLocator = {
   selector: z.string().optional().describe('CSS selector'),
   xpath: z.string().optional().describe('XPath expression'),
-  text: z.string().optional().describe('Text content to find'),
+  text: z.string().optional().describe(
+    'Visible text of the element: the innermost element whose whole text contains it ' +
+    '(case-sensitive; enabled, visible matches first). Top document only: not inside iframes or shadow DOM',
+  ),
 };
 
 const tabId = z.number().int().optional().describe('Tab ID (defaults to active tab)');
@@ -68,11 +71,17 @@ const foxScreenshotSchema = z.object({
     .default('viewport')
     .describe('Capture scope: viewport (default), full_page, all_tabs, or scroll_capture'),
   tabId,
-  saveToFile: z.boolean().optional().default(true).describe('Save screenshot to file'),
+  saveToFile: z.boolean().optional().default(true).describe(
+    'Save the image to a file and return it as a resource_link (default). Images are never returned ' +
+    'inline, so false captures nothing and only returns the tab info',
+  ),
   filename: z.string().optional().describe('Optional filename for saved screenshot'),
   // all_tabs options
   urlPattern: z.string().optional().describe('Regex pattern to filter tabs (for all_tabs scope)'),
-  includeData: z.boolean().optional().default(false).describe('Include base64 image data in response (for all_tabs scope)'),
+  includeData: z.boolean().optional().default(false).describe(
+    'No effect: base64 image data is never returned; all_tabs images are saved to files like the others',
+  ),
+  timeout: timeoutMs.describe('all_tabs: time budget for capturing all tabs in ms (default 20000); tabs left when it runs out are reported as skipped'),
   // scroll_capture options
   scrollStep: z.number().int().optional().describe('Pixels to scroll each step (default: 80% of viewport)'),
   delay: z.number().int().optional().default(500).describe('Delay between scrolls in ms (for scroll_capture scope)'),
@@ -145,15 +154,20 @@ const foxClickSchema = z.object({
 });
 
 const foxTypeSchema = z.object({
-  text: z.string().describe('Text to type'),
+  text: z.string().describe('Text to type (never used to find the element)'),
   selector: z.string().optional().describe('CSS selector for the input element'),
   placeholder: z.string().optional().describe('Placeholder text to find the input'),
   name: z.string().optional().describe('Name attribute of the input'),
   id: z.string().optional().describe('ID of the input element'),
   tabId,
   clear: z.boolean().optional().default(false).describe('Clear existing content first'),
-  pressEnter: z.boolean().optional().default(false).describe('Press Enter after typing'),
-  delay: z.number().int().optional().default(50).describe('Delay between keystrokes in ms'),
+  pressEnter: z.boolean().optional().default(false).describe(
+    'Press Enter after typing. In a form field this also submits the form the way a real Enter does ' +
+    '(unless a keydown handler cancels it); the result reports it in `enter`',
+  ),
+  delay: z.number().int().min(0).optional().default(50).describe(
+    'Delay between keystrokes in ms (0 = none). Reduced automatically so that all delays together stay within 10 s',
+  ),
 });
 
 const foxPressKeySchema = z.object({
@@ -405,7 +419,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_screenshot: {
     name: 'fox_screenshot',
     description:
-      'Take a screenshot of the current browser tab. Supports multiple scopes: viewport (visible area), full_page (entire scrollable page), all_tabs (capture every open tab), or scroll_capture (scroll through page collecting element info at each position).',
+      'Take a screenshot of the current browser tab. Supports multiple scopes: viewport (visible area), full_page (entire scrollable page), all_tabs (capture every open tab), or scroll_capture (scroll through page collecting element info at each position). Images are saved to files and returned as resource_link. all_tabs fails when no tab could be captured.',
     inputSchema: foxScreenshotSchema,
     classification: 'observe',
   },
@@ -447,7 +461,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_get_tabs: {
     name: 'fox_get_tabs',
     description:
-      'Get list of open browser tabs (URL, title, active status, loading state, audio). Defaults to current window, max 50 tabs. Use url_pattern to filter or current_window_only=false for all windows.',
+      'Get list of open browser tabs (URL, title, active status, loading state, audio). Defaults to current window, max 50 tabs. Use urlPattern to filter or currentWindowOnly=false for all windows.',
     inputSchema: foxGetTabsSchema,
     classification: 'observe',
   },
@@ -456,28 +470,28 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_navigate: {
     name: 'fox_navigate',
     description:
-      "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R).",
+      "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R). With waitForLoad, goto / refresh fail when the page does not finish loading within 25 s or the tab is closed (the navigation itself may still complete).",
     inputSchema: foxNavigateSchema,
     classification: 'act',
   },
   fox_click: {
     name: 'fox_click',
     description:
-      'Click on an element in the browser. Can target by CSS selector, XPath, text content, or coordinates. Supports double-click and right-click.',
+      'Click on an element in the browser. Can target by CSS selector, XPath, text content, or coordinates. Supports double-click and right-click. Works in the top document only (not inside iframes or shadow DOM); fails on a disabled element. The click is a synthetic DOM event (isTrusted=false), which some sites ignore.',
     inputSchema: foxClickSchema,
     classification: 'act',
   },
   fox_type: {
     name: 'fox_type',
     description:
-      'Type text into an input field or editable element. Can target by selector, placeholder, name, or id. Optionally clear existing content first and press Enter after.',
+      'Type text into an input field or editable element. Can target by selector, placeholder, name, or id; without any of them, types into the focused field. Optionally clear existing content first and press Enter after. Key events are synthetic (isTrusted=false).',
     inputSchema: foxTypeSchema,
     classification: 'act',
   },
   fox_press_key: {
     name: 'fox_press_key',
     description:
-      'Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta). Useful for Enter, Escape, Tab, arrow keys, and keyboard shortcuts.',
+      'Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta). The key events are synthetic (isTrusted=false): page handlers see them, but the browser performs no default action (no focus move on Tab, no scrolling, no browser shortcuts). Plain Enter in a form field submits the form like a real Enter.',
     inputSchema: foxPressKeySchema,
     classification: 'act',
   },
@@ -498,7 +512,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_hover: {
     name: 'fox_hover',
     description:
-      'Hover over an element to trigger hover effects, tooltips, or dropdown menus.',
+      'Hover over an element to trigger hover effects, tooltips, or dropdown menus. Dispatches synthetic mouseenter / mouseover events (isTrusted=false): JavaScript hover handlers run, CSS :hover styles do not apply.',
     inputSchema: foxHoverSchema,
     classification: 'interact',
   },
@@ -547,7 +561,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_wait_for_network_idle: {
     name: 'fox_wait_for_network_idle',
     description:
-      'Wait for network requests (fetch/XHR) to settle. Use after actions that trigger API calls.',
+      'Wait for network requests (fetch/XHR) to settle. Use after actions that trigger API calls. Counts the top page\'s requests from the first call on this page (earlier in-flight requests are not seen). Fails when the network does not become idle within the timeout.',
     inputSchema: foxWaitForNetworkIdleSchema,
     classification: 'wait',
   },
@@ -570,14 +584,14 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_start_logging: {
     name: 'fox_start_logging',
     description:
-      'Start capturing console logs and network requests from the browser. Use before performing actions you want to monitor.',
+      'Start capturing console logs and network requests of the tab (top page). Use before performing actions you want to monitor. Logs are kept per tab across reloads and navigations (the newest 500 console and 500 network entries) until fox_clear_logs or the tab is closed.',
     inputSchema: foxStartLoggingSchema,
     classification: 'logging',
   },
   fox_stop_logging: {
     name: 'fox_stop_logging',
     description:
-      'Stop capturing console logs and network requests. Logs are preserved and can still be retrieved.',
+      'Stop capturing console logs and network requests. Logs are preserved and can still be retrieved (until fox_clear_logs or the tab is closed).',
     inputSchema: foxStopLoggingSchema,
     classification: 'logging',
   },
@@ -622,14 +636,14 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_inject_observer: {
     name: 'fox_inject_observer',
     description:
-      'Inject a MutationObserver into the page that captures DOM changes (attributes, child list, subtree). Accumulated changes are readable via fox_get_console_logs. Requires script execution enabled.',
+      'Start a MutationObserver on an element (default body) that collects DOM changes (attributes, child list, subtree). The changes are returned by fox_remove_observer (the last 100). The observer ends when the page reloads or navigates. Requires script execution enabled.',
     inputSchema: foxInjectObserverSchema,
     classification: 'script',
   },
   fox_remove_observer: {
     name: 'fox_remove_observer',
     description:
-      'Remove a previously injected MutationObserver and get all accumulated changes since it was injected.',
+      'Remove an observer started by fox_inject_observer and get the changes it collected (the last 100). Fails when no observer with that ID exists on the current page.',
     inputSchema: foxRemoveObserverSchema,
     classification: 'script',
     annotations: { destructiveHint: false },

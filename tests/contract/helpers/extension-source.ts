@@ -18,7 +18,8 @@ import { transformWithOxc } from 'vite';
 const EXTENSION_SRC = new URL('../../../packages/extension/src/', import.meta.url);
 
 export function readExtensionSource(file: string): string {
-  return readFileSync(fileURLToPath(new URL(file, EXTENSION_SRC)), 'utf-8');
+  // Line endings normalized: a Windows checkout (core.autocrlf) has CRLF.
+  return readFileSync(fileURLToPath(new URL(file, EXTENSION_SRC)), 'utf-8').split('\r\n').join('\n');
 }
 
 /**
@@ -39,12 +40,13 @@ export function readNumericObjectConstant(source: string, name: string): Record<
 }
 
 /**
- * Source text of the top-level `function <name>(...) {...}` declaration.
+ * Source text of the `function <name>(...) {...}` declaration (top level,
+ * or indented inside content.ts's IIFE; `async` allowed).
  * Braces are matched naively (no string / comment awareness), which is fine
  * for the small functions this is used on.
  */
 export function extractFunctionSource(source: string, name: string): string {
-  const start = source.search(new RegExp(`^function ${name}\\(`, 'm'));
+  const start = source.search(new RegExp(`^[ \\t]*(?:async )?function ${name}\\(`, 'm'));
   if (start < 0) throw new Error(`function ${name} not found`);
 
   // Skip the parameter list, then match the body braces.
@@ -71,4 +73,17 @@ export async function loadExtensionFunction<T extends (...args: never[]) => unkn
   const ts = extractFunctionSource(readExtensionSource(file), name);
   const { code } = await transformWithOxc(ts, `${name}.ts`, { lang: 'ts' });
   return new Function(`${code}\nreturn ${name};`)() as T;
+}
+
+/**
+ * Load several functions of one Extension source file together, so they can
+ * call each other. Free globals they use (e.g. `browser`) are looked up on
+ * globalThis when called. Same limits as extractFunctionSource (the body
+ * must be the first `{` after the parameter list: no object return types).
+ */
+export async function loadExtensionFunctions<T>(file: string, names: readonly string[]): Promise<T> {
+  const source = readExtensionSource(file);
+  const ts = names.map((name) => extractFunctionSource(source, name).trimStart()).join('\n\n');
+  const { code } = await transformWithOxc(ts, 'functions.ts', { lang: 'ts' });
+  return new Function(`${code}\nreturn { ${names.join(', ')} };`)() as T;
 }

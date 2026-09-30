@@ -43,4 +43,10 @@ describe('BROWSER_ACTIONS ⇔ WIRE_ACTION_MAP', () => {
       .map(([wire, internal]) => `${wire} -> ${internal}`);
     expect(unhandled).toEqual([]);
   });
+
+  it('3.A17: the observer tools reach the content script observer', () => {
+    expect(wireMap.get('inject_observer')).toBe('observeElement');
+    expect(wireMap.get('remove_observer')).toBe('stopObserving');
+    // TODO(test): observer id round trip through a fake content script
+  });
 });

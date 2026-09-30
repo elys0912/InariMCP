@@ -101,6 +101,28 @@ describe('externalizeScreenshots', () => {
     expect(fs.readdirSync(dir).sort()).toEqual(['all_1.png', 'all_tab12.png']);
   });
 
+  it('warns when a caller-chosen filename replaces an existing file (5.7)', () => {
+    const first: Record<string, unknown> = { requestId: '1', success: true, data: { imageData: PNG_URL } };
+    externalizeScreenshots(first, 'same', noLog);
+    expect(first['data']).not.toHaveProperty('imageOverwritten');
+    const second: Record<string, unknown> = { requestId: '2', success: true, data: { imageData: PNG_URL } };
+    externalizeScreenshots(second, 'same', noLog);
+    const data = second['data'] as Record<string, unknown>;
+    expect(data['imageOverwritten']).toBe(true);
+    expect(data['warnings']).toEqual([expect.stringContaining('same.png already existed')]);
+    // TODO(test): all_tabs entry overwrite flag; generated names never warn
+  });
+
+  it('fails an all_tabs response when no image could be saved (5.7)', () => {
+    const response: Record<string, unknown> = {
+      requestId: '1', success: true,
+      data: { screenshots: [{ tabId: 1, imageData: '' }, { tabId: 2, error: 'restricted' }] },
+    };
+    externalizeScreenshots(response, undefined, noLog);
+    expect(response['success']).toBe(false);
+    expect(response['error']).toMatch(/every all_tabs screenshot/);
+  });
+
   it('leaves responses without data or images untouched', () => {
     const noData: Record<string, unknown> = { requestId: '1', success: false, error: 'x' };
     externalizeScreenshots(noData, undefined, noLog);
