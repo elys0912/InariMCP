@@ -74,7 +74,17 @@ describe('logger rotation', () => {
     }
   });
 
-  it('copies and truncates when the rename fails and copyTruncate is set', () => {
+  it('with copyTruncate keeps the same file (an open writer keeps appending to it)', () => {
+    bigFile();
+    const fd = fs.openSync(file, 'a');
+    expect(rotateIfLarge(file, true)).toBe(true);
+    fs.writeSync(fd, 'after rotation\n');
+    fs.closeSync(fd);
+    expect(fs.readFileSync(file, 'utf-8')).toBe('after rotation\n');
+    expect(fs.statSync(`${file}.old`).size).toBe(MAX_LOG_BYTES + 10);
+  });
+
+  it('copies and truncates even when rename would fail', () => {
     bigFile();
     state.renameFails = true;
     expect(rotateIfLarge(file, true)).toBe(true);

@@ -58,21 +58,36 @@ export type OutsideJobResult = { via: string } | { via: 'none'; errors: string[]
 const TRAMPOLINE_WAIT_MS = 10_000;
 const POLL_MS = 100;
 
-/** Read the spec, start the daemon, then delete the spec (= "started"). */
-const TRAMPOLINE_JS = `const fs = require('fs');
+/**
+ * Read the spec, start the daemon, then delete the spec (= "started"). When
+ * the spec cannot be read or the daemon cannot be spawned (no pid) the spec is
+ * left in place, so the caller times out and moves on to the next route.
+ */
+export const TRAMPOLINE_JS = `const fs = require('fs');
 const { spawn } = require('child_process');
 const specPath = process.argv[2];
-try {
-  const s = JSON.parse(fs.readFileSync(specPath, 'utf8'));
-  let fd = 'ignore';
-  try { fd = fs.openSync(s.log, 'a'); } catch (e) {}
-  const opts = { env: Object.assign({}, process.env, s.env), detached: true, windowsHide: true, stdio: ['ignore', 'ignore', fd] };
-  if (s.cwd) opts.cwd = s.cwd;
-  spawn(s.exe, s.args, opts).unref();
-} finally {
-  try { fs.unlinkSync(specPath); } catch (e) {}
-}
+const s = JSON.parse(fs.readFileSync(specPath, 'utf8'));
+let fd = 'ignore';
+try { fd = fs.openSync(s.log, 'a'); } catch (e) {}
+const opts = { env: Object.assign({}, process.env, s.env), detached: true, windowsHide: true, stdio: ['ignore', 'ignore', fd] };
+if (s.cwd) opts.cwd = s.cwd;
+const child = spawn(s.exe, s.args, opts);
+child.on('error', () => {});
+child.unref();
+if (child.pid) { try { fs.unlinkSync(specPath); } catch (e) {} }
 `;
+
+/** Delete files in `dir` older than `maxAgeMs` (leftovers of an interrupted start). Never throws. */
+export function sweepRunDir(dir: string, maxAgeMs = 10 * 60_000, now = Date.now()): void {
+  try {
+    for (const name of fs.readdirSync(dir)) {
+      const file = path.join(dir, name);
+      try {
+        if (now - fs.statSync(file).mtimeMs > maxAgeMs) fs.unlinkSync(file);
+      } catch { /* vanished or locked */ }
+    }
+  } catch { /* no such directory */ }
+}
 
 /** WMI creates the process under WmiPrvSE, i.e. outside any job of ours. */
 const WMI_VBS = `cmd = ""

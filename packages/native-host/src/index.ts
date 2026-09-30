@@ -34,6 +34,9 @@ function shutdown(connection: ServerConnection, monitor: HealthMonitor): void {
 /** daemon.log is written by a long-lived daemon, so it is also checked while we run. */
 const DAEMON_LOG_CHECK_MS = 60 * 60_000;
 
+/** Longest wait for a daemon start in progress when stdin closes. */
+const STARTUP_CLEANUP_WAIT_MS = 5_000;
+
 /** Data retention and log housekeeping; never throws. */
 function housekeeping(): void {
   try {
@@ -79,7 +82,7 @@ async function main(): Promise<void> {
   // Connect to the shared daemon, starting it if nothing listens on the port.
   // This can take up to ~35 s, so it runs beside the stdin loop below: the
   // Extension's ping (30 s timeout) must be answered while it is in progress.
-  launcher.ensureRunning()
+  const startup = launcher.ensureRunning()
     .catch((err: unknown) => {
       log(`ensureRunning failed: ${err instanceof Error ? err.message : String(err)}`);
     })
@@ -94,14 +97,17 @@ async function main(): Promise<void> {
 
   await runStdinLoop(launcher, connection, () => running);
 
+  // Let a daemon start in progress finish its cleanup (temporary task / files),
+  // but do not hold the exit for long.
+  await Promise.race([startup, new Promise<void>((r) => setTimeout(r, STARTUP_CLEANUP_WAIT_MS))]);
+
   shutdown(connection, monitor);
   process.exit(0);
 }
 
 process.on('unhandledRejection', (reason) => {
   const msg = reason instanceof Error
-    ? `${reason.message}
-${reason.stack ?? ''}`
+    ? `${reason.message}\n${reason.stack ?? ''}`
     : String(reason);
   log(`unhandledRejection: ${msg}`);
 });

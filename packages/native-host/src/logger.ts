@@ -76,9 +76,9 @@ function tighten(filePath: string): void {
 /**
  * Rename `filePath` to `<file>.old` when it is larger than MAX_LOG_BYTES.
  * Also used for daemon.log (server-launcher.ts), which a running daemon keeps
- * open for appending: on Windows the rename then fails, so with `copyTruncate`
- * the content is copied to `<file>.old` and the file truncated in place (lines
- * written in between are lost, which is acceptable for a log).
+ * open for appending: with `copyTruncate` the content is copied to
+ * `<file>.old` and the file truncated in place, so the daemon keeps writing to
+ * the right file (lines written in between are lost, which is acceptable).
  * Returns true when the file is small enough afterwards (or does not exist).
  */
 export function rotateIfLarge(filePath: string, copyTruncate = false): boolean {
@@ -92,12 +92,13 @@ export function rotateIfLarge(filePath: string, copyTruncate = false): boolean {
     } catch {
       // ignore — rename below reports the real problem
     }
-    try {
-      fs.renameSync(filePath, old);
-    } catch (err: unknown) {
-      if (!copyTruncate) throw err;
+    if (copyTruncate) {
+      // The file is held open by another process: a rename would only make it
+      // keep writing to `.old` (Node opens files with delete sharing).
       fs.copyFileSync(filePath, old);
       fs.truncateSync(filePath, 0);
+    } else {
+      fs.renameSync(filePath, old);
     }
     return true;
   } catch (err: unknown) {

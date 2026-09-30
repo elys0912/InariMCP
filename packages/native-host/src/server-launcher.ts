@@ -20,7 +20,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { log, rotateIfLarge } from './logger.js';
-import { daemonEnvFrom, defaultDeps, startOutsideJob } from './outside-job.js';
+import { daemonEnvFrom, defaultDeps, startOutsideJob, sweepRunDir } from './outside-job.js';
 
 function resolveHost(): string {
   return (
@@ -154,6 +154,8 @@ export class ServerLauncher {
     }
     // A daemon that cannot bind its WS port exits at once; say why instead.
     if (await this.isPortInUse(this.wsPort)) {
+      // Counts as an attempt, so the health monitor's limit and backoff apply.
+      this.restartAttempts++;
       log(`WS port ${this.host}:${this.wsPort} is in use by another process — not starting the daemon`);
       return false;
     }
@@ -164,8 +166,7 @@ export class ServerLauncher {
     try {
       fs.appendFileSync(
         daemonLogPath(),
-        `${new Date().toISOString()} --- daemon start requested by Native Host (PID ${process.pid}) ---
-`,
+        `${new Date().toISOString()} --- daemon start requested by Native Host (PID ${process.pid}) ---\n`,
         { mode: 0o600 },
       );
     } catch {
@@ -176,6 +177,7 @@ export class ServerLauncher {
     // Windows: outside Firefox's job object, or closing Firefox kills the
     // daemon (see breakaway.ts). Falls back to a plain spawn on failure.
     if (process.platform === 'win32') {
+      sweepRunDir(path.join(daemonCwd(), 'run'));
       const result = await startOutsideJob(
         {
           exe: process.execPath,
@@ -240,7 +242,13 @@ export class ServerLauncher {
       if (await this.checkHealth()) {
         log('daemon is now available');
         this.restartAttempts = 0;
-        if (!(await this.isPortInUse(this.wsPort))) {
+        // The WS bridge may bind a moment after the HTTP server.
+        let wsUp = false;
+        for (let i = 0; i < 5 && !wsUp; i++) {
+          if (i > 0) await this.sleep(500);
+          wsUp = await this.isPortInUse(this.wsPort);
+        }
+        if (!wsUp) {
           log(`daemon answers /health but nothing listens on WS port ${this.wsPort} — check FOX_WS_PORT`);
         }
         return true;

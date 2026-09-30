@@ -13,9 +13,9 @@ import {
 
 const spec: DaemonSpec = {
   exe: 'node.exe',
-  args: ['C:\a b\index.js', '--daemon'],
+  args: [String.raw`C:\a b\index.js`, '--daemon'],
   env: { FOX_HTTP_PORT: '1' },
-  log: 'C:\logs\daemon.log',
+  log: String.raw`C:\logs\daemon.log`,
 };
 
 interface Harness {
@@ -29,7 +29,7 @@ function harness(results: Record<string, RunResult>, consume = true): Harness {
   const files = new Map<string, string | Buffer>();
   const calls: { cmd: string; args: string[] }[] = [];
   const deps: OutsideJobDeps = {
-    dir: 'D:\run',
+    dir: String.raw`D:\run`,
     id: 'T1',
     sleep: async () => {},
     fs: {
@@ -115,9 +115,9 @@ describe('schtasksStrategy', () => {
 
 describe('taskXml', () => {
   it('escapes and quotes the arguments', () => {
-    const xml = taskXml('C:\n&n\node.exe', ['C:\a\t.js', 'C:\b\s.json']);
-    expect(xml).toContain('<Command>C:\n&amp;n\node.exe</Command>');
-    expect(xml).toContain('<Arguments>&quot;C:\a\t.js&quot; &quot;C:\b\s.json&quot;</Arguments>');
+    const xml = taskXml(String.raw`C:\n&n\node.exe`, [String.raw`C:\a\t.js`, String.raw`C:\b\s.json`]);
+    expect(xml).toContain(String.raw`<Command>C:\n&amp;n\node.exe</Command>`);
+    expect(xml).toContain(String.raw`<Arguments>&quot;C:\a\t.js&quot; &quot;C:\b\s.json&quot;</Arguments>`);
     expect(xml).toContain('<RunLevel>LeastPrivilege</RunLevel>');
   });
 });
