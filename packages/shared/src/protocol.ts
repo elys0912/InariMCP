@@ -46,9 +46,47 @@ export const BrowserCommandSchema = z.object({
    * Extension refuses it the same way when the actual target tab matches.
    */
   protectedUrlPatterns: z.array(z.string()).optional(),
+  /**
+   * Set only on a call the human approved (one-time approval token consumed
+   * by the MCP Server): lower-case hostname the approval covers. The
+   * Extension still applies `protectedUrlPatterns`, but lets the command run
+   * on a protected tab whose hostname equals this value.
+   */
+  approvedHost: z.string().optional(),
 });
 
 export type BrowserCommand = z.infer<typeof BrowserCommandSchema>;
+
+// ---------------------------------------------------------------------------
+// Approval prompt  (data of a `request_approval` command the MCP Server
+// sends for a protected-site action; shown in the Extension's popup)
+// ---------------------------------------------------------------------------
+
+/**
+ * `BrowserCommand.data` of `request_approval` when the MCP Server asks the
+ * human about a protected-site action (kind `protected_action`). The
+ * Extension shows it in its toolbar popup — never in the page — and answers
+ * `{ approved, timedOut, cancelled, approvalId }`.
+ *
+ * fox_request_approval sends `{ message, detail?, timeout }` instead (no
+ * `kind`); its answer never unlocks anything.
+ */
+export const ApprovalPromptSchema = z.object({
+  kind: z.literal('protected_action'),
+  approvalId: z.string(),
+  toolName: z.string(),
+  host: z.string(),
+  url: z.string(),
+  matchedPattern: z.string(),
+  /** Argument summary, one `key: value` per line. */
+  summary: z.string(),
+  /** Epoch ms after which the MCP Server no longer accepts the answer. */
+  expiresAt: z.number(),
+  /** How long the Extension waits for the human (ms). */
+  timeout: z.number(),
+});
+
+export type ApprovalPrompt = z.infer<typeof ApprovalPromptSchema>;
 
 // ---------------------------------------------------------------------------
 // BrowserResponse  (Extension → MCP Server)
@@ -147,8 +185,9 @@ export type ElicitationPayload = z.infer<typeof ElicitationPayloadSchema>;
 // is a machine-readable error code, and `details` may carry structured
 // context (e.g. SafetyBlockDetail).
 //
-// When confirmationRequired is true, the caller should use MCP elicitation
-// to ask the human for approval before retrying.
+// When confirmationRequired is true, the MCP Server has opened a one-time
+// human-approval request (details.approval); the stdio relay asks the human
+// (MCP elicitation, else the Extension's popup) and retries with the token.
 // ---------------------------------------------------------------------------
 
 export const ToolResultSchema = z.object({

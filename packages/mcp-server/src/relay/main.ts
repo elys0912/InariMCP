@@ -6,7 +6,9 @@
  * locally from TOOL_SCHEMAS (filtered by this session's FOX_CAPS); each
  * tools/call is forwarded to the shared daemon's POST /mcp/call, which runs
  * zod validation and the SafetyGuard, and its CallToolResult is returned
- * unchanged (confirmation-required results included).
+ * unchanged — except confirmation-required results: for those the relay
+ * asks the human (MCP elicitation, else the Extension's popup) and repeats
+ * the call once with the one-time approval token (relay/approval.ts).
  *
  * stdout carries JSON-RPC only; every log line goes to stderr.
  */
@@ -18,6 +20,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ENV } from '@kitsune-mcp/shared';
 import { registerTools } from '../tools/registry.js';
 import { DaemonClient } from './daemon-client.js';
+import { callWithApproval, canElicit } from './approval.js';
+import { isElicitationApprovalEnabled } from '../safety/approval.js';
+import type { ApprovalDeps } from './approval.js';
 
 const PACKAGE_VERSION = '0.1.0';
 const SERVER_NAME = 'kitsune-mcp';
@@ -48,10 +53,22 @@ export async function runRelay(): Promise<void> {
     },
   );
 
+  const approvalDeps = (signal: AbortSignal): ApprovalDeps => ({
+    // FOX_APPROVAL_ELICITATION off: always the Extension's popup.
+    canElicit: isElicitationApprovalEnabled() && canElicit(mcpServer.server.getClientCapabilities()),
+    elicit: (params, timeoutMs) => mcpServer.server.elicitInput(params, { timeout: timeoutMs, signal }),
+    reportElicitation: (requestId, approved) => client.reportElicitation(requestId, approved),
+    askBrowser: (requestId) => client.askBrowser(requestId, signal),
+    log,
+  });
+
   const toolCount = registerTools(
     mcpServer,
     (toolName) => async (args, extra) => {
-      const result = await client.callTool(toolName, args, extra.signal);
+      const result = await callWithApproval(
+        (approvalToken) => client.callTool(toolName, args, extra.signal, approvalToken),
+        approvalDeps(extra.signal),
+      );
       if (toolName !== 'fox_safety_status' || result.isError) return result;
       // Re-check on every status call: the daemon may have been restarted
       // by another session since this relay started.

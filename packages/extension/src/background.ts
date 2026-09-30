@@ -100,6 +100,8 @@ const TIMEOUTS = {
   RECONNECT_INITIAL: 1_000,
   SCREENSHOT_DELAY: 150,
   NAVIGATION: 30_000,
+  /** request_approval without a timeout argument (popup wait). */
+  APPROVAL: 60_000,
 } as const;
 
 const EXCLUDED_URL_PREFIXES = ["about:", "moz-extension:"] as const;
@@ -401,6 +403,8 @@ function handleDisconnect(port: browser.runtime.Port): void {
     entry.reject(new Error("Native host disconnected - reconnecting..."));
   }
   pendingRequests.clear();
+  // Nobody is left to receive an answer: withdraw open approval requests.
+  cancelAllApprovals();
 
   void refreshSetupState();
   scheduleReconnect();
@@ -589,9 +593,30 @@ const BADGE_TITLE_KEYS: Record<SetupState["kind"], string | null> = {
   ready: null,
 };
 
+const APPROVAL_BADGE_COLOR = "#E5A00D";
+let lastSetupState: SetupState = { kind: "connecting" };
+
 function applyBadge(state: SetupState): void {
+  lastSetupState = state;
+  renderBadge();
+}
+
+/**
+ * Pending approval requests take precedence (count on an amber badge): the
+ * popup is where the human answers them. Otherwise the setup state.
+ */
+function renderBadge(): void {
+  const pending = pendingApprovals.size;
+  if (pending > 0) {
+    browser.browserAction.setBadgeBackgroundColor({ color: APPROVAL_BADGE_COLOR }).catch(() => {});
+    browser.browserAction.setBadgeText({ text: String(pending) }).catch(() => {});
+    browser.browserAction.setTitle({ title: t("badgeApprovalPending", String(pending)) }).catch(() => {});
+    return;
+  }
+  const state = lastSetupState;
   const attention = state.kind !== "ready" && state.kind !== "connecting";
   const titleKey = BADGE_TITLE_KEYS[state.kind];
+  browser.browserAction.setBadgeBackgroundColor({ color: BADGE_COLOR }).catch(() => {});
   browser.browserAction.setBadgeText({ text: attention ? "!" : "" }).catch(() => {});
   browser.browserAction
     .setTitle({ title: titleKey === null ? "KitsuneMCP" : t(titleKey) })
@@ -695,6 +720,8 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
     }
   }
   const protectedPatterns = parseProtectedPatterns(message.protectedUrlPatterns);
+  // Hostname a human approved for this one call (MCP Server approval token).
+  const approvedHost = typeof message.approvedHost === "string" ? message.approvedHost : undefined;
 
   // Protected-domain check against the real URL of the target tab (not the
   // server's last-seen URL, which is shared by every session). The server
@@ -702,7 +729,7 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
   // single-tab captures and to every acting tool without a `url` argument;
   // the logging actions and screenshot_all_tabs apply them themselves below.
   if (protectedPatterns.length > 0 && !SELF_PROTECTED_ACTIONS.has(action ?? "")) {
-    const refusal = await checkProtectedTarget(tabId, protectedPatterns);
+    const refusal = await checkProtectedTarget(tabId, protectedPatterns, approvedHost);
     if (refusal) {
       result = refusal;
       postWireResponse(message, result);
@@ -804,9 +831,7 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         result = await navigateHistory(tabId, "forward");
         break;
       case "requestApproval":
-        result = await trackHumanWait(message.requestId, tabId, (id) =>
-          requestApproval(id, data),
-        );
+        result = await requestApproval(message.requestId, data);
         break;
       case "solveCaptcha":
         result = await trackHumanWait(message.requestId, tabId, (id) =>
@@ -850,7 +875,7 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         const tab = await resolveTab(tabId);
         // Same rule as a single-tab screenshot: refuse on a protected page,
         // judged by the tab's real URL.
-        const refusal = await checkProtectedTarget(tab.id, protectedPatterns);
+        const refusal = await checkProtectedTarget(tab.id, protectedPatterns, approvedHost);
         if (refusal) {
           result = refusal;
           break;
@@ -1032,10 +1057,14 @@ const SELF_PROTECTED_ACTIONS: ReadonlySet<string> = new Set([
  * Refuse a command when its target tab (same resolution as the container
  * scope check and the handlers) is on a protected domain. Returns null when
  * the command may proceed. Fails closed if the tab cannot be resolved.
+ * `approvedHost`: the human approved this one call for that hostname (the
+ * MCP Server consumed an approval token); a protected tab on exactly that
+ * hostname is let through.
  */
 async function checkProtectedTarget(
   tabId: number | undefined,
   patterns: RegExp[],
+  approvedHost?: string,
 ): Promise<CommandResult | null> {
   let tab: browser.tabs.Tab | undefined;
   try {
@@ -1051,7 +1080,7 @@ async function checkProtectedTarget(
   }
   const tabUrl = tab.url;
   const matched = findProtectedMatch(tabUrl, patterns);
-  if (tabUrl && matched) {
+  if (tabUrl && matched && !isApprovedHost(tabUrl, approvedHost)) {
     // url / matchedPattern end up in the wire response's `data`, so the
     // server can name the page that was actually refused (its own
     // last-known URL may be stale).
@@ -1246,12 +1275,102 @@ async function screenshotAllTabs(
 }
 
 // ---------------------------------------------------------------------------
-// Approval & captcha
+// Approval requests (toolbar popup, never the page)
+// ---------------------------------------------------------------------------
+//
+// A request_approval command stays pending here until the human decides in
+// the popup (APPROVAL_MESSAGE.DECIDE, accepted from extension pages only),
+// it times out, the server withdraws it (cancel_human_wait) or the Native
+// Host disconnects. The badge shows how many are pending. The answer is the
+// command's response, on the server's own requestId.
+
+interface PendingApproval {
+  view: ApprovalView;
+  /** requestId of the request_approval command (cancel_human_wait key). */
+  requestId: string;
+  finish: (decision: ApprovalDecision) => void;
+}
+
+/** Pending requests by ApprovalView.id, in arrival order. */
+const pendingApprovals = new Map<string, PendingApproval>();
+const APPROVAL_NOTIFICATION_PREFIX = "kitsune-approval-";
+
+function requestApproval(
+  requestId: number | string | undefined,
+  data: Record<string, unknown> = {},
+): Promise<CommandResult> {
+  const key = requestId === undefined ? `local-${Date.now()}` : String(requestId);
+  const view = parseApprovalPrompt(data, key, Date.now(), TIMEOUTS.APPROVAL);
+  if (view === null) {
+    return Promise.resolve({ success: false, error: "Malformed approval request" });
+  }
+  // A repeated id (server retry) replaces the older entry.
+  pendingApprovals.get(view.id)?.finish("cancelled");
+
+  return new Promise<CommandResult>((resolve) => {
+    let settled = false;
+    const finish = (decision: ApprovalDecision): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (pendingApprovals.get(view.id)?.finish === finish) pendingApprovals.delete(view.id);
+      browser.notifications?.clear?.(APPROVAL_NOTIFICATION_PREFIX + view.id)?.catch(() => {});
+      renderBadge();
+      resolve(approvalCommandResult(view, decision, Date.now()));
+    };
+    const timer = setTimeout(() => finish("timeout"), Math.max(0, view.deadline - Date.now()));
+    pendingApprovals.set(view.id, { view, requestId: key, finish });
+    renderBadge();
+    notifyApproval(view);
+  });
+}
+
+/** OS notification pointing at the toolbar popup (best effort). */
+function notifyApproval(view: ApprovalView): void {
+  try {
+    if (!browser.notifications) return;
+    const message =
+      view.kind === "protected_action"
+        ? t("notifyApprovalProtected", [view.toolName ?? "", view.host ?? ""])
+        : t("notifyApprovalQuestion", (view.message || t("notifyApprovalDefault")).slice(0, 160));
+    browser.notifications
+      .create(APPROVAL_NOTIFICATION_PREFIX + view.id, {
+        type: "basic",
+        title: t("notifyApprovalTitle"),
+        message,
+        iconUrl: browser.runtime.getURL("icons/icon.svg"),
+      })
+      .catch(() => {});
+  } catch {
+    // Notifications unavailable -- the badge still shows the request
+  }
+}
+
+function cancelAllApprovals(): void {
+  for (const entry of [...pendingApprovals.values()]) entry.finish("cancelled");
+}
+
+/** Popup: the pending requests, oldest first. */
+function listApprovals(): ApprovalView[] {
+  return [...pendingApprovals.values()].map((entry) => entry.view);
+}
+
+/** Popup: the human's decision on one request. */
+function decideApproval(id: unknown, approved: unknown): CommandResult {
+  const entry = typeof id === "string" ? pendingApprovals.get(id) : undefined;
+  if (!entry) return { success: false, error: "This request is no longer pending" };
+  if (typeof approved !== "boolean") return { success: false, error: "approved must be a boolean" };
+  entry.finish(approved ? "approved" : "denied");
+  return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// Captcha
 // ---------------------------------------------------------------------------
 
 /**
- * Tabs showing a banner for a server command (requestId → tabId), so that
- * cancel_human_wait can withdraw it after the server stopped waiting.
+ * Tabs showing a captcha banner for a server command (requestId → tabId),
+ * so that cancel_human_wait can withdraw it after the server stopped waiting.
  */
 const humanWaits = new Map<string, number>();
 
@@ -1279,36 +1398,25 @@ async function trackHumanWait(
   }
 }
 
-/** Withdraw the approval / captcha banner of a command the server gave up on. */
+/**
+ * The server gave up waiting on a command: withdraw its approval request,
+ * or the captcha banner it showed.
+ */
 async function cancelHumanWait(data: Record<string, unknown> = {}): Promise<CommandResult> {
   const target = data.requestId;
-  const tabId =
-    typeof target === "string" || typeof target === "number"
-      ? humanWaits.get(String(target))
-      : undefined;
+  if (typeof target !== "string" && typeof target !== "number") {
+    return { success: true, cancelled: false };
+  }
+  const key = String(target);
+  for (const entry of pendingApprovals.values()) {
+    if (entry.requestId === key) {
+      entry.finish("cancelled");
+      return { success: true, cancelled: true };
+    }
+  }
+  const tabId = humanWaits.get(key);
   if (tabId === undefined) return { success: true, cancelled: false };
   return sendToContentScript(tabId, { action: "cancelHumanWait" });
-}
-
-async function requestApproval(
-  tabId: number | undefined,
-  data: Record<string, unknown> = {},
-): Promise<CommandResult> {
-  try {
-    if (browser.notifications) {
-      await browser.notifications.create({
-        type: "basic",
-        title: t("notifyApprovalTitle"),
-        message: (
-          (data.message as string) || t("notifyApprovalDefault")
-        ).slice(0, 200),
-        iconUrl: browser.runtime.getURL("icons/icon.svg"),
-      });
-    }
-  } catch {
-    // Notifications unavailable -- the in-page banner still works
-  }
-  return sendToContentScript(tabId, { action: "requestApproval", ...data });
 }
 
 async function solveCaptcha(
@@ -1925,9 +2033,15 @@ const SCOPE_SELF_ENFORCED_ACTIONS: ReadonlySet<string> = new Set([
   "open_in_container",
 ]);
 
-/** Actions that touch no tab and no container at all. */
+/**
+ * Actions that touch no tab and no container at all. Approval requests are
+ * shown in the toolbar popup, and cancel_human_wait only withdraws a wait
+ * the command it cancels already passed the scope check for.
+ */
 const SCOPE_NO_TAB_ACTIONS: ReadonlySet<string> = new Set([
   "status",
+  "requestApproval",
+  "cancelHumanWait",
 ]);
 
 /** Internal action that targets one tab (the strict branch of the scope check). */
@@ -2116,6 +2230,22 @@ browser.runtime.onMessage.addListener(
     sendResponse: (response: unknown) => void,
   ): boolean | void => {
     const msg = message as { target?: string; type?: string; [key: string]: unknown };
+    if (msg.type === APPROVAL_MESSAGE.LIST || msg.type === APPROVAL_MESSAGE.DECIDE) {
+      // Only the toolbar popup may see or answer approval requests: never a
+      // content script (page JS, fox_execute_script), and for a decision not
+      // even an extension page loaded in a tab.
+      if (!isExtensionPage(sender) || (msg.type === APPROVAL_MESSAGE.DECIDE && sender.tab)) {
+        console.error("[KitsuneMCP] Refused approval message from", sender.url);
+        sendResponse({ success: false, error: "Approval requests are answered in the KitsuneMCP toolbar popup" });
+        return;
+      }
+      sendResponse(
+        msg.type === APPROVAL_MESSAGE.LIST
+          ? { success: true, approvals: listApprovals() }
+          : decideApproval(msg.id, msg.approved),
+      );
+      return;
+    }
     if (msg.type === LOGGING_STATE_QUERY) {
       // Only the top frame records (commands go to frame 0). The URL is the
       // one the browser reports for the sender (tab and document), never a
@@ -2207,6 +2337,13 @@ browser.webNavigation.onCommitted.addListener((details) => {
 
 browser.tabs.onRemoved.addListener((tabId) => {
   loggingTabs.delete(tabId);
+});
+
+// Clicking an approval notification opens the toolbar popup where it is
+// answered (best effort: Firefox may refuse openPopup outside a user action).
+browser.notifications?.onClicked?.addListener((notificationId) => {
+  if (!notificationId.startsWith(APPROVAL_NOTIFICATION_PREFIX)) return;
+  browser.browserAction.openPopup?.()?.catch(() => {});
 });
 
 // Block external messages (design doc 7.8 -- prevent command injection from

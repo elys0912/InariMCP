@@ -9,6 +9,13 @@
  *   5. Post-processing      — URL tracking, screenshot resource_link, sanitize
  *   6. Return ToolResult    — unified envelope back to Claude Code
  *
+ * Protected sites (Layer 4/7): a `confirmation_required` answer — from the
+ * guard or from the Extension — opens a human-approval request
+ * (safety/approval.ts) and returns it in the result details
+ * (`details.approval`). The caller (normally the stdio relay,
+ * relay/approval.ts) obtains the human decision and retries with the
+ * one-time `approvalToken` it was issued.
+ *
  * Fork-source: server.py L1009-1245 execute_tool() + _dispatch_action()
  */
 
@@ -17,6 +24,15 @@ import { pathToFileURL } from 'node:url';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserAction, BrowserCommand, ToolResult } from '@kitsune-mcp/shared';
 import { getSafetyGuard, OBSERVE_TOOLS } from '../safety/guard.js';
+import type { SafetyDenial } from '../safety/guard.js';
+import {
+  REQUEST_TTL_MS,
+  approvalTargetFor,
+  getApprovalStore,
+  hashArgs,
+  summarizeArgs,
+} from '../safety/approval.js';
+import type { ApprovalGrant } from '../safety/approval.js';
 import type { SafetyConfig } from '../safety/config.js';
 import { getContainerConfig } from '../safety/container.js';
 import { sanitizeResult } from '../safety/sanitizer.js';
@@ -267,6 +283,89 @@ function safetyDenialToCallResult(
   };
 }
 
+/**
+ * `details.approval` of a confirmation_required result: the open approval
+ * request the caller asks the human about (relay/approval.ts reads it).
+ */
+export interface ApprovalRequestDetails {
+  requestId: string;
+  toolName: string;
+  host: string;
+  protectedUrl: string;
+  matchedPattern: string;
+  summary: string;
+  expiresAt: number;
+}
+
+/**
+ * Turn a confirmation_required denial into its tool result, opening a
+ * human-approval request for exactly this call. The text tells the LLM how
+ * approval works and how to retry; the JSON block carries the request for
+ * the relay.
+ */
+function confirmationToCallResult(
+  toolName: string,
+  args: Record<string, unknown>,
+  denial: SafetyDenial,
+  tokenRejected: boolean,
+): CallToolResult {
+  const protectedUrl = denial.elicitation?.protectedUrl ?? '';
+  const matchedPattern = denial.elicitation?.matchedPattern ?? '';
+  const target = approvalTargetFor(toolName, args, protectedUrl);
+  const result = safetyDenialToCallResult({ ...denial, decision: denial.safetyDecision });
+
+  const notes: string[] = [];
+  if (tokenRejected) {
+    notes.push(
+      'The approval token sent with this call was not accepted (expired, already used, ' +
+      'or issued for a different tool, arguments or site).',
+    );
+  }
+
+  if (target === null) {
+    notes.push(
+      'This call cannot be approved: the protected page has no usable URL. ' +
+      'Pass the tab explicitly (tabId) and try again.',
+    );
+  } else {
+    const request = getApprovalStore().createRequest(target, {
+      protectedUrl,
+      matchedPattern,
+      summary: summarizeArgs(args),
+    });
+    const approval: ApprovalRequestDetails = {
+      requestId: request.id,
+      toolName,
+      host: target.host,
+      protectedUrl,
+      matchedPattern,
+      summary: request.summary,
+      expiresAt: request.expiresAt,
+    };
+    notes.push(
+      'How approval works: KitsuneMCP asks the human itself, in the MCP client\'s ' +
+      'confirmation dialog (MCP elicitation) when the client supports it, otherwise in ' +
+      'Firefox, where the KitsuneMCP toolbar button shows a badge and the human approves ' +
+      'or denies in its popup. An approval covers one call of this tool with exactly these ' +
+      `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / 1000)} s. ` +
+      'Nothing in the page (buttons, fox_click, fox_execute_script) can approve it. ' +
+      `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
+      'If the human declined, do not retry without asking them first.',
+    );
+    // The second block holds the machine-readable details.
+    const block = result.content[1];
+    if (block && block.type === 'text') {
+      const details = JSON.parse(block.text) as Record<string, unknown>;
+      details['approval'] = approval;
+      block.text = JSON.stringify(details);
+    }
+  }
+
+  const first = result.content[0];
+  if (first && first.type === 'text') first.text += `\n\n${notes.join('\n')}`;
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Screenshot post-processing (resource_link, never base64)
 // ---------------------------------------------------------------------------
@@ -332,11 +431,23 @@ function screenshotResourceLinks(paths: string[]): CallToolResult['content'] {
  *                  'http' for POST /mcp/call). Every entry point goes through
  *                  the same SafetyGuard pipeline.
  */
+export interface ToolCallOptions {
+  /**
+   * One-time human-approval token for this exact call (safety/approval.ts),
+   * sent out of band (POST /mcp/call body) after the human approved.
+   * Consumed on use.
+   */
+  approvalToken?: string;
+}
+
 export function createToolHandler(
   toolName: string,
   transport: string = 'stdio',
-): (args: Record<string, unknown>) => Promise<CallToolResult> {
-  return async (args: Record<string, unknown>): Promise<CallToolResult> => {
+): (args: Record<string, unknown>, options?: ToolCallOptions) => Promise<CallToolResult> {
+  return async (
+    args: Record<string, unknown>,
+    options: ToolCallOptions = {},
+  ): Promise<CallToolResult> => {
     const guard = getSafetyGuard();
 
     // -----------------------------------------------------------------------
@@ -352,8 +463,20 @@ export function createToolHandler(
     // -----------------------------------------------------------------------
     // 1. Safety check
     // -----------------------------------------------------------------------
-    const denial = guard.check(toolName, args, transport);
+    // A presented approval token is consumed here, before anything else:
+    // single use even when the call is then refused for another reason.
+    const token = options.approvalToken;
+    const presented = typeof token === 'string' && token !== '';
+    const grant: ApprovalGrant | null = presented
+      ? getApprovalStore().consume(token, toolName, hashArgs(args))
+      : null;
+    const tokenRejected = presented && grant === null;
+
+    const denial = guard.check(toolName, args, transport, grant);
     if (denial !== null) {
+      if (denial.safetyDecision === 'confirmation_required') {
+        return confirmationToCallResult(toolName, args, denial, tokenRejected);
+      }
       return safetyDenialToCallResult({ ...denial, decision: denial.safetyDecision });
     }
 
@@ -391,6 +514,11 @@ export function createToolHandler(
       requestId: '', // Will be assigned by connectionManager.sendCommand()
     };
     attachSafetyMetadata(command, guard.config, toolName, args);
+    // The human approved this call for one host: the Extension may run it on
+    // a protected tab only while that tab is on this host.
+    if (grant !== null && command.protectedUrlPatterns) {
+      command.approvedHost = grant.target.host;
+    }
 
     // -----------------------------------------------------------------------
     // 4. Send command to browser
@@ -410,7 +538,7 @@ export function createToolHandler(
         transport,
         typeof reportedPattern === 'string' && reportedPattern ? reportedPattern : null,
       );
-      return safetyDenialToCallResult({ ...confirmation, decision: confirmation.safetyDecision });
+      return confirmationToCallResult(toolName, args, confirmation, tokenRejected);
     }
 
     // Other Extension-side safety refusals (e.g. Layer 0 out_of_scope):

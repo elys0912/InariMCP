@@ -3,6 +3,8 @@ import type { SafetyConfig } from './config.js';
 import { audit } from './audit.js';
 import type { AuditDecision } from './audit.js';
 import { checkHeadlessContainerScope } from './container.js';
+import { grantCoversDenial } from './approval.js';
+import type { ApprovalGrant } from './approval.js';
 
 const SAFE_URL_RE = /^(https?:\/\/|about:blank$)/i;
 
@@ -69,21 +71,32 @@ export class SafetyGuard {
     this._compilePatterns();
   }
 
+  /**
+   * @param grant  A consumed human-approval token for this exact call
+   *               (safety/approval.ts). It lifts only a Layer 4/7
+   *               `confirmation_required` for the approved host; every other
+   *               denial stands. Decisions made with a grant are audited as
+   *               `allowed_by_human`.
+   */
   check(
     toolName: string,
     args: Record<string, unknown>,
     transport?: string,
+    grant?: ApprovalGrant | null,
   ): SafetyDenial | null {
     if (!this.config.enabled) {
       return null;
     }
 
     const targetUrl = this._targetUrl(args);
-    const denial = this._checkInner(toolName, targetUrl, args);
+    let denial = this._checkInner(toolName, targetUrl, args);
+    if (grantCoversDenial(denial, grant)) denial = null;
 
     const isObserve = OBSERVE_TOOLS.has(toolName);
     let decision: AuditDecision;
-    if (denial === null) {
+    if (denial === null && grant) {
+      decision = 'allowed_by_human';
+    } else if (denial === null) {
       if (isObserve && this._isOnProtectedDomain(targetUrl)) {
         decision = 'observed_on_protected_domain';
       } else {

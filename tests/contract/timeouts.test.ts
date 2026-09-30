@@ -10,6 +10,8 @@
  *                expires after IN_FLIGHT_TTL_MS (native-host/src/host.ts)
  *   extension    browser-side wait          the tool's timeout argument, else
  *                                           content.ts TIMEOUTS.* fallbacks
+ *                                           (request_approval: background.ts
+ *                                           TIMEOUTS.APPROVAL, popup wait)
  *
  * Claims checked here:
  *   1. relay > daemon, for every action, both transports and any timeout
@@ -133,11 +135,20 @@ describe('4. timeout argument keys', () => {
   });
 });
 
-describe('5. daemon waits longer than the content-script fallbacks', () => {
+describe('5. daemon waits longer than the extension-side fallbacks', () => {
   const content = readNumericObjectConstant(readExtensionSource('content.ts'), 'TIMEOUTS');
+  const background = readNumericObjectConstant(readExtensionSource('background.ts'), 'TIMEOUTS');
+
+  // Approval requests wait in the background (toolbar popup), not in the page.
+  it('request_approval: daemon base > background.ts TIMEOUTS.APPROVAL', () => {
+    expect(background['APPROVAL']).toBeTypeOf('number');
+    expect(content['APPROVAL']).toBeUndefined();
+    for (const kind of KINDS) {
+      expect(daemonTimeout('request_approval', {}, kind)).toBeGreaterThan(background['APPROVAL']!);
+    }
+  });
 
   it.each([
-    ['request_approval', 'APPROVAL'],
     ['solve_captcha', 'CAPTCHA'],
     ['wait_for_element', 'WAIT_ELEMENT'],
     ['wait_for_change', 'DEFAULT'],

@@ -62,23 +62,37 @@
   "badgeHostOutdated": { "message": "KitsuneMCP: Native Host が古くなっています" },
   "badgeDaemonDown": { "message": "KitsuneMCP: MCP サーバーが応答しません" },
   "badgeNoSession": { "message": "KitsuneMCP: Claude Code とつながっていません" },
+  "badgeApprovalPending": { "message": "KitsuneMCP: 承認待ちのリクエストが $1 件あります" },
 
   "menuScreenshot": { "message": "KitsuneMCP でスクリーンショットを撮る" },
   "menuInspect": { "message": "KitsuneMCP で要素を調べる" },
 
   "notifyApprovalTitle": { "message": "Claude が承認を求めています" },
   "notifyApprovalDefault": { "message": "Claude が操作の実行を求めています" },
+  "notifyApprovalProtected": { "message": "$2 での $1 に承認が必要です。ツールバーの KitsuneMCP ボタンから承認または拒否してください。" },
+  "notifyApprovalQuestion": { "message": "$1 — ツールバーの KitsuneMCP ボタンから回答してください。" },
   "notifyCaptchaTitle": { "message": "CAPTCHA の解決が必要です" },
   "notifyCaptchaMessage": { "message": "Claude が CAPTCHA で止まっています。解いてください。" },
 
-  "bannerApprovalTitle": { "message": "⚠️ KitsuneMCP が承認を求めています: $1" },
-  "bannerApprovalDefault": { "message": "操作の実行" },
-  "bannerApprove": { "message": "承認" },
-  "bannerDeny": { "message": "拒否" },
   "bannerCaptchaTitle": { "message": "🧩 CAPTCHA（$1）を解いてください。解けたら自動で続きます。" },
   "bannerCaptchaDetail": {
     "message": "KitsuneMCP は一時停止して待っています。自動で続かないときは「完了」を押してください。"
   },
   "bannerDone": { "message": "完了" },
-  "bannerCancel": { "message": "キャンセル" }
+  "bannerCancel": { "message": "キャンセル" },
+
+  "popupApprovalsTitle": { "message": "承認リクエスト" },
+  "approvalProtectedTitle": { "message": "保護サイトでの操作" },
+  "approvalMessageTitle": { "message": "Claude からの確認" },
+  "approvalTool": { "message": "ツール" },
+  "approvalSite": { "message": "サイト" },
+  "approvalPage": { "message": "ページ" },
+  "approvalPattern": { "message": "一致したルール" },
+  "approvalArgs": { "message": "引数" },
+  "approvalProtectedNote": { "message": "自分で依頼した操作のときだけ承認してください。許可されるのはこの 1 回の呼び出しだけです。残り $1 秒。" },
+  "approvalMessageNote": { "message": "回答は Claude に返されます。保護サイトの操作は許可されません。残り $1 秒。" },
+  "approvalMore": { "message": "ほかに $1 件が待機中です" },
+  "approvalApprove": { "message": "承認" },
+  "approvalDeny": { "message": "拒否" },
+  "toastApprovalGone": { "message": "このリクエストはすでに終了しています" }
 }

@@ -16,7 +16,10 @@ export type AuditDecision =
   | 'scripts_disabled'
   | 'confirmation_required'
   | 'observed_on_protected_domain'
-  | 'out_of_scope';
+  | 'out_of_scope'
+  /** A human approved / declined a protected-site action (tools/approval-flow.ts). */
+  | 'approval_granted'
+  | 'approval_denied';
 
 export interface AuditEntry {
   ts: string;
