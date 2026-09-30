@@ -15,8 +15,8 @@
  *     are accepted only after this MAC checks out, so a fake daemon cannot
  *     drive the browser. A bad MAC or a 1008 close drops the cached token;
  *     it is re-read from disk before the next attempt (the file may have
- *     been regenerated). The whole handshake has 10 s (the server's auth
- *     timeout). A server that never sends a challenge is an older daemon:
+ *     been regenerated). The whole handshake has 10 s (the server itself
+ *     allows 5 s for our auth frame). A server that never sends a challenge is an older daemon:
  *     there is no fallback to sending the token.
  *
  * After the handshake:

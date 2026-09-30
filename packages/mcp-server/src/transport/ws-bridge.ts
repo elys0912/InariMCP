@@ -17,7 +17,7 @@
  *     cannot pose as an Origin-less client; and every client, with or
  *     without Origin, must still pass step 2.
  *  2. Server sends `{ type: 'auth_challenge', protocol, nonce: S }`.
- *  3. Client answers within 10 s with
+ *  3. Client answers within 5 s with
  *     `{ type: 'auth', protocol, nonce: C, mac: MAC('ws-client', S, C) }`.
  *     Anything else (including the old `{ token }` frame), a bad MAC or a
  *     timeout → close 1008 (Policy Violation). The token never travels.
@@ -55,7 +55,13 @@ import { AUTH_PROTOCOL, MAC_LABEL, computeMac, isNonce, macMatches, newNonce } f
 // Constants
 // ---------------------------------------------------------------------------
 
-const AUTH_TIMEOUT_MS = 10_000; // 10 seconds for the auth frame
+const AUTH_TIMEOUT_MS = 5_000; // for the auth frame (the Native Host answers at once)
+/**
+ * Connections that have not sent their auth frame yet. Each may buffer up to
+ * MAX_PAYLOAD_BYTES before the size of its first frame can be checked, so
+ * their number bounds what a local process without the token can make us hold.
+ */
+const MAX_UNAUTHENTICATED = 8;
 /** Largest frame accepted before authentication (the auth frame is ~200 bytes). */
 const MAX_AUTH_FRAME_BYTES = 4_096;
 /** Largest frame accepted at all: the Native Host's own cap on Extension frames. */
@@ -65,6 +71,7 @@ const PROBE_TIMEOUT_MS = 5_000;
 
 const POLICY_VIOLATION = 1008;
 const MESSAGE_TOO_BIG = 1009;
+const TRY_AGAIN_LATER = 1013;
 
 // ---------------------------------------------------------------------------
 // Origin validation
@@ -133,6 +140,7 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
 
   const wss = new WebSocketServer({ host, port, maxPayload: MAX_PAYLOAD_BYTES });
   const hosts = new Set<HostSocket>();
+  let unauthenticated = 0;
 
   const ping = (h: HostSocket): void => {
     h.lastPingAt = Date.now();
@@ -199,7 +207,20 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
       return;
     }
 
-    // ----- Challenge (10 s to answer) -----
+    if (unauthenticated >= MAX_UNAUTHENTICATED) {
+      log(`WebSocket connection refused: ${MAX_UNAUTHENTICATED} connections already waiting for auth`);
+      ws.close(TRY_AGAIN_LATER, 'too many pending connections');
+      return;
+    }
+    unauthenticated++;
+    let counted = true;
+    const settle = (): void => {
+      if (counted) unauthenticated--;
+      counted = false;
+    };
+    ws.on('close', settle);
+
+    // ----- Challenge (5 s to answer) -----
     const serverNonce = newNonce();
     const authTimer = setTimeout(() => {
       log('WebSocket connection refused: auth timeout');
@@ -210,6 +231,7 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
 
     ws.once('message', (raw: Buffer | ArrayBuffer | Buffer[]) => {
       clearTimeout(authTimer);
+      settle();
 
       if (frameLength(raw) > MAX_AUTH_FRAME_BYTES) {
         log('WebSocket connection refused: oversized auth frame');

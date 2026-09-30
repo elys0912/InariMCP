@@ -5,12 +5,9 @@
  * when the tokens differ.
  */
 
-import * as fs from 'node:fs';
 import * as http from 'node:http';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { WebSocketServer } from 'ws';
 import { BrowserConnectionManager, getConnectionManager } from '../../packages/mcp-server/src/connection/manager.js';
 import { startWebSocketServer } from '../../packages/mcp-server/src/transport/ws-bridge.js';
@@ -21,18 +18,7 @@ import { ServerLauncher } from '../../packages/native-host/src/server-launcher.j
 const TOKEN = '1'.repeat(64);
 const OTHER = '2'.repeat(64);
 
-let home: string;
-const savedEnv = { ...process.env };
-beforeAll(() => {
-  home = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-contract-'));
-  process.env['HOME'] = home;
-  process.env['USERPROFILE'] = home;
-  delete process.env['FOX_SAFETY_CONFIG'];
-});
-afterAll(() => {
-  process.env = savedEnv;
-  fs.rmSync(home, { recursive: true, force: true });
-});
+// HOME / USERPROFILE point at a temporary directory: tests/setup/isolate-home.ts
 
 const cleanups: (() => Promise<void> | void)[] = [];
 afterEach(async () => {

@@ -1,27 +1,13 @@
-import * as fs from 'node:fs';
 import * as http from 'node:http';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { DaemonClient } from '../src/relay/daemon-client.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { startHttpBridge } from '../src/transport/http-bridge.js';
 import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION } from '../src/transport/auth.js';
 import { TOKEN } from './helpers/ws.js';
 
-let home: string;
-const savedEnv = { ...process.env };
-beforeAll(() => {
-  home = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-relay-'));
-  process.env['HOME'] = home;
-  process.env['USERPROFILE'] = home;
-  delete process.env['FOX_SAFETY_CONFIG'];
-});
-afterAll(() => {
-  process.env = savedEnv;
-  fs.rmSync(home, { recursive: true, force: true });
-});
+// HOME / USERPROFILE point at a temporary directory: tests/setup/isolate-home.ts
 
 let servers: http.Server[] = [];
 afterEach(async () => {
