@@ -24,9 +24,10 @@
  *   5. daemon > extension for content.ts fallbacks (no argument).
  *   6. native-host bookkeeping TTL > daemon's longest base timeout.
  *
- * Not claimed: the Extension's TIMEOUTS.NAVIGATION (background.ts, used by
- * navigate / refresh / new-tab load waits) equals the daemon's 30 s default
- * instead of being shorter — see the WP0 report.
+ * Also (5b): the Extension's own budgets for navigate / refresh / new-tab
+ * load waits (TIMEOUTS.PAGE_LOAD), screenshot all_tabs and fox_type typing
+ * are shorter than the daemon's default. TIMEOUTS.NAVIGATION is only the
+ * fallback of fox_wait_for_navigation, whose schema always sends a timeout.
  */
 
 import { readFileSync } from 'node:fs';
@@ -159,6 +160,26 @@ describe('5. daemon waits longer than the extension-side fallbacks', () => {
       expect(daemonTimeout(action, {}, kind)).toBeGreaterThan(content[key]!);
     }
   });
+});
+
+describe('5b. extension-side waits without a timeout argument end before the daemon (WP5)', () => {
+  const content = readNumericObjectConstant(readExtensionSource('content.ts'), 'TIMEOUTS');
+  const background = readNumericObjectConstant(readExtensionSource('background.ts'), 'TIMEOUTS');
+
+  it.each([
+    ['navigate', background, 'PAGE_LOAD'],
+    ['refresh', background, 'PAGE_LOAD'],
+    ['hard_refresh', background, 'PAGE_LOAD'],
+    ['screenshot_all_tabs', background, 'ALL_TABS_BUDGET'],
+    ['type', content, 'TYPING_BUDGET'],
+  ] as const)('%s: daemon base > %s', (action, table, key) => {
+    expect(table[key]).toBeTypeOf('number');
+    for (const kind of KINDS) {
+      expect(daemonTimeout(action, {}, kind), `${action} ${kind}`).toBeGreaterThan(table[key]!);
+    }
+  });
+  // TODO(test): per-character overhead of fox_type on top of TYPING_BUDGET
+  // (100 ms focus wait + event dispatch) stays inside the daemon margin.
 });
 
 describe('6. native-host in-flight bookkeeping outlives the daemon timeout', () => {

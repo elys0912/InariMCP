@@ -37,9 +37,18 @@ interface ScreenshotOptions {
   fullPage?: boolean;
   allowFocus?: boolean;
   restoreFocus?: boolean;
+  /** false: capture nothing (the image would have nowhere to go). */
+  saveToFile?: boolean;
+  /** all_tabs: attach imageData per tab (the MCP Server always sets it). */
   includeData?: boolean;
   urlPattern?: string;
+  /** all_tabs: time budget of the whole run (ms). */
+  timeout?: number;
 }
+
+const NO_IMAGE_NOTE =
+  "saveToFile is false: no image was captured. KitsuneMCP returns screenshots only " +
+  "as saved files (resource_link), never inline.";
 
 interface GetAllTabsOptions {
   currentWindowOnly?: boolean;
@@ -99,7 +108,19 @@ const TIMEOUTS = {
   RECONNECT_MAX: 30_000,
   RECONNECT_INITIAL: 1_000,
   SCREENSHOT_DELAY: 150,
+  /** fox_wait_for_navigation without a timeout argument. */
   NAVIGATION: 30_000,
+  /**
+   * Load wait of navigate / refresh / new tab. Shorter than the daemon's 30 s
+   * default for these commands, so the Extension reports the timeout itself.
+   */
+  PAGE_LOAD: 25_000,
+  /** No "loading" status this long after tabs.update / reload: nothing to load. */
+  TAB_LOAD_SETTLE: 1_000,
+  /** One tabs.captureTab call of screenshot all_tabs. */
+  CAPTURE_TAB: 5_000,
+  /** Whole screenshot all_tabs run without a timeout argument (< daemon 30 s). */
+  ALL_TABS_BUDGET: 20_000,
   /** request_approval without a timeout argument (popup wait). */
   APPROVAL: 60_000,
 } as const;
@@ -116,56 +137,111 @@ function matchesPattern(url: string | undefined, pattern: string): boolean {
   return new RegExp(pattern).test(url);
 }
 
-function waitForTabComplete(tabId: number, timeoutMs = TIMEOUTS.NAVIGATION): Promise<void> {
-  return new Promise((resolve) => {
-    const listener = (
-      updatedTabId: number,
-      changeInfo: browser.tabs.TabChangeInfo,
-    ): void => {
-      if (updatedTabId === tabId && changeInfo.status === "complete") {
-        browser.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    };
-    browser.tabs.onUpdated.addListener(listener);
+type TabLoadOutcome = "complete" | "timeout" | "removed";
 
-    setTimeout(() => {
-      browser.tabs.onUpdated.removeListener(listener);
-      resolve();
-    }, timeoutMs);
-  });
+/** The part of browser.tabs that waitForTabLoad uses (a fake in tests). */
+interface TabLoadApi {
+  onUpdated: {
+    addListener(fn: (tabId: number, changeInfo: browser.tabs.TabChangeInfo, tab: browser.tabs.Tab) => void): void;
+    removeListener(fn: (tabId: number, changeInfo: browser.tabs.TabChangeInfo, tab: browser.tabs.Tab) => void): void;
+  };
+  onRemoved: {
+    addListener(fn: (tabId: number) => void): void;
+    removeListener(fn: (tabId: number) => void): void;
+  };
+  get(tabId: number): Promise<browser.tabs.Tab>;
 }
 
 /**
- * Wait until a tab satisfies `isLoaded`, checked on every onUpdated event and
- * once against the current state. The listener is added before that check,
- * so a load that finishes in between is not missed. Resolves on timeout too.
+ * Run `trigger` (tabs.update / tabs.reload, or nothing for a tab that was
+ * just created) and wait until the tab has loaded. The listeners go in
+ * before the trigger, so a fast load is not missed.
+ *
+ *   requireLoading true   (navigate / reload) the tab must go through
+ *                         "loading" after the trigger; a "complete" status
+ *                         left over from the previous document does not
+ *                         count. If no load starts within `settleMs` (same-
+ *                         document navigation, nothing to load), the tab's
+ *                         current state decides.
+ *   requireLoading false  (new tab) the current state counts at once.
+ *
+ * Outcomes: "complete", "timeout" after `timeoutMs`, or "removed" when the
+ * tab is closed meanwhile. A trigger that throws rejects (listeners removed).
  */
-function waitForTabState(
+function waitForTabLoad(
+  tabs: TabLoadApi,
   tabId: number,
+  trigger: () => Promise<unknown>,
   isLoaded: (tab: browser.tabs.Tab) => boolean,
-  timeoutMs = TIMEOUTS.NAVIGATION,
-): Promise<void> {
-  return new Promise((resolve) => {
+  options: { timeoutMs: number; settleMs: number; requireLoading: boolean },
+): Promise<TabLoadOutcome> {
+  return new Promise<TabLoadOutcome>((resolve, reject) => {
     let done = false;
-    const finish = (): void => {
-      if (done) return;
+    let sawLoading = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let settleTimer: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = (): void => {
       done = true;
-      browser.tabs.onUpdated.removeListener(listener);
-      clearTimeout(timer);
-      resolve();
+      tabs.onUpdated.removeListener(onUpdated);
+      tabs.onRemoved.removeListener(onRemoved);
+      if (timer !== undefined) clearTimeout(timer);
+      if (settleTimer !== undefined) clearTimeout(settleTimer);
     };
-    const listener = (
+    const finish = (outcome: TabLoadOutcome): void => {
+      if (done) return;
+      cleanup();
+      resolve(outcome);
+    };
+    const checkCurrent = (): void => {
+      if (done) return;
+      tabs.get(tabId).then(
+        (tab) => { if (isLoaded(tab)) finish("complete"); },
+        () => finish("removed"),
+      );
+    };
+    const onUpdated = (
       updatedTabId: number,
-      _changeInfo: browser.tabs.TabChangeInfo,
+      changeInfo: browser.tabs.TabChangeInfo,
       tab: browser.tabs.Tab,
     ): void => {
-      if (updatedTabId === tabId && isLoaded(tab)) finish();
+      if (updatedTabId !== tabId || done) return;
+      if (changeInfo.status === "loading") sawLoading = true;
+      if ((sawLoading || !options.requireLoading) && isLoaded(tab)) finish("complete");
     };
-    browser.tabs.onUpdated.addListener(listener);
-    const timer = setTimeout(finish, timeoutMs);
-    browser.tabs.get(tabId).then((tab) => { if (isLoaded(tab)) finish(); }, finish);
+    const onRemoved = (removedTabId: number): void => {
+      if (removedTabId === tabId) finish("removed");
+    };
+    tabs.onUpdated.addListener(onUpdated);
+    tabs.onRemoved.addListener(onRemoved);
+    timer = setTimeout(() => finish("timeout"), options.timeoutMs);
+
+    trigger().then(
+      () => {
+        if (done) return;
+        if (!options.requireLoading) {
+          checkCurrent();
+          return;
+        }
+        settleTimer = setTimeout(() => {
+          if (!sawLoading) checkCurrent();
+        }, options.settleMs);
+      },
+      (error: unknown) => {
+        if (done) return;
+        cleanup();
+        reject(error);
+      },
+    );
   });
+}
+
+/** Error text for a load wait that did not complete. */
+function tabLoadError(outcome: TabLoadOutcome, timeoutMs: number, currentUrl: string | undefined): string {
+  return outcome === "removed"
+    ? "The tab was closed before the page finished loading"
+    : `The page did not finish loading within ${timeoutMs}ms` +
+        ` (current URL: ${currentUrl ?? "unknown"}). The navigation may still complete;` +
+        " check with fox_get_tabs or fox_wait_for_url.";
 }
 
 /** A positive number from the command data, or the fallback. */
@@ -298,12 +374,12 @@ let requestCounter = 0;
 
 // Console / network logging: tabs where it is switched on, with the
 // protected URL patterns attached to start_logging (empty when the server
-// sent none, i.e. confirm_protected_actions is off). The records themselves
-// stay in that tab's top-frame content script; this map only outlives
-// reloads / navigations, so the next document resumes recording (content
-// script query + early injection, see "Event listeners") -- except while the
-// tab is on a protected page, where recording is paused. Cleared by
-// stop_logging or when the tab closes.
+// sent none, i.e. confirm_protected_actions is off). The records are kept
+// per tab in logBuffers (see "Console / network log buffers"); this map
+// tells the next document after a reload / navigation to resume recording
+// (content script query + early injection, see "Event listeners") -- except
+// while the tab is on a protected page, where recording is paused. Cleared
+// by stop_logging or when the tab closes.
 interface LoggingTabState {
   patterns: RegExp[];
 }
@@ -314,6 +390,10 @@ const LOGGING_STATE_QUERY = "kitsune:loggingState";
 
 // Reconnection settings
 let reconnectAttempts = 0;
+/** When the host first answered on the current port (null: not yet). */
+let hostConfirmedAt: number | null = null;
+/** A connection counts as stable (backoff starts over) after this long. */
+const STABLE_CONNECTION_MS = 10_000;
 const MAX_RECONNECT_ATTEMPTS = 20;
 const INITIAL_RECONNECT_DELAY = TIMEOUTS.RECONNECT_INITIAL;
 const MAX_RECONNECT_DELAY = TIMEOUTS.RECONNECT_MAX;
@@ -327,6 +407,21 @@ function getReconnectDelay(): number {
     INITIAL_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts),
     MAX_RECONNECT_DELAY,
   );
+}
+
+/**
+ * Reconnect attempt counter after a disconnect. It starts over only when the
+ * host had answered on the lost port and stayed up for `stableMs`; a host
+ * that is missing, exits at once or crashes right after answering keeps
+ * counting up, so the backoff grows instead of respawning it every second.
+ * `confirmedForMs`: time since the host's first answer, null if it never did.
+ */
+function nextReconnectAttempts(
+  attempts: number,
+  confirmedForMs: number | null,
+  stableMs: number,
+): number {
+  return confirmedForMs !== null && confirmedForMs >= stableMs ? 0 : attempts;
 }
 
 function scheduleReconnect(): void {
@@ -367,8 +462,12 @@ function connectNativeHost(): void {
     nativePort = browser.runtime.connectNative(NATIVE_HOST_NAME);
     isConnected = true;
     hostConfirmed = false;
-    reconnectAttempts = 0;
-    console.log("[KitsuneMCP] Connected to native host");
+    hostConfirmedAt = null;
+    // reconnectAttempts is NOT reset here: connectNative() returns a port
+    // even when the host is missing or exits at once, so resetting now would
+    // defeat the backoff (a new host process every second). It is reset in
+    // handleDisconnect once a connection proved stable.
+    console.log("[KitsuneMCP] Port opened to native host");
 
     nativePort.onMessage.addListener(handleNativeMessage);
     nativePort.onDisconnect.addListener(handleDisconnect);
@@ -394,8 +493,14 @@ function handleDisconnect(port: browser.runtime.Port): void {
   } else if (!hostConfirmed) {
     lastHostError = "Native host exited without answering";
   }
+  reconnectAttempts = nextReconnectAttempts(
+    reconnectAttempts,
+    hostConfirmedAt === null ? null : Date.now() - hostConfirmedAt,
+    STABLE_CONNECTION_MS,
+  );
   isConnected = false;
   hostConfirmed = false;
+  hostConfirmedAt = null;
   nativePort = null;
 
   for (const [, entry] of pendingRequests) {
@@ -410,13 +515,38 @@ function handleDisconnect(port: browser.runtime.Port): void {
   scheduleReconnect();
 }
 
+/**
+ * One-line summary of a Native Messaging frame for the console: action,
+ * requestId and the top-level / data key names -- never the values, which
+ * can hold scripts, typed text, form values or page content.
+ */
+function describeNativeMessage(raw: unknown): string {
+  if (typeof raw !== "object" || raw === null) return `(${typeof raw})`;
+  const m = raw as Record<string, unknown>;
+  const parts: string[] = [];
+  if (typeof m.action === "string") parts.push(`action=${m.action.slice(0, 64)}`);
+  if (typeof m.requestId === "string" || typeof m.requestId === "number") {
+    parts.push(`requestId=${String(m.requestId).slice(0, 64)}`);
+  }
+  if (typeof m.success === "boolean") parts.push(`success=${m.success}`);
+  const keys = Object.keys(m).filter((k) => k !== "action" && k !== "requestId" && k !== "success");
+  if (keys.length > 0) parts.push(`keys=[${keys.slice(0, 20).join(",")}]`);
+  const data = m.data;
+  if (typeof data === "object" && data !== null && !Array.isArray(data)) {
+    const dataKeys = Object.keys(data);
+    if (dataKeys.length > 0) parts.push(`data=[${dataKeys.slice(0, 20).join(",")}]`);
+  }
+  return parts.join(" ");
+}
+
 function handleNativeMessage(raw: unknown): void {
   const message = raw as NativeMessage;
-  console.log("[KitsuneMCP] Received from native host:", message);
+  console.log(`[KitsuneMCP] Received from native host: ${describeNativeMessage(raw)}`);
 
   if (!hostConfirmed) {
     hostConfirmed = true;
     lastHostError = null;
+    hostConfirmedAt = Date.now();
   }
 
   if (typeof message.requestId === "number" && pendingRequests.has(message.requestId)) {
@@ -648,16 +778,22 @@ async function resolveTab(
 // Content script messaging
 // ---------------------------------------------------------------------------
 
+/**
+ * Send a command to the tab's content script in one frame -- the top frame
+ * (0) unless a caller names another. The content script runs in every frame
+ * (all_frames), and tabs.sendMessage without a frameId goes to all of them
+ * and takes the first answer, so any iframe (including a hostile one) could
+ * answer or be the one that acts.
+ */
 async function sendToContentScript(
   tabId: number | undefined,
   message: Record<string, unknown>,
-  frameId?: number,
+  frameId: number = TOP_FRAME_ID,
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
-    const result = (await (frameId === undefined
-      ? browser.tabs.sendMessage(tab.id, message)
-      : browser.tabs.sendMessage(tab.id, message, { frameId }))) as Record<string, unknown>;
+    if (!tab) return { success: false, error: "No target tab" };
+    const result = (await browser.tabs.sendMessage(tab.id, message, { frameId })) as Record<string, unknown>;
     return { success: true, ...result };
   } catch (error) {
     const msg = (error as Error).message;
@@ -701,23 +837,34 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
   const navigateInNewTab = resolved.action === "navigate" && data?.newTab === true;
   const action = navigateInNewTab ? "createTab" : resolved.action;
 
+  // Resolve the target tab of a single-tab action ONCE (explicit tabId, else
+  // the active tab of the current window) and pin its id: the container
+  // scope check, the protected-domain check, the handler and the URL report
+  // below then all see the same tab, even if the active tab changes
+  // meanwhile. Undefined when it cannot be resolved -- the checks then fail
+  // closed and the handler reports the missing tab.
+  let target: browser.tabs.Tab | undefined;
+  if (action !== undefined && isSingleTabAction(action)) {
+    try {
+      target = await resolveTab(tabId);
+    } catch {
+      target = undefined;
+    }
+    if (target) tabId = target.id;
+  }
+
   // Container scope check (Layer 0). The MCP Server attaches
   // `containerScope` to every command when container_scope.enabled is true.
   const containerScope = parseContainerScope(message.containerScope);
   let scope: ScopeFilter | null = null;
   if (containerScope) {
-    const decision = await enforceContainerScope(action, tabId, containerScope);
+    const decision = await enforceContainerScope(action, target, containerScope);
     if (!decision.allowed) {
       result = outOfScope(decision.error);
       postWireResponse(message, result);
       return result;
     }
     scope = decision.scope;
-    // Pin the tab that passed the check so the handler cannot drift to a
-    // different active tab between the check and the operation.
-    if (decision.tabId !== undefined) {
-      tabId = decision.tabId;
-    }
   }
   const protectedPatterns = parseProtectedPatterns(message.protectedUrlPatterns);
   // Hostname a human approved for this one call (MCP Server approval token).
@@ -727,9 +874,17 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
   // server's last-seen URL, which is shared by every session). The server
   // attaches the patterns, when confirm_protected_actions is true, to
   // single-tab captures and to every acting tool without a `url` argument;
-  // the logging actions and screenshot_all_tabs apply them themselves below.
-  if (protectedPatterns.length > 0 && !SELF_PROTECTED_ACTIONS.has(action ?? "")) {
-    const refusal = await checkProtectedTarget(tabId, protectedPatterns, approvedHost);
+  // the logging actions and the multi-tab actions (screenshot_all_tabs,
+  // reload_all, reload_by_url) apply them themselves below. Actions that
+  // act on no existing tab (new tab, tab list, approval, status) have no
+  // target to check.
+  if (
+    protectedPatterns.length > 0 &&
+    action !== undefined &&
+    isSingleTabAction(action) &&
+    !SELF_PROTECTED_ACTIONS.has(action)
+  ) {
+    const refusal = checkProtectedTarget(target, protectedPatterns, approvedHost);
     if (refusal) {
       result = refusal;
       postWireResponse(message, result);
@@ -796,17 +951,16 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         result = await screenshotAllTabs(data as ScreenshotOptions, scope, protectedPatterns);
         break;
       case "refresh":
-      case "reload":
         result = await refreshTab(tabId, data as RefreshOptions);
         break;
       case "hardRefresh":
-        result = await hardRefreshTab(tabId);
+        result = await refreshTab(tabId, { ...(data as RefreshOptions), bypassCache: true });
         break;
       case "reloadAll":
-        result = await reloadAllTabs(data as ReloadAllOptions, scope);
+        result = await reloadAllTabs(data as ReloadAllOptions, scope, protectedPatterns);
         break;
       case "reloadByUrl":
-        result = await reloadTabsByUrl(data as ReloadByUrlOptions, scope);
+        result = await reloadTabsByUrl(data as ReloadByUrlOptions, scope, protectedPatterns);
         break;
       case "status": {
         // The popup asks for a recheck (e.g. right after running the
@@ -841,15 +995,13 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
       case "cancelHumanWait":
         result = await cancelHumanWait(data);
         break;
-      // Content-script-forwarded actions
+      // Content-script-forwarded actions. Every command goes to the top
+      // frame (sendToContentScript's default), never to whichever frame
+      // answers first.
       case "getValue":
       case "setValue":
       case "selectOption":
       case "hover":
-      case "getAttribute":
-      case "focus":
-      case "getComputedStyles":
-      case "getBoundingRect":
       case "waitForChange":
       case "observeElement":
       case "stopObserving":
@@ -857,13 +1009,8 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
       case "clickAndWait":
       case "pressKey":
       case "getText":
-        result = await sendToContentScript(tabId, { action, ...data });
-        break;
-      // Page-activity tracking and console / network logging live in the
-      // top frame's content script (frame 0), so every command for them goes
-      // there -- not to whichever frame happens to answer first.
       case "waitForNetworkIdle":
-        result = await sendToContentScript(tabId, { action, ...data }, TOP_FRAME_ID);
+        result = await sendToContentScript(tabId, { action, ...data });
         break;
       case "waitForNavigation":
         result = await waitForNavigation(tabId, data);
@@ -871,51 +1018,18 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
       case "waitForUrl":
         result = await waitForUrl(tabId, data);
         break;
-      case "startLogging": {
-        const tab = await resolveTab(tabId);
-        // Same rule as a single-tab screenshot: refuse on a protected page,
-        // judged by the tab's real URL.
-        const refusal = await checkProtectedTarget(tab.id, protectedPatterns, approvedHost);
-        if (refusal) {
-          result = refusal;
-          break;
-        }
-        result = await sendToContentScript(
-          tab.id,
-          {
-            action: "startLogging",
-            ...data,
-            protectedPatterns: protectedPatterns.map((p) => p.source),
-          },
-          TOP_FRAME_ID,
-        );
-        if (result.success) loggingTabs.set(tab.id, { patterns: protectedPatterns });
+      case "startLogging":
+        result = await startLoggingOnTab(target, data, protectedPatterns, approvedHost);
         break;
-      }
-      case "stopLogging": {
-        const tab = await resolveTab(tabId);
-        loggingTabs.delete(tab.id);
-        result = await sendToContentScript(tab.id, { action: "stopLogging" }, TOP_FRAME_ID);
+      case "stopLogging":
+        result = await stopLoggingOnTab(target);
         break;
-      }
       case "getConsoleLogs":
-      case "getNetworkLogs": {
-        const tab = await resolveTab(tabId);
-        result = await sendToContentScript(tab.id, { action, ...data }, TOP_FRAME_ID);
-        if (result.success) {
-          result = {
-            ...result,
-            pausedForProtectedDomain: isLoggingPausedForTab(tab, protectedPatterns),
-          };
-        }
+      case "getNetworkLogs":
+        result = await getLogsOfTab(action, target, data, protectedPatterns);
         break;
-      }
       case "clearLogs":
-        result = await sendToContentScript(
-          tabId,
-          { action: "clearLogs", ...data },
-          TOP_FRAME_ID,
-        );
+        result = await clearLogsOfTab(target, data);
         break;
       case "list_containers":
         result = await listContainers(scope);
@@ -929,9 +1043,12 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         const entireWord = (data as { entireWord?: boolean }).entireWord ?? false;
         const includeRectData = (data as { includeRectData?: boolean }).includeRectData ?? false;
 
-        const tab = await resolveTab(tabId);
+        if (!target) {
+          result = { success: false, error: "No target tab" };
+          break;
+        }
         const findResult = await browser.find.find(findQuery, {
-          tabId: tab.id,
+          tabId: target.id,
           caseSensitive,
           entireWord,
           includeRangeData: true,
@@ -1043,35 +1160,33 @@ function postWireResponse(message: NativeMessage, result: CommandResult): void {
 
 /**
  * Actions that apply `protectedUrlPatterns` in their own handler instead of
- * being refused up front: all_tabs excludes protected tabs, start_logging
- * refuses on its own tab, get_*_logs report a pause.
+ * being refused up front: all_tabs, reload_all and reload_by_url skip
+ * protected tabs, start_logging refuses on its own tab, get_*_logs report a
+ * pause.
  */
 const SELF_PROTECTED_ACTIONS: ReadonlySet<string> = new Set([
   "screenshotAllTabs",
+  "reloadAll",
+  "reloadByUrl",
   "startLogging",
   "getConsoleLogs",
   "getNetworkLogs",
 ]);
 
 /**
- * Refuse a command when its target tab (same resolution as the container
- * scope check and the handlers) is on a protected domain. Returns null when
- * the command may proceed. Fails closed if the tab cannot be resolved.
+ * Refuse a command when its target tab (resolved once in handleCommand, the
+ * same tab the container scope check and the handler use) is on a
+ * protected domain. Returns null when the command may proceed. Fails closed
+ * if the tab could not be resolved.
  * `approvedHost`: the human approved this one call for that hostname (the
  * MCP Server consumed an approval token); a protected tab on exactly that
  * hostname is let through.
  */
-async function checkProtectedTarget(
-  tabId: number | undefined,
+function checkProtectedTarget(
+  tab: browser.tabs.Tab | undefined,
   patterns: RegExp[],
   approvedHost?: string,
-): Promise<CommandResult | null> {
-  let tab: browser.tabs.Tab | undefined;
-  try {
-    tab = await resolveTab(tabId);
-  } catch {
-    tab = undefined;
-  }
+): CommandResult | null {
   if (!tab) {
     return {
       success: false,
@@ -1108,6 +1223,19 @@ async function takeScreenshot(
       await browser.tabs.query({ active: true, currentWindow: true })
     )[0];
     const targetTab = tabId ? await browser.tabs.get(tabId) : currentTab;
+    if (!targetTab) return { success: false, error: "No target tab" };
+
+    // saveToFile false: images reach the MCP client only as files the
+    // Native Host saves (never as base64), so nothing is captured.
+    if (options.saveToFile === false) {
+      return {
+        success: true,
+        type: options.fullPage ? "fullPage" : "visible",
+        imageSaved: false,
+        note: NO_IMAGE_NOTE,
+        tab: { id: targetTab.id, url: targetTab.url, title: targetTab.title },
+      };
+    }
 
     const needsFocus = tabId !== undefined && tabId !== currentTab?.id;
     let originalActiveTab: browser.tabs.Tab | null = null;
@@ -1119,13 +1247,13 @@ async function takeScreenshot(
     }
 
     try {
-      const dataUrl = await browser.tabs.captureVisibleTab(
-        targetTab.windowId,
-        {
-          format: options.format || "png",
-          quality: options.quality || 90,
-        },
-      );
+      // captureTab(tabId), not captureVisibleTab(windowId): the latter takes
+      // whatever tab is visible in that window, which is another tab when
+      // the target is in a different window or was not focused.
+      const dataUrl = await browser.tabs.captureTab(targetTab.id, {
+        format: options.format || "png",
+        quality: options.quality || 90,
+      });
 
       if (options.fullPage) {
         return await captureFullPageImage(targetTab, dataUrl, options);
@@ -1171,10 +1299,11 @@ async function captureFullPageImage(
   };
   let dimensions: Record<string, unknown> | null = null;
   try {
-    dimensions = (await browser.tabs.sendMessage(targetTab.id, {
-      action: "captureFullPage",
-      format: options.format || "png",
-    })) as Record<string, unknown>;
+    dimensions = (await browser.tabs.sendMessage(
+      targetTab.id,
+      { action: "captureFullPage", format: options.format || "png" },
+      { frameId: TOP_FRAME_ID },
+    )) as Record<string, unknown>;
     const width = dimensions.scrollWidth;
     const height = dimensions.scrollHeight;
     if (typeof width === "number" && typeof height === "number" && width > 0 && height > 0) {
@@ -1226,52 +1355,105 @@ async function screenshotAllTabs(
       targetTabs = targetTabs.filter((t) => !matchesAnyPattern(t.url, protectedPatterns));
     }
     const excludedProtected = beforeProtected - targetTabs.length;
-
-    const results: Record<string, unknown>[] = [];
-
-    for (const tab of targetTabs) {
-      try {
-        const dataUrl = await browser.tabs.captureTab(tab.id, {
-          format: options.format || "png",
-          quality: options.quality || 90,
-        });
-
-        results.push({
-          success: true,
-          tabId: tab.id,
-          url: tab.url ?? "",
-          title: tab.title ?? "",
-          imageData: options.includeData ? dataUrl : undefined,
-          timestamp: Date.now(),
-        });
-      } catch (e) {
-        console.warn(`captureTab failed for tab ${tab.id} (${tab.url}):`, e);
-        results.push({
-          success: false,
-          tabId: tab.id,
-          url: tab.url ?? "",
-          error: (e as Error).message,
-        });
-      }
-    }
-
-    return {
-      success: true,
-      screenshots: results,
-      count: results.filter((r) => r.success).length,
-      failed: results.filter((r) => !r.success).length,
-      excludedProtected,
-      ...(excludedProtected > 0
+    const excluded =
+      excludedProtected > 0
         ? {
           excludedReason:
             "Tabs matching protected_url_patterns in safety.json were not captured " +
             "(set confirm_protected_actions to false to include them).",
         }
+        : {};
+
+    if (options.saveToFile === false) {
+      return {
+        success: true,
+        screenshots: targetTabs.map((t) => ({
+          tabId: t.id, url: t.url ?? "", title: t.title ?? "", imageSaved: false,
+        })),
+        count: 0,
+        failed: 0,
+        note: NO_IMAGE_NOTE,
+        excludedProtected,
+        ...excluded,
+      };
+    }
+
+    const budgetMs = positiveOr(options.timeout, TIMEOUTS.ALL_TABS_BUDGET);
+    const results = await captureTabsWithin(
+      targetTabs,
+      (tab) => browser.tabs.captureTab(tab.id, {
+        format: options.format || "png",
+        quality: options.quality || 90,
+      }),
+      { perTabMs: TIMEOUTS.CAPTURE_TAB, budgetMs, keepData: options.includeData === true },
+    );
+    const count = results.filter((r) => r.success).length;
+    const failed = results.length - count;
+
+    return {
+      // Nothing captured although there were tabs to capture: a failure.
+      success: results.length === 0 || count > 0,
+      ...(results.length > 0 && count === 0
+        ? { error: `No tab could be captured (${failed} failed; see screenshots[].error)` }
         : {}),
+      screenshots: results,
+      count,
+      failed,
+      excludedProtected,
+      ...excluded,
     };
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }
+}
+
+/**
+ * Capture `tabs` one after another within `budgetMs` overall, giving each
+ * capture at most `perTabMs` (or what is left of the budget). Tabs reached
+ * after the budget is used up are reported as skipped, not captured. Each
+ * entry has success / tabId / url, plus imageData (keepData) or error.
+ */
+async function captureTabsWithin(
+  tabs: browser.tabs.Tab[],
+  capture: (tab: browser.tabs.Tab) => Promise<string>,
+  options: { perTabMs: number; budgetMs: number; keepData: boolean },
+): Promise<Record<string, unknown>[]> {
+  const started = Date.now();
+  const results: Record<string, unknown>[] = [];
+  for (const tab of tabs) {
+    const base = { tabId: tab.id, url: tab.url ?? "", title: tab.title ?? "" };
+    const left = options.budgetMs - (Date.now() - started);
+    if (left <= 0) {
+      results.push({
+        ...base,
+        success: false,
+        skipped: true,
+        error: `Skipped: the ${options.budgetMs}ms budget of this capture was used up`,
+      });
+      continue;
+    }
+    const limit = Math.min(options.perTabMs, left);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const dataUrl = await Promise.race([
+        capture(tab),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`captureTab timed out after ${limit}ms`)), limit);
+        }),
+      ]);
+      results.push({
+        ...base,
+        success: true,
+        ...(options.keepData ? { imageData: dataUrl } : {}),
+        timestamp: Date.now(),
+      });
+    } catch (e) {
+      results.push({ ...base, success: false, error: (e as Error).message });
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+  return results;
 }
 
 // ---------------------------------------------------------------------------
@@ -1444,24 +1626,34 @@ async function solveCaptcha(
 // Navigation
 // ---------------------------------------------------------------------------
 
+const TAB_LOAD_OPTIONS = {
+  timeoutMs: TIMEOUTS.PAGE_LOAD,
+  settleMs: TIMEOUTS.TAB_LOAD_SETTLE,
+} as const;
+
 async function navigateTo(
   tabId: number | undefined,
-  data: { url: string },
+  data: { url: string; waitForLoad?: boolean },
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
-    await browser.tabs.update(tab.id, { url: data.url });
-    await waitForTabComplete(tab.id);
+    if (!tab) return { success: false, error: "No target tab" };
+    const navigate = (): Promise<unknown> => browser.tabs.update(tab.id, { url: data.url });
+    if (data.waitForLoad === false) {
+      await navigate();
+      return { success: true, url: data.url, waited: false };
+    }
+    const outcome = await waitForTabLoad(
+      browser.tabs, tab.id, navigate, (t) => t.status === "complete",
+      { ...TAB_LOAD_OPTIONS, requireLoading: true },
+    );
     // Report the URL actually loaded (after redirects), so the server's guard
     // tracks the real page; fall back to the requested URL.
-    let finalUrl = data.url;
-    try {
-      const updated = await browser.tabs.get(tab.id);
-      if (updated.url) finalUrl = updated.url;
-    } catch {
-      // keep the requested URL
+    const updated = await browser.tabs.get(tab.id).catch(() => undefined);
+    if (outcome !== "complete") {
+      return { success: false, error: tabLoadError(outcome, TAB_LOAD_OPTIONS.timeoutMs, updated?.url) };
     }
-    return { success: true, url: finalUrl };
+    return { success: true, url: updated?.url || data.url };
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }
@@ -1481,10 +1673,17 @@ async function navigateNewTab(
       // starts loading (seen on the first new tab after Firefox starts).
       // Treat about:blank as loaded only when it is what was asked for.
       const wantsBlank = data.url === "about:blank";
-      await waitForTabState(
+      const outcome = await waitForTabLoad(
+        browser.tabs,
         tabId,
+        () => Promise.resolve(),
         (tab) => tab.status === "complete" && (wantsBlank || tab.url !== "about:blank"),
+        { ...TAB_LOAD_OPTIONS, requireLoading: false },
       );
+      if (outcome !== "complete") {
+        const now = await browser.tabs.get(tabId).catch(() => undefined);
+        return { success: false, error: tabLoadError(outcome, TAB_LOAD_OPTIONS.timeoutMs, now?.url), tabId };
+      }
     }
     // Same shape as navigateTo (url after redirects), plus the new tab's id.
     const updated = await browser.tabs.get(tabId);
@@ -1543,9 +1742,11 @@ async function getPageInfo(
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
-    const result = (await browser.tabs.sendMessage(tab.id, {
-      action: "getPageInfo",
-    })) as Record<string, unknown>;
+    const result = (await browser.tabs.sendMessage(
+      tab.id,
+      { action: "getPageInfo" },
+      { frameId: TOP_FRAME_ID },
+    )) as Record<string, unknown>;
     return {
       success: true,
       tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
@@ -1682,9 +1883,11 @@ async function getTabInfo(tabId: number): Promise<CommandResult> {
 
     let pageInfo: unknown = null;
     try {
-      pageInfo = await browser.tabs.sendMessage(tabId, {
-        action: "getPageInfo",
-      });
+      pageInfo = await browser.tabs.sendMessage(
+        tabId,
+        { action: "getPageInfo" },
+        { frameId: TOP_FRAME_ID },
+      );
     } catch {
       pageInfo = { error: "Content script not available" };
     }
@@ -1820,65 +2023,89 @@ async function refreshTab(
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
+    if (!tab) return { success: false, error: "No target tab" };
+    const bypassCache = options.bypassCache || false;
+    const reload = (): Promise<unknown> => browser.tabs.reload(tab.id, { bypassCache });
 
-    await browser.tabs.reload(tab.id, {
-      bypassCache: options.bypassCache || false,
-    });
-
-    if (options.waitForLoad !== false) {
-      await waitForTabComplete(tab.id);
-      return {
-        success: true,
-        refreshed: true,
-        tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
-        bypassCache: options.bypassCache || false,
-      };
+    if (options.waitForLoad === false) {
+      await reload();
+      return { success: true, refreshed: true, tab: { id: tab.id, url: tab.url ?? "" }, bypassCache };
     }
 
+    const outcome = await waitForTabLoad(
+      browser.tabs, tab.id, reload, (t) => t.status === "complete",
+      { ...TAB_LOAD_OPTIONS, requireLoading: true },
+    );
+    const updated = await browser.tabs.get(tab.id).catch(() => undefined);
+    if (outcome !== "complete") {
+      return { success: false, error: tabLoadError(outcome, TAB_LOAD_OPTIONS.timeoutMs, updated?.url) };
+    }
     return {
       success: true,
       refreshed: true,
-      tab: { id: tab.id, url: tab.url ?? "" },
+      tab: { id: tab.id, url: updated?.url ?? tab.url ?? "", title: updated?.title ?? tab.title ?? "" },
+      bypassCache,
     };
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }
 }
 
-async function hardRefreshTab(
-  tabId: number | undefined,
+/**
+ * Reload every tab `selects`, except tabs outside the container scope and
+ * tabs on a protected domain (only their count is reported, as for
+ * screenshot all_tabs).
+ */
+async function reloadMatchingTabs(
+  selects: (tab: browser.tabs.Tab) => boolean,
+  bypassCache: boolean,
+  scope: ScopeFilter | null,
+  protectedPatterns: RegExp[],
 ): Promise<CommandResult> {
-  return refreshTab(tabId, { bypassCache: true });
+  const tabs = await browser.tabs.query({});
+  const results: { id: number; url: string; reloaded: boolean }[] = [];
+  let excludedProtected = 0;
+
+  for (const tab of tabs) {
+    if (!isTabInScope(tab, scope) || !selects(tab)) continue;
+    if (matchesAnyPattern(tab.url, protectedPatterns)) {
+      excludedProtected++;
+      continue;
+    }
+    await browser.tabs.reload(tab.id, { bypassCache });
+    results.push({ id: tab.id, url: tab.url ?? "", reloaded: true });
+  }
+
+  return {
+    success: true,
+    reloadedCount: results.length,
+    tabs: results,
+    bypassCache,
+    excludedProtected,
+    ...(excludedProtected > 0
+      ? {
+        excludedReason:
+          "Tabs matching protected_url_patterns in safety.json were not reloaded " +
+          "(set confirm_protected_actions to false to include them).",
+      }
+      : {}),
+  };
 }
 
 async function reloadAllTabs(
   options: ReloadAllOptions = {},
   scope: ScopeFilter | null = null,
+  protectedPatterns: RegExp[] = [],
 ): Promise<CommandResult> {
   try {
-    const tabs = await browser.tabs.query({});
-    const results: { id: number; url: string; reloaded: boolean }[] = [];
-
-    for (const tab of tabs) {
-      if (shouldSkipTab(tab.url)) continue;
-      if (!isTabInScope(tab, scope)) continue;
-
-      if (options.urlPattern) {
-        if (!matchesPattern(tab.url, options.urlPattern)) continue;
-      }
-
-      await browser.tabs.reload(tab.id, {
-        bypassCache: options.bypassCache || false,
-      });
-      results.push({ id: tab.id, url: tab.url ?? "", reloaded: true });
-    }
-
-    return {
-      success: true,
-      reloadedCount: results.length,
-      tabs: results,
-      bypassCache: options.bypassCache || false,
-    };
+    return await reloadMatchingTabs(
+      (tab) =>
+        !shouldSkipTab(tab.url) &&
+        (!options.urlPattern || matchesPattern(tab.url, options.urlPattern)),
+      options.bypassCache || false,
+      scope,
+      protectedPatterns,
+    );
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }
@@ -1887,43 +2114,270 @@ async function reloadAllTabs(
 async function reloadTabsByUrl(
   options: ReloadByUrlOptions,
   scope: ScopeFilter | null = null,
+  protectedPatterns: RegExp[] = [],
 ): Promise<CommandResult> {
   try {
     if (!options.url && !options.urlPattern) {
       return { success: false, error: "Must provide url or urlPattern" };
     }
-
-    const tabs = await browser.tabs.query({});
-    const results: { id: number; url: string; reloaded: boolean }[] = [];
-
-    for (const tab of tabs) {
-      if (!isTabInScope(tab, scope)) continue;
-      let matches = false;
-
-      if (options.url) {
-        matches = !!tab.url &&
-          (tab.url === options.url || tab.url.startsWith(options.url));
-      } else if (options.urlPattern) {
-        matches = matchesPattern(tab.url, options.urlPattern);
-      }
-
-      if (matches) {
-        await browser.tabs.reload(tab.id, {
-          bypassCache: options.bypassCache !== false,
-        });
-        results.push({ id: tab.id, url: tab.url ?? "", reloaded: true });
-      }
-    }
-
-    return {
-      success: true,
-      reloadedCount: results.length,
-      tabs: results,
-      bypassCache: options.bypassCache !== false,
-    };
+    return await reloadMatchingTabs(
+      (tab) =>
+        options.url
+          ? !!tab.url && tab.url.startsWith(options.url)
+          : matchesPattern(tab.url, options.urlPattern!),
+      options.bypassCache !== false,
+      scope,
+      protectedPatterns,
+    );
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Console / network log buffers (per tab, kept across navigations)
+// ---------------------------------------------------------------------------
+//
+// The top frame's content script records entries while logging is on and
+// forwards them here in small batches (LOG_RECORD_MESSAGE), plus whatever it
+// still holds when asked (flushLogs / stopLogging). The buffers live in the
+// background, so a reload or navigation -- which replaces the content script
+// -- does not lose them. Each tab keeps at most LOG_BUFFER_LIMIT console and
+// LOG_BUFFER_LIMIT network entries (oldest dropped). A buffer exists from
+// start_logging until the tab closes; stop_logging keeps it (the logs stay
+// readable), clear_logs empties it. Entries recorded in the last moment
+// before a navigation can be lost (the batch in flight when the old page
+// unloads).
+
+interface LogBuffer {
+  console: Record<string, unknown>[];
+  network: Record<string, unknown>[];
+}
+const logBuffers = new Map<number, LogBuffer>();
+const LOG_BUFFER_LIMIT = 500;
+/** content → background: `{ type, console?: entry[], network?: entry[] }`. */
+const LOG_RECORD_MESSAGE = "kitsune:logRecords";
+
+/**
+ * Copy one log entry from a content script into plain data: strings (cut
+ * at 5000 characters), finite numbers, booleans, null, and one level of
+ * string records (headers). Anything else is dropped; null if not an object.
+ */
+function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw).slice(0, 20)) {
+    if (typeof value === "string") {
+      out[key] = value.length > 5000 ? value.slice(0, 5000) : value;
+    } else if (typeof value === "number") {
+      if (Number.isFinite(value)) out[key] = value;
+    } else if (typeof value === "boolean" || value === null) {
+      out[key] = value;
+    } else if (typeof value === "object" && !Array.isArray(value)) {
+      const record: Record<string, string> = {};
+      for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, 50)) {
+        if (typeof v === "string") record[k.slice(0, 200)] = v.slice(0, 1000);
+      }
+      out[key] = record;
+    }
+  }
+  return out;
+}
+
+/**
+ * Append the valid entries of `incoming` (an array, else nothing) to
+ * `target`, keeping only the newest `limit`. Returns how many were added.
+ */
+function appendLogRecords(target: Record<string, unknown>[], incoming: unknown, limit: number): number {
+  if (!Array.isArray(incoming)) return 0;
+  let added = 0;
+  for (const raw of incoming) {
+    const entry = sanitizeLogRecord(raw);
+    if (entry === null) continue;
+    target.push(entry);
+    added++;
+  }
+  if (target.length > limit) target.splice(0, target.length - limit);
+  return added;
+}
+
+/** Positive integer `limit`, else 100 (the tool default). */
+function logLimit(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 100;
+}
+
+/** fox_get_console_logs filters over a buffer (newest `limit` entries). */
+function queryConsoleLogs(
+  entries: Record<string, unknown>[],
+  options: Record<string, unknown> = {},
+): CommandResult {
+  let logs = entries;
+  if (typeof options.level === "string" && options.level !== "") {
+    logs = logs.filter((l) => l.level === options.level);
+  }
+  if (typeof options.search === "string" && options.search !== "") {
+    const needle = options.search.toLowerCase();
+    logs = logs.filter((l) => typeof l.message === "string" && l.message.toLowerCase().includes(needle));
+  }
+  const limit = logLimit(options.limit);
+  if (logs.length > limit) logs = logs.slice(-limit);
+  return { success: true, logs, totalCount: entries.length, returnedCount: logs.length };
+}
+
+/** fox_get_network_logs filters over a buffer (urlPattern: case-insensitive regex). */
+function queryNetworkLogs(
+  entries: Record<string, unknown>[],
+  options: Record<string, unknown> = {},
+): CommandResult {
+  let logs = entries;
+  if (typeof options.urlPattern === "string" && options.urlPattern !== "") {
+    let pattern: RegExp;
+    try {
+      pattern = new RegExp(options.urlPattern, "i");
+    } catch (error) {
+      return { success: false, error: `Invalid urlPattern: ${(error as Error).message}` };
+    }
+    logs = logs.filter((l) => typeof l.url === "string" && pattern.test(l.url));
+  }
+  if (typeof options.method === "string" && options.method !== "") {
+    const method = options.method.toUpperCase();
+    logs = logs.filter((l) => typeof l.method === "string" && l.method.toUpperCase() === method);
+  }
+  if (typeof options.status === "number") {
+    logs = logs.filter((l) => l.status === options.status);
+  }
+  if (options.errorsOnly === true) {
+    logs = logs.filter((l) => !!l.error || (typeof l.status === "number" && l.status >= 400));
+  }
+  const limit = logLimit(options.limit);
+  if (logs.length > limit) logs = logs.slice(-limit);
+  return { success: true, logs, totalCount: entries.length, returnedCount: logs.length };
+}
+
+/**
+ * Store entries a tab's top-frame content script sent (batch, flush or stop
+ * reply). Dropped when the tab has no buffer (logging never started, or the
+ * buffer was released) or the page they came from is protected.
+ */
+function acceptLogRecords(
+  tabId: number,
+  pageUrls: (string | undefined)[],
+  payload: { console?: unknown; network?: unknown },
+): void {
+  const buffer = logBuffers.get(tabId);
+  if (!buffer) return;
+  const patterns = loggingTabs.get(tabId)?.patterns ?? [];
+  if (pageUrls.some((u) => findProtectedMatch(u, patterns) !== undefined)) return;
+  appendLogRecords(buffer.console, payload.console, LOG_BUFFER_LIMIT);
+  appendLogRecords(buffer.network, payload.network, LOG_BUFFER_LIMIT);
+}
+
+function logCounts(tabId: number): { consoleLogsCount: number; networkLogsCount: number } {
+  const buffer = logBuffers.get(tabId);
+  return {
+    consoleLogsCount: buffer?.console.length ?? 0,
+    networkLogsCount: buffer?.network.length ?? 0,
+  };
+}
+
+async function startLoggingOnTab(
+  target: browser.tabs.Tab | undefined,
+  data: Record<string, unknown> = {},
+  protectedPatterns: RegExp[],
+  approvedHost: string | undefined,
+): Promise<CommandResult> {
+  // Same rule as a single-tab screenshot: refuse on a protected page, judged
+  // by the tab's real URL (fails closed without a tab).
+  if (!target) return { success: false, error: "No target tab" };
+  const refusal = checkProtectedTarget(target, protectedPatterns, approvedHost);
+  if (refusal) return refusal;
+  const tab = target;
+  const result = await sendToContentScript(tab.id, {
+    action: "startLogging",
+    ...data,
+    protectedPatterns: protectedPatterns.map((p) => p.source),
+  });
+  if (!result.success) return result;
+  loggingTabs.set(tab.id, { patterns: protectedPatterns });
+  let buffer = logBuffers.get(tab.id);
+  if (!buffer) {
+    buffer = { console: [], network: [] };
+    logBuffers.set(tab.id, buffer);
+  }
+  if (data.clearExisting === true) {
+    buffer.console.length = 0;
+    buffer.network.length = 0;
+  }
+  return { ...result, ...logCounts(tab.id), bufferLimit: LOG_BUFFER_LIMIT };
+}
+
+async function stopLoggingOnTab(target: browser.tabs.Tab | undefined): Promise<CommandResult> {
+  if (!target) return { success: false, error: "No target tab" };
+  // Ask the page first, so the entries it has not sent yet are kept.
+  const reply = await sendToContentScript(target.id, { action: "stopLogging" });
+  if (reply.success) acceptLogRecords(target.id, [target.url], reply as { console?: unknown; network?: unknown });
+  loggingTabs.delete(target.id);
+  return {
+    success: true,
+    message: "Logging stopped",
+    ...logCounts(target.id),
+    ...(reply.success
+      ? {}
+      : { note: `The page did not answer (${reply.error ?? "unknown error"}); logging is off for this tab anyway.` }),
+  };
+}
+
+async function getLogsOfTab(
+  action: "getConsoleLogs" | "getNetworkLogs",
+  target: browser.tabs.Tab | undefined,
+  data: Record<string, unknown> = {},
+  protectedPatterns: RegExp[],
+): Promise<CommandResult> {
+  if (!target) return { success: false, error: "No target tab" };
+  // Collect what the current page recorded but has not sent yet. The logs
+  // themselves come from the background buffer, so they are there even
+  // when the current page has no content script.
+  const flush = await sendToContentScript(target.id, { action: "flushLogs" });
+  if (flush.success) acceptLogRecords(target.id, [target.url], flush as { console?: unknown; network?: unknown });
+  const buffer = logBuffers.get(target.id) ?? { console: [], network: [] };
+  const result = action === "getConsoleLogs"
+    ? queryConsoleLogs(buffer.console, data)
+    : queryNetworkLogs(buffer.network, data);
+  if (!result.success) return result;
+
+  const interception = (flush.success ? flush.interception : undefined) as
+    { console?: boolean; fetch?: boolean; xhr?: boolean } | undefined;
+  const diagnostics: Record<string, unknown> = !interception
+    ? { currentPageReached: false }
+    : action === "getConsoleLogs"
+      ? { interceptionAvailable: interception.console === true, injection: flush.injection }
+      : {
+        interceptionAvailable: interception.fetch === true || interception.xhr === true,
+        interception: { fetch: interception.fetch === true, xhr: interception.xhr === true },
+      };
+  return {
+    ...result,
+    loggingEnabled: loggingTabs.has(target.id),
+    pausedForProtectedDomain: isLoggingPausedForTab(target, protectedPatterns),
+    ...diagnostics,
+  };
+}
+
+async function clearLogsOfTab(
+  target: browser.tabs.Tab | undefined,
+  data: Record<string, unknown> = {},
+): Promise<CommandResult> {
+  if (!target) return { success: false, error: "No target tab" };
+  const clearConsole = data.console !== false;
+  const clearNetwork = data.network !== false;
+  const buffer = logBuffers.get(target.id);
+  if (buffer) {
+    if (clearConsole) buffer.console.length = 0;
+    if (clearNetwork) buffer.network.length = 0;
+  }
+  // Drop what the page holds but has not sent yet (best effort).
+  await sendToContentScript(target.id, { action: "clearLogs", console: clearConsole, network: clearNetwork });
+  return { success: true, message: "Logs cleared", ...logCounts(target.id) };
 }
 
 // ---------------------------------------------------------------------------
@@ -2050,14 +2504,13 @@ function isSingleTabAction(action: string): boolean {
 }
 
 /**
- * Layer 0 enforcement. For single-tab actions, resolves the target tab
- * (explicit tabId, else the active tab -- same logic as resolveTab()) and
- * requires its cookieStoreId to be the agent container's. Anything that
- * cannot be resolved is refused.
+ * Layer 0 enforcement. For single-tab actions, requires the target tab
+ * (resolved once by handleCommand: explicit tabId, else the active tab) to
+ * be in the agent container. A tab that could not be resolved is refused.
  */
 async function enforceContainerScope(
   action: string | undefined,
-  tabId: number | undefined,
+  tab: browser.tabs.Tab | undefined,
   containerScope: ContainerScope,
 ): Promise<ScopeDecision> {
   const { containerName } = containerScope;
@@ -2088,12 +2541,6 @@ async function enforceContainerScope(
     };
   }
 
-  let tab: browser.tabs.Tab | undefined;
-  try {
-    tab = await resolveTab(tabId);
-  } catch {
-    tab = undefined;
-  }
   if (!tab) {
     return {
       allowed: false,
@@ -2246,6 +2693,18 @@ browser.runtime.onMessage.addListener(
       );
       return;
     }
+    if (msg.type === LOG_RECORD_MESSAGE) {
+      // A batch from the top frame of a tab whose logging is on. The page
+      // URL checked is the browser's (sender), never one from the message.
+      const senderTabId = sender.tab?.id;
+      const accepted =
+        sender.frameId === TOP_FRAME_ID &&
+        senderTabId !== undefined &&
+        loggingTabs.has(senderTabId);
+      if (accepted) acceptLogRecords(senderTabId, [sender.tab?.url, sender.url], msg as { console?: unknown; network?: unknown });
+      sendResponse({ accepted });
+      return;
+    }
     if (msg.type === LOGGING_STATE_QUERY) {
       // Only the top frame records (commands go to frame 0). The URL is the
       // one the browser reports for the sender (tab and document), never a
@@ -2337,6 +2796,7 @@ browser.webNavigation.onCommitted.addListener((details) => {
 
 browser.tabs.onRemoved.addListener((tabId) => {
   loggingTabs.delete(tabId);
+  logBuffers.delete(tabId);
 });
 
 // Clicking an approval notification opens the toolbar popup where it is
@@ -2375,25 +2835,34 @@ browser.contextMenus.create({
 
 browser.contextMenus.onClicked.addListener(
   (
-    info: { menuItemId: string; pageX?: number; pageY?: number },
+    info: { menuItemId: string; pageX?: number; pageY?: number; frameId?: number },
     tab: browser.tabs.Tab,
   ): void => {
     if (info.menuItemId === "kitsune-screenshot") {
-      takeScreenshot(tab.id).then((result) => {
-        if (result.success && nativePort) {
+      void takeScreenshot(tab.id).then((result) => {
+        if (!result.success || !nativePort) return;
+        try {
           nativePort.postMessage({
             action: "screenshotTaken",
             data: result.imageData,
             tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
           });
+        } catch (error) {
+          console.warn("[KitsuneMCP] Could not hand the screenshot to the native host:", (error as Error).message);
         }
       });
     } else if (info.menuItemId === "kitsune-inspect") {
-      browser.tabs.sendMessage(tab.id, {
-        action: "inspectElement",
-        x: info.pageX,
-        y: info.pageY,
-      });
+      // The frame the menu was opened in (its content script handles it).
+      browser.tabs
+        .sendMessage(
+          tab.id,
+          { action: "inspectElement", x: info.pageX, y: info.pageY },
+          { frameId: info.frameId ?? TOP_FRAME_ID },
+        )
+        .catch((error: unknown) => {
+          // No content script in that frame (e.g. a page extensions cannot enter)
+          console.warn("[KitsuneMCP] Inspect element failed:", (error as Error).message);
+        });
     }
   },
 );

@@ -83,7 +83,7 @@ const WIRE_ACTION_MAP: ReadonlyMap<string, string | null> = new Map<string, stri
   ["solve_captcha", "solveCaptcha"],
   ["cancel_human_wait", "cancelHumanWait"],
   ["audit_page", null],
-  ["inject_observer", null],
+  ["inject_observer", "observeElement"],
 
   // --- P3-3 actions (container / find keep their snake_case internal names) ---
   ["snapshot", null],
@@ -93,7 +93,7 @@ const WIRE_ACTION_MAP: ReadonlyMap<string, string | null> = new Map<string, stri
   ["open_in_container", "open_in_container"],
   ["wait_for_navigation", "waitForNavigation"],
   ["wait_for_url", "waitForUrl"],
-  ["remove_observer", null],
+  ["remove_observer", "stopObserving"],
 ]);
 
 (globalThis as { KITSUNE_WIRE_ACTION_MAP?: ReadonlyMap<string, string | null> })
