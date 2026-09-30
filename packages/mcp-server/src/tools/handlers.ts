@@ -36,6 +36,7 @@ import type { ApprovalGrant } from '../safety/approval.js';
 import type { SafetyConfig } from '../safety/config.js';
 import { getContainerConfig } from '../safety/container.js';
 import { sanitizeResult } from '../safety/sanitizer.js';
+import { compileUrlPatterns } from '../safety/url-pattern.js';
 import { audit } from '../safety/audit.js';
 import type { AuditDecision } from '../safety/audit.js';
 import { camelizeArgs } from '../utils/camelize.js';
@@ -176,8 +177,8 @@ function buildCommandData(
  *     (confirmation_required), keeps the patterns with the tab and pauses
  *     recording while the tab is on a protected page.
  *     Also on every acting tool (not in OBSERVE_TOOLS) without a `url`
- *     argument: the guard's Layer 7 can only check the last URL it saw,
- *     which is shared by every session and tab, so the Extension refuses
+ *     argument: the guard's Layer 7 can only check the last URL it saw for
+ *     the tab, which may be stale or unknown, so the Extension refuses
  *     the command when the actual target tab is protected. Tools with a
  *     `url` are checked by the guard against that URL instead.
  */
@@ -209,7 +210,10 @@ export function attachSafetyMetadata(
     config.confirmProtectedActions &&
     config.protectedUrlPatterns.length > 0
   ) {
-    command.protectedUrlPatterns = [...config.protectedUrlPatterns];
+    // The Extension tests each entry as a case-insensitive regex against the
+    // raw tab URL: send the anchored equivalent of each host pattern.
+    command.protectedUrlPatterns = compileUrlPatterns(config.protectedUrlPatterns, 'protected')
+      .patterns.map((p) => p.wireSource);
   }
 }
 
@@ -561,10 +565,15 @@ export function createToolHandler(
     // -----------------------------------------------------------------------
 
     // Track the page URL after every successful operation (data.url, or
-    // data.tab.url), so Layer 4/7 protected-domain checks see the current
-    // page on both the Extension and headless paths.
+    // data.tab.url) per tab, so the guard's checks see the current page on
+    // both the Extension and headless paths. Then check the URL the command
+    // ended on: a redirect or a clicked link may have reached a blocked site.
     if (response.success && response.data) {
-      guard.noteUrl(response.data);
+      guard.noteUrl(response.data, args, toolName);
+      const reached = guard.checkReachedUrl(toolName, args, response.data, transport);
+      if (reached !== null) {
+        return safetyDenialToCallResult({ ...reached, decision: reached.safetyDecision });
+      }
     }
 
     // Saved screenshot files → resource_link blocks (both backends).

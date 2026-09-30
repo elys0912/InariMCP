@@ -177,7 +177,11 @@ describe('without approval, protected-site actions are refused', () => {
     const result = await createToolHandler('fox_click')({ selector: '#send' });
     expect(result.isError).toBe(true);
     expect(browser.received.map((c) => c.action)).toEqual(['click']);
-    expect(browser.received[0]!.protectedUrlPatterns).toEqual(['bank\\.example\\.test']);
+    // Sent as the anchored regex equivalent of the host pattern (safety/url-pattern.ts).
+    const sentPatterns = browser.received[0]!.protectedUrlPatterns!.map((p) => new RegExp(p, 'i'));
+    expect(sentPatterns).toHaveLength(1);
+    expect(sentPatterns[0]!.test(PROTECTED_URL)).toBe(true);
+    expect(sentPatterns[0]!.test(`https://${PROTECTED_HOST}.other.test/`)).toBe(false);
     expect(browser.received[0]!.approvedHost).toBeUndefined();
     expect(details(result)['approval']).toMatchObject({ toolName: 'fox_click', host: PROTECTED_HOST });
   });
@@ -275,7 +279,7 @@ describe('popup approval → one-time token', () => {
     const first = await createToolHandler('fox_click')(args);
     const reply = await askBrowser(findApprovalRequest(first)!.requestId, getConnectionManager());
 
-    browser.tabUrl = 'https://www.bank.example.test.other.test/'; // still matches the pattern, other host
+    browser.tabUrl = `https://other.${PROTECTED_HOST}/`; // still matches the pattern, other host
     const result = await createToolHandler('fox_click')(args, { approvalToken: reply.approvalToken });
     expect(result.isError).toBe(true);
     expect(details(result)).toMatchObject({ decision: 'confirmation_required' });

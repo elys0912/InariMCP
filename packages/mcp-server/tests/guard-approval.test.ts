@@ -68,7 +68,7 @@ describe('SafetyGuard.check with an approval grant', () => {
 
     const nav = { url: PROTECTED };
     expect(
-      guard({ blockedUrlPatterns: ['transfer'] }).check('fox_navigate', nav, undefined, grantFor('fox_navigate', nav)),
+      guard({ blockedUrlPatterns: ['bank.example.test/transfer'] }).check('fox_navigate', nav, undefined, grantFor('fox_navigate', nav)),
     ).toMatchObject({ safetyDecision: 'blocked_url' });
 
     const js = { url: 'javascript:alert(1)' };
