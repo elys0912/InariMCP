@@ -28,6 +28,7 @@
 import { helpText, parseArgs } from './cli.js';
 import { PACKAGE_VERSION } from './version.js';
 import { installProcessHandlers } from './utils/process-handlers.js';
+import { installStderrTimestamps } from './utils/log-file.js';
 
 const command = parseArgs(process.argv.slice(2));
 
@@ -44,6 +45,8 @@ async function main(): Promise<void> {
       process.exitCode = 2;
       return;
     case 'daemon': {
+      // stderr is daemon.log: timestamp every line (utils/log-file.ts)
+      installStderrTimestamps();
       // Global error handlers (policy: utils/process-handlers.ts)
       installProcessHandlers('daemon');
       // Each role loads only its own modules (the relay never loads
