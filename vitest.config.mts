@@ -1,0 +1,40 @@
+import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vitest/config';
+
+/**
+ * Test layout
+ *
+ *   packages/<pkg>/tests/**\/*.test.ts  unit tests of one workspace
+ *   tests/contract/**\/*.test.ts        contracts spanning several packages
+ *
+ * Tests live outside `src/`, so each package's tsconfig (`include: ["src"]`,
+ * `rootDir: "src"`) never compiles them into `dist/`. Vitest transpiles them
+ * on the fly; they are not type-checked by `npm run build`.
+ *
+ * packages/extension is not a project here: its sources are classic scripts
+ * (no import/export, browser globals, loaded in order by manifest.json), so
+ * background.ts / content.ts cannot be imported by a test. Extension-side
+ * contracts are checked from tests/contract instead, by loading the
+ * dependency-free action-map.ts or by reading the extension sources.
+ */
+
+/** Resolve the shared package to its sources, so tests do not need a build. */
+const sharedSrc = fileURLToPath(new URL('./packages/shared/src/index.ts', import.meta.url));
+
+export default defineConfig({
+  resolve: {
+    alias: [{ find: /^@kitsune-mcp\/shared$/, replacement: sharedSrc }],
+  },
+  test: {
+    env: {
+      // Keep the Native Host logger away from ~/.kitsune-mcp/logs.
+      FOX_NATIVE_HOST_LOG: 'off',
+    },
+    projects: [
+      { extends: true, test: { name: 'shared', include: ['packages/shared/tests/**/*.test.ts'] } },
+      { extends: true, test: { name: 'mcp-server', include: ['packages/mcp-server/tests/**/*.test.ts'] } },
+      { extends: true, test: { name: 'native-host', include: ['packages/native-host/tests/**/*.test.ts'] } },
+      { extends: true, test: { name: 'contract', include: ['tests/contract/**/*.test.ts'] } },
+    ],
+  },
+});

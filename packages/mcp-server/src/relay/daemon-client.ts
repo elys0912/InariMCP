@@ -43,7 +43,7 @@ const HEALTH_TIMEOUT_MS = 2_000;
  * own wait for the headless backend to boot (FOX_HEADLESS_STARTUP_TIMEOUT,
  * default 45 s) plus transport slack.
  */
-const RELAY_TIMEOUT_MARGIN_MS = 60_000;
+export const RELAY_TIMEOUT_MARGIN_MS = 60_000;
 
 function log(msg: string): void {
   process.stderr.write(`[KitsuneMCP:relay] ${msg}\n`);

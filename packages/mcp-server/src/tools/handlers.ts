@@ -174,7 +174,7 @@ const PROTECTED_CAPTURE_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAct
   'get_network_logs',
 ]);
 
-function attachSafetyMetadata(
+export function attachSafetyMetadata(
   command: BrowserCommand,
   config: SafetyConfig,
   toolName: string,
