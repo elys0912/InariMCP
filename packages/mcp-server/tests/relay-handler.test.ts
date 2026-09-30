@@ -81,6 +81,18 @@ describe('relay tool handler', () => {
     expect(logs).toEqual(['WARNING: settings differ']);
   });
 
+  it('still delivers the warning when the daemon was not up at the background check', async () => {
+    const client = fakeClient();
+    client.ready
+      .mockResolvedValueOnce(false) // startNotice(): no daemon yet
+      .mockResolvedValue(true); //     first tool call: it is up by now
+    client.settingsMismatch.mockResolvedValue(['settings differ']);
+    const handlers = createRelayHandlers(client, null, () => {});
+    handlers.startNotice();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(texts(await call(handlers))).toEqual(['done', 'WARNING: settings differ']);
+  });
+
   it('carries the warning over a failed first call to the next successful one', async () => {
     const client = fakeClient();
     client.callTool.mockResolvedValueOnce(failed);

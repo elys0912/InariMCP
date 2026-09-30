@@ -2,7 +2,7 @@
  * Headless backend actions against a real headless Firefox (Playwright).
  * Skipped as a whole when Firefox cannot be launched.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { HeadlessBrowser } from '../src/headless/backend.js';
 
 type Result = Record<string, unknown>;
@@ -174,6 +174,34 @@ describe('dialogs', () => {
     expect(info['success']).toBe(true);
     expect(Date.now() - started).toBeLessThan(1_000);
     expect(await waiting).toMatchObject({ success: true, handled: false });
+  });
+
+  real('an armed handler expires: a later dialog is treated as unexpected', async () => {
+    expect((await browser.execute('create_tab', undefined, {}))['success']).toBe(true);
+    await load(ALERT);
+    const armed = await browser.execute('handle_dialog', undefined, { action: 'accept', timeout: 100 });
+    expect(armed['armed']).toBe('accept');
+    const realNow = Date.now.bind(Date);
+    const spy = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 31_000);
+    try {
+      const click = await browser.execute('click', undefined, { selector: '#b' });
+      expect(click['success']).toBe(true);
+      expect((click['dialogs'] as Array<{ auto: boolean }>)[0]?.auto).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  }, 40_000);
+
+  real('closing the tab ends a waiting handle_dialog at once', async () => {
+    const created = await browser.execute('create_tab', undefined, {});
+    const tab = created['tabId'] as number;
+    const started = Date.now();
+    const waiting = browser.execute('handle_dialog', tab, { timeout: 20_000 });
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await browser.execute('close_tab', tab, {}))['success']).toBe(true);
+    const r = await waiting;
+    expect(r['success']).toBe(false);
+    expect(Date.now() - started).toBeLessThan(10_000);
   });
 
   real('an unexpected dialog is dismissed after a grace period and reported', async () => {

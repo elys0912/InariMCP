@@ -5,6 +5,18 @@ export function isTruthyEnv(value: string | undefined): boolean {
   return value !== undefined && ['1', 'true', 'yes'].includes(value.trim().toLowerCase());
 }
 
+const FALSY_VALUES = ['0', 'false', 'no', 'off'];
+
+/**
+ * The raw FOX_HEADLESS value when it is neither enabling nor a known "off"
+ * (e.g. `on`, `y`): it is treated as off, and the daemon says so in its log.
+ */
+export function unrecognizedHeadlessValue(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const raw = resolve(env, ENV.FOX_HEADLESS, LEGACY_ENV.CLAUDE_BROWSER_HEADLESS);
+  if (raw === undefined || isTruthyEnv(raw)) return undefined;
+  return FALSY_VALUES.includes(raw.trim().toLowerCase()) ? undefined : raw;
+}
+
 /** The first non-empty value of FOX_* or its legacy CLAUDE_BROWSER_* name. */
 function resolve(env: NodeJS.ProcessEnv, foxKey: string, legacyKey: string): string | undefined {
   for (const key of [foxKey, legacyKey]) {

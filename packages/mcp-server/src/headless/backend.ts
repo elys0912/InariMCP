@@ -39,6 +39,8 @@ function log(msg: string): void {
 
 /** Longest a dialog nobody asked for may stay open before it is dismissed (it blocks the page). */
 const DIALOG_GRACE_MS = 2_000;
+/** An armed fox_handle_dialog applies to the next dialog within this time only. */
+const ARM_TTL_MS = 30_000;
 /** fox_snapshot text is cut at this many characters. */
 const SNAPSHOT_MAX_CHARS = 50_000;
 
@@ -54,8 +56,8 @@ export class HeadlessBrowser {
   // Dialogs are tracked per tab outside the execute() lock: a fox_handle_dialog
   // waiting for a dialog must not block the click that opens it.
   private _pendingDialog = new Map<number, Dialog>();
-  private _dialogWaiters = new Map<number, (d: Dialog) => void>();
-  private _armed = new Map<number, { action: 'accept' | 'dismiss'; promptText?: string }>();
+  private _dialogWaiters = new Map<number, { deliver: (d: Dialog) => void; cancel: () => void }>();
+  private _armed = new Map<number, { action: 'accept' | 'dismiss'; promptText?: string; until: number }>();
   private _dialogEvents = new Map<number, DialogEvent[]>();
   private _browser: Browser | null = null;
   private _context: BrowserContext | null = null;
@@ -104,6 +106,7 @@ export class HeadlessBrowser {
     this._tabs.clear();
     this._activeTabId = null;
     this._pendingDialog.clear();
+    for (const w of this._dialogWaiters.values()) w.cancel();
     this._dialogWaiters.clear();
     this._armed.clear();
     this._dialogEvents.clear();
@@ -131,6 +134,7 @@ export class HeadlessBrowser {
   private _forgetTab(tabId: number): void {
     this._tabs.delete(tabId);
     this._pendingDialog.delete(tabId);
+    this._dialogWaiters.get(tabId)?.cancel();
     this._dialogWaiters.delete(tabId);
     this._armed.delete(tabId);
     this._dialogEvents.delete(tabId);
@@ -197,7 +201,7 @@ export class HeadlessBrowser {
   ): Promise<Record<string, unknown>> {
     // Not serialised: it waits for a dialog that a queued action may be about to open.
     if (action === 'handle_dialog') {
-      return this._finish(action, tabId, args, await this._run(action, () => this._handleDialog(tabId, args)));
+      return this._finish(action, tabId ?? this._activeTabId, args, await this._run(action, () => this._handleDialog(tabId, args)));
     }
 
     let release!: () => void;
@@ -206,7 +210,9 @@ export class HeadlessBrowser {
     this._lockChain = gate;
     await prev;
     try {
-      return this._finish(action, tabId, args, await this._run(action, () => this._dispatch(action, tabId, args)));
+      // The tab this action targets, fixed before it can change the active tab.
+      const target = tabId ?? this._activeTabId;
+      return this._finish(action, target, args, await this._run(action, () => this._dispatch(action, tabId, args)));
     } finally {
       release();
     }
@@ -231,7 +237,7 @@ export class HeadlessBrowser {
    */
   private _finish(
     action: string,
-    tabId: number | undefined,
+    id: number | null,
     args: Record<string, unknown>,
     result: Record<string, unknown>,
   ): Record<string, unknown> {
@@ -239,7 +245,6 @@ export class HeadlessBrowser {
       ...(Array.isArray(result['warnings']) ? (result['warnings'] as string[]) : []),
       ...ignoredParamWarnings(action, args),
     ];
-    const id = tabId ?? this._activeTabId;
     const drain = id !== null && action !== 'handle_dialog';
     const events = drain ? this._dialogEvents.get(id) : undefined;
     if (drain) this._dialogEvents.delete(id);
@@ -271,24 +276,25 @@ export class HeadlessBrowser {
     const waiter = this._dialogWaiters.get(tabId);
     if (waiter) {
       this._dialogWaiters.delete(tabId);
-      waiter(dialog);
+      waiter.deliver(dialog);
       return;
     }
     const armed = this._armed.get(tabId);
-    if (armed) {
-      this._armed.delete(tabId);
-      void this._settle(dialog, armed.action, armed.promptText).then((info) => {
+    this._armed.delete(tabId);
+    if (armed && Date.now() <= armed.until) {
+      void this._settle(dialog, armed.action, armed.promptText, (info) => {
         this._recordDialog(tabId, { ...info, auto: false });
       });
       return;
     }
-    // Nobody asked for it: an open dialog blocks the page (and the action that
-    // opened it), so give fox_handle_dialog a moment, then dismiss.
+    // Nobody asked for it (or the request expired): an open dialog blocks the
+    // page and the action that opened it, so give fox_handle_dialog a moment,
+    // then dismiss.
     this._pendingDialog.set(tabId, dialog);
     setTimeout(() => {
       if (this._pendingDialog.get(tabId) !== dialog) return;
       this._pendingDialog.delete(tabId);
-      void this._settle(dialog, 'dismiss').then((info) => {
+      void this._settle(dialog, 'dismiss', undefined, (info) => {
         this._recordDialog(tabId, { ...info, auto: true });
       });
     }, DIALOG_GRACE_MS).unref();
@@ -304,8 +310,11 @@ export class HeadlessBrowser {
     dialog: Dialog,
     action: 'accept' | 'dismiss',
     promptText?: string,
+    /** Called before the dialog is settled, so a result that waits for it already finds the record. */
+    onInfo?: (info: { type: string; message: string; handled: 'accept' | 'dismiss' }) => void,
   ): Promise<{ type: string; message: string; handled: 'accept' | 'dismiss' }> {
     const info = { type: dialog.type(), message: dialog.message(), handled: action };
+    onInfo?.(info);
     try {
       if (action === 'accept') await dialog.accept(promptText);
       else await dialog.dismiss();
@@ -339,7 +348,11 @@ export class HeadlessBrowser {
     }
 
     const dialog = await new Promise<Dialog | null>((resolve) => {
-      const waiter = (d: Dialog): void => { clearTimeout(timer); resolve(d); };
+      const waiter = {
+        deliver: (d: Dialog): void => { clearTimeout(timer); resolve(d); },
+        // the tab was closed or the browser stopped
+        cancel: (): void => { clearTimeout(timer); resolve(null); },
+      };
       const timer = setTimeout(() => {
         if (this._dialogWaiters.get(id) === waiter) this._dialogWaiters.delete(id);
         resolve(null);
@@ -347,13 +360,20 @@ export class HeadlessBrowser {
       this._dialogWaiters.set(id, waiter);
     });
     if (dialog) return settle(dialog);
+    if (!this._tabs.has(id)) return { success: false, error: `Tab ${id} was closed while waiting for a dialog` };
 
-    this._armed.set(id, { action, ...(promptText !== undefined ? { promptText } : {}) });
+    this._armed.set(id, {
+      action,
+      ...(promptText !== undefined ? { promptText } : {}),
+      until: Date.now() + ARM_TTL_MS,
+    });
     return {
       success: true,
       handled: false,
       armed: action,
-      message: `No dialog open; the next dialog on this tab will be ${action === 'accept' ? 'accepted' : 'dismissed'}`,
+      message:
+        `No dialog open; the next dialog on this tab within ${ARM_TTL_MS / 1000}s will be ` +
+        `${action === 'accept' ? 'accepted' : 'dismissed'}`,
     };
   }
 

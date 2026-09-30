@@ -260,17 +260,22 @@ export class DaemonClient {
    * @returns human-readable warnings (empty when the settings agree)
    */
   async settingsMismatch(timeoutMs: number = HEALTH_TIMEOUT_MS): Promise<string[]> {
+    return (await this.checkSettings(timeoutMs)) ?? [];
+  }
+
+  /** Like settingsMismatch(), but null when the daemon's settings could not be read (unknown, not "equal"). */
+  async checkSettings(timeoutMs: number = HEALTH_TIMEOUT_MS): Promise<string[] | null> {
     const token = this.readToken();
-    if (token === undefined) return [];
+    if (token === undefined) return null;
     let reply: HttpReply;
     try {
       reply = await this.request('GET', '/daemon/info', undefined, timeoutMs, token);
     } catch {
-      return [];
+      return null;
     }
-    if (reply.status !== 200 || !reply.verified || !isRecord(reply.body)) return [];
+    if (reply.status !== 200 || !reply.verified || !isRecord(reply.body)) return null;
     const daemonSettings = reply.body['settings'];
-    if (!isRecord(daemonSettings)) return [];
+    if (!isRecord(daemonSettings)) return null;
     const pid = typeof reply.body['pid'] === 'number' ? reply.body['pid'] : 'unknown';
 
     const mine = snapshotDaemonSettings();

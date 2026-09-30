@@ -54,15 +54,20 @@ export function createRelayHandlers(
   const checkNotice = (): Promise<string[]> => {
     notice ??= client.ready()
       .then(async (ok) => {
-        if (!ok) return [];
+        if (!ok) {
+          // No daemon yet: forget this attempt, a later call checks again.
+          notice = null;
+          return [];
+        }
         const protocol = client.protocolMismatch?.();
-        return protocol !== undefined ? [protocol] : client.settingsMismatch();
-      })
-      .then((warnings) => {
+        const warnings = protocol !== undefined ? [protocol] : await client.settingsMismatch();
         for (const w of warnings) log(`WARNING: ${w}`);
         return warnings;
       })
-      .catch(() => []);
+      .catch(() => {
+        notice = null;
+        return [];
+      });
     return notice;
   };
 

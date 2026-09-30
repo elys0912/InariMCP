@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
-import { headlessStartupTimeoutMs, isHeadlessEnabled, isTruthyEnv } from '../src/utils/headless-env.js';
+import {
+  headlessStartupTimeoutMs,
+  isHeadlessEnabled,
+  isTruthyEnv,
+  unrecognizedHeadlessValue,
+} from '../src/utils/headless-env.js';
 import { checkHeadlessContainerScope } from '../src/safety/container.js';
 import type { SafetyConfig } from '../src/safety/config.js';
 
@@ -28,6 +33,20 @@ describe('isHeadlessEnabled', () => {
   it('the FOX_ name wins over the legacy one, an empty FOX_ value falls through', () => {
     expect(isHeadlessEnabled({ FOX_HEADLESS: '0', CLAUDE_BROWSER_HEADLESS: '1' })).toBe(false);
     expect(isHeadlessEnabled({ FOX_HEADLESS: '', CLAUDE_BROWSER_HEADLESS: '1' })).toBe(true);
+  });
+});
+
+describe('unrecognizedHeadlessValue', () => {
+  it('reports values that look like "on" but do not enable headless', () => {
+    expect(unrecognizedHeadlessValue({ FOX_HEADLESS: 'on' })).toBe('on');
+    expect(unrecognizedHeadlessValue({ FOX_HEADLESS: 'y' })).toBe('y');
+  });
+
+  it('is silent for enabling, known-off and unset values', () => {
+    for (const v of ['1', 'true', 'yes', '0', 'false', 'no', 'off', '']) {
+      expect(unrecognizedHeadlessValue({ FOX_HEADLESS: v })).toBeUndefined();
+    }
+    expect(unrecognizedHeadlessValue({})).toBeUndefined();
   });
 });
 

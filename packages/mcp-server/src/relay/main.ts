@@ -47,7 +47,7 @@ export async function runRelay(): Promise<void> {
     (async (): Promise<string[] | null> => {
       if (!(await client.checkHealth(PRECHECK_TIMEOUT_MS))) return null;
       const protocol = client.protocolMismatch();
-      return protocol !== undefined ? [protocol] : client.settingsMismatch(PRECHECK_TIMEOUT_MS);
+      return protocol !== undefined ? [protocol] : client.checkSettings(PRECHECK_TIMEOUT_MS);
     })(),
     new Promise<null>((resolve) => setTimeout(() => resolve(null), PRECHECK_BUDGET_MS)),
   ]);
