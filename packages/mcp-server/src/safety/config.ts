@@ -149,7 +149,7 @@ export function loadConfig(): LoadedSafetyConfig {
     // policy problem, so the defaults stay in force.
     try {
       const dir = path.dirname(configPath);
-      fs.mkdirSync(dir, { recursive: true });
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
       const fileConfig: Record<string, unknown> = {
         enabled: DEFAULT_CONFIG.enabled,
         read_only: DEFAULT_CONFIG.readOnly,

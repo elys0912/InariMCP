@@ -100,6 +100,9 @@ describe('loadConfig (2.B2)', () => {
   function load(content: string | null): LoadedSafetyConfig {
     const file = path.join(dir, 'safety.json');
     if (content !== null) fs.writeFileSync(file, content);
+    // Keep ~/.kitsune-mcp of the real home out of reach.
+    vi.stubEnv('HOME', dir);
+    vi.stubEnv('USERPROFILE', dir);
     vi.stubEnv('FOX_SAFETY_CONFIG', file);
     vi.stubEnv('FOX_READ_ONLY', '');
     vi.stubEnv('FOX_ALLOW_SCRIPTS', '');
@@ -128,6 +131,16 @@ describe('loadConfig (2.B2)', () => {
     const cfg = load(null);
     expect(cfg.configError).toBeUndefined();
     expect(fs.existsSync(path.join(dir, 'safety.json'))).toBe(true);
+  });
+
+  // Windows ignores the mode bits (see the WP2 note on 0o600 / 0o700).
+  it.skipIf(process.platform === 'win32')('creates a missing config directory 0o700', () => {
+    const file = path.join(dir, 'sub', 'safety.json');
+    vi.stubEnv('HOME', dir);
+    vi.stubEnv('USERPROFILE', dir);
+    vi.stubEnv('FOX_SAFETY_CONFIG', file);
+    loadConfig();
+    expect(fs.statSync(path.join(dir, 'sub')).mode & 0o777).toBe(0o700);
   });
 });
 
@@ -241,3 +254,17 @@ describe('review follow-ups', () => {
 
 // TODO(test): handlers.ts calls noteUrl() for data-less successes (fox_close_tab returns {success:true} only) — cover through createToolHandler with a fake browser.
 // TODO(test): checkReachedUrl through createToolHandler: result withheld and the tab URL recorded.
+
+describe('rate limit counts only calls that would run (2.B7)', () => {
+  it('refused calls and fox_safety_status do not use up the budget', () => {
+    const g = guard({ maxActionsPerMinute: 2, readOnly: true });
+    for (let i = 0; i < 5; i++) {
+      expect(decision(g, 'fox_click', {})).toBe('read_only');
+      expect(decision(g, 'fox_safety_status', {})).toBeNull();
+    }
+    expect(decision(g, 'fox_screenshot', {})).toBeNull();
+    expect(decision(g, 'fox_get_text', {})).toBeNull();
+    expect(decision(g, 'fox_get_text', {})).toBe('rate_limited');
+    expect(g.status().actionsInLastMinute).toBe(2);
+  });
+});

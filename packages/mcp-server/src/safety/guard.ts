@@ -128,6 +128,16 @@ export class SafetyGuard {
     let denial = this._checkInner(toolName, targetUrl, currentUrl, args);
     if (grantCoversDenial(denial, grant)) denial = null;
 
+    // Layer 1: Rate limit, checked last so that only calls that would run
+    // count: refused calls and fox_safety_status do not use up the budget.
+    if (denial === null && toolName !== 'fox_safety_status' && !this._withinRateLimit()) {
+      denial = this._deny(
+        'rate_limited',
+        `Rate limit exceeded: more than ${this.config.maxActionsPerMinute} actions ` +
+        'in the last minute. Wait a few seconds and retry.',
+      );
+    }
+
     const isObserve = OBSERVE_TOOLS.has(toolName);
     let decision: AuditDecision;
     if (denial === null && grant) {
@@ -337,15 +347,6 @@ export class SafetyGuard {
         safetyDecision: containerDenial.safetyDecision,
         error: containerDenial.error,
       };
-    }
-
-    // Layer 1: Rate limit
-    if (!this._withinRateLimit()) {
-      return this._deny(
-        'rate_limited',
-        `Rate limit exceeded: more than ${this.config.maxActionsPerMinute} actions ` +
-        'in the last minute. Wait a few seconds and retry.',
-      );
     }
 
     // Layer 2-3: URL scheme guard + blocklist/allowlist, on the parsed URL
