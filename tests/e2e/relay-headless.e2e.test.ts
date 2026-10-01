@@ -11,10 +11,11 @@
  * use on 8765/8766 is neither reused nor disturbed.
  *
  * Cleanup: the relay spawns the daemon detached, and the daemon only exits
- * after RELAY_TTL (90 s) + idle timeout. The test therefore stops it by PID
- * (GET /daemon/info): SIGTERM on POSIX (graceful: closes Firefox),
- * `taskkill /T /F` on Windows (the process tree, Firefox included), and
- * waits until the PID is gone and the port is free.
+ * after RELAY_TTL (90 s) + idle timeout. The test therefore stops it over
+ * its signed POST /daemon/shutdown (graceful: closes Firefox, exits 0) and
+ * waits until the PID (GET /daemon/info) is gone and the port is free. Only
+ * when that request fails is the process killed (SIGTERM / `taskkill /T /F`)
+ * so no Firefox is left behind — and the test fails.
  *
  * Run: npm run test:e2e (excluded from npm test).
  */
@@ -29,6 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { AUTH_HEADER, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
 
 const ENTRY = fileURLToPath(new URL('../../packages/mcp-server/dist/index.js', import.meta.url));
 const MARKER = 'kitsune-e2e-marker-7f3a';
@@ -84,32 +86,86 @@ let httpPort: number;
 let client: Client;
 let daemonPid: number | undefined;
 
+function readToken(): string | undefined {
+  try {
+    return fs.readFileSync(path.join(os.homedir(), '.kitsune-mcp', 'api_token'), 'utf-8').trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Last resort when the graceful stop failed: no Firefox may be left behind. */
+function killDaemon(pid: number): void {
+  if (process.platform === 'win32') {
+    try {
+      execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    } catch {
+      // already gone
+    }
+  } else {
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      // already gone
+    }
+  }
+}
+
+/** Signed POST /daemon/shutdown; the daemon exits once its answer is out. */
+async function requestShutdown(token: string): Promise<{ status: number; verified: boolean; body: Record<string, unknown> }> {
+  const body = JSON.stringify({ force: false });
+  const signed = signRequest(token, 'POST', '/daemon/shutdown', body);
+  const res = await fetch(`http://127.0.0.1:${httpPort}/daemon/shutdown`, {
+    method: 'POST',
+    headers: { ...signed.headers, 'Content-Type': 'application/json' },
+    body,
+  });
+  const raw = Buffer.from(await res.arrayBuffer());
+  const verified = verifyResponse(token, signed.nonce, res.status, raw, res.headers.get(AUTH_HEADER.signature) ?? undefined);
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
+  } catch {
+    // not JSON
+  }
+  return { status: res.status, verified, body: parsed };
+}
+
 async function stopDaemon(): Promise<void> {
-  if (daemonPid === undefined) {
+  const token = readToken();
+  if (daemonPid === undefined && token !== undefined) {
     // Not learned yet (setup failed early): ask the daemon, if any.
-    const token = fs.readFileSync(path.join(os.homedir(), '.kitsune-mcp', 'api_token'), 'utf-8').trim();
     const info = await fetch(`http://127.0.0.1:${httpPort}/daemon/info`, { headers: { 'X-API-Key': token } })
       .then((r) => r.json() as Promise<{ pid?: number }>)
       .catch(() => ({} as { pid?: number }));
     daemonPid = info.pid;
   }
   if (daemonPid === undefined) return;
-  if (process.platform === 'win32') {
-    try {
-      execFileSync('taskkill', ['/PID', String(daemonPid), '/T', '/F'], { stdio: 'ignore' });
-    } catch {
-      // already gone
-    }
+  const pid = daemonPid;
+
+  let problem: string | undefined;
+  if (token === undefined) {
+    problem = 'no api_token to sign the shutdown request';
   } else {
     try {
-      process.kill(daemonPid, 'SIGTERM');
-    } catch {
-      // already gone
+      const reply = await requestShutdown(token);
+      if (reply.status !== 200 || !reply.verified) {
+        problem = `POST /daemon/shutdown answered ${reply.status} (signed: ${reply.verified}): ${JSON.stringify(reply.body)}`;
+      } else if (reply.body['pid'] !== pid) {
+        problem = `POST /daemon/shutdown answered for PID ${String(reply.body['pid'])}, expected ${pid}`;
+      }
+    } catch (err: unknown) {
+      problem = `POST /daemon/shutdown failed: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
-  const pid = daemonPid;
+  if (problem !== undefined) killDaemon(pid);
+
   const gone = await waitFor(async () => !pidAlive(pid) && !(await portOpen(httpPort)), 20_000);
-  if (!gone) throw new Error(`daemon PID ${pid} still running after stop`);
+  if (!gone) {
+    killDaemon(pid);
+    throw new Error(`daemon PID ${pid} still running after stop${problem !== undefined ? ` (${problem})` : ''}`);
+  }
+  if (problem !== undefined) throw new Error(`graceful stop failed, daemon was killed instead: ${problem}`);
 }
 
 beforeAll(async () => {
@@ -188,4 +244,5 @@ describe('relay → daemon → headless Firefox', () => {
     expect(text(status)).toMatch(/readOnly/);
   }, 180_000);
   // TODO(test): screenshot file lands under the isolated SCREENSHOTS dir; audit log in the temp home; relay restarts a killed daemon
+  // TODO(test): --stop-daemon CLI against this daemon (exit 0, "stopped"); shutdown while a fox_navigate is in flight (drain ≤ 10 s, then exit)
 });

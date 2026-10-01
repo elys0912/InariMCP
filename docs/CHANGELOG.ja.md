@@ -65,6 +65,7 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 ### 追加
 
 - **`--help`、`--version`、`--doctor`**: `node packages/mcp-server/dist/index.js --doctor`は14項目（ビルド、FirefoxとClaude Codeへの登録、daemon、トークン、ログなど）を読み取りだけで確認し、問題ごとに対処を表示する。FAILの項目があれば終了コード1で終わる。`native-messaging`が未登録ならWARN（終了コード0。拡張機能経路では必要だが、ヘッドレスだけなら不要）、壊れた登録（JSONとして不正、name・type・allowed extension・pathの不備）はFAILで、対処文は`npm run setup`を案内する。`--help` / `--version`はdaemon・トークン・ログを作る前に終わる。知らない引数は、中継として起動せずに終了コード2で終わるようになった（5afc516、0e06a30、7a4e61f）
+- **`--stop-daemon`**: `node packages/mcp-server/dist/index.js --stop-daemon`は、動いているdaemonを署名付きの`POST /daemon/shutdown`で停止する。実行中のツール呼び出しは最大10秒まで完了を待ち（`--force`では待たない）、ヘッドレスのFirefoxを閉じ、Native Hostとの接続を切って（WebSocketのclose 1001）から終了する。`npm run teardown`とdoctorの対処文もこれを使う。アンインストーラがシグナルで止めるのは、APIトークンが無いかその要求が失敗した場合だけになった
 - **`FOX_APPROVAL_ELICITATION`**: `0` / `false` / `off` / `no`にすると、保護対象サイトでの操作はFirefoxのポップアップでしか承認できなくなる（ヘッドレスモードでは承認できなくなる）。既定は有効（4a785bb）
 - **`FOX_SCREENSHOT_RETENTION_DAYS`**（既定`30`）: Native Hostの起動のたびに、自動生成の名前で保存した、この日数より古いスクリーンショットを削除する。`0`ですべて残す。自分で指定した`filename`で保存したファイルは削除しない（69b1af9）
 - **ログがリロードと遷移を跨いで残る**: コンソールとネットワークのログは拡張機能のbackgroundにタブごとに保持する（それぞれ最新500件）ので、`fox_get_console_logs` / `fox_get_network_logs`は遷移前の記録も返す（47d43c6）

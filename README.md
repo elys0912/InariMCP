@@ -172,12 +172,15 @@ node packages/mcp-server/dist/index.js [option]
 | (none) | stdio MCP relay — what Claude Code starts. Starts the shared daemon when none is running |
 | `--daemon` | the shared daemon. Normally started automatically by a relay or by the Native Host |
 | `--doctor` (or `doctor`) | check the installation and the running daemon |
+| `--stop-daemon` [`--force`] | stop the running daemon gracefully |
 | `-h`, `--help` | show the usage |
 | `-v`, `--version` | print the version |
 
 `--help` and `--version` print and exit before anything else happens: no daemon is started, no API token or log file is created. An unknown argument (or two modes together) exits with code 2.
 
 `--doctor` prints one line per item — `OK`, `WARN`, `FAIL` or `SKIP` — with a fix for each problem, and exits with code 1 when an item FAILs (else 0). A missing `native-messaging` registration is a WARN: the extension route (Firefox) needs it, headless alone does not. The 14 items: `node`, `versions` (all packages and the extension manifest have the same version), `build` (`dist` newer than the sources), `native-messaging` (the Firefox registration and the manifest's name, type, allowed extension and path), `nm-wrapper` (the wrapper points to this checkout and its node exists), `claude` (the Claude Code registration, read from `~/.claude.json` and `.mcp.json`), `powershell` (Windows: whether the Native Host can use it), `daemon` (`/health`: protocol, proof, version), `token`, `settings` (`FOX_*` here vs. the running daemon), `browsers` (connected Native Hosts), `safety-config` (`safety.json` parses and is valid), `screenshots` (`FOX_SCREENSHOTS_DIR`) and `logs` (sizes, Native Host start-up limit). It is read-only: it creates no token, starts no daemon, writes no log, and does not run `claude mcp get` (that would start the server to test it).
+
+`--stop-daemon` asks the daemon to stop over a signed `POST /daemon/shutdown` (it needs `~/.kitsune-mcp/api_token`): running tool calls get up to 10 s to finish (`--force`: none), headless Firefox is closed, and the daemon exits. It exits with code 0 when the daemon is gone (or none was running), else 1. Every Claude Code session loses the browser tools until its next call starts a daemon again, and a running Native Host (Firefox with the extension) starts one within about 20 s — quit Firefox first to keep it stopped.
 
 `scripts/e2e/nm-probe.mjs [manifest.json]` starts the Native Messaging host the way Firefox does (from the installed manifest by default), sends `ping` and `status`, and checks that it reaches the daemon (exit code 0 = pass, 1 = fail, 2 = bad arguments). It starts a daemon if none is running.
 
@@ -219,7 +222,7 @@ npm run teardown
 1. the Firefox Native Messaging registration (registry key / manifest files), so the extension cannot start the Native Host again,
 2. `~/.kitsune-mcp/native-host/` (the wrapper),
 3. the Claude Code registration, when you confirm or pass `--unregister-claude` (it only finds registrations visible from the repository directory — a `local`-scope registration made in another directory is listed, and has to be removed there),
-4. running Native Host processes of this repository, then the daemon (after checking that the process on the port is a KitsuneMCP daemon; SIGTERM, then SIGKILL after the grace period),
+4. running Native Host processes of this repository, then the daemon (after checking that the process on the port is a KitsuneMCP daemon; over its signed `POST /daemon/shutdown` when the API token is present, else — or when that fails — SIGTERM, then SIGKILL after the grace period),
 5. with `--purge`, the rest of `~/.kitsune-mcp/` (API token, `safety.json`, logs, screenshots); otherwise what is left is listed, not deleted.
 
 Claude Code sessions that still run KitsuneMCP start the daemon again on their next browser tool call; the uninstaller names them — restart them. The repository and the Firefox extension are not touched (remove the extension in Firefox).

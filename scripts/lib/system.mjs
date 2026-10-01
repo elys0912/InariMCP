@@ -20,7 +20,7 @@ import * as readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import {
   AUTH_HEADER, SERVICE_NAME, commandInvocation, computeMac, macMatches, newNonce,
-  parsePsOutput, parseTabOutput, pathApi, responseSignatureValid, signGet,
+  parsePsOutput, parseTabOutput, pathApi, responseSignatureValid, signGet, signPost,
 } from './core.mjs';
 
 export const REPO_ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -76,6 +76,7 @@ export function defaultDeps() {
     run: runSync,
     fs,
     httpGet,
+    httpPost,
     sleep,
     kill: (pid, signal) => process.kill(pid, signal),
     isAlive,
@@ -345,14 +346,26 @@ export async function stopProcess(deps, pid, graceMs) {
  * proxy, even with NODE_USE_ENV_PROXY / HTTP_PROXY set (review 4.B5).
  * @returns {Promise<{status: number, headers: object, body: Buffer}|null>}
  */
-export function httpGet({ host, port, urlPath, headers = {}, timeoutMs = 3000 }) {
+export function httpGet(opts) {
+  return httpRequest({ ...opts, method: 'GET' });
+}
+
+/** POST with a string body, same rules as httpGet. */
+export function httpPost(opts) {
+  return httpRequest({ ...opts, method: 'POST' });
+}
+
+function httpRequest({ host, port, urlPath, method, headers = {}, body, timeoutMs = 3000 }) {
   return new Promise((resolve) => {
     const agent = new http.Agent({ keepAlive: false });
     const done = (value) => {
       agent.destroy();
       resolve(value);
     };
-    const req = http.request({ host, port, path: urlPath, method: 'GET', headers, agent, timeout: timeoutMs }, (res) => {
+    const allHeaders = body === undefined
+      ? headers
+      : { ...headers, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) };
+    const req = http.request({ host, port, path: urlPath, method, headers: allHeaders, agent, timeout: timeoutMs }, (res) => {
       const chunks = [];
       let size = 0;
       res.on('data', (c) => {
@@ -365,8 +378,32 @@ export function httpGet({ host, port, urlPath, headers = {}, timeoutMs = 3000 })
     });
     req.on('timeout', () => req.destroy(new Error('timeout')));
     req.on('error', () => done(null));
+    if (body !== undefined) req.write(body);
     req.end();
   });
+}
+
+/**
+ * Ask a verified daemon to stop itself (signed POST /daemon/shutdown; the
+ * daemon lets running calls finish, closes Firefox / the WS connections and
+ * exits), then wait up to graceMs for its port to go quiet.
+ * @returns {Promise<'stopped'|'refused'|'unanswered'|'still-running'>}
+ *   refused: the daemon answered but not 200 / not signed (an older daemon has no such route)
+ */
+export async function stopDaemonGracefully(deps, endpoint, token, graceMs) {
+  const body = JSON.stringify({ force: false });
+  const signed = signPost(token, '/daemon/shutdown', body);
+  const res = await deps.httpPost({ ...endpoint, urlPath: '/daemon/shutdown', headers: signed.headers, body, timeoutMs: 15_000 });
+  if (!res) return 'unanswered';
+  if (res.status !== 200 || !responseSignatureValid(token, signed.nonce, res.status, res.body, res.headers[AUTH_HEADER.signature])) {
+    return 'refused';
+  }
+  const step = 200;
+  for (let waited = 0; waited <= Math.max(graceMs, 2_000); waited += step) {
+    if (!(await deps.httpGet({ ...endpoint, urlPath: '/health', timeoutMs: 1_000 }))) return 'stopped';
+    await deps.sleep(step);
+  }
+  return 'still-running';
 }
 
 /**

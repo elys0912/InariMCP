@@ -67,7 +67,8 @@ the Native Host starts the daemon again (and recreates the token and logs).
 2. \`rmdir /s /q "${v.data}\\native-host"\`
 3. \`claude mcp remove --scope user ${CLAUDE_NAME}\` (and \`--scope local\` / \`project\` if used)
 4. Remove the extension in Firefox (about:addons, or about:debugging for a temporary add-on), or quit Firefox.
-5. Stop the daemon: \`netstat -ano | findstr :8765\` shows the PID in the LISTENING line; \`taskkill /PID <pid> /F\`.
+5. Stop the daemon: \`"${v.node}" "${v.repo}\\packages\\mcp-server\\dist\\index.js" --stop-daemon\`.
+   Without the API token: \`netstat -ano | findstr :8765\` shows the PID in the LISTENING line; \`taskkill /PID <pid> /F\`.
    Close Claude Code sessions that still use KitsuneMCP (they start the daemon again on the next tool call).
 6. Optional: \`rmdir /s /q "${v.data}"\` (API token, safety.json, logs, screenshots).
 `;
@@ -83,7 +84,8 @@ the Native Host starts the daemon again (and recreates the token and logs).
 2. \`rm -rf ${v.data}/native-host\`
 3. \`claude mcp remove --scope user ${CLAUDE_NAME}\` (and \`--scope local\` / \`project\` if used)
 4. Remove the extension in Firefox (about:addons, or about:debugging for a temporary add-on), or quit Firefox.
-5. Stop the daemon: \`kill $(lsof -tiTCP:8765 -sTCP:LISTEN)\` (or find the PID with \`ss -ltnp 'sport = :8765'\`).
+5. Stop the daemon: \`'${v.node}' '${v.repo}/packages/mcp-server/dist/index.js' --stop-daemon\`.
+   Without the API token: \`kill $(lsof -tiTCP:8765 -sTCP:LISTEN)\` (or find the PID with \`ss -ltnp 'sport = :8765'\`).
    Close Claude Code sessions that still use KitsuneMCP (they start the daemon again on the next tool call).
 6. Optional: \`rm -rf ${v.data}\` (API token, safety.json, logs, screenshots).
 `;
@@ -143,8 +145,10 @@ Removes the KitsuneMCP registration, in an order that keeps it removed:
      so the extension cannot start the Native Host again
   2. removes ~/.kitsune-mcp/native-host/ (host wrapper)
   3. removes the Claude Code registration (--unregister-claude, or when confirmed)
-  4. stops this repository's Native Host processes, then the daemon
-     (SIGTERM, then SIGKILL after --grace seconds; Windows cannot signal gracefully)
+  4. stops this repository's Native Host processes, then the daemon: over its signed
+     POST /daemon/shutdown when ~/.kitsune-mcp/api_token is present (running calls finish,
+     Firefox is closed), else SIGTERM, then SIGKILL after --grace seconds (Windows cannot
+     signal gracefully)
   5. with --purge: deletes ~/.kitsune-mcp/ (API token, safety.json, logs, screenshots)
 The repository and the Firefox extension are not touched (remove the extension in Firefox).
 
