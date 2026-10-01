@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BrowserConnectionManager, runWithCallSignal } from '../src/connection/manager.js';
+import {
+  BrowserConnectionManager,
+  currentCommandContext,
+  runWithCallSignal,
+  type CommandContext,
+} from '../src/connection/manager.js';
 
 interface Sent {
   action: string;
@@ -104,5 +109,63 @@ describe('client abort (5.5)', () => {
     abort.abort();
     expect((await pending).success).toBe(true);
     expect(sent).toHaveLength(1); // no cancel_human_wait
+  });
+});
+
+describe('command context for the connection (Q-2)', () => {
+  /** A browser that records the CommandContext of each command and never answers. */
+  function contextBrowser(manager: BrowserConnectionManager): CommandContext[] {
+    const seen: CommandContext[] = [];
+    manager.registerBrowser('h', () => {
+      const ctx = currentCommandContext();
+      if (ctx) seen.push(ctx);
+    }, 'headless');
+    return seen;
+  }
+
+  it('hands the deadline and a live signal to the send function', async () => {
+    const manager = new BrowserConnectionManager();
+    const seen = contextBrowser(manager);
+    const before = Date.now();
+    const pending = manager.sendCommand({ action: 'get_tabs', requestId: 'x' }, 1_000);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.deadline).toBeGreaterThanOrEqual(before + 1_000);
+    expect(seen[0]!.deadline).toBeLessThanOrEqual(Date.now() + 1_000);
+    expect(seen[0]!.signal.aborted).toBe(false);
+    expect(currentCommandContext()).toBeUndefined();
+    manager.shutdown();
+    await pending;
+    expect(seen[0]!.signal.aborted).toBe(true);
+  });
+
+  it('aborts the signal when the command times out', async () => {
+    const manager = new BrowserConnectionManager();
+    const seen = contextBrowser(manager);
+    const res = await manager.sendCommand({ action: 'get_tabs', requestId: 'x' }, 20);
+    expect(res.error).toMatch(/timed out/);
+    expect(seen[0]!.signal.aborted).toBe(true);
+  });
+
+  it('aborts the signal when the client abandons the call', async () => {
+    const manager = new BrowserConnectionManager();
+    const seen = contextBrowser(manager);
+    const abort = new AbortController();
+    const pending = runWithCallSignal(abort.signal, () =>
+      manager.sendCommand({ action: 'get_tabs', requestId: 'x' }, 10_000),
+    );
+    abort.abort();
+    await pending;
+    expect(seen[0]!.signal.aborted).toBe(true);
+  });
+
+  it('does not abort the signal of a command that was answered', async () => {
+    const manager = new BrowserConnectionManager();
+    const sent: string[] = [];
+    let ctx: CommandContext | undefined;
+    manager.registerBrowser('h', (m) => { sent.push(m.requestId); ctx = currentCommandContext(); }, 'headless');
+    const pending = manager.sendCommand({ action: 'get_tabs', requestId: 'x' }, 10_000);
+    manager.handleResponse({ requestId: sent[0]!, success: true });
+    await pending;
+    expect(ctx?.signal.aborted).toBe(false);
   });
 });

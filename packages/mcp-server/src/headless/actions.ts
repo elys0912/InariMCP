@@ -76,6 +76,10 @@ export interface ActionContext {
   tabId: number | undefined;
   args: Record<string, unknown>;
   host: TabHost;
+  /** Date.now() at which the caller stops waiting (Infinity: no deadline). */
+  deadline: number;
+  /** Aborted when the caller gave up on the command. */
+  signal: AbortSignal | undefined;
 }
 
 export type ActionHandler = (c: ActionContext) => Promise<Record<string, unknown>>;

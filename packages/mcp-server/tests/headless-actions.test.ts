@@ -219,6 +219,34 @@ describe('dialogs', () => {
     expect(Date.now() - started).toBeLessThan(10_000);
   });
 
+  real('a second handle_dialog replaces the first, which does not arm (Q-3)', async () => {
+    await load(ALERT);
+    const first = browser.execute('handle_dialog', undefined, { action: 'accept', timeout: 300 });
+    const second = browser.execute('handle_dialog', undefined, { action: 'dismiss', timeout: 10_000 });
+    expect(await first).toMatchObject({ success: false });
+    expect(String((await first)['error'])).toContain('Replaced');
+    const click = await browser.execute('click', undefined, { selector: '#b' });
+    expect(click['success']).toBe(true);
+    expect(await second).toMatchObject({ success: true, handled: 'dismiss' });
+    // The first one's timeout has passed: it must not have armed itself.
+    await new Promise((r) => setTimeout(r, 400));
+    const later = await browser.execute('click', undefined, { selector: '#b' });
+    expect((later['dialogs'] as Array<{ auto: boolean }>)[0]?.auto).toBe(true);
+  }, 40_000);
+
+  real('a cancelled handle_dialog ends at once and does not arm (Q-2)', async () => {
+    await load(ALERT);
+    const abort = new AbortController();
+    const waiting = browser.execute('handle_dialog', undefined, { action: 'accept', timeout: 20_000 },
+      { deadline: Infinity, signal: abort.signal });
+    abort.abort();
+    const r = await waiting;
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain('Cancelled');
+    const click = await browser.execute('click', undefined, { selector: '#b' });
+    expect((click['dialogs'] as Array<{ auto: boolean }>)[0]?.auto).toBe(true);
+  }, 40_000);
+
   real('an unexpected dialog is dismissed after a grace period and reported', async () => {
     await load(ALERT);
     const click = await browser.execute('click', undefined, { selector: '#b' });
@@ -295,4 +323,48 @@ describe('type without selector: password guard follows the focus (WP30)', () =>
   });
   // TODO(test): focus inside a closed shadow root is not seen (documented
   //   limitation of headless/focus.ts).
+});
+
+describe('commands given up while waiting for the lock (Q-2)', () => {
+  const TITLE = "document.title = 'ran'";
+
+  async function busy(): Promise<Result> {
+    // Holds the lock for ~500 ms.
+    return browser.execute('wait_for_element', undefined, { selector: '#never', timeout: 500 });
+  }
+
+  real('a command whose caller gave up meanwhile is not run', async () => {
+    await load('<p>x</p>');
+    const abort = new AbortController();
+    const hold = busy();
+    const queued = browser.execute('execute_script', undefined, { script: TITLE },
+      { deadline: Infinity, signal: abort.signal });
+    abort.abort();
+    await hold;
+    const r = await queued;
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain('Not run');
+    const info = await browser.execute('get_page_info', undefined, {});
+    expect(info['title']).not.toBe('ran');
+  });
+
+  real('a command whose deadline passed meanwhile is not run', async () => {
+    await load('<p>x</p>');
+    const hold = busy();
+    const queued = browser.execute('execute_script', undefined, { script: TITLE },
+      { deadline: Date.now() + 100, signal: new AbortController().signal });
+    await hold;
+    expect(String((await queued)['error'])).toContain('Not run');
+    const info = await browser.execute('get_page_info', undefined, {});
+    expect(info['title']).not.toBe('ran');
+  });
+
+  real('a command still awaited runs after the one before it', async () => {
+    await load('<p>x</p>');
+    const hold = busy();
+    const queued = browser.execute('execute_script', undefined, { script: TITLE },
+      { deadline: Date.now() + 30_000, signal: new AbortController().signal });
+    await hold;
+    expect((await queued)['success']).toBe(true);
+  });
 });

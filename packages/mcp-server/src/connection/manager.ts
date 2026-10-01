@@ -36,6 +36,32 @@ export function runWithCallSignal<T>(signal: AbortSignal, fn: () => T): T {
 const CANCELLED_ERROR = 'Cancelled: the client abandoned the tool call';
 
 // ---------------------------------------------------------------------------
+// Command context (deadline and cancellation, for the connection)
+// ---------------------------------------------------------------------------
+
+/** What a connection may learn about the command it is handed. */
+export interface CommandContext {
+  /** Date.now() at which sendCommand() stops waiting for the answer. */
+  readonly deadline: number;
+  /**
+   * Aborted when sendCommand() gives up on the command (timeout, client
+   * abort, disconnect, shutdown): an answer would be dropped from then on.
+   */
+  readonly signal: AbortSignal;
+}
+
+const commandContext = new AsyncLocalStorage<CommandContext>();
+
+/**
+ * The context of the command being handed to a connection. Set while the
+ * connection's SendFn runs (and in what it starts from there), so the
+ * headless backend can skip or stop a command nobody waits for any more.
+ */
+export function currentCommandContext(): CommandContext | undefined {
+  return commandContext.getStore();
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -65,6 +91,8 @@ interface PendingRequest {
   resolve: (value: BrowserResponse) => void;
   timer: ReturnType<typeof setTimeout>;
   connectionId: string;
+  /** Aborts the command's CommandContext signal. */
+  abort: (reason: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,8 +101,8 @@ interface PendingRequest {
 
 /** Ordinary commands over the Native Host path. */
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
-/** Ordinary commands on the headless backend. */
-const HEADLESS_COMMAND_TIMEOUT_MS = 35_000;
+/** Ordinary commands on the headless backend (headless/limits.ts stays below it). */
+export const HEADLESS_COMMAND_TIMEOUT_MS = 35_000;
 
 /** Long-running actions that wait for a human. */
 const ACTION_TIMEOUT_MS: Partial<Record<BrowserAction, number>> = {
@@ -213,11 +241,9 @@ export class BrowserConnectionManager {
       if (entry.connectionId !== id) continue;
       clearTimeout(entry.timer);
       this.pending.delete(requestId);
-      entry.resolve({
-        requestId,
-        success: false,
-        error: 'Browser disconnected before responding',
-      });
+      const error = 'Browser disconnected before responding';
+      entry.resolve({ requestId, success: false, error });
+      entry.abort(error);
     }
   }
 
@@ -305,6 +331,12 @@ export class BrowserConnectionManager {
     // Rewrite the command's requestId so caller and browser agree.
     const outgoing: BrowserCommand = { ...command, requestId };
     const humanWait = HUMAN_WAIT_ACTIONS.has(command.action);
+    const commandAbort = new AbortController();
+    const context: CommandContext = {
+      deadline: Date.now() + effectiveTimeout,
+      signal: commandAbort.signal,
+    };
+    const abort = (reason: string): void => { commandAbort.abort(new Error(reason)); };
 
     return new Promise<BrowserResponse>((resolve) => {
       const onAbort = (): void => {
@@ -322,6 +354,7 @@ export class BrowserConnectionManager {
         clearTimeout(entry.timer);
         this.pending.delete(requestId);
         entry.resolve({ requestId, success: false, error });
+        abort(error);
       };
 
       const timer = setTimeout(() => {
@@ -332,11 +365,11 @@ export class BrowserConnectionManager {
         if (humanWait && conn.kind !== 'headless') cancelHumanWait(conn, requestId);
       }, effectiveTimeout);
 
-      this.pending.set(requestId, { resolve: settle, timer, connectionId: conn.id });
+      this.pending.set(requestId, { resolve: settle, timer, connectionId: conn.id, abort });
       signal?.addEventListener('abort', onAbort, { once: true });
 
       try {
-        const maybePromise = conn.send(outgoing);
+        const maybePromise = commandContext.run(context, () => conn.send(outgoing));
         if (maybePromise instanceof Promise) {
           maybePromise.catch((err: unknown) => {
             fail(`Send failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -370,13 +403,11 @@ export class BrowserConnectionManager {
 
   /** Fail all pending requests and clear connections. */
   shutdown(): void {
+    const error = 'Connection manager shutting down';
     for (const [id, entry] of this.pending) {
       clearTimeout(entry.timer);
-      entry.resolve({
-        requestId: id,
-        success: false,
-        error: 'Connection manager shutting down',
-      });
+      entry.resolve({ requestId: id, success: false, error });
+      entry.abort(error);
     }
     this.pending.clear();
     this.connections.clear();
