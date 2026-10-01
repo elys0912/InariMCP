@@ -18,7 +18,8 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && npm run typecheck:tests",
+    "typecheck:tests": "tsc -p tsconfig.test.json",
     "clean": "npm run clean --workspaces",
     "test": "vitest run --project=!e2e",
     "test:e2e": "vitest run --project=e2e",

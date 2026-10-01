@@ -142,8 +142,9 @@ function stubDeps(home: string) {
     deps: {
       home,
       env: { PATH: '' },
-      out: (s: string) => out.push(s),
-      err: (s: string) => out.push(s),
+      // Return true like process.stdout.write (defaultDeps' out / err).
+      out: (s: string) => (out.push(s), true),
+      err: (s: string) => (out.push(s), true),
       isTTY: false,
       run: (file: string, args: string[]) => {
         calls.push([file, ...args]);
