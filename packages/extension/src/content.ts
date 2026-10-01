@@ -11,6 +11,7 @@
 // top-level side effects.
 
 import { handleMessage } from "./content/handler";
+import { rememberContextTarget } from "./content/inspect";
 import { resumeLoggingFromBackground, sendLogBatch } from "./content/log-store";
 import { recordScriptStart } from "./content/page-hooks";
 import type { ContentMessage } from "./content/types";
@@ -50,6 +51,8 @@ import type { ContentMessage } from "./content/types";
   // ---------------------------------------------------------------------------
 
   resumeLoggingFromBackground();
+  // The element the context menu was opened on ("inspect element").
+  document.addEventListener("contextmenu", rememberContextTarget, true);
   if (window === window.top) {
     // Send what is pending before the document goes away (best effort).
     window.addEventListener("pagehide", sendLogBatch);

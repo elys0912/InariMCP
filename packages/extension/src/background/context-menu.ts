@@ -21,7 +21,7 @@ export function registerContextMenus(): void {
 
   browser.contextMenus.onClicked.addListener(
     (
-      info: { menuItemId: string; pageX?: number; pageY?: number; frameId?: number },
+      info: { menuItemId: string; frameId?: number },
       tab: browser.tabs.Tab,
     ): void => {
       if (info.menuItemId === "kitsune-screenshot") {
@@ -38,11 +38,13 @@ export function registerContextMenus(): void {
           }
         });
       } else if (info.menuItemId === "kitsune-inspect") {
-        // The frame the menu was opened in (its content script handles it).
+        // The frame the menu was opened in. Its content script inspects the
+        // element it saw the contextmenu event on: OnClickData has no
+        // pageX / pageY in Firefox.
         browser.tabs
           .sendMessage(
             tab.id,
-            { action: "inspectElement", x: info.pageX, y: info.pageY },
+            { action: "inspectElement" },
             { frameId: info.frameId ?? TOP_FRAME_ID },
           )
           .catch((error: unknown) => {

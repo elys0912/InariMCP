@@ -20,6 +20,7 @@
  */
 
 import { beforeAll, describe, expect, it } from 'vitest';
+import { readExtensionSource } from './helpers/extension-source.js';
 
 interface ContentFns {
   escapeXPathString(s: string): string;
@@ -76,4 +77,27 @@ describe('3.A13 text locator', () => {
     expect(xpath).toMatch(/\[not\(\*\[/); // innermost: no child element also matches
     expect(fns.textLocatorXPath('   ')).toBeNull();
   });
+});
+
+describe('WP30 context menu "inspect element" uses the contextmenu target, not pageX / pageY', () => {
+  it('remembers the element of the last contextmenu event while it is in the document', async () => {
+    const inspect = await import('../../packages/extension/src/content/inspect.ts');
+    const el = { nodeType: 1, isConnected: true };
+    inspect.rememberContextTarget({ target: el as unknown as EventTarget });
+    expect(inspect.contextTarget()).toBe(el);
+    el.isConnected = false; // removed from the page meanwhile
+    expect(inspect.contextTarget()).toBeNull();
+    inspect.rememberContextTarget({ target: { nodeType: 9 } as unknown as EventTarget }); // document
+    expect(inspect.contextTarget()).toBeNull();
+  });
+
+  it('content.ts records contextmenu targets; the menu sends no coordinates', () => {
+    expect(readExtensionSource('content.ts'))
+      .toMatch(/document\.addEventListener\("contextmenu", rememberContextTarget, true\)/);
+    const menu = readExtensionSource('background/context-menu.ts');
+    expect(menu).not.toMatch(/info\.page[XY]|page[XY]\?: number/);
+    expect(menu).toMatch(/\{ action: "inspectElement" \}/);
+  });
+  // TODO(test): in a real Firefox: right-click an element (also in an
+  //   iframe) → "inspect element" highlights that element.
 });
