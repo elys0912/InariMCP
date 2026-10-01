@@ -57,7 +57,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 180000
         },
         "tabId": {
@@ -142,7 +143,8 @@
         },
         "timeout": {
           "type": "integer",
-          "description": "(mode=wait_and_act; default 15000) Max wait time in ms before giving up"
+          "maximum": 580000,
+          "description": "(mode=wait_and_act; default 15000) Max wait time in ms before giving up (at most 580000)"
         }
       },
       "required": [
@@ -296,7 +298,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 5000
         },
         "tabId": {
@@ -626,7 +629,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 60000
         },
         "tabId": {
@@ -701,6 +705,7 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
+          "maximum": 580000,
           "description": "all_tabs: time budget for capturing all tabs in ms (default 20000); tabs left when it runs out are reported as skipped"
         },
         "scrollStep": {
@@ -1002,7 +1007,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "(default 10000 (element), 10000 (network_idle), 30000 (navigation), 15000 (url)) Timeout in milliseconds"
+          "maximum": 580000,
+          "description": "(default 10000 (element), 10000 (network_idle), 30000 (navigation), 15000 (url)) Timeout in milliseconds (at most 580000)"
         },
         "visible": {
           "type": "boolean",

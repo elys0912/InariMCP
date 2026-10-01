@@ -21,7 +21,7 @@
 
 import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
-import { TOOL_SCHEMAS } from './schemas.js';
+import { MAX_TIMEOUT_ARG_MS, TOOL_SCHEMAS } from './schemas.js';
 import { toolAnnotations } from './classification.js';
 import type { ToolAnnotations } from './classification.js';
 
@@ -456,7 +456,8 @@ const foxEvaluate = grouped({
     wait_and_act: {
       fields: {
         ...fieldsOf('fox_wait_and_act', ['condition', 'actionScript', 'pollIntervalMs']),
-        timeout: z.number().int().optional().default(15000).describe('Max wait time in ms before giving up'),
+        timeout: z.number().int().max(MAX_TIMEOUT_ARG_MS).optional().default(15000)
+          .describe(`Max wait time in ms before giving up (at most ${MAX_TIMEOUT_ARG_MS})`),
         tabId,
       },
       run: { ...same('fox_wait_and_act'), toOp: renamed({ timeout: 'timeoutMs' }) },

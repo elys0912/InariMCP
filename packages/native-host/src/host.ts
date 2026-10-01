@@ -24,7 +24,10 @@ interface InFlight {
 
 /** requestId → command info, so a response can reuse the requested filename. */
 const inFlight = new Map<string, InFlight>();
-/** Entries older than this are assumed abandoned (longest server timeout is 200 s). */
+/**
+ * Entries older than this are assumed abandoned: the server waits at most
+ * 580 s (the cap of timeout arguments, mcp-server tools/schemas.ts) + 5 s.
+ */
 const IN_FLIGHT_TTL_MS = 10 * 60_000;
 
 function pruneInFlight(now: number): void {

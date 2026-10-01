@@ -59,7 +59,16 @@ const elementLocator = {
 };
 
 const tabId = z.number().int().optional().describe('Tab ID (defaults to active tab)');
-const timeoutMs = z.number().int().positive().optional().describe('Timeout in milliseconds');
+/**
+ * Upper bound of every timeout argument. The Native Host keeps a command's
+ * bookkeeping (the requested screenshot filename) for 10 minutes
+ * (native-host/src/host.ts IN_FLIGHT_TTL_MS); the daemon waits up to
+ * argument + 5 s, so 580 s keeps that inside the 10 minutes.
+ */
+export const MAX_TIMEOUT_ARG_MS = 580_000;
+
+const timeoutMs = z.number().int().positive().max(MAX_TIMEOUT_ARG_MS).optional()
+  .describe(`Timeout in milliseconds (at most ${MAX_TIMEOUT_ARG_MS})`);
 
 /** Shared by every urlPattern argument (same on the Extension and headless). */
 const URL_PATTERN_NOTE =
@@ -369,7 +378,8 @@ const foxWaitAndActSchema = z.object({
   condition: z.string().describe('JS expression that returns truthy when ready'),
   actionScript: z.string().describe('JS to run once condition is met'),
   pollIntervalMs: z.number().int().optional().default(200).describe('How often to check condition'),
-  timeoutMs: z.number().int().optional().default(15000).describe('Max wait time before giving up'),
+  timeoutMs: z.number().int().max(MAX_TIMEOUT_ARG_MS).optional().default(15000)
+    .describe(`Max wait time in ms before giving up (at most ${MAX_TIMEOUT_ARG_MS})`),
   tabId,
 });
 

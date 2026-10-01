@@ -162,7 +162,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 180000
         },
         "tabId": {
@@ -512,7 +513,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 5000
         },
         "tabId": {
@@ -826,7 +828,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 60000
         },
         "tabId": {
@@ -974,6 +977,7 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
+          "maximum": 580000,
           "description": "all_tabs: time budget for capturing all tabs in ms (default 20000); tabs left when it runs out are reported as skipped"
         },
         "scrollStep": {
@@ -1301,8 +1305,9 @@
         },
         "timeoutMs": {
           "type": "integer",
+          "maximum": 580000,
           "default": 15000,
-          "description": "Max wait time before giving up"
+          "description": "Max wait time in ms before giving up (at most 580000)"
         },
         "tabId": {
           "type": "integer",
@@ -1334,7 +1339,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 10000
         },
         "visible": {
@@ -1367,7 +1373,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 30000
         },
         "waitUntil": {
@@ -1405,7 +1412,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 10000
         },
         "idleTime": {
@@ -1443,7 +1451,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 15000
         },
         "tabId": {
