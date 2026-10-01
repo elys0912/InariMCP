@@ -172,12 +172,15 @@ node packages/mcp-server/dist/index.js [オプション]
 | （なし） | stdioのMCP中継。Claude Codeが起動するもの。共有daemonが動いていなければ起動する |
 | `--daemon` | 共有daemon。通常は中継かNative Hostが自動で起動する |
 | `--doctor`（または`doctor`） | インストールと動いているdaemonを確認する |
+| `--stop-daemon` [`--force`] | 動いているdaemonを正常に停止する |
 | `-h`、`--help` | 使い方を表示する |
 | `-v`、`--version` | 版を表示する |
 
 `--help`と`--version`は、ほかの処理より前に表示して終わる。daemonは起動せず、APIトークンもログファイルも作らない。知らない引数（または2つのモードの同時指定）は終了コード2で終わる。
 
 `--doctor`は項目ごとに`OK`・`WARN`・`FAIL`・`SKIP`を1行ずつ表示し、問題には対処を添える。FAILが1つでもあれば終了コード1（なければ0）。`native-messaging`の登録がないのはWARN（拡張機能の経路（Firefox）では必要、ヘッドレスだけなら不要）。14項目: `node`、`versions`（全パッケージと拡張機能のマニフェストの版が一致するか）、`build`（`dist`がソースより新しいか）、`native-messaging`（Firefoxへの登録と、マニフェストのname・type・許可する拡張機能・path）、`nm-wrapper`（ラッパーがこのチェックアウトを指し、そのnodeがあるか）、`claude`（Claude Codeへの登録。`~/.claude.json`と`.mcp.json`から読む）、`powershell`（Windows: Native Hostが使えるか）、`daemon`（`/health`のprotocol・proof・版）、`token`、`settings`（ここでの`FOX_*`と動いているdaemonの差）、`browsers`（接続しているNative Host）、`safety-config`（`safety.json`が読めて正しいか）、`screenshots`（`FOX_SCREENSHOTS_DIR`）、`logs`（サイズ、Native Hostの起動試行の上限）。読み取りだけで、トークンを作らず、daemonを起動せず、ログを書かず、`claude mcp get`も実行しない（実行するとサーバーが起動して接続を試すため）。
+
+`--stop-daemon`は署名付きの`POST /daemon/shutdown`でdaemonに停止を求める（`~/.kitsune-mcp/api_token`が必要）。実行中のツール呼び出しは最大10秒まで完了を待ち（`--force`では待たない）、ヘッドレスのFirefoxを閉じてからdaemonが終了する。daemonが無くなれば（もともと動いていなければ）終了コード0、そうでなければ1。すべてのClaude Codeのセッションは、次の呼び出しでdaemonが起動するまでブラウザのツールを使えない。動いているNative Host（拡張機能を入れたFirefox）は20秒ほどでdaemonを起動し直すので、止めたままにするには先にFirefoxを終了する。
 
 `scripts/e2e/nm-probe.mjs [manifest.json]`は、Firefoxと同じ方法でNative Messaging hostを起動し（既定はインストールしたマニフェスト）、`ping`と`status`を送って、daemonに届くかを確かめる（終了コード0 = 成功、1 = 失敗、2 = 引数の誤り）。daemonが動いていなければ起動する。
 
@@ -219,7 +222,7 @@ npm run teardown
 1. FirefoxのNative Messagingの登録（レジストリキー / マニフェストファイル）。これで拡張機能がNative Hostを起動し直せなくなる
 2. `~/.kitsune-mcp/native-host/`（ラッパー）
 3. Claude Codeの登録。確認して同意したときか`--unregister-claude`を付けたとき（見つけられるのはリポジトリのディレクトリから見える登録だけ。別のディレクトリで`local`スコープで登録したものは一覧に出すので、そこで削除する）
-4. このリポジトリの動いているNative Hostのプロセス、続いてdaemon（ポートの相手がKitsuneMCPのdaemonであることを確かめてから。SIGTERM、猶予の後にSIGKILL）
+4. このリポジトリの動いているNative Hostのプロセス、続いてdaemon（ポートの相手がKitsuneMCPのdaemonであることを確かめてから。APIトークンがあれば署名付きの`POST /daemon/shutdown`で止め、トークンが無いかそれが失敗したときはSIGTERM、猶予の後にSIGKILL）
 5. `--purge`を付けたときは`~/.kitsune-mcp/`の残り（APIトークン、`safety.json`、ログ、スクリーンショット）。付けなければ残りは一覧を表示するだけで削除しない
 
 KitsuneMCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す。アンインストーラがそれを表示するので、再起動する。リポジトリとFirefoxの拡張機能は変更しない（拡張機能はFirefoxで外す）。

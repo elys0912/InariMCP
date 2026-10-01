@@ -18,7 +18,7 @@ import {
   buildWindowsWrapper, buildWrapper, claudeConfigPath, claudeEntryState, classifyProcesses,
   commandInvocation, computeMac, dataPaths, findClaudeEntries, manifestState, nmManifestTargets,
   nodeVersionManager, parseArgs, parseInstallArgs, parsePsOutput, parseRegDefaultValue,
-  parseTabOutput, parseUninstallArgs, serializeJson, shellQuote,
+  parseTabOutput, parseUninstallArgs, serializeJson, shellQuote, signPost,
 } from '../../scripts/lib/core.mjs';
 import {
   defaultDeps, httpGet, listNodeProcesses, probeDaemon, removeTreeSafe, stopProcess, writeFileAtomic,
@@ -1191,6 +1191,18 @@ describe('daemon authentication copy', () => {
     const token = 'a'.repeat(64);
     expect(computeMac(token, 'health', 'b'.repeat(32))).toBe(serverAuth.computeMac(token, 'health', 'b'.repeat(32)));
   });
+
+  it('signPost signs like signRequest (POST /daemon/shutdown from uninstall.mjs)', () => {
+    const token = 'a'.repeat(64);
+    const body = JSON.stringify({ force: false });
+    const s = signPost(token, '/daemon/shutdown', body, 1_000);
+    const nonce = s.headers[AUTH_HEADER.nonce];
+    expect(s.nonce).toBe(nonce);
+    expect(s.headers[AUTH_HEADER.signature]).toBe(serverAuth.computeMac(
+      token, serverAuth.MAC_LABEL.httpRequest, 'POST', '/daemon/shutdown', '1000', nonce, serverAuth.sha256Hex(body),
+    ));
+  });
+  // TODO(test): stopDaemonGracefully outcomes (stopped / refused / unanswered / still-running) and the uninstall daemon branch
 });
 
 // ---------------------------------------------------------------------------

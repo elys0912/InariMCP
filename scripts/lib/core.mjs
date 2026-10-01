@@ -565,6 +565,20 @@ export function signGet(token, urlPath, now = Date.now()) {
   };
 }
 
+/** Signed POST with a JSON body (same MAC as auth.ts signRequest). */
+export function signPost(token, urlPath, body, now = Date.now()) {
+  const nonce = newNonce();
+  const timestamp = String(now);
+  return {
+    nonce,
+    headers: {
+      [AUTH_HEADER.timestamp]: timestamp,
+      [AUTH_HEADER.nonce]: nonce,
+      [AUTH_HEADER.signature]: computeMac(token, 'http-request', 'POST', urlPath, timestamp, nonce, sha256Hex(body)),
+    },
+  };
+}
+
 export function responseSignatureValid(token, nonce, status, body, signature) {
   return macMatches(signature, computeMac(token, 'http-response', nonce, String(status), sha256Hex(body)));
 }

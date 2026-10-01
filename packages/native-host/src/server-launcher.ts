@@ -339,7 +339,7 @@ export class ServerLauncher {
         line =
           `the daemon on ${this.host}:${this.httpPort} speaks protocol ${String(verdict.protocol ?? '1')} ` +
           `(version ${verdict.version ?? 'unknown'}); this Native Host needs ${DAEMON_PROTOCOL_VERSION}. ` +
-          'Stop that daemon process — a matching one is started automatically.';
+          'Stop that daemon process (end it by PID; an older daemon has no --stop-daemon) — a matching one is started automatically.';
         break;
       case 'impostor':
         line =
@@ -358,7 +358,7 @@ export class ServerLauncher {
         ) {
           line =
             `the running daemon is version ${verdict.version}, the installed one ${this.expectedVersion} ` +
-            '(it keeps running until it is idle; restart it to use the installed one)';
+            '(it keeps running until it is idle; `node packages/mcp-server/dist/index.js --stop-daemon` stops it, the next use starts the installed one)';
         }
         break;
       case 'down':

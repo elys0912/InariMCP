@@ -15,6 +15,10 @@
  *
  * Stops itself after FOX_DAEMON_IDLE_TIMEOUT seconds (default 600) without a
  * relay, a Native Host connection or an in-flight call (daemon/activity.ts).
+ * Stopped on request through the signed POST /daemon/shutdown (relay
+ * `--stop-daemon`, scripts/uninstall.mjs): running calls get up to
+ * SHUTDOWN_DRAIN_MS to finish, the headless browser is closed, the Native
+ * Hosts get WS close 1001, then exit 0.
  */
 
 import * as http from 'node:http';
@@ -42,6 +46,11 @@ import { stderrLogger } from '@kitsune-mcp/shared/node';
 import { probeExistingDaemon } from './probe.js';
 
 const log = stderrLogger('daemon');
+
+/** How long a graceful stop waits for running tool calls (POST /daemon/shutdown without force). */
+export const SHUTDOWN_DRAIN_MS = 10_000;
+/** WebSocket close code sent to the Native Hosts on shutdown (RFC 6455 "Going Away"). */
+const WS_GOING_AWAY = 1001;
 
 function isAddrInUse(err: unknown): boolean {
   return err instanceof Error && 'code' in err && err.code === 'EADDRINUSE';
@@ -108,8 +117,66 @@ export async function runDaemon(): Promise<void> {
   let markReady: () => void = () => undefined;
   const ready = new Promise<void>((resolve) => { markReady = resolve; });
 
+  // --- Shutdown (two steps: everything but the exit, then the exit) ---
+  // Signals run both at once. POST /daemon/shutdown runs prepare(), answers,
+  // and calls exit() once the answer is out (transport/http-bridge.ts).
+  let httpServer: http.Server | undefined;
+  let wsServer: WebSocketServer | undefined;
+  let preparing: Promise<Record<string, unknown>> | undefined;
+
+  const prepareShutdown = (reason: string, force: boolean): Promise<Record<string, unknown>> => {
+    preparing ??= (async (): Promise<Record<string, unknown>> => {
+      log(`${reason} — shutting down${force ? ' (forced)' : ''}`);
+      activity.stop();
+
+      // Let running commands finish (the bridge refuses new ones meanwhile).
+      const startedAt = Date.now();
+      let drained = activity.inFlightCalls === 0;
+      if (!drained && !force) drained = await activity.waitForIdle(SHUTDOWN_DRAIN_MS);
+      const waitedMs = Date.now() - startedAt;
+      if (!drained) log(`${activity.inFlightCalls} call(s) still running after ${waitedMs} ms — cancelling them`);
+
+      // Native Hosts: 1001 Going Away, so they know this was deliberate.
+      if (wsServer !== undefined) {
+        for (const client of wsServer.clients) {
+          try {
+            client.close(WS_GOING_AWAY, 'daemon shutting down');
+          } catch {
+            // Best-effort
+          }
+        }
+        wsServer.close();
+      }
+
+      if (headlessMode) {
+        try {
+          // Loaded on demand: playwright is only needed in headless mode.
+          const { getHeadlessBrowser } = await import('../headless/backend.js');
+          await getHeadlessBrowser()?.stop();
+        } catch {
+          // Best-effort
+        }
+      }
+      connectionManager.shutdown();
+      return { waitedMs, drained, cancelledCalls: drained ? 0 : activity.inFlightCalls };
+    })();
+    return preparing;
+  };
+
+  const exitNow = (): void => {
+    httpServer?.close();
+    log('shutdown complete');
+    process.exit(0);
+  };
+
+  // Signals and the idle timer stop at once, as before POST /daemon/shutdown
+  // existed (idle: nothing runs; a signal sender has its own kill timeout).
+  const shutdown = async (reason: string): Promise<void> => {
+    await prepareShutdown(reason, true);
+    exitNow();
+  };
+
   // --- HTTP port first: it is the singleton lock ---
-  let httpServer: http.Server;
   try {
     httpServer = await startHttpBridge({
       host,
@@ -124,6 +191,10 @@ export async function runDaemon(): Promise<void> {
         settings,
         effectiveSettings,
       }),
+      shutdown: {
+        prepare: ({ force }) => prepareShutdown('POST /daemon/shutdown', force),
+        exit: exitNow,
+      },
     });
   } catch (err: unknown) {
     if (isAddrInUse(err)) {
@@ -158,13 +229,12 @@ export async function runDaemon(): Promise<void> {
   }
 
   // --- WebSocket bridge (Native Host) ---
-  let wsServer: WebSocketServer;
   try {
     wsServer = await startWebSocketServer({ host, port: wsPort, apiToken, connectionManager });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`cannot listen on ws://${host}:${wsPort}: ${msg}. Set ${ENV.FOX_WS_PORT} to a free port.`);
-    httpServer.close();
+    httpServer?.close();
     process.exit(1);
   }
 
@@ -182,29 +252,6 @@ export async function runDaemon(): Promise<void> {
     `[KitsuneMCP:daemon] Mode  : ${headlessMode ? 'headless' : 'extension'}`,
     `[KitsuneMCP:daemon] Idle  : ${idleMs === 0 ? 'never exits' : `exits after ${idleMs / 1000}s unused`}`,
   ].join('\n') + '\n');
-
-  // --- Shutdown ---
-  let shuttingDown = false;
-  const shutdown = async (reason: string): Promise<void> => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    log(`${reason} — shutting down`);
-    activity.stop();
-    httpServer.close();
-    wsServer.close();
-    if (headlessMode) {
-      try {
-        // Loaded on demand: playwright is only needed in headless mode.
-        const { getHeadlessBrowser } = await import('../headless/backend.js');
-        await getHeadlessBrowser()?.stop();
-      } catch {
-        // Best-effort
-      }
-    }
-    connectionManager.shutdown();
-    log('shutdown complete');
-    process.exit(0);
-  };
 
   process.on('SIGINT', () => void shutdown('SIGINT received'));
   process.on('SIGTERM', () => void shutdown('SIGTERM received'));

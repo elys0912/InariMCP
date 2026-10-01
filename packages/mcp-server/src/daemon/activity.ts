@@ -33,6 +33,7 @@ export function resolveIdleTimeoutMs(): number {
 export class DaemonActivity {
   private readonly relays = new Map<string, number>();
   private inFlight = 0;
+  private readonly idleWaiters: Array<() => void> = [];
   private idleSince: number | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -47,6 +48,35 @@ export class DaemonActivity {
 
   endCall(): void {
     this.inFlight = Math.max(0, this.inFlight - 1);
+    if (this.inFlight === 0) {
+      const waiters = this.idleWaiters.splice(0);
+      for (const w of waiters) w();
+    }
+  }
+
+  /** Tool calls (and popup approvals) currently running. */
+  get inFlightCalls(): number {
+    return this.inFlight;
+  }
+
+  /**
+   * Resolves true as soon as no call is in flight, false when `timeoutMs`
+   * passed first (graceful shutdown: let running commands finish).
+   */
+  waitForIdle(timeoutMs: number): Promise<boolean> {
+    if (this.inFlight === 0) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        const i = this.idleWaiters.indexOf(onIdle);
+        if (i >= 0) this.idleWaiters.splice(i, 1);
+        resolve(false);
+      }, timeoutMs);
+      const onIdle = (): void => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      this.idleWaiters.push(onIdle);
+    });
   }
 
   /** Relays seen within RELAY_TTL_MS. Expired entries are dropped. */

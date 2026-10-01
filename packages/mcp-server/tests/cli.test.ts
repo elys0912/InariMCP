@@ -28,6 +28,15 @@ describe('parseArgs', () => {
     expect(parseArgs(['--version', '--daemon'])).toEqual({ kind: 'version' });
     expect(parseArgs(['--daemon', '--doctor', '--help'])).toEqual({ kind: 'help' });
   });
+
+  it('parses --stop-daemon, with --force only there', () => {
+    expect(parseArgs(['--stop-daemon'])).toEqual({ kind: 'stop-daemon', force: false });
+    expect(parseArgs(['--stop-daemon', '--force'])).toEqual({ kind: 'stop-daemon', force: true });
+    expect(parseArgs(['--force'])).toMatchObject({ kind: 'error' });
+    expect(parseArgs(['--daemon', '--stop-daemon'])).toMatchObject({ kind: 'error' });
+  });
+
+  // TODO(test): --stop-daemon with no daemon exits 0 and creates nothing
 });
 
 const entry = path.resolve(__dirname, '..', 'dist', 'index.js');
@@ -44,6 +53,7 @@ describe.skipIf(!fs.existsSync(entry))('dist/index.js without side effects (need
       const help = spawnSync(process.execPath, [entry, '--help'], { env, encoding: 'utf-8', timeout: 10_000 });
       expect(help.status).toBe(0);
       expect(help.stdout).toContain('--daemon');
+      expect(help.stdout).toContain('--stop-daemon');
 
       const bad = spawnSync(process.execPath, [entry, '--nope'], { env, encoding: 'utf-8', timeout: 10_000 });
       expect(bad.status).toBe(2);

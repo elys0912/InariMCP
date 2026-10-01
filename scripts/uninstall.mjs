@@ -19,7 +19,7 @@ import {
 } from './lib/core.mjs';
 import {
   confirm, defaultDeps, exists, exitOnBrokenPipe, findClaude, isMain, listNodeProcesses, makeReporter, probeDaemon,
-  readTextOrNull, regDeleteKey, regQueryDefault, removeTreeSafe, runProgram, stopProcess,
+  readTextOrNull, regDeleteKey, regQueryDefault, removeTreeSafe, runProgram, stopDaemonGracefully, stopProcess,
 } from './lib/system.mjs';
 import { manualForPlatform, manualMarkdown, uninstallUsage } from './lib/texts.mjs';
 
@@ -159,15 +159,38 @@ async function uninstall(argv, deps, r) {
   } else if (hostPids.length + daemonPids.size === 0) {
     if (classes) r.ok('no KitsuneMCP Native Host or daemon of this repository is running');
   } else {
-    // Native Hosts first: a live host restarts a stopped daemon.
+    // Native Hosts first: a live host restarts a stopped daemon. Then the
+    // daemon, gracefully over its signed POST /daemon/shutdown when we hold
+    // its token (running calls finish, Firefox is closed); by signal only
+    // when it cannot be asked (no token, older daemon, no answer).
+    const graceful = daemon.kind === 'kitsune' && daemon.verified && token !== undefined;
     const order = [...hostPids.map((pid) => ['Native Host', pid]), ...[...daemonPids].map((pid) => ['daemon', pid])];
     if (!dry && !(await confirm(deps, opts,
       `Stop ${order.map(([k, pid]) => `${k} ${pid}`).join(', ')}? Claude Code sessions lose the browser tools.`, true))) {
       r.info('left running');
     } else {
+      let daemonStopped = false;
       for (const [kind, pid] of order) {
         if (dry) {
-          r.plan(`stop ${kind} PID ${pid} (SIGTERM, SIGKILL after ${opts.graceMs / 1000}s)`);
+          r.plan(kind === 'daemon' && graceful
+            ? `stop daemon PID ${pid} over POST /daemon/shutdown (signal after ${opts.graceMs / 1000}s if it keeps running)`
+            : `stop ${kind} PID ${pid} (SIGTERM, SIGKILL after ${opts.graceMs / 1000}s)`);
+          continue;
+        }
+        if (kind === 'daemon' && graceful && !daemonStopped) {
+          const outcome = await stopDaemonGracefully(deps, endpoint, token, opts.graceMs);
+          if (outcome === 'stopped') {
+            daemonStopped = true;
+            if (!deps.isAlive(pid)) {
+              r.ok(`daemon PID ${pid}: stopped (POST /daemon/shutdown)`);
+              continue;
+            }
+            r.info(`daemon answered the stop request but PID ${pid} is still alive — sending a signal`);
+          } else {
+            r.info(`POST /daemon/shutdown ${outcome === 'refused' ? 'was refused (older daemon?)' : outcome === 'unanswered' ? 'got no answer' : 'did not stop it in time'} — sending a signal`);
+          }
+        } else if (kind === 'daemon' && daemonStopped && !deps.isAlive(pid)) {
+          r.ok(`daemon PID ${pid}: already gone`);
           continue;
         }
         const result = await stopProcess(deps, pid, opts.graceMs);

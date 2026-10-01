@@ -23,6 +23,8 @@
  *  - approvals (relay/approval.ts): POST /approval/elicitation and
  *    /approval/browser; a retried call sends `approvalToken` in the
  *    /mcp/call body.
+ *  - stopDaemon() (`--stop-daemon`): signed POST /daemon/shutdown, then
+ *    waits until /health stops answering. Never starts a daemon.
  */
 
 import * as http from 'node:http';
@@ -76,6 +78,18 @@ interface HttpReply {
 }
 
 class ConnectionRefusedError extends Error {}
+
+/** How long stopDaemon() waits for the daemon to go away (its own drain cap is 10 s). */
+const DAEMON_STOP_WAIT_MS = 20_000;
+
+export interface StopDaemonResult {
+  /** False when something went wrong (a daemon may still be running). */
+  ok: boolean;
+  /** A daemon was running and is gone now. */
+  stopped: boolean;
+  pid?: number;
+  message: string;
+}
 
 export interface DaemonClientOptions {
   /** Defaults: FOX_HOST / FOX_HTTP_PORT (utils/endpoint.ts). */
@@ -208,8 +222,9 @@ export class DaemonClient {
     return (
       `The KitsuneMCP daemon running at ${this.baseUrl} is from another version ` +
       `(protocol ${this.daemonProtocol === undefined ? '1 or older' : String(this.daemonProtocol)}, ` +
-      `this session needs ${DAEMON_PROTOCOL_VERSION}). Stop that daemon process (and restart ` +
-      'Firefox if it was started by the Native Host); the next tool call starts a matching one.'
+      `this session needs ${DAEMON_PROTOCOL_VERSION}). Stop that daemon process (end it by PID: ` +
+      'it predates --stop-daemon; then restart Firefox if it was started by the Native Host); ' +
+      'the next tool call starts a matching one.'
     );
   }
 
@@ -260,8 +275,8 @@ export class DaemonClient {
       `The shared KitsuneMCP daemon (PID ${pid}) was started with different settings ` +
       'than this session. The running daemon\'s settings apply to every session: ' +
       diffs.join('; ') +
-      '. To change them, stop the daemon (it also exits on its own after being unused ' +
-      'for FOX_DAEMON_IDLE_TIMEOUT seconds) and start a session with the desired settings.',
+      '. To change them, stop the daemon (node dist/index.js --stop-daemon; it also exits on its own ' +
+      'after being unused for FOX_DAEMON_IDLE_TIMEOUT seconds) and start a session with the desired settings.',
     ];
   }
 
@@ -353,6 +368,70 @@ export class DaemonClient {
 
       return this.toCallToolResult(name, reply);
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Stop (`--stop-daemon`)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Ask the running daemon to stop (signed POST /daemon/shutdown) and wait
+   * until nothing answers /health any more. Never starts a daemon.
+   * `force` skips the daemon's wait for running calls.
+   */
+  async stopDaemon(force = false, waitMs: number = DAEMON_STOP_WAIT_MS): Promise<StopDaemonResult> {
+    if (!(await this.checkHealth())) {
+      return { ok: true, stopped: false, message: `no KitsuneMCP daemon answers at ${this.baseUrl}` };
+    }
+    const mismatch = this.protocolMismatch();
+    if (mismatch !== undefined) return { ok: false, stopped: false, message: mismatch };
+    const token = this.readToken();
+    if (token === undefined) {
+      return {
+        ok: false,
+        stopped: false,
+        message: `a daemon answers at ${this.baseUrl} but there is no API token at ~/.kitsune-mcp/api_token to sign the request`,
+      };
+    }
+
+    const body = JSON.stringify({ force });
+    let reply: HttpReply;
+    try {
+      reply = await this.request('POST', '/daemon/shutdown', body, waitMs, token);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, stopped: false, message: `POST ${this.baseUrl}/daemon/shutdown failed: ${msg}` };
+    }
+    if (!reply.verified) {
+      return {
+        ok: false,
+        stopped: false,
+        message: reply.status === 403
+          ? `the daemon at ${this.baseUrl} refused the signature (api_token replaced since it started?)`
+          : `the answer from ${this.baseUrl} is not signed by the KitsuneMCP daemon — not trusting it`,
+      };
+    }
+    if (reply.status !== 200) {
+      const b = isRecord(reply.body) ? reply.body : {};
+      const error = typeof b['error'] === 'string' ? b['error'] : `HTTP ${reply.status}`;
+      return { ok: false, stopped: false, message: `the daemon refused to stop: ${error}` };
+    }
+    const b = isRecord(reply.body) ? reply.body : {};
+    const pid = typeof b['pid'] === 'number' ? b['pid'] : undefined;
+
+    const deadline = Date.now() + waitMs;
+    while (Date.now() < deadline) {
+      await sleep(HEALTH_POLL_INTERVAL_MS);
+      if (!(await this.checkHealth(HEALTH_TIMEOUT_MS))) {
+        return { ok: true, stopped: true, pid, message: `daemon${pid !== undefined ? ` (PID ${pid})` : ''} stopped` };
+      }
+    }
+    return {
+      ok: false,
+      stopped: false,
+      pid,
+      message: `the daemon${pid !== undefined ? ` (PID ${pid})` : ''} accepted the stop request but still answers after ${waitMs / 1000}s`,
+    };
   }
 
   // -------------------------------------------------------------------------

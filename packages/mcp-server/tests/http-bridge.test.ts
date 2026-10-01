@@ -254,6 +254,60 @@ describe('client abort (5.5)', () => {
   });
 });
 
+describe('POST /daemon/shutdown', () => {
+  async function startWithShutdown(): Promise<{ prepared: { force: boolean }[]; exited: () => number }> {
+    const prepared: { force: boolean }[] = [];
+    let exits = 0;
+    server = await startHttpBridge({
+      host: '127.0.0.1',
+      port: 0,
+      apiToken: TOKEN,
+      connectionManager: getConnectionManager(),
+      shutdown: {
+        prepare: async (opts) => { prepared.push(opts); return { waitedMs: 0, drained: true }; },
+        exit: () => { exits++; },
+      },
+    });
+    port = (server.address() as AddressInfo).port;
+    return { prepared, exited: () => exits };
+  }
+
+  it('refuses X-API-Key (403) and never runs the shutdown', async () => {
+    const { prepared, exited } = await startWithShutdown();
+    const r = await request('POST', '/daemon/shutdown', { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' }, '{}');
+    expect(r.status).toBe(403);
+    expect(prepared).toEqual([]);
+    expect(exited()).toBe(0);
+  });
+
+  it('runs the shutdown for a signed request, signs the answer, exits after it', async () => {
+    const { prepared, exited } = await startWithShutdown();
+    const body = JSON.stringify({ force: true });
+    const s = signRequest(TOKEN, 'POST', '/daemon/shutdown', body);
+    const r = await request('POST', '/daemon/shutdown', { ...s.headers, 'Content-Type': 'application/json' }, body);
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ status: 'stopping', pid: process.pid, force: true, drained: true });
+    expect(verifyResponse(TOKEN, s.nonce, 200, r.raw, r.headers[AUTH_HEADER.signature])).toBe(true);
+    expect(prepared).toEqual([{ force: true }]);
+    await waitFor(() => exited() > 0);
+    expect(exited()).toBe(1);
+
+    // Tool calls are refused while stopping.
+    const call = await request('POST', '/mcp/call', { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' },
+      JSON.stringify({ name: 'fox_safety_status', arguments: {} }));
+    expect(call.status).toBe(503);
+  });
+
+  it('answers 501 when the daemon gave no shutdown hooks', async () => {
+    await start();
+    const s = signRequest(TOKEN, 'POST', '/daemon/shutdown', '{}');
+    expect((await request('POST', '/daemon/shutdown', { ...s.headers, 'Content-Type': 'application/json' }, '{}')).status).toBe(501);
+  });
+
+  // TODO(test): a second shutdown request while the first is preparing shares it (repeated: true); non-boolean force → 400;
+  //             daemon/main.ts prepareShutdown waits for in-flight calls (activity.waitForIdle) and closes WS clients with 1001
+});
+
 describe('isAllowedHostHeader', () => {
   it.each([
     ['127.0.0.1:8765', true],
