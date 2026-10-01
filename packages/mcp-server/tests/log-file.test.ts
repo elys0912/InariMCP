@@ -41,7 +41,16 @@ describe('daemon.log timestamps', () => {
     expect(written.join('')).toBe('T a\nT b\n');
   });
 
-  // TODO(test): a string with a text encoding (latin1, utf16le) is decoded as if it were bytes (see WP33 report).
+  it('keeps a string written with a text encoding (latin1, utf16le, ascii) as the text it is', () => {
+    const { sink, written } = capture();
+    const cafe = 'caf' + String.fromCharCode(0xe9) + '\n';
+    sink.write(cafe, 'latin1');
+    sink.write(cafe, 'utf16le');
+    sink.write('plain\n', 'ascii');
+    expect(written.join('')).toBe(`T ${cafe}T ${cafe}T plain\n`);
+    expect(written.join('')).not.toContain('�');
+  });
+
   it('decodes a string written as hex / base64 bytes before stamping it', () => {
     const { sink, written } = capture();
     sink.write(Buffer.from('hi\n').toString('hex'), 'hex');

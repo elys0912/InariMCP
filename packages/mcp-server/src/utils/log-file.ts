@@ -3,6 +3,9 @@ import { logStamp, stampLines } from '@kitsune-mcp/shared/node';
 // Rotation and line stamps are shared with the Native Host.
 export { MAX_LOG_BYTES, logStamp, rotateIfLarge, stampLines } from '@kitsune-mcp/shared/node';
 
+/** Encodings whose string spells out bytes (decoded to text before stamping). */
+const BYTE_STRING_ENCODINGS: ReadonlySet<string> = new Set(['hex', 'base64', 'base64url']);
+
 /**
  * Prefix every line the process writes to stderr with a timestamp and the
  * PID. Used by the daemon, whose stderr is ~/.kitsune-mcp/logs/daemon.log:
@@ -20,9 +23,11 @@ export function installStderrTimestamps(
     encodingOrCb?: BufferEncoding | ((err?: Error | null) => void),
     cb?: (err?: Error | null) => void,
   ): boolean => {
+    // Only a binary-to-text encoding makes the string stand for bytes; with
+    // a text encoding (latin1, utf16le, …) the string is already the text.
     const text =
       typeof chunk === 'string'
-        ? typeof encodingOrCb === 'string' && encodingOrCb !== 'utf8' && encodingOrCb !== 'utf-8'
+        ? typeof encodingOrCb === 'string' && BYTE_STRING_ENCODINGS.has(encodingOrCb)
           ? Buffer.from(chunk, encodingOrCb).toString('utf-8')
           : chunk
         : Buffer.from(chunk).toString('utf-8');
