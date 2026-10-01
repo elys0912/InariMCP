@@ -50,7 +50,6 @@ export const ENV_DEFAULTS = {
   MAX_RESTART_ATTEMPTS: 10,
   BACKOFF_BASE_MS: 2_000,
   BACKOFF_MAX_MS: 60_000,
-  STABLE_THRESHOLD_MS: 300_000,
   /**
    * Whether protected-site approvals may be given through MCP elicitation
    * when FOX_APPROVAL_ELICITATION is unset. The single place to change the

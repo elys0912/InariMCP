@@ -137,6 +137,12 @@ export function saveScreenshotFile(
   suffix = '',
 ): { path: string; overwritten: boolean } {
   const match = DATA_URL_RE.exec(imageData);
+  if (match === null && imageData.startsWith('data:')) {
+    // Another MIME type (or not base64): decoding the whole string as base64
+    // would write a broken file and report success.
+    const head = imageData.split(',', 1)[0]!.slice(0, 60);
+    throw new Error(`unsupported screenshot data URL (${head}); expected PNG, JPEG or WebP as base64`);
+  }
   const mime = match?.[1]?.toLowerCase() ?? 'image/png';
   const ext = EXT_BY_MIME[mime] ?? '.png';
   const base64 = match ? imageData.slice(match[0].length) : imageData;

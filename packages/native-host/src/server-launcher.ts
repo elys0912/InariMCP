@@ -101,10 +101,17 @@ export class ServerLauncher {
   readonly host: string;
   private cachedApiToken: string | undefined;
 
+  /**
+   * Start attempts since a usable daemon last answered /health. Capped at
+   * MAX_RESTART_ATTEMPTS: only a usable daemon (ours or one a relay started)
+   * resets it, not the passing of time.
+   */
   private restartAttempts = 0;
-  private lastStableTime = Date.now();
   /** Last problem that was logged, so repeated checks do not flood the log. */
   private lastReported: string | undefined;
+  /** Same for GET /daemon/info. */
+  private lastInfoProblem: string | undefined;
+  private readonly serverEntry: string;
   private readonly expectedVersion = installedDaemonVersion();
 
   private readonly readTokenFile: () => string | undefined;
@@ -115,11 +122,13 @@ export class ServerLauncher {
     httpPort?: number;
     wsPort?: number;
     readToken?: () => string | undefined;
+    serverEntry?: string;
   } = {}) {
     this.host = options.host ?? resolveHost();
     this.httpPort = options.httpPort ?? resolveHttpPort(reportInvalidPort);
     this.wsPort = options.wsPort ?? resolveWsPort(reportInvalidPort);
     this.readTokenFile = options.readToken ?? (() => readApiTokenFile());
+    this.serverEntry = options.serverEntry ?? serverEntryPath();
     this.cachedApiToken = this.readTokenFile();
   }
 
@@ -151,10 +160,12 @@ export class ServerLauncher {
       return false;
     }
 
-    const serverEntry = serverEntryPath();
+    const serverEntry = this.serverEntry;
 
     if (!fs.existsSync(serverEntry)) {
-      log(`MCP server entry not found: ${serverEntry}`);
+      // Retrying cannot help until the package is built / reinstalled.
+      this.restartAttempts = ENV_DEFAULTS.MAX_RESTART_ATTEMPTS;
+      log(`MCP server entry not found: ${serverEntry} — not retrying`);
       return false;
     }
 
@@ -201,7 +212,6 @@ export class ServerLauncher {
       );
       if (!('errors' in result)) {
         this.restartAttempts++;
-        this.lastStableTime = Date.now();
         log(`started daemon outside the job object via ${result.via} (attempt #${this.restartAttempts})`);
         return this.waitUntilHealthy();
       }
@@ -211,6 +221,8 @@ export class ServerLauncher {
       );
     }
 
+    // A spawn that throws counts as an attempt too.
+    this.restartAttempts++;
     try {
       const pid = spawnDetachedDaemon({
         entry: serverEntry,
@@ -218,12 +230,10 @@ export class ServerLauncher {
         cwd: daemonCwd(),
         onError: (err) => log(`daemon spawn error: ${err.message}`),
       });
-      this.restartAttempts++;
-      this.lastStableTime = Date.now();
       log(`started daemon (PID: ${pid ?? 'unknown'}, attempt #${this.restartAttempts})`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      log(`failed to start daemon: ${msg}`);
+      log(`failed to start daemon (attempt #${this.restartAttempts}): ${msg}`);
       return false;
     }
 
@@ -236,8 +246,7 @@ export class ServerLauncher {
     while (Date.now() < deadline) {
       await this.sleep(200);
       if (await this.checkHealth()) {
-        log('daemon is now available');
-        this.restartAttempts = 0;
+        log('daemon is now available'); // checkHealth() reset the start counter
         // The WS bridge may bind a moment after the HTTP server.
         let wsUp = false;
         for (let i = 0; i < 5 && !wsUp; i++) {
@@ -320,7 +329,8 @@ export class ServerLauncher {
   /**
    * GET /health with a fresh nonce and classify the answer. A failed proof
    * is retried once with the token re-read from disk (it may have been
-   * regenerated). Problems are logged when they change.
+   * regenerated). Problems are logged when they change. A usable daemon,
+   * whoever started it, resets the start counter.
    */
   async probeHealth(): Promise<HealthVerdict> {
     let verdict = await this.requestHealth();
@@ -329,6 +339,7 @@ export class ServerLauncher {
       verdict = await this.requestHealth();
     }
     this.report(verdict);
+    if (isUsable(verdict)) this.restartAttempts = 0;
     return verdict;
   }
 
@@ -383,7 +394,8 @@ export class ServerLauncher {
         },
         (res) => {
           let body = '';
-          res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+          res.setEncoding('utf8');
+          res.on('data', (chunk: string) => { body += chunk; });
           res.on('end', () => resolve(evaluateHealth(res.statusCode, body, token, nonce)));
           res.on('error', () => resolve({ kind: 'down' }));
         },
@@ -430,6 +442,7 @@ export class ServerLauncher {
               this.reloadApiToken();
             }
             if (res.statusCode !== 200) {
+              this.reportInfo(`GET /daemon/info: HTTP ${String(res.statusCode)} — daemon info not shown`);
               resolve(null);
               return;
             }
@@ -442,12 +455,15 @@ export class ServerLauncher {
               const parsed = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
               const relays = parsed['relays'];
               if (typeof relays !== 'number') {
+                this.reportInfo('GET /daemon/info: "relays" is not a number — daemon info not shown');
                 resolve(null);
                 return;
               }
               const version = parsed['version'];
+              this.reportInfo(undefined);
               resolve({ relays, ...(typeof version === 'string' ? { version } : {}) });
             } catch {
+              this.reportInfo('GET /daemon/info: answer is not valid JSON — daemon info not shown');
               resolve(null);
             }
           });
@@ -464,15 +480,10 @@ export class ServerLauncher {
     });
   }
 
-  resetBackoff(): void {
-    const now = Date.now();
-    if (
-      this.restartAttempts > 0 &&
-      now - this.lastStableTime > ENV_DEFAULTS.STABLE_THRESHOLD_MS
-    ) {
-      log('resetting start counter after stability period');
-      this.restartAttempts = 0;
-    }
+  /** Log a /daemon/info problem when it differs from the last one (cf. report()). */
+  private reportInfo(problem: string | undefined): void {
+    if (problem !== undefined && problem !== this.lastInfoProblem) log(problem);
+    this.lastInfoProblem = problem;
   }
 
   getBackoffDelay(): number {

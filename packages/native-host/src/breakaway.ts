@@ -140,8 +140,12 @@ export function spawnDaemonBreakaway(entry: string, logPath: string, cwd?: strin
 
     let stdout = '';
     let stderr = '';
-    ps.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-    ps.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    // Decode as a stream so a multi-byte character split across chunks
+    // (localized PowerShell errors) stays intact.
+    ps.stdout.setEncoding('utf8');
+    ps.stderr.setEncoding('utf8');
+    ps.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    ps.stderr.on('data', (chunk: string) => { stderr += chunk; });
 
     const timer = setTimeout(() => {
       ps.kill();

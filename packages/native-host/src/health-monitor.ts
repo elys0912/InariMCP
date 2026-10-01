@@ -8,6 +8,9 @@
  *   - nothing listens (2 checks in a row) → the daemon is really gone
  *     (crashed, or exited after its idle timeout while Firefox was closed):
  *     start a new one, with exponential backoff and at most 10 attempts.
+ *     The count goes back to 0 only when a usable daemon answers /health
+ *     (ours or one a relay started); after 10 failures the monitor stops
+ *     starting daemons.
  *
  * Division of labour with ws-client.ts:
  *  - HealthMonitor starts the daemon when it is missing.
@@ -25,7 +28,6 @@ import { log } from './logger.js';
 /** What HealthMonitor needs from ServerLauncher. */
 export type MonitoredLauncher = Pick<
   ServerLauncher,
-  | 'resetBackoff'
   | 'probeHealth'
   | 'checkHealth'
   | 'isPortInUse'
@@ -84,9 +86,6 @@ export class HealthMonitor {
   }
 
   private async checkOnce(): Promise<void> {
-    // Reset backoff counter if the daemon has been stable long enough
-    this.launcher.resetBackoff();
-
     const verdict = await this.launcher.probeHealth();
     if (isUsable(verdict)) {
       if (this.consecutiveMissing > 0) {
@@ -135,8 +134,9 @@ export class HealthMonitor {
     }
 
     log('starting daemon');
+    // Count missing checks afresh from this attempt on, whatever its outcome.
+    this.consecutiveMissing = 0;
     if (await this.launcher.start()) {
-      this.consecutiveMissing = 0;
       this.onRestart?.();
     } else {
       log('failed to start daemon');
