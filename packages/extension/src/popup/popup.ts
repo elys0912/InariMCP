@@ -4,6 +4,7 @@
 
 import { t } from '../i18n';
 import { APPROVAL_MESSAGE, type ApprovalView } from '../approval';
+import type { ContentRequest } from '../content/types';
 import type { SetupState } from '../types/setup';
 import { setupStateOfReply, setupStateOfFailure } from './setup-status';
 
@@ -434,7 +435,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         const result = await browser.tabs.sendMessage(
           currentTab.id,
-          { action: 'getPageInfo' },
+          { action: 'getPageInfo' } satisfies ContentRequest,
           { frameId: 0 },
         ) as PageInfoResponse;
 

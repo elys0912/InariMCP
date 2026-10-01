@@ -1,15 +1,9 @@
 // Captcha detection and the wait for the human to solve it.
 
+import { t } from "../i18n";
 import { CAPTCHA_BANNER_ID, TIMEOUTS } from "./constants";
 import { BANNER_SUPERSEDED, closeOverlayBanner, createOverlayBanner } from "./overlay";
 import type { CaptchaWidget, CaptchaOptions } from "./types";
-
-/**
- * Localized banner text (same as t() in i18n.ts).
- */
-function msg(key: string, substitutions?: string | string[]): string {
-  return browser.i18n.getMessage(key, substitutions) || key;
-}
 
 function detectCaptcha(): { present: boolean; widgets: CaptchaWidget[] } {
   const widgets: CaptchaWidget[] = [];
@@ -96,11 +90,11 @@ export async function solveCaptcha(
   // Start the banner (resolves on button click or timeout)
   const bannerPromise = createOverlayBanner({
     id: CAPTCHA_BANNER_ID,
-    title: msg("bannerCaptchaTitle", types),
-    detail: msg("bannerCaptchaDetail"),
+    title: t("bannerCaptchaTitle", types),
+    detail: t("bannerCaptchaDetail"),
     buttons: [
-      { label: msg("bannerDone"), value: "done", color: "#ffd166", textColor: "#0f3460" },
-      { label: msg("bannerCancel"), value: "cancel", color: "transparent", textColor: "#fff" },
+      { label: t("bannerDone"), value: "done", color: "#ffd166", textColor: "#0f3460" },
+      { label: t("bannerCancel"), value: "cancel", color: "transparent", textColor: "#fff" },
     ],
     timeoutMs,
     borderColor: "#ffd166",

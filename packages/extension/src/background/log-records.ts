@@ -3,10 +3,11 @@
 
 import type { CommandResult } from "./types";
 import { clipText } from "../text-clip";
+import { LOG_TEXT_LIMIT } from "./constants";
 
 /**
  * Copy one log entry from a content script into plain data: strings (cut
- * at 5000 characters), finite numbers, booleans, null, and one level of
+ * at LOG_TEXT_LIMIT characters), finite numbers, booleans, null, and one level of
  * string records (headers). Anything else is dropped; null if not an object.
  */
 export function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null {
@@ -14,7 +15,7 @@ export function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null 
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw).slice(0, 20)) {
     if (typeof value === "string") {
-      out[key] = clipText(value, 5000);
+      out[key] = clipText(value, LOG_TEXT_LIMIT);
     } else if (typeof value === "number") {
       if (Number.isFinite(value)) out[key] = value;
     } else if (typeof value === "boolean" || value === null) {

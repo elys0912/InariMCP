@@ -1,5 +1,6 @@
 // Screenshots: single tab (visible / full page) and all tabs (L3).
 
+import type { ContentRequest } from "../content/types";
 import { findUrlRule, type CompiledUrlRule } from "../url-rule";
 import { TIMEOUTS, TOP_FRAME_ID } from "./constants";
 import { isTabInScope } from "./container-scope";
@@ -95,7 +96,7 @@ async function captureFullPageImage(
   try {
     dimensions = (await browser.tabs.sendMessage(
       targetTab.id,
-      { action: "captureFullPage", format: options.format || "png" },
+      { action: "captureFullPage", format: options.format || "png" } satisfies ContentRequest,
       { frameId: TOP_FRAME_ID },
     )) as Record<string, unknown>;
     const width = dimensions.scrollWidth;

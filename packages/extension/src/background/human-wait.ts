@@ -69,5 +69,5 @@ export async function solveCaptcha(
       // Notifications unavailable
     }
   }
-  return sendToContentScript(tabId, { action: "solveCaptcha", ...data });
+  return sendToContentScript(tabId, { ...data, action: "solveCaptcha" });
 }

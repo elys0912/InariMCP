@@ -40,6 +40,7 @@
 //   skipUrlReport   (tab only) no URL report after the call (the tab is gone).
 //   handler         runs the action (inside handleCommand's try / catch).
 
+import type { ContentAction } from "../content/types";
 import type { CompiledUrlRule } from "../url-rule";
 import { requestApproval } from "./approvals";
 import { listContainers, openInContainer } from "./container-scope";
@@ -129,7 +130,9 @@ export type ActionDescriptor = TabActionDescriptor | SelfScopedActionDescriptor 
  * Content-script-forwarded actions. Every command goes to the top frame
  * (sendToContentScript's default), never to whichever frame answers first.
  */
-const toContentScript: ActionHandler = (c) => sendToContentScript(c.tabId, { action: c.action, ...c.data });
+function toContentScript(action: ContentAction): ActionHandler {
+  return (c) => sendToContentScript(c.tabId, { ...c.data, action });
+}
 
 /** status (popup): host connection and setup state. */
 async function status(c: ActionContext): Promise<CommandResult> {
@@ -213,18 +216,18 @@ const ACTIONS = {
   cancelHumanWait: { scope: "noTab", protectedCheck: "none", handler: (c) => cancelHumanWait(c.data) },
 
   // --- Content script (form / input, wait / observe, text) ---
-  getValue: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  setValue: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  selectOption: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  hover: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  waitForChange: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  observeElement: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  stopObserving: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  scrollAndCapture: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  clickAndWait: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  pressKey: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  getText: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  waitForNetworkIdle: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
+  getValue: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("getValue") },
+  setValue: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("setValue") },
+  selectOption: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("selectOption") },
+  hover: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("hover") },
+  waitForChange: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("waitForChange") },
+  observeElement: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("observeElement") },
+  stopObserving: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("stopObserving") },
+  scrollAndCapture: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("scrollAndCapture") },
+  clickAndWait: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("clickAndWait") },
+  pressKey: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("pressKey") },
+  getText: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("getText") },
+  waitForNetworkIdle: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("waitForNetworkIdle") },
 
   // --- Tab waits ---
   waitForNavigation: { scope: "tab", protectedCheck: "upfront", handler: (c) => waitForNavigation(c.tabId, c.data) },

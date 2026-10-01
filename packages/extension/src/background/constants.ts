@@ -23,8 +23,5 @@ export const TIMEOUTS = {
 
 export const TOP_FRAME_ID = 0;
 
-/** Message type of the content script's "is logging on for my tab?" query. */
-export const LOGGING_STATE_QUERY = "kitsune:loggingState";
-
-/** content → background: `{ type, console?: entry[], network?: entry[] }`. */
-export const LOG_RECORD_MESSAGE = "kitsune:logRecords";
+// Message types and log limits shared with the content script (../wire-messages.ts).
+export { LOG_RECORD_MESSAGE, LOGGING_STATE_QUERY, LOG_ENTRY_LIMIT, LOG_TEXT_LIMIT } from "../wire-messages";

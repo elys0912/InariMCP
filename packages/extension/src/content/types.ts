@@ -156,10 +156,70 @@ export interface ClearLogsOptions {
   network?: boolean;
 }
 
-export interface ContentMessage {
-  action: string;
+export interface GetElementsOptions {
+  selector?: string;
+  limit?: number;
+}
+
+export interface StopObservingOptions {
+  observerId: string;
+}
+
+/**
+ * The options each background → content action carries next to `action`
+ * (one key per case of handler.ts handleMessage). `{}`: no options read.
+ */
+export interface ContentOptionsByAction {
+  click: ClickOptions;
+  type: TypeOptions;
+  scroll: ScrollOptions;
+  getPageInfo: {};
+  getElements: GetElementsOptions;
+  highlight: HighlightOptions;
+  waitForElement: WaitOptions;
+  waitForChange: WaitForChangeOptions;
+  waitForNetworkIdle: NetworkIdleOptions;
+  observeElement: ObserveOptions;
+  stopObserving: StopObservingOptions;
+  scrollAndCapture: ScrollCaptureOptions;
+  clickAndWait: ClickAndWaitOptions;
+  captureFullPage: {};
+  inspectElement: {};
+  getValue: FindElementOptions;
+  setValue: SetValueOptions;
+  hover: FindElementOptions;
+  selectOption: SelectOptionOptions;
+  pressKey: PressKeyOptions;
+  getText: TextOptions;
+  solveCaptcha: CaptchaOptions;
+  cancelHumanWait: {};
+  startLogging: LoggingOptions;
+  stopLogging: {};
+  flushLogs: {};
+  clearLogs: ClearLogsOptions;
+}
+
+/** Action name of a background → content message. */
+export type ContentAction = keyof ContentOptionsByAction;
+
+/**
+ * A background → content message as the background builds it: the action
+ * and the command's data, not checked against the action's options.
+ */
+export interface ContentRequest {
+  action: ContentAction;
   [key: string]: unknown;
 }
+
+/**
+ * A background → content message as handleMessage reads it, narrowed by
+ * `action`. The options are what the sender put there: content.ts takes a
+ * runtime message as this type without checking it, and the handlers read
+ * the options defensively.
+ */
+export type ContentMessage = {
+  [A in ContentAction]: { action: A } & ContentOptionsByAction[A];
+}[ContentAction];
 
 export interface ConsoleLogEntry {
   level: string;

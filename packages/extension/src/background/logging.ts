@@ -2,7 +2,7 @@
 // log buffers (logBuffers), owned here (L3).
 
 import type { CompiledUrlRule } from "../url-rule";
-import { TOP_FRAME_ID } from "./constants";
+import { LOG_ENTRY_LIMIT, TOP_FRAME_ID } from "./constants";
 import { appendLogRecords, queryConsoleLogs, queryNetworkLogs } from "./log-records";
 import { sendToContentScript, noTargetTab } from "./tab-target";
 import { shouldSkipTab } from "./tab-wait";
@@ -28,8 +28,8 @@ const loggingTabs = new Map<number, LoggingTabState>();
 // forwards them here in small batches (LOG_RECORD_MESSAGE), plus whatever it
 // still holds when asked (flushLogs / stopLogging). The buffers live in the
 // background, so a reload or navigation -- which replaces the content script
-// -- does not lose them. Each tab keeps at most LOG_BUFFER_LIMIT console and
-// LOG_BUFFER_LIMIT network entries (oldest dropped). A buffer exists from
+// -- does not lose them. Each tab keeps at most LOG_ENTRY_LIMIT console and
+// LOG_ENTRY_LIMIT network entries (oldest dropped). A buffer exists from
 // start_logging until the tab closes; stop_logging keeps it (the logs stay
 // readable), clear_logs empties it. Entries recorded in the last moment
 // before a navigation can be lost (the batch in flight when the old page
@@ -40,7 +40,6 @@ interface LogBuffer {
   network: Record<string, unknown>[];
 }
 const logBuffers = new Map<number, LogBuffer>();
-const LOG_BUFFER_LIMIT = 500;
 
 /** Why a batch of log entries was dropped (LOG_RECORD_MESSAGE reply `reason`). */
 export type LogRecordRefusal = "not_top_frame" | "not_logging" | "protected_page";
@@ -60,8 +59,8 @@ export function acceptLogRecords(
   if (!buffer) return "not_logging";
   const patterns = loggingTabs.get(tabId)?.patterns ?? [];
   if (pageUrls.some((u) => findProtectedMatch(u, patterns) !== undefined)) return "protected_page";
-  appendLogRecords(buffer.console, payload.console, LOG_BUFFER_LIMIT);
-  appendLogRecords(buffer.network, payload.network, LOG_BUFFER_LIMIT);
+  appendLogRecords(buffer.console, payload.console, LOG_ENTRY_LIMIT);
+  appendLogRecords(buffer.network, payload.network, LOG_ENTRY_LIMIT);
   return null;
 }
 
@@ -86,8 +85,8 @@ export async function startLoggingOnTab(
   if (refusal) return refusal;
   const tab = target;
   const result = await sendToContentScript(tab.id, {
-    action: "startLogging",
     ...data,
+    action: "startLogging",
     protectedPatterns: protectedPatterns.map((p) => p.rule),
   });
   if (!result.success) return result;
@@ -101,7 +100,7 @@ export async function startLoggingOnTab(
     buffer.console.length = 0;
     buffer.network.length = 0;
   }
-  return { ...result, ...logCounts(tab.id), bufferLimit: LOG_BUFFER_LIMIT };
+  return { ...result, ...logCounts(tab.id), bufferLimit: LOG_ENTRY_LIMIT };
 }
 
 export async function stopLoggingOnTab(target: browser.tabs.Tab | undefined): Promise<CommandResult> {

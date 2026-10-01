@@ -1,5 +1,6 @@
 // Target tab resolution and messaging to the tab's content script (L1).
 
+import type { ContentRequest } from "../content/types";
 import { TOP_FRAME_ID } from "./constants";
 import type { CommandResult } from "./types";
 
@@ -30,10 +31,13 @@ export function noTargetTab(): CommandResult {
  * (all_frames), and tabs.sendMessage without a frameId goes to all of them
  * and takes the first answer, so any iframe (including a hostile one) could
  * answer or be the one that acts.
+ *
+ * Build `message` as `{ ...data, action }`: the action last, so that a
+ * command's data cannot replace the action the background checked.
  */
 export async function sendToContentScript(
   tabId: number | undefined,
-  message: Record<string, unknown>,
+  message: ContentRequest,
   frameId: number = TOP_FRAME_ID,
 ): Promise<CommandResult> {
   try {

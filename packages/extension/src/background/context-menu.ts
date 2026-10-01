@@ -1,6 +1,7 @@
 // Context menu entries of the page: screenshot, inspect element (L5).
 // Created once by background.ts (registerContextMenus).
 
+import type { ContentRequest } from "../content/types";
 import { t } from "../i18n";
 import { TOP_FRAME_ID } from "./constants";
 import { postToHost } from "./native-connection";
@@ -44,7 +45,7 @@ export function registerContextMenus(): void {
         browser.tabs
           .sendMessage(
             tab.id,
-            { action: "inspectElement" },
+            { action: "inspectElement" } satisfies ContentRequest,
             { frameId: info.frameId ?? TOP_FRAME_ID },
           )
           .catch((error: unknown) => {

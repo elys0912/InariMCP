@@ -1,5 +1,6 @@
 // Tab management tools and find_text (L3).
 
+import type { ContentRequest } from "../content/types";
 import { TOP_FRAME_ID } from "./constants";
 import { isTabInScope, ensureScopeContainer } from "./container-scope";
 import { noTargetTab } from "./tab-target";
@@ -95,7 +96,7 @@ export async function getTabInfo(tabId: number): Promise<CommandResult> {
     try {
       pageInfo = await browser.tabs.sendMessage(
         tabId,
-        { action: "getPageInfo" },
+        { action: "getPageInfo" } satisfies ContentRequest,
         { frameId: TOP_FRAME_ID },
       );
     } catch {
