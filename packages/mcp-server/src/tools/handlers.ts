@@ -42,7 +42,7 @@ import { applyPasswordPolicy, passwordSelectorRefusal } from '../safety/password
 import { audit } from '../safety/audit.js';
 import type { AuditDecision } from '../safety/audit.js';
 import { getConnectionManager } from '../connection/manager.js';
-import { resolveOperation } from './operations.js';
+import { deprecationNote, resolveOperation } from './operations.js';
 
 // ---------------------------------------------------------------------------
 // Action-name mapping
@@ -553,6 +553,32 @@ export interface ToolCallOptions {
 export function createToolHandler(
   calledName: string,
   transport: string = 'stdio',
+): (args: Record<string, unknown>, options?: ToolCallOptions) => Promise<CallToolResult> {
+  const run = toolCall(calledName, transport);
+  return async (args, options) => withDeprecationNote(calledName, await run(args, options));
+}
+
+/** Deprecated names already reported in this process. */
+const reportedDeprecations = new Set<string>();
+
+/**
+ * A call by a deprecated name: once per name and process, a note at the end
+ * of the result and a line on stderr (daemon.log). Not on every call, to
+ * keep results short.
+ */
+function withDeprecationNote(calledName: string, result: CallToolResult): CallToolResult {
+  if (reportedDeprecations.has(calledName)) return result;
+  const note = deprecationNote(calledName);
+  if (note === null) return result;
+  reportedDeprecations.add(calledName);
+  process.stderr.write(`[KitsuneMCP] ${note}\n`);
+  result.content.push({ type: 'text' as const, text: `Note: ${note}` });
+  return result;
+}
+
+function toolCall(
+  calledName: string,
+  transport: string,
 ): (args: Record<string, unknown>, options?: ToolCallOptions) => Promise<CallToolResult> {
   return async (
     calledArgs: Record<string, unknown>,

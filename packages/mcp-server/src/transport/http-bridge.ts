@@ -11,7 +11,7 @@
  * (relay/main.ts) forwards its MCP tools/call to POST /mcp/call.
  *
  * Tool execution over HTTP (POST /mcp/call, and its alias POST
- * /browser/command): zod validation against TOOL_SCHEMAS[name].inputSchema ->
+ * /browser/command): zod validation against callSchemaFor(name) (tools/operations.ts) ->
  * createToolHandler (SafetyGuard.check, containerScope /
  * protectedUrlPatterns attachment, post-processing). Every tool is
  * reachable: FOX_CAPS is a per-session tools/list setting applied by each
@@ -62,8 +62,7 @@ import * as path from 'node:path';
 import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
 import { runWithCallSignal, type BrowserConnectionManager } from '../connection/manager.js';
 import { getScreenshotsDir, listScreenshots } from '../utils/screenshot.js';
-import { TOOL_SCHEMAS } from '../tools/schemas.js';
-import { getRegisteredToolNames } from '../tools/registry.js';
+import { callSchemaFor, callableToolNames, describeTool } from '../tools/operations.js';
 import { createToolHandler } from '../tools/handlers.js';
 import { answerFromElicitation, askBrowser } from '../tools/approval-flow.js';
 import { RELAY_ID_HEADER, isValidRelayId } from '../utils/endpoint.js';
@@ -346,8 +345,9 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
   ready.then(() => { isReady = true; }, () => { /* the daemon exits on failure */ });
   const startTime = Date.now();
 
-  // Every tool (see header comment: FOX_CAPS is applied by each relay).
-  const registeredTools = getRegisteredToolNames('all');
+  // Every tool, deprecated names included (see header comment: FOX_CAPS
+  // is applied by each relay).
+  const registeredTools = callableToolNames();
 
   /** Audit transport label: `relay:<id>` for relays, `http` otherwise. */
   const callerOf = (req: http.IncomingMessage): { transport: string; relayId?: string } => {
@@ -461,10 +461,8 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
 
     if (pathname === '/mcp/tools') {
       const tools = [...registeredTools].flatMap((name) => {
-        const def = TOOL_SCHEMAS[name];
-        return def
-          ? [{ name: def.name, description: def.description, classification: def.classification }]
-          : [];
+        const info = describeTool(name);
+        return info ? [{ name, ...info }] : [];
       });
       reply.json(200, { tools });
       return;
@@ -587,14 +585,14 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
       return;
     }
 
-    const def = TOOL_SCHEMAS[toolName];
-    if (!def || !registeredTools.has(toolName)) {
+    const schema = callSchemaFor(toolName);
+    if (!schema || !registeredTools.has(toolName)) {
       reply.error(404, `Unknown tool: ${toolName}`);
       return;
     }
 
     const rawArgs = data['arguments'] ?? {};
-    const parsed = def.inputSchema.safeParse(rawArgs);
+    const parsed = schema.safeParse(rawArgs);
     if (!parsed.success) {
       reply.json(400, {
         success: false,

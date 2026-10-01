@@ -339,6 +339,27 @@ describe('relay: ask, then retry once with the token', () => {
     expect(text(result)).toContain('declined');
     expect(browser.received).toEqual([]);
   });
+
+  it.each([
+    ['fox_tab', { action: 'create', url: PROTECTED_URL, active: true }],
+    ['fox_create_tab', { url: PROTECTED_URL, active: true }],
+  ])('a grouped public tool and its deprecated name (%s): refused, approved, run once', async (tool, toolArgs) => {
+    const run = createToolHandler(tool);
+    const asked: string[] = [];
+    const result = await callWithApproval((approvalToken) => run(toolArgs, { approvalToken }), {
+      canElicit: true,
+      elicit: async (params) => {
+        asked.push(JSON.stringify(params));
+        return { action: 'accept', content: { approve: true } };
+      },
+      reportElicitation: async (id, approved) => answerFromElicitation(id, approved),
+      askBrowser: async (id) => askBrowser(id, getConnectionManager()),
+    });
+    expect(result.isError).toBeFalsy();
+    expect(browser.received.map((c) => c.action)).toEqual(['create_tab']);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain(tool);
+  });
 });
 
 // ---------------------------------------------------------------------------

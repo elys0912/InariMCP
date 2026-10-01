@@ -15,6 +15,10 @@
  *     (`dispatch:<case>`, `execute:<action>` or `default`)
  * tests/golden/guard-decisions.json: SafetyGuard.check() per case and
  * policy (null = allowed).
+ *
+ * The golden files hold the calls by the pre-consolidation tool names
+ * (the operations). PUBLIC_CASES make the same calls through the public
+ * tools of tools/public-tools.ts and must give the same entries.
  */
 
 import * as fs from 'node:fs';
@@ -28,6 +32,8 @@ import { createToolHandler } from '../../packages/mcp-server/src/tools/handlers.
 import { getConnectionManager, resolveCommandTimeout } from '../../packages/mcp-server/src/connection/manager.js';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG, type LoadedSafetyConfig } from '../../packages/mcp-server/src/safety/config.js';
+import { callSchemaFor, resolveOperation } from '../../packages/mcp-server/src/tools/operations.js';
+import { LEGACY_REPLACEMENTS } from '../../packages/mcp-server/src/tools/public-tools.js';
 
 const UPDATE = process.env['UPDATE_GOLDEN'] === '1';
 const GOLDEN_DIR = fileURLToPath(new URL('../golden/', import.meta.url));
@@ -150,6 +156,71 @@ const CASES: Case[] = [
   ['safety_status/default', 'fox_safety_status', {}],
 ];
 
+/** The golden cases of replaced names, as calls of the public tools: id → [tool, raw arguments]. */
+const PUBLIC_CASES: Record<string, [tool: string, args: Record<string, unknown>]> = {
+  'get_elements/default': ['fox_find', { by: 'selector', selector: 'a' }],
+  'get_elements/options': ['fox_find', { by: 'selector', selector: 'li', limit: 5, tabId: 2 }],
+  'get_text/default': ['fox_read', { mode: 'text' }],
+  'get_text/options': ['fox_read', { mode: 'text', selector: '#x', maxLength: 100, tabId: 2 }],
+  'find_text/default': ['fox_find', { by: 'text', text: 'hello' }],
+  'find_text/options': ['fox_find', { by: 'text', text: 'Hi', caseSensitive: true, entireWord: true, includeRectData: true, tabId: 4 }],
+  'get_page_info/default': ['fox_read', { mode: 'info' }],
+  'get_page_info/tab': ['fox_read', { mode: 'info', tabId: 5 }],
+  'get_tabs/default': ['fox_tabs', { what: 'tabs' }],
+  'get_tabs/options': ['fox_tabs', { what: 'tabs', currentWindowOnly: false, limit: 10, urlPattern: '^https://', includeFavicon: true }],
+  'get_tabs/invalid_regex': ['fox_tabs', { what: 'tabs', urlPattern: '(' }],
+  'set_value/default': ['fox_set_value', { selector: '#v', value: '1' }],
+  'set_value/tab': ['fox_set_value', { kind: 'input', selector: '#v', value: '2', tabId: 2 }],
+  'select_option/value': ['fox_set_value', { kind: 'select', selector: 'select', option: { value: 'a' } }],
+  'select_option/text': ['fox_set_value', { kind: 'select', selector: 'select', option: { text: 'A' } }],
+  'select_option/index': ['fox_set_value', { kind: 'select', selector: 'select', option: { index: 2 }, tabId: 2 }],
+  'hover/default': ['fox_interact', { action: 'hover', selector: '#h' }],
+  'scroll/default': ['fox_interact', { action: 'scroll' }],
+  'scroll/direction': ['fox_interact', { action: 'scroll', direction: 'down', amount: 500 }],
+  'scroll/to_element': ['fox_interact', { action: 'scroll', toElement: '#f', tabId: 2 }],
+  'scroll/container': ['fox_interact', { action: 'scroll', selector: '#pane', direction: 'top' }],
+  'highlight/default': ['fox_interact', { action: 'highlight', selector: '#h' }],
+  'highlight/options': ['fox_interact', { action: 'highlight', selector: '#h', duration: 1000, label: 'L', tabId: 2 }],
+  'create_tab/default': ['fox_tab', { action: 'create' }],
+  'create_tab/url': ['fox_tab', { action: 'create', url: PLAIN_URL, active: false }],
+  'create_tab/protected': ['fox_tab', { action: 'create', url: PROTECTED_URL }],
+  'close_tab/default': ['fox_tab', { action: 'close', tabId: 7 }],
+  'switch_tab/default': ['fox_tab', { action: 'switch', tabId: 7 }],
+  'wait_for_element/default': ['fox_wait', { for: 'element', selector: '#w' }],
+  'wait_for_element/options': ['fox_wait', { for: 'element', selector: '#w', timeout: 40000, visible: false, tabId: 2 }],
+  'wait_for_network_idle/default': ['fox_wait', { for: 'network_idle' }],
+  'wait_for_network_idle/options': ['fox_wait', { for: 'network_idle', timeout: 2000, idleTime: 100, tabId: 2 }],
+  'wait_for_navigation/default': ['fox_wait', { for: 'navigation' }],
+  'wait_for_navigation/options': ['fox_wait', { for: 'navigation', waitUntil: 'domcontentloaded', urlPattern: '/done', timeout: 60000 }],
+  'wait_for_url/url': ['fox_wait', { for: 'url', url: `${PLAIN_URL}done` }],
+  'wait_for_url/pattern': ['fox_wait', { for: 'url', urlPattern: 'done$', timeout: 1000, tabId: 2 }],
+  'wait_for_url/protected': ['fox_wait', { for: 'url', url: PROTECTED_URL }],
+  'start_logging/default': ['fox_logging', { action: 'start' }],
+  'start_logging/options': ['fox_logging', { action: 'start', clearExisting: true, tabId: 2 }],
+  'stop_logging/default': ['fox_logging', { action: 'stop' }],
+  'clear_logs/default': ['fox_logging', { action: 'clear' }],
+  'clear_logs/options': ['fox_logging', { action: 'clear', console: false, tabId: 2 }],
+  'get_console_logs/default': ['fox_get_logs', { kind: 'console' }],
+  'get_console_logs/options': ['fox_get_logs', { kind: 'console', level: 'error', search: 'x', limit: 5, tabId: 2 }],
+  'get_network_logs/default': ['fox_get_logs', { kind: 'network' }],
+  'get_network_logs/options': ['fox_get_logs', { kind: 'network', urlPattern: 'api', method: 'POST', status: 500, errorsOnly: true, limit: 3 }],
+  'execute_script/default': ['fox_evaluate', { mode: 'script', script: '1+1' }],
+  'execute_script/tab': ['fox_evaluate', { mode: 'script', script: 'document.title', tabId: 2 }],
+  'eval_chain/default': ['fox_evaluate', {
+    mode: 'chain',
+    steps: [{ script: '1' }, { script: '$prev+1', label: 'inc', captureConsole: false, stopOnError: false }],
+  }],
+  'inject_observer/default': ['fox_observer', { action: 'inject' }],
+  'inject_observer/options': ['fox_observer', { action: 'inject', selector: '#root', observerId: 'o1', observeAttributes: false, tabId: 2 }],
+  'remove_observer/default': ['fox_observer', { action: 'remove', observerId: 'o1' }],
+  'wait_and_act/default': ['fox_evaluate', { mode: 'wait_and_act', condition: 'true', actionScript: '1' }],
+  'wait_and_act/options': ['fox_evaluate', { mode: 'wait_and_act', condition: 'true', actionScript: '1', pollIntervalMs: 50, timeout: 60000, tabId: 2 }],
+  'list_containers/default': ['fox_tabs', { what: 'containers' }],
+  'open_in_container/name': ['fox_tab', { action: 'create', url: PLAIN_URL, container: { name: 'Work' } }],
+  'open_in_container/cookie_store': ['fox_tab', { action: 'create', url: PLAIN_URL, container: { cookieStoreId: 'firefox-container-1' }, active: false }],
+  'open_in_container/blocked': ['fox_tab', { action: 'create', url: BLOCKED_URL, container: { name: 'Work' } }],
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -236,11 +307,22 @@ afterAll(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-async function recordCommands(): Promise<CommandEntry[]> {
+/** A call to record: a golden case, or the public-tool call of the same id. */
+interface Call { id: string; tool: string; raw: Record<string, unknown>; args: Record<string, unknown> }
+
+const legacyCalls = (): Call[] =>
+  CASES.map(([id, tool, raw]) => ({ id, tool, raw, args: parseArgs(tool, raw) }));
+
+const publicCalls = (): Call[] => Object.entries(PUBLIC_CASES).map(([id, [tool, raw]]) => {
+  const schema = callSchemaFor(tool);
+  if (!schema) throw new Error(`unknown tool ${tool}`);
+  return { id, tool, raw, args: schema.parse(raw) as Record<string, unknown> };
+});
+
+async function recordCommands(calls: Call[]): Promise<CommandEntry[]> {
   const branches = headlessBranches();
   const entries: CommandEntry[] = [];
-  for (const [id, tool, raw] of CASES) {
-    const args = parseArgs(tool, raw);
+  for (const { id, tool, raw, args } of calls) {
     sent.length = 0;
     const result = await createToolHandler(tool)(args);
     if (sent.length > 1) throw new Error(`${id}: ${sent.length} commands sent`);
@@ -278,7 +360,7 @@ const GUARD_POLICIES: Record<string, { config: Partial<LoadedSafetyConfig>; tabU
 
 type GuardEntry = { id: string; tool: string } & Record<string, string | null>;
 
-function recordGuardDecisions(): GuardEntry[] {
+function recordGuardDecisions(calls: Call[]): GuardEntry[] {
   const guards = Object.entries(GUARD_POLICIES).map(([name, { config, tabUrl }]) => {
     const guard = new SafetyGuard({
       ...DEFAULT_CONFIG,
@@ -290,11 +372,11 @@ function recordGuardDecisions(): GuardEntry[] {
     guard.noteUrl({ url: tabUrl }, {}, 'fox_get_page_info');
     return [name, guard] as const;
   });
-  return CASES.map(([id, tool, raw]) => {
-    const args = parseArgs(tool, raw);
+  return calls.map(({ id, tool, args }) => {
+    const call = resolveOperation(tool, args);
     const entry: GuardEntry = { id, tool };
     for (const [name, guard] of guards) {
-      entry[name] = guard.check(tool, args)?.safetyDecision ?? null;
+      entry[name] = guard.check(call.op, call.args, undefined, null, call.label)?.safetyDecision ?? null;
     }
     return entry;
   });
@@ -313,7 +395,7 @@ describe('golden cases', () => {
 
 describe('BrowserCommand per tool call (tests/golden/tool-commands.json)', () => {
   it('matches the golden file', async () => {
-    const actual = await recordCommands();
+    const actual = await recordCommands(legacyCalls());
     if (UPDATE) writeGolden('tool-commands.json', actual);
     const golden = readGolden('tool-commands.json') as CommandEntry[];
     expect(actual.map((e) => e.id)).toEqual(golden.map((e) => e.id));
@@ -325,7 +407,7 @@ describe('BrowserCommand per tool call (tests/golden/tool-commands.json)', () =>
 
 describe('SafetyGuard decisions (tests/golden/guard-decisions.json)', () => {
   it('match the golden file', () => {
-    const actual = recordGuardDecisions();
+    const actual = recordGuardDecisions(legacyCalls());
     if (UPDATE) writeGolden('guard-decisions.json', actual);
     const golden = readGolden('guard-decisions.json') as GuardEntry[];
     expect(actual.map((e) => e.id)).toEqual(golden.map((e) => e.id));
@@ -335,5 +417,52 @@ describe('SafetyGuard decisions (tests/golden/guard-decisions.json)', () => {
   });
 });
 
+describe('public tools (tools/public-tools.ts) give the golden entries of the replaced names', () => {
+  const byId = <T extends { id: string }>(entries: T[]) => new Map(entries.map((e) => [e.id, e]));
+
+  it('every golden case of a replaced name has a public call', () => {
+    const replaced = CASES
+      .filter(([, tool]) => LEGACY_REPLACEMENTS[tool] || tool === 'fox_set_value')
+      .map(([id]) => id);
+    expect(Object.keys(PUBLIC_CASES).sort()).toEqual(replaced.sort());
+  });
+
+  it('same BrowserCommand, timeout and headless branch; refusals name the public tool', async () => {
+    const golden = byId(readGolden('tool-commands.json') as CommandEntry[]);
+    for (const actual of await recordCommands(publicCalls())) {
+      const expected = golden.get(actual.id)!;
+      expect({ ...actual, tool: expected.tool, args: expected.args }, actual.id).toEqual({
+        ...expected,
+        ...(expected.refusal !== undefined
+          ? { refusal: expected.refusal.replace(expected.tool, actual.tool) }
+          : {}),
+      });
+    }
+  });
+
+  it('same guard decisions', () => {
+    const golden = byId(readGolden('guard-decisions.json') as GuardEntry[]);
+    for (const actual of recordGuardDecisions(publicCalls())) {
+      const expected = golden.get(actual.id)!;
+      expect({ ...actual, tool: expected.tool }, actual.id).toEqual(expected);
+    }
+  });
+});
+
+describe('public tool call schemas', () => {
+  const rejects = (tool: string, args: Record<string, unknown>) =>
+    callSchemaFor(tool)!.safeParse(args).success === false;
+
+  it('refuse a missing or unknown discriminator and cross-argument violations', () => {
+    expect(rejects('fox_wait', { selector: '#a' })).toBe(true);
+    expect(rejects('fox_wait', { for: 'nope' })).toBe(true);
+    expect(rejects('fox_wait', { for: 'url' })).toBe(true);
+    expect(rejects('fox_set_value', { kind: 'select', selector: 's', option: { value: 'a', index: 1 } })).toBe(true);
+    expect(rejects('fox_tab', { action: 'create', container: { name: 'Work' } })).toBe(true);
+    expect(rejects('fox_tab', { action: 'close' })).toBe(true);
+  });
+});
+
+// TODO(test): listSchema notes (scope / required / default) per field; annotations fold per tool.
 // TODO(test): commands with an approval grant (approvedHost) and Extension-side refusals.
 // TODO(test): FOX_READ_ONLY / FOX_ALLOW_SCRIPTS env overrides through the handler path.
