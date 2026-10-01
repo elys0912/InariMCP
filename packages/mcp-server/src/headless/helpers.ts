@@ -3,6 +3,8 @@
  * tested and loaded without it).
  */
 
+import { GET_ELEMENTS_MAX, HIGHLIGHT_MS } from './limits.js';
+
 /**
  * Timeout argument in ms. The schemas use both `timeout` and `timeoutMs`;
  * `timeoutMs` wins (same order as connection/manager.ts resolveCommandTimeout).
@@ -74,7 +76,7 @@ const HEADLESS_IGNORED: Record<string, IgnoredParam[]> = {
     { key: 'pressEnter', def: false, note: 'Enter is not pressed; use fox_press_key' },
     { key: 'delay', def: 50, same: [0], note: 'text is entered at once' },
   ],
-  get_elements: [{ key: 'limit', def: 50, note: 'always returns at most 50 elements' }],
+  get_elements: [{ key: 'limit', def: 50, note: `always returns at most ${GET_ELEMENTS_MAX} elements` }],
   find_text: [
     { key: 'caseSensitive', def: false, note: 'not applied' },
     { key: 'entireWord', def: false, note: 'not applied' },
@@ -86,7 +88,7 @@ const HEADLESS_IGNORED: Record<string, IgnoredParam[]> = {
     { key: 'limit', def: 50, note: 'not applied' },
   ],
   highlight: [
-    { key: 'duration', def: 3000, note: 'fixed at 2000 ms' },
+    { key: 'duration', def: 3000, note: `fixed at ${HIGHLIGHT_MS} ms` },
     { key: 'label', note: 'no label is drawn' },
   ],
   create_tab: [{ key: 'active', def: true, note: 'the new tab always becomes active' }],

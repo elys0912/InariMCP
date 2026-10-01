@@ -12,7 +12,8 @@
  *   - refusal: the error text when the call is refused before sending
  *   - timeoutMs: resolveCommandTimeout() on the Extension / headless path
  *   - headless: the HeadlessBrowser branch the action reaches
- *     (`dispatch:<case>`, `execute:<action>` or `default`)
+ *     (`dispatch:<action>`, `execute:<action>` or `default`; read from the
+ *     route table HEADLESS_ROUTES of headless/actions.ts)
  * tests/golden/guard-decisions.json: SafetyGuard.check() per case and
  * policy (null = allowed).
  *
@@ -34,10 +35,10 @@ import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG, type LoadedSafetyConfig } from '../../packages/mcp-server/src/safety/config.js';
 import { callSchemaFor, resolveOperation } from '../../packages/mcp-server/src/tools/operations.js';
 import { LEGACY_REPLACEMENTS } from '../../packages/mcp-server/src/tools/public-tools.js';
+import { headlessRoute } from '../../packages/mcp-server/src/headless/actions.js';
 
 const UPDATE = process.env['UPDATE_GOLDEN'] === '1';
 const GOLDEN_DIR = fileURLToPath(new URL('../golden/', import.meta.url));
-const BACKEND_SRC = fileURLToPath(new URL('../../packages/mcp-server/src/headless/backend.ts', import.meta.url));
 
 const PLAIN_URL = 'https://plain.example.test/';
 const PROTECTED_URL = 'https://bank.example.test/transfer';
@@ -236,23 +237,15 @@ function plain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-/** case labels of HeadlessBrowser._dispatch(), and actions execute() handles itself. */
-function headlessBranches(): { dispatch: Set<string>; execute: Set<string> } {
-  const src = fs.readFileSync(BACKEND_SRC, 'utf-8');
-  const start = src.indexOf('private async _dispatch(');
-  const end = src.indexOf('export function getHeadlessBrowser');
-  const executeStart = src.indexOf('async execute(');
-  if (start < 0 || end < 0 || executeStart < 0) throw new Error('backend.ts layout changed');
-  const labels = (text: string, re: RegExp) => new Set([...text.matchAll(re)].map((m) => m[1]!));
-  return {
-    dispatch: labels(src.slice(start, end), /case '([a-z_]+)'/g),
-    execute: labels(src.slice(executeStart, start), /action === '([a-z_]+)'/g),
-  };
-}
-
-function headlessTarget(action: string, branches: ReturnType<typeof headlessBranches>): string {
-  if (branches.execute.has(action)) return `execute:${action}`;
-  if (branches.dispatch.has(action)) return `dispatch:${action}`;
+/**
+ * The HeadlessBrowser branch of an action, from the route table of
+ * headless/actions.ts: run under the lock (`dispatch:`), by execute() itself
+ * outside the lock (`execute:`), or the unsupported-action answer (`default`).
+ */
+function headlessTarget(action: string): string {
+  const route = headlessRoute(action);
+  if (route.kind === 'unlocked') return `execute:${action}`;
+  if (route.kind === 'dispatch') return `dispatch:${action}`;
   return 'default';
 }
 
@@ -320,7 +313,6 @@ const publicCalls = (): Call[] => Object.entries(PUBLIC_CASES).map(([id, [tool, 
 });
 
 async function recordCommands(calls: Call[]): Promise<CommandEntry[]> {
-  const branches = headlessBranches();
   const entries: CommandEntry[] = [];
   for (const { id, tool, raw, args } of calls) {
     sent.length = 0;
@@ -335,7 +327,7 @@ async function recordCommands(calls: Call[]): Promise<CommandEntry[]> {
         extension: resolveCommandTimeout(command, 'native-host'),
         headless: resolveCommandTimeout(command, 'headless'),
       };
-      entry.headless = headlessTarget(command.action, branches);
+      entry.headless = headlessTarget(command.action);
     } else if (result.isError) {
       const first = result.content[0];
       entry.refusal = first && first.type === 'text' ? first.text.split('\n')[0] : '';
