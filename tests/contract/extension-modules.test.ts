@@ -90,7 +90,7 @@ function topLevelSideEffects(source: string): string[] {
 }
 
 /** Entries split into a directory of modules. */
-const TREES = ['background'] as const;
+const TREES = ['background', 'content'] as const;
 
 describe('extension modules', () => {
   const graph = importGraph();

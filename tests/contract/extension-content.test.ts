@@ -1,8 +1,8 @@
 /**
- * Extension content.ts: element location and typing fixes of WP5
- * (review 3.A1 / 6.Critical, 3.A11, 3.A13, 6.High). The helpers are cut
- * out of the content script's IIFE (helpers/extension-source.ts); DOM
- * behaviour itself needs a real browser.
+ * Extension content script: element location and typing fixes of WP5
+ * (review 3.A1 / 6.Critical, 3.A11, 3.A13, 6.High). The helpers are
+ * imported from content/dom.ts and content/input.ts (modules without
+ * top-level side effects); DOM behaviour itself needs a real browser.
  *
  * TODO(test): in a real DOM (Playwright Firefox): findByText picks the
  *   innermost / enabled / visible match, text split over child elements,
@@ -20,7 +20,6 @@
  */
 
 import { beforeAll, describe, expect, it } from 'vitest';
-import { loadExtensionFunctions } from './helpers/extension-source.js';
 
 interface ContentFns {
   escapeXPathString(s: string): string;
@@ -34,10 +33,16 @@ interface ContentFns {
 let fns: ContentFns;
 
 beforeAll(async () => {
-  fns = await loadExtensionFunctions<ContentFns>('content.ts', [
-    'escapeXPathString', 'textLocatorXPath', 'generateXPath',
-    'locatorOf', 'locatorWithoutText', 'typingDelay',
-  ]);
+  const dom = await import('../../packages/extension/src/content/dom.ts');
+  const input = await import('../../packages/extension/src/content/input.ts');
+  fns = {
+    escapeXPathString: dom.escapeXPathString,
+    textLocatorXPath: dom.textLocatorXPath,
+    generateXPath: dom.generateXPath as ContentFns['generateXPath'],
+    locatorOf: dom.locatorOf as ContentFns['locatorOf'],
+    locatorWithoutText: dom.locatorWithoutText as ContentFns['locatorWithoutText'],
+    typingDelay: input.typingDelay,
+  };
 });
 
 describe('3.A1 fox_type: `text` is what to type, not a locator', () => {

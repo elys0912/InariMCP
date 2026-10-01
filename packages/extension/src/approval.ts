@@ -3,8 +3,8 @@
 // Human approval is asked in the toolbar popup, never in the page: content
 // scripts, page JavaScript and the LLM's own tools (fox_click,
 // fox_execute_script, ...) cannot reach the popup, and the background only
-// accepts a decision from an extension page (the popup). See background.ts
-// "Approval requests".
+// accepts a decision from an extension page (the popup). See
+// background/approvals.ts.
 //
 // Two kinds of request arrive as `request_approval` commands:
 //   protected_action  sent by the MCP Server for a protected-site action
@@ -14,7 +14,7 @@
 //                     Claude. The answer goes back to Claude and unlocks
 //                     nothing.
 //
-// Imported by background.ts and popup.ts (bundled into both). Contract tests
+// Imported by the background modules and popup.ts (bundled into both). Contract tests
 // load it as a module; it also publishes its helpers on globalThis for them.
 
 /** runtime.sendMessage types between the popup and the background. */

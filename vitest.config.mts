@@ -13,11 +13,12 @@ import { defineConfig } from 'vitest/config';
  * on the fly; they are not type-checked by `npm run build`, but by
  * `npm run typecheck` (tsconfig.test.json, with the same shared aliases).
  *
- * packages/extension is not a project here: its sources are classic scripts
- * (no import/export, browser globals, loaded in order by manifest.json), so
- * background.ts / content.ts cannot be imported by a test. Extension-side
- * contracts are checked from tests/contract instead, by loading the
- * dependency-free action-map.ts or by reading the extension sources.
+ * packages/extension is not a project here: its entries (background.ts /
+ * content.ts) register browser listeners at load time and cannot be
+ * imported by a test. Extension-side contracts are checked from
+ * tests/contract instead, by importing the modules without top-level side
+ * effects (background/*.ts, content/*.ts, action-map.ts, approval.ts,
+ * url-rule.ts) or by reading the extension sources.
  */
 
 /** Resolve the shared package to its sources, so tests do not need a build. */

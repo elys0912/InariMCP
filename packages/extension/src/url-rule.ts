@@ -20,7 +20,7 @@
 // A plain string is the legacy form (`protectedUrlPatterns` of older MCP
 // Servers): a regex over the raw URL, read as a regex rule with matchRaw.
 //
-// Imported by background.ts and content.ts (bundled into both). Keep it
+// Imported by the background and content modules (bundled into both). Keep it
 // dependency-free and without top-level side effects: content.js runs it on
 // every injection, before its __fox_injected guard.
 
