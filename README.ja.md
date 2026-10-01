@@ -4,7 +4,7 @@
 
 **普段使いのFirefoxをClaude Codeから操作する。** Firefox専用のMCPアドオン — 使い捨てブラウザではなく、あなたの実プロファイル・実ログインをそのまま使う。
 
-> ステータス: **開発初期 — インストーラは完成済み（実機のWindowsとLinuxで確認済み、macOSは未検証）で、拡張機能経路はエンドツーエンドで動く。** AMO / GitHub Releases経由での署名済みパッケージ配布は準備中。下記の[Status](#status)を参照。
+> ステータス: **開発初期 — インストーラは完成済み（Windows・macOS・Linux。macOSは実機で未検証）で、拡張機能経路はエンドツーエンドで動く。** AMO / GitHub Releases経由での署名済みパッケージ配布は準備中。下記の[Status](#status)を参照。
 
 ![status](https://img.shields.io/badge/status-WIP-yellow) ![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
 
@@ -46,41 +46,45 @@ KitsuneMCPは意図的に用途を絞っている。以下に当てはまる場�
 
 - Node.js >= 18.0.0（KitsuneMCPの実行に必要。開発時の要件は[開発](#開発)を参照）
 - Firefox 142以降（拡張機能の`strict_min_version`）。Developer EditionとNightlyも通常版と同じNative Messagingの登録を読む
-- Windowsではインストーラの実行にPowerShellが必要（使えない場合は[WindowsでPowerShellが使えない場合](#windowsでpowershellが使えない場合)）
 - （ヘッドレスモードのみ）PlaywrightのFirefox: `npx playwright install firefox`
+
+PowerShellは不要。インストーラとアンインストーラはNode.jsのスクリプト。
 
 ### インストール
 
 ```bash
 git clone https://github.com/elys0912/KitsuneMCP.git
 cd KitsuneMCP
-npm run install:windows   # macOS / Linux: npm run install:unix
+npm ci
+npm run build
+npm run setup
 ```
 
-`install:unix`はLinuxでは確認済み、実機のmacOSではまだ検証していない（[Status](#status)参照）。LinuxのFirefoxはディストリビューションのパッケージ（deb/rpm）、MozillaのAPTリポジトリ、mozilla.orgのtarballのいずれかを使うこと。Flatpak版はNative Messaging hostを起動できず、Snap版（Ubuntuの既定の`firefox`）も動かない場合がある。[環境ごとの注意](#環境ごとの注意)を参照。
+インストーラはWindows・macOS・Linuxで同じように動く。macOSは実機では未検証（[Status](#status)参照）。LinuxのFirefoxはディストリビューションのパッケージ（deb/rpm）、MozillaのAPTリポジトリ、mozilla.orgのtarballのいずれかが確実。Snap版とFlatpak版はデスクトップポータルが必要になる（[環境ごとの注意](#環境ごとの注意)を参照）。
 
-インストーラが行うこと:
+`npm run setup`（`node scripts/install.mjs`）が行うこと:
 
-1. Node.js（18以上）とnpmを確認し、Firefoxを探す（見つからなくても警告だけ。WindowsではDeveloper EditionとNightlyは検出されないが、問題はない）
-2. `npm install`と`npm run build`を実行する
-3. Native Messaging hostのラッパー（`run-host.cmd` / `run-host.sh`）を`~/.kitsune-mcp/native-host/`に生成し、hostのマニフェスト`kitsune_mcp.json`をFirefoxに登録する（Windows: マニフェストはラッパーと同じ場所に置き、`HKCU\Software\Mozilla\NativeMessagingHosts\kitsune_mcp`から参照する。Linux: `~/.mozilla/native-messaging-hosts/`に書く。macOS: `~/Library/Application Support/Mozilla/NativeMessagingHosts/`に書く）
-4. Claude CodeへのMCPサーバー登録を尋ねる（`claude mcp add`、[Claude Codeへの追加](#claude-codeへの追加)を参照）
+1. Node.js（18以上）とビルド結果（`packages/*/dist`）を確認し、Firefoxを探す（見つからなくても警告だけ）
+2. Native Messaging hostのラッパー（`run-host.cmd` / `run-host.sh`）を`~/.kitsune-mcp/native-host/`に書く
+3. hostのマニフェスト`kitsune_mcp.json`をFirefoxが読む場所に書く（Windows: ラッパーと同じ場所に置き、全エディション共通の`HKCU\Software\Mozilla\NativeMessagingHosts\kitsune_mcp`から参照する。macOS: `~/Library/Application Support/Mozilla/NativeMessagingHosts/`。Linux: `~/.mozilla/native-messaging-hosts/`と、XDG・Snap・Flatpak版がありそうならそれぞれの置き場）
+4. `claude mcp add`のコマンドを表示する。`--register-claude`を付けると実行する（[Claude Codeへの追加](#claude-codeへの追加)を参照）
 
-オプション（npm経由では`--`の後に書く。例: `npm run install:unix -- --skip-build`）:
+何度実行してもよい。変わっていないファイルと登録はそのままにする。指定しない限りビルドはしない（`--build`で先に`npm install`と`npm run build`を実行する）。オプションはnpm経由なら`--`の後に書く（`npm run setup -- --register-claude`）か、スクリプトを直接呼ぶ（`node scripts/install.mjs --register-claude`）。
 
-| `install.sh` | `install.ps1` | 効果 |
-|---|---|---|
-| `--skip-build` | `-SkipBuild` | `npm install` / `npm run build`を省く（`dist/`が必要） |
-| `--register-claude` | `-RegisterClaude` | 尋ねずにClaude Codeへ登録する |
-| `--no-register-claude` | `-NoRegisterClaude` | 登録せず、コマンドを表示する |
-| `--claude-scope user\|local\|project` | `-ClaudeScope user\|local\|project` | `claude mcp add`のスコープ（既定は`user` = 全プロジェクト共通） |
-| `--help` | （`Get-Help scripts\install.ps1 -Detailed`） | 使い方を表示する |
+| オプション | 効果 |
+|---|---|
+| `-n`、`--dry-run` | 何が変わるかを表示するだけで、何も変えない |
+| `-y`、`--yes` | すべての質問にyesで答える（質問しない） |
+| `--register-claude` | Claude CodeにMCPサーバーを登録する（既定はコマンドの表示だけ） |
+| `--claude-scope user\|local\|project` | `claude mcp add`のスコープ（既定は`user` = 全プロジェクト共通） |
+| `--node PATH` | 登録するnodeの実行ファイル（既定はインストーラを実行しているnode） |
+| `--build` | 先に`npm install`と`npm run build`を実行する |
+| `--manual` | 手作業でのインストール手順（Markdown）を表示して終わる |
+| `-h`、`--help` | 使い方と、このマシン向けの手作業の手順を表示する |
 
-直接実行する場合: `bash scripts/install.sh [オプション]`または`powershell -ExecutionPolicy Bypass -File scripts/install.ps1 [オプション]`。
+質問するのは標準入力が端末のときだけで、そうでなければ既定の答えを使う。`--skip-build`と`--no-register-claude`も受け付ける。以前の`npm run install:windows` / `install:unix`は`node scripts/install.mjs --build`の別名として残っている。
 
-`packages/native-host/`内の`run-host.cmd` / `run-host.sh`は使われない。インストーラが`~/.kitsune-mcp/native-host/`に専用のラッパーを生成する。
-
-**Node.jsを入れ替えた・アップグレードした場合は、インストーラを実行し直すこと** — 生成されるラッパーには、ビルド時のnodeバイナリの絶対パスが埋め込まれている（そのバイナリが無くなった場合は、Firefoxの`PATH`上の`node`で起動する）。
+**Node.jsを入れ替えた・アップグレードした場合は、インストーラを実行し直すこと** — 生成されるラッパーには、インストーラを実行したnodeバイナリの絶対パスが埋め込まれている（そのバイナリが無くなった場合は、Firefoxの`PATH`上の`node`で起動する）。そのnodeがバージョンマネージャーのもの（バージョンを切り替えるとパスが変わる）ならインストーラが警告する。`--node`で変わらないパスを指定できる。
 
 ### Firefoxへの拡張機能の読み込み
 
@@ -94,7 +98,7 @@ npm run install:windows   # macOS / Linux: npm run install:unix
 
 ### Claude Codeへの追加
 
-インストーラがClaude Codeへの登録（`claude mcp add`、既定スコープ`user` = 全プロジェクト共通）を代わりに行ってくれる。`kitsune-mcp`が既に登録されていればそのままにする。この手順をスキップした場合や、インストール時に`claude`が`PATH`に無かった場合は手動で登録する。
+`npm run setup -- --register-claude`でKitsuneMCPをClaude Codeに登録する（`claude mcp add`、既定スコープ`user` = 全プロジェクト共通、nodeは絶対パス）。このインストールを指す登録が既にあればそのままにし、別の場所を指していれば確認してから置き換える。`--register-claude`を付けなかった場合や`claude`が`PATH`に無い場合は、インストーラが表示するコマンドを自分で実行する。
 
 ```bash
 claude mcp add --scope user kitsune-mcp -- node <INSTALL_PATH>/packages/mcp-server/dist/index.js
@@ -130,19 +134,20 @@ claude mcp add --scope user kitsune-mcp -- node <INSTALL_PATH>/packages/mcp-serv
 |---|---|---|
 | バッジなし、「Connected」/「Connected (N)」 | FirefoxとN個のClaude Codeセッションが接続している | 不要 |
 | 赤い`!`、「No session」 | Firefox側は準備済みだが、KitsuneMCPを使うClaude Codeのセッションがない | 登録して（ポップアップにコマンドが出る）Claude Codeを再起動する。実行中のセッションは約30秒で表示される |
-| 赤い`!`、「Setup needed」（native hostが見つからない） | FirefoxがNative Messaging hostを見つけられない | インストーラを実行してRecheckを押す（Flatpak版Firefoxは[環境ごとの注意](#環境ごとの注意)を参照） |
-| 赤い`!`、「Setup needed」（native hostが失敗 / MCPサーバーが応答しない） | hostは登録済みだが起動しない、またはdaemonが応答しない | インストーラを再実行する（よくある原因はNode.jsのアップグレード・移動）。下記のログを見る |
-| 赤い`!`、「Update needed」 | クローンが拡張機能より古い | `git pull`してインストーラを再実行し、Firefoxを再起動する |
+| 赤い`!`、「Setup needed」（native hostが見つからない） | FirefoxがNative Messaging hostを見つけられない | ビルドしてインストーラを実行し（ポップアップにコマンドが出る）、Recheckを押す（Snap版 / Flatpak版Firefoxは[環境ごとの注意](#環境ごとの注意)を参照） |
+| 赤い`!`、「Setup needed」（native hostが失敗 / MCPサーバーが応答しない） | hostは登録済みだが起動しない、またはdaemonが応答しない | インストーラ（`npm run setup`）を再実行する（ポップアップのコマンドはビルドもする。よくある原因はNode.jsのアップグレード・移動）。下記のログを見る |
+| 赤い`!`、「Update needed」 | クローンが拡張機能より古い | `git pull`してビルドし、インストーラを再実行して、Firefoxを再起動する |
 | 黄色の数字 | あなたの承認を待っている要求がある | ポップアップを開いて承認か拒否をする |
 
-4. Claude Codeに`fox_safety_status`を呼ばせる。有効な安全ポリシー（読み取り専用モード、スクリプトの可否、URLパターン、レート制限、監査ログの場所）が表示され、動いているdaemonがこのセッションと違う設定で起動されていれば警告も出る。ブラウザが接続しているかどうかは表示されない。
-5. 低いレベルで確認するときはdaemonに問い合わせる。
+4. 診断を実行する: `node packages/mcp-server/dist/index.js --doctor`（[コマンドライン](#コマンドライン)を参照）。ビルド、Firefoxへの登録、Claude Codeへの登録、daemon、ログを確認し、問題ごとに対処を表示する。
+5. Claude Codeに`fox_safety_status`を呼ばせる。有効な安全ポリシー（読み取り専用モード、スクリプトの可否、URLパターン、レート制限、監査ログの場所）が表示され、動いているdaemonがこのセッションと違う設定で起動されていれば警告も出る。ブラウザが接続しているかどうかは表示されない。
+6. 低いレベルで確認するときはdaemonに問い合わせる。
 
 ```bash
-curl -sS http://127.0.0.1:8765/health    # Windows PowerShell: curl.exe -sS … または Invoke-RestMethod …
+curl --noproxy '*' -sS http://127.0.0.1:8765/health    # Windows PowerShell: curl.exe --noproxy "*" -sS …
 ```
 
-`"status":"ok"`ならdaemonは動いている。拡張機能が接続すると（読み込みから数秒後）`browsers_connected`が`1`になる。何も応答しない（「Connection refused」）ならdaemonはまだ動いていない。daemonは最初のClaude Codeセッションか、拡張機能を読み込んだFirefoxが起動し、10分使われなければ終了する。そのうえでログを見る。
+（`--noproxy`は設定済みのHTTPプロキシをローカルへの要求から外す。）`"status":"ok"`ならdaemonは動いている。拡張機能が接続すると（読み込みから数秒後）`browsers_connected`が`1`になる。何も応答しない（「Connection refused」）ならdaemonはまだ動いていない。daemonは最初のClaude Codeセッションか、拡張機能を読み込んだFirefoxが起動し、10分使われなければ終了する。そのうえでログを見る。
 
 ### ログ
 
@@ -154,79 +159,101 @@ curl -sS http://127.0.0.1:8765/health    # Windows PowerShell: curl.exe -sS … 
 | `daemon.log` | 共有daemonのstderr |
 | `audit.jsonl` | 安全ガードの監査ログ（`safety.json`の`audit_log`） |
 
-各ファイルは5 MBを超えると`<名前>.old`に退避される（1世代だけ残る）。
+`native-host.log`と`daemon.log`の各行は`<ISO 8601の時刻> [<pid>] `で始まる。各ファイルは5 MBを超えると`<名前>.old`に退避される（1世代だけ残る）。
+
+### コマンドライン
+
+```
+node packages/mcp-server/dist/index.js [オプション]
+```
+
+| オプション | 効果 |
+|---|---|
+| （なし） | stdioのMCP中継。Claude Codeが起動するもの。共有daemonが動いていなければ起動する |
+| `--daemon` | 共有daemon。通常は中継かNative Hostが自動で起動する |
+| `--doctor`（または`doctor`） | インストールと動いているdaemonを確認する |
+| `-h`、`--help` | 使い方を表示する |
+| `-v`、`--version` | 版を表示する |
+
+`--help`と`--version`は、ほかの処理より前に表示して終わる。daemonは起動せず、APIトークンもログファイルも作らない。知らない引数（または2つのモードの同時指定）は終了コード2で終わる。
+
+`--doctor`は項目ごとに`OK`・`WARN`・`FAIL`・`SKIP`を1行ずつ表示し、問題には対処を添える。FAILが1つでもあれば終了コード1（なければ0）。14項目: `node`、`versions`（全パッケージと拡張機能のマニフェストの版が一致するか）、`build`（`dist`がソースより新しいか）、`native-messaging`（Firefoxへの登録と、マニフェストのname・type・許可する拡張機能・path）、`nm-wrapper`（ラッパーがこのチェックアウトを指し、そのnodeがあるか）、`claude`（Claude Codeへの登録。`~/.claude.json`と`.mcp.json`から読む）、`powershell`（Windows: Native Hostが使えるか）、`daemon`（`/health`のprotocol・proof・版）、`token`、`settings`（ここでの`FOX_*`と動いているdaemonの差）、`browsers`（接続しているNative Host）、`safety-config`（`safety.json`が読めて正しいか）、`screenshots`（`FOX_SCREENSHOTS_DIR`）、`logs`（サイズ、Native Hostの起動試行の上限）。読み取りだけで、トークンを作らず、daemonを起動せず、ログを書かず、`claude mcp get`も実行しない（実行するとサーバーが起動して接続を試すため）。
+
+`scripts/e2e/nm-probe.mjs [manifest.json]`は、Firefoxと同じ方法でNative Messaging hostを起動し（既定はインストールしたマニフェスト）、`ping`と`status`を送って、daemonに届くかを確かめる（終了コード0 = 成功、1 = 失敗、2 = 引数の誤り）。daemonが動いていなければ起動する。
 
 ### ヘッドレスモード
 
-拡張機能をインストールしたくない場合は、`FOX_HEADLESS`を設定してdaemonを起動すると、実際のブラウザと通信する代わりにPlaywrightで管理されたFirefoxインスタンスを直接操作する。
+拡張機能をインストールしたくない場合は、`FOX_HEADLESS=1`を設定してdaemonを起動すると、実際のブラウザと通信する代わりにPlaywrightで管理されたFirefoxインスタンスを直接操作する。
 
 ```bash
 FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
 ```
 
-（または`claude mcp add --env FOX_HEADLESS=1 …`）。現行版では空でない値ならすべて有効になり、`0`でも有効になる。この設定が効くのは、このセッションがdaemonを起動した場合だけ（[下記](#先にdaemonを起動した側の設定が勝つ)を参照）。
+（または`claude mcp add --env FOX_HEADLESS=1 …`）。有効になるのは`1`・`true`・`yes`（大文字小文字は問わない）だけで、それ以外の値では無効のまま。「無効」として知られた値（`0`・`false`・`no`・`off`）以外、たとえば`on`なら、daemonがログに警告を出す。`FOX_HEADLESS_STARTUP_TIMEOUT`はFirefox起動のタイムアウト（ミリ秒、既定`45000`）。これらの設定が効くのは、このセッションがdaemonを起動した場合だけ（[下記](#先にdaemonを起動した側の設定が勝つ)を参照）。
 
-これにより実際のセッション/cookie/ログイン状態は失われる点に注意 — 使い捨てプロファイルになる、Playwright MCPと同じトレードオフ。使えないツール・引数が多く、ブラウザのポップアップで尋ねる相手もいないので、保護対象サイトでの操作はMCP elicitationでしか承認できない。実際にログイン済みのFirefoxを使いたい場合は拡張機能経由を使うこと。
+これにより実際のセッション/cookie/ログイン状態は失われる点に注意 — 使い捨てプロファイルになる、Playwright MCPと同じトレードオフ。使えないツール・引数が多く（無視した引数は結果の`warnings`に並ぶ）、ブラウザのポップアップで尋ねる相手もいないので、保護対象サイトでの操作はMCP elicitationでしか承認できない。ヘッドレスモードにはFirefoxのコンテナがないので、`safety.json`で`container_scope.enabled`にしているとブラウザへのコマンドはすべて拒否される。ヘッドレスのdaemonにはコンテナスコープを切った専用の`safety.json`を`FOX_SAFETY_CONFIG`で渡す。実際にログイン済みのFirefoxを使いたい場合は拡張機能経由を使うこと。
 
 ### 更新
 
 ```bash
 git pull
-npm run install:windows   # または: npm run install:unix
+npm ci
+npm run build
+npm run setup
 ```
 
 その後、`about:debugging`で拡張機能を再読み込みし（またはFirefoxを再起動して読み込み直し）、Claude Codeを再起動する。古い版のdaemonは止めるまで動き続ける。新しい中継やNative Hostが、動いているdaemonについて「speaks protocol …」「is from another version」と報告したら、そのdaemonのプロセスを止める（Native Hostが起動したものならFirefoxも再起動する）。次のツール呼び出しで対応する版のdaemonが起動する。
 
 ### アンインストール
 
-1. Firefoxで拡張機能を外す（`about:debugging` → 削除）か、Firefoxを閉じる。そのままだと、動き続けているNative Hostが約20秒でdaemonを起動し直し、APIトークンとログを作り直す。
-2. アンインストーラを実行する。
-
 ```bash
-npm run uninstall:windows   # または: npm run uninstall:unix
+npm run teardown
 ```
 
-実行中のdaemonを止め（ポートの相手がKitsuneMCPのdaemonであることを確かめ、確認を取ってから）、Firefoxへの登録と`~/.kitsune-mcp/native-host/`を削除し、Claude Codeの登録を削除するか尋ねる（`claude mcp remove`。見つけられるのはリポジトリのディレクトリから見える登録だけで、別のディレクトリで`local`スコープで登録したものはそこで削除する）。`~/.kitsune-mcp/`の残り（APIトークン、`safety.json`、ログ、スクリーンショット）は一覧を表示するだけで削除しない。
+`npm run teardown`（`node scripts/uninstall.mjs`）は、外したものが元に戻らない順に外す。
 
-オプション（npm経由では`--`の後）: `--purge`/`-Purge`で`~/.kitsune-mcp/`の残りも削除する。`--stop-daemon`/`-StopDaemon`と`--no-stop-daemon`/`-NoStopDaemon`、`--unregister-claude`/`-UnregisterClaude`と`--no-unregister-claude`/`-NoUnregisterClaude`で質問への答えを先に指定できる。リポジトリ自体は変更しない。
+1. FirefoxのNative Messagingの登録（レジストリキー / マニフェストファイル）。これで拡張機能がNative Hostを起動し直せなくなる
+2. `~/.kitsune-mcp/native-host/`（ラッパー）
+3. Claude Codeの登録。確認して同意したときか`--unregister-claude`を付けたとき（見つけられるのはリポジトリのディレクトリから見える登録だけ。別のディレクトリで`local`スコープで登録したものは一覧に出すので、そこで削除する）
+4. このリポジトリの動いているNative Hostのプロセス、続いてdaemon（ポートの相手がKitsuneMCPのdaemonであることを確かめてから。SIGTERM、猶予の後にSIGKILL）
+5. `--purge`を付けたときは`~/.kitsune-mcp/`の残り（APIトークン、`safety.json`、ログ、スクリーンショット）。付けなければ残りは一覧を表示するだけで削除しない
 
-### WindowsでPowerShellが使えない場合
+KitsuneMCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す。アンインストーラがそれを表示するので、再起動する。リポジトリとFirefoxの拡張機能は変更しない（拡張機能はFirefoxで外す）。
 
-`npm run install:windows` / `uninstall:windows`にはPowerShellが必要。ブロックされている環境では手作業で設定する（`cmd.exe`で実行する。`<REPO>`はクローンの絶対パス、`<NODE>`は`where node`の出力に置き換える）。
+オプション（npm経由では`--`の後）: `-n`/`--dry-run`、`-y`/`--yes`（Claude Codeの登録も削除する）、`--unregister-claude`、`--keep-claude`、`--no-stop`（何も止めない）、`--grace 秒`（既定5）、`--purge`、`--manual`、`-h`/`--help`。`--stop-daemon`、`--no-stop-daemon`、`--no-unregister-claude`も受け付ける。`npm run uninstall:windows` / `uninstall:unix`は別名として残っている。
 
-1. `<REPO>`で`npm install`と`npm run build`を実行する。
-2. `%USERPROFILE%\.kitsune-mcp\native-host\run-host.cmd`を作る。
+### 手作業での設定
+
+インストーラを実行できない環境では手作業で設定する。`node scripts/install.mjs --manual`と`node scripts/uninstall.mjs --manual`が全プラットフォームの手順を表示し、`--help`はこのマシン向けにパスを埋めた手順を表示する。Windowsでインストーラを使わない場合:
+
+1. ビルド: リポジトリで`npm ci`と`npm run build`を実行する。
+2. フォルダ`%USERPROFILE%\.kitsune-mcp\native-host`を作る。
+3. `%USERPROFILE%\.kitsune-mcp\native-host\run-host.cmd`を作る（フルパスを使う。パス中の`%`は`%%`と書く）。
 
    ```bat
    @echo off
-   cd /d "<REPO>\packages\native-host"
-   "<NODE>" "<REPO>\packages\native-host\dist\index.js" %*
+   cd /d "C:\path\to\KitsuneMCP\packages\native-host"
+   "C:\Program Files\nodejs\node.exe" "C:\path\to\KitsuneMCP\packages\native-host\dist\index.js" %*
    ```
 
-3. `%USERPROFILE%\.kitsune-mcp\native-host\kitsune_mcp.json`を作る（バックスラッシュは2つ重ねる。`packages/native-host/kitsune-mcp.json`も同じテンプレート）。
+4. `packages\native-host\kitsune_mcp.json`を`%USERPROFILE%\.kitsune-mcp\native-host\kitsune_mcp.json`にコピーし、`"path"`を`run-host.cmd`のフルパスにする（JSONでは`\`を`\\`と書く）。
+5. Firefoxに登録する（全エディションがこのキーを読む）。
 
-   ```json
-   {
-     "name": "kitsune_mcp",
-     "description": "KitsuneMCP Native Messaging Host",
-     "path": "C:\\Users\\<you>\\.kitsune-mcp\\native-host\\run-host.cmd",
-     "type": "stdio",
-     "allowed_extensions": ["kitsune-mcp@elys0912.github.io"]
-   }
+   ```bat
+   reg add "HKCU\Software\Mozilla\NativeMessagingHosts\kitsune_mcp" /ve /t REG_SZ /d "%USERPROFILE%\.kitsune-mcp\native-host\kitsune_mcp.json" /f
    ```
 
-4. 登録する: `reg add "HKCU\Software\Mozilla\NativeMessagingHosts\kitsune_mcp" /ve /t REG_SZ /d "%USERPROFILE%\.kitsune-mcp\native-host\kitsune_mcp.json" /f`
-5. `claude mcp add --scope user kitsune-mcp -- node "<REPO>\packages\mcp-server\dist\index.js"`
+6. 任意、Claude Code: `claude mcp add --scope user kitsune-mcp -- "C:\Program Files\nodejs\node.exe" "C:\path\to\KitsuneMCP\packages\mcp-server\dist\index.js"`
 
-手作業でアンインストールするには: 拡張機能を外す（またはFirefoxを閉じる）。`netstat -ano | findstr :8765`でdaemonを探して`taskkill /PID <pid>`で止める。`reg delete "HKCU\Software\Mozilla\NativeMessagingHosts\kitsune_mcp" /f`を実行し、`%USERPROFILE%\.kitsune-mcp\native-host`（または`%USERPROFILE%\.kitsune-mcp`全体）を削除して、`claude mcp remove kitsune-mcp`を実行する。
+Windowsで手作業でアンインストールするには（順番が大事。hostが登録されたままFirefoxが拡張機能を動かしていると、Native Hostがdaemonを起動し直す）: `reg delete "HKCU\Software\Mozilla\NativeMessagingHosts\kitsune_mcp" /f`、`rmdir /s /q "%USERPROFILE%\.kitsune-mcp\native-host"`、`claude mcp remove --scope user kitsune-mcp`を実行し、Firefoxで拡張機能を外すかFirefoxを終了する。`netstat -ano | findstr :8765`でdaemonを探して`taskkill /PID <pid> /F`で止める。必要なら`rmdir /s /q "%USERPROFILE%\.kitsune-mcp"`。
 
-Native Host自体も、WindowsではdaemonをFirefoxのジョブオブジェクトの外で起動するためにPowerShellを使う（そうしないと、Firefoxを閉じたときにdaemonと、それを使うClaude Codeのセッションが止まる）。PowerShellが使えなければWMI（`cscript`）、次に一回限りのタスク スケジューラのタスク（`schtasks`）を試す。すべて失敗したときだけ、daemonをジョブの中で起動し、`native-host.log`に警告を出す。
+WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外で起動する（そうしないと、Firefoxを閉じたときにdaemonと、それを使うClaude Codeのセッションが止まる）。まずPowerShellを試し、次にWMI（`cscript`）、一回限りのタスク スケジューラのタスク（`schtasks`）を試す。すべて失敗したときだけ、daemonをジョブの中で起動し、`native-host.log`に警告を出す。
 
 ### 環境ごとの注意
 
-- **Flatpak版Firefox**はサンドボックスの外のNative Messaging hostを起動できない。ポップアップは「Setup needed」と表示してインストーラの実行を案内するが、再実行しても直らない。Flatpak以外のFirefoxを使う。
-- **Snap版Firefox**（Ubuntuの既定の`firefox`）も起動できない場合がある。インストーラが警告する。MozillaのAPTリポジトリからdeb版を入れる。
-- **WSL**: Claude CodeとFirefoxは同じ側で動かす。WSLの中のClaude CodeとWindowsのFirefoxを組み合わせると、それぞれが自分の`~/.kitsune-mcp/`（とAPIトークン）でdaemonを起動するので、WSLのセッションはWindowsのFirefoxに届かない。Claude CodeをWindowsで動かすか、FirefoxをWSLの中（WSLg）で`install:unix`を使って動かす。
+- **Snap版Firefox**（Ubuntuの既定の`firefox`）は、xdg-desktop-portalのWebExtensionsポータルを通してNative Messaging hostを起動する。環境によっては動かない。インストーラはマニフェストを`~/.mozilla/native-messaging-hosts/`とsnapの中に書く。動かなければMozillaのAPTリポジトリからdeb版を入れる。
+- **Flatpak版Firefox**はサンドボックスの中からホストのnodeを実行できない。インストーラはマニフェストを`~/.var/app/org.mozilla.firefox/`にも書くが、Firefoxがhostに届くのはポータル経由のときだけ。`about:config`で`widget.use-xdg-desktop-portal.native-messaging`を`1`にする（WebExtensionsに対応したxdg-desktop-portalが必要）。そうしないと、ポップアップに「Setup needed」と出てもインストーラの再実行では直らない。Flatpak以外のFirefoxが確実。
+- **WSL**: Claude CodeとFirefoxは同じ側で動かす。WSLの中のClaude CodeとWindowsのFirefoxを組み合わせると、それぞれが自分の`~/.kitsune-mcp/`（とAPIトークン）でdaemonを起動するので、WSLのセッションはWindowsのFirefoxに届かない。Claude CodeをWindowsで動かすか、FirefoxをWSLの中（WSLg）で動かしてインストーラもそこで実行する。WSLの中で実行するとインストーラが警告する。
 - **Firefoxのプロファイルを複数**同時に開くと、すべてが1つのdaemonに接続し、コマンドは先に接続した方に送られる。どちらが使われているかはどこにも表示されない。
 
 ## アーキテクチャ
@@ -242,7 +269,7 @@ Native Host自体も、WindowsではdaemonをFirefoxのジョブオブジェク�
 
 コマンドフロー: Claude Code → stdio中継 → HTTP → 共有サーバー → 安全ガード → WebSocket → Native Host → Native Messaging → 拡張機能バックグラウンドスクリプト → コンテンツスクリプト → ページDOM、結果は同じ経路を逆にたどって返ってくる。
 
-`claude mcp add`のコマンドは変わらない。中継が最初の利用時に共有サーバーを起動し（Firefoxが先ならNative Hostが起動する）、共有サーバーは10分使われなければ自分で終了する（`FOX_DAEMON_IDLE_TIMEOUT`）。セッションごとに中継が1つずつ立ち、全員が1つの共有サーバーを使うので、Claude Codeを複数セッション同時に使ってもポートがぶつからない。安全ガードの状態（レート制限、監査ログ、現在のURL）もセッション間で共有される。
+`claude mcp add`のコマンドは変わらない。中継が最初の利用時に共有サーバーを起動し（Firefoxが先ならNative Hostが起動する）、共有サーバーは10分使われなければ自分で終了する（`FOX_DAEMON_IDLE_TIMEOUT`）。セッションごとに中継が1つずつ立ち、全員が1つの共有サーバーを使うので、Claude Codeを複数セッション同時に使ってもポートがぶつからない。安全ガードの状態（レート制限、監査ログ、タブごとの最後に見たURL）もセッション間で共有される。
 
 中継とNative Hostはdaemonを、daemonは中継とNative Hostを、`~/.kitsune-mcp/api_token`のAPIトークンを使ったHMACのチャレンジ応答で確かめ合う（トークン自体は送らない）。ポートを横取りしたプログラムはdaemonになりすませない。`GET /health`は認証不要で、nonceを付けると`proof`を加え、中継とNative Hostが確認する`protocol`の版を返す。HTTP APIは`X-API-Key: <token>`ヘッダーも受け付けるが、手作業のデバッグ用（その応答には署名が付かない）。`FOX_HOST`がループバック以外のアドレスだと、daemonは警告をログに出す（ポートが他のマシンから届くようになる）。
 
@@ -258,19 +285,19 @@ Native Host自体も、WindowsではdaemonをFirefoxのジョブオブジェク�
 | `FOX_HTTP_PORT` | `8765` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
 | `FOX_WS_PORT` | `8766` | daemon、Native Host | Native Hostが接続するWebSocketのポート。旧名: `CLAUDE_BROWSER_WS_PORT` |
 | `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、スクリプト禁止、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
-| `FOX_HEADLESS` | 未設定 | daemon | ヘッドレスPlaywrightバックエンドを使う。現行版では空でない値ならすべて有効（`0`でも有効） |
-| `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスブラウザの起動タイムアウト（**ミリ秒**。秒ではない）のつもりの値。現行版ではログに出るだけで、起動には使われない |
+| `FOX_HEADLESS` | 未設定 | daemon | `1` / `true` / `yes`でヘッドレスPlaywrightバックエンドを使う。それ以外は無効（`on`など認識できない値は警告をログに出す）。旧名: `CLAUDE_BROWSER_HEADLESS` |
+| `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない）。旧名: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | PlaywrightのFirefox | daemon（ヘッドレスのみ） | Playwrightが起動するFirefoxバイナリのパス。旧名: `CLAUDE_BROWSER_EXECUTABLE` |
 | `FOX_SCREENSHOTS_DIR` | `~/.kitsune-mcp/screenshots` | Native Host（拡張機能経路）、daemon（ヘッドレス経路、`GET /screenshots`） | スクリーンショットの保存先。旧名: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
 | `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | Native Hostが起動するたびに、自動で付けた名前で保存したスクリーンショットのうち、この日数より古いものを削除する（`0`ですべて残す）。`filename`を指定して保存したものと、ヘッドレスのスクリーンショットは削除しない |
-| `FOX_READ_ONLY` | 未設定 | daemon | ちょうど`1`のとき読み取り専用モードを強制する。旧名: `CLAUDE_BROWSER_READ_ONLY` |
-| `FOX_ALLOW_SCRIPTS` | 未設定 | daemon | ちょうど`0`のときスクリプト系ツール（`fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act`、`fox_inject_observer`）を無効化する。旧名: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
+| `FOX_READ_ONLY` | 未設定 | daemon | `1` / `true` / `yes`で読み取り専用モードを強制する。旧名: `CLAUDE_BROWSER_READ_ONLY` |
+| `FOX_ALLOW_SCRIPTS` | 未設定 | daemon | `0` / `false` / `no` / `off`でスクリプト系ツール（`fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act`、`fox_inject_observer`、`fox_remove_observer`）を無効化する。旧名: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
 | `FOX_SAFETY_CONFIG` | `~/.kitsune-mcp/safety.json` | daemon | 安全ポリシーファイルの代替パス。旧名: `CLAUDE_BROWSER_SAFETY_CONFIG` |
 | `FOX_APPROVAL_ELICITATION` | 有効 | 中継、daemon | `0` / `false` / `off` / `no`でMCP elicitationによる承認を無効にする。保護対象サイトでの操作は常にFirefoxのポップアップで承認することになる |
 | `FOX_DAEMON_IDLE_TIMEOUT` | `600` | daemon | 中継・Native Host・実行中の呼び出しがどれもない状態が何秒続いたらdaemonが終了するか（`0`で終了しない） |
 | `FOX_NATIVE_HOST_LOG` | `~/.kitsune-mcp/logs/native-host.log` | Native Host | ログファイルのパス。`0` / `off` / `false` / `no` / `none`でファイルへのログを無効化する |
 
-`FOX_PORT`、`FOX_DEBUG`、`FOX_CONTAINER`は`packages/shared`に定義があるが、どこからも読まれない。`CLAUDE_BROWSER_HEADLESS`と`CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT`も読まれない。
+`FOX_PORT`、`FOX_DEBUG`、`FOX_CONTAINER`は`packages/shared`に定義があるが、どこからも読まれない。
 
 ### `FOX_CAPS`のプロファイル
 
@@ -294,10 +321,10 @@ Native Host自体も、WindowsではdaemonをFirefoxのジョブオブジェク�
 | キー | 既定値 | 意味 |
 |---|---|---|
 | `enabled` | `true` | 安全ガードを有効にする |
-| `read_only` | `false` | 観察系以外のツールをすべて拒否する |
+| `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ、スクリプト）を拒否する。観察・待機・ログ・UIだけを変えるツール（`fox_hover`、`fox_scroll`、`fox_highlight`、`fox_switch_tab`）は使える |
 | `allow_script_execution` | `true` | スクリプト系ツールを許可する |
 | `confirm_protected_actions` | `true` | 保護対象サイトでの操作（スクリーンショット・ログ収集を含む）の前に人に尋ねる |
-| `allow_password_typing` | `false` | パスワード欄への入力を許可する（[既知の制約](docs/known-issues.ja.md)を参照） |
+| `allow_password_typing` | `false` | パスワード欄（`type="password"`、`autocomplete`が`current-password` / `new-password`）への`fox_type` / `fox_set_value`を許可する |
 | `max_actions_per_minute` | `120` | レート制限。全セッション共通（`0`で制限なし） |
 | `audit_log` | `true` | `~/.kitsune-mcp/logs/audit.jsonl`に書く |
 | `blocked_url_patterns` | `[]` | 拒否するURL |
@@ -305,7 +332,19 @@ Native Host自体も、WindowsではdaemonをFirefoxのジョブオブジェク�
 | `protected_url_patterns` | 銀行、決済処理業者、`.gov`など | 人による承認が必要なサイト |
 | `container_scope` | `{ "enabled": false, "container_name": "KitsuneMCP Agent" }` | レイヤー0: エージェントを1つのFirefoxコンテナに制限する |
 
-URLパターンは大文字小文字を区別しない正規表現で、現行版ではURL全体のどこかに一致すれば当たりになる（ホスト名だけとは比べない）。先頭から書くなどして自分でアンカーを付けること。ファイルを読めなかった場合、daemonはエラーをstderrに出して既定値で動く。
+URLパターンは文字列のままではなく、解析したURLと照合する。`example.com.attacker.net`や、ホスト名を含むクエリ文字列には一致しない。
+
+| パターン | 一致するもの |
+|---|---|
+| `example.com` | そのホストとすべてのサブドメイン |
+| `*.example.com` | サブドメインだけ |
+| `example.com/admin` | ……のうち、パスが`/admin`で始まるもの（`example.com/*` = 任意のパス） |
+| `https://example.com` | ……のうち、そのスキームのもの |
+| `re:<正規表現>` | 正規化したURL（`scheme://host[:port]/path?query#hash`、ユーザー名・パスワードなし）に対する、大文字小文字を区別しない正規表現。アンカーは自分で付ける |
+
+ホストとスキームは大文字小文字を区別しない。`allowed_url_patterns`ではパスは書いたとおりに一致する（区切りの位置で: `/admin`は`/administrator`を含まない）。ブロックと保護対象のリストでは、`%xx`のエスケープを戻し、連続するスラッシュをまとめ、大文字小文字をそろえたうえで、後ろに何が続いても一致する。以前の版の正規表現もできるだけそのまま使える。単純なもの（`paypal\.com`、`\.gov(/|$)`、`^https://a\.example/`）は同じ意味のホストパターンとして読む。それ以外は、ブロックと保護対象のリストでは以前の意味（URLのどこかに一致）のまま警告付きで使い、許可リストではエラーにする。
+
+`safety.json`を使えない場合（読めない、JSONとして不正、型の誤り、使えないURLパターン）、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。遷移先も確認する: 許可するのは`http://`・`https://`・`about:blank`だけで、ホストの前にユーザー名やパスワードが付いたURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。
 
 ### 保護対象サイトでの人による承認
 
@@ -339,27 +378,28 @@ daemon はセッションごとに新しく起動されるわけではない。C
 - Firefoxネイティブapi: コンテナタブ、`browser.find`、`tabs.captureTab`（P7）
 - 拡張機能経路のエンドツーエンド結合、および中継＋共有サーバー構成への移行（Claude Codeを複数セッション同時に使ってもポートを取り合わない）（P7.5）
 - Windows 11 + Firefoxでの実機E2E（2026-09-27）
-- インストーラー（Windows用`scripts/install.ps1` / `scripts/uninstall.ps1`、macOS/Linux用`scripts/install.sh` / `scripts/uninstall.sh`） — 実機Windows 11と、Linux（WSL2のUbuntu 24.04、deb版Firefox 156）で結線を確認済み（2026-09-28）。macOS固有の経路は実機のmacOSではまだ動かしていない。Linuxの確認に使ったスモークテストは`scripts/e2e/`にある
+- インストーラー — 最初はPowerShell / bashのスクリプトで、実機Windows 11と、Linux（WSL2のUbuntu 24.04、deb版Firefox 156）で結線を確認済み（2026-09-28）。その後、PowerShellの要らない全プラットフォーム共通のNode.jsのインストーラとアンインストーラ（`scripts/install.mjs` / `scripts/uninstall.mjs`、`npm run setup` / `npm run teardown`）に置き換えた。macOS固有の経路は実機のmacOSではまだ動かしていない。Linuxの確認に使ったスモークテストは`scripts/e2e/`にある
+- 診断（`--doctor`）、`--help` / `--version`、全パッケージと拡張機能の版の統一（0.1.4）
 - 配布準備: 正式なExtension ID確定（`kitsune-mcp@elys0912.github.io`）、AMOの`data_collection_permissions`設定、`web-ext lint`がエラー・警告0件（P8）
 - 承認をページの外へ移動（ツールバーのポップアップ / MCP elicitation、1回限りの承認トークン）、daemon・中継・Native Hostの間のHMACによる相互認証
 
 **未完了:**
 - AMOでの署名と、GitHub Releasesでの署名済みパッケージの配布
 
-バージョン番号はまだそろっていない。拡張機能は0.1.4、npmパッケージ（とdaemonの`/health`）は0.1.0。
 
 ### ツールの対応状況
 
 | ツール | 拡張機能経路 | ヘッドレス |
 |---|---|---|
 | `fox_run_workflow`、`fox_audit_page` | 未実装 | 未実装 |
-| `fox_snapshot` | 未実装 | アクセシビリティツリーではなくPNGのスクリーンショット（base64）を返す |
-| `fox_eval_chain`、`fox_wait_and_act`、`fox_inject_observer`、`fox_remove_observer`、`fox_handle_dialog` | 未実装 | 動く |
+| `fox_snapshot` | 未実装 | アクセシビリティツリーをYAMLのテキストで返す |
+| `fox_eval_chain`、`fox_wait_and_act`、`fox_handle_dialog` | 未実装 | 動く |
+| `fox_inject_observer`、`fox_remove_observer` | 動く | 動く（1ページに1つ。`fox_remove_observer`は変更の件数だけを返す） |
 | `fox_start_logging`、`fox_stop_logging`、`fox_get_console_logs`、`fox_get_network_logs`、`fox_clear_logs` | 動く | 非対応 |
 | `fox_navigate`の`action: "hard_refresh"`、`fox_screenshot`の`scope: "all_tabs"` / `"scroll_capture"` | 動く | 非対応 |
 | `fox_list_containers`、`fox_open_in_container` | 動く | 非対応（コンテナがない） |
 | `fox_request_approval` | 動く | 常に拒否（尋ねる相手がいない） |
-| その他すべて | 動く | 動くが、無視される引数が多い（[既知の制約](docs/known-issues.ja.md)を参照） |
+| その他すべて | 動く | 動くが、無視される引数が多い（結果の`warnings`に並ぶ。[既知の制約](docs/known-issues.ja.md)を参照） |
 
 未実装のツールを呼ぶと、黙って失敗するのではなくエラー（`Not implemented in extension: …` / `Unsupported headless action: …`）が返る。
 
@@ -373,7 +413,16 @@ npm run build
 npm test
 ```
 
-`npm test`はVitestのテスト（パッケージごとの単体テストと`tests/contract/`の契約テスト）を実行する。VitestにはNode.js 22.12以上（または24）が必要。KitsuneMCPの実行自体はNode.js 18で足りる。
+`npm test`はVitestのテスト（パッケージごとの単体テスト、`tests/contract/`の契約テスト、`tests/scripts/`のインストーラのテスト）を実行する。テストファイルごとに一時的なホームディレクトリを使うので、テストがあなたの`~/.kitsune-mcp/`に触れることはない。開発にはNode.js 22.12以上（または24）が必要（Vitestの要件）。KitsuneMCPの実行自体はNode.js 18で足りる。
+
+`npm test`に含めていないエンドツーエンドの確認:
+
+| コマンド | 確認すること |
+|---|---|
+| `npm run test:e2e` | MCP経由で中継 → daemon → ヘッドレスFirefox（`tests/e2e/`。`npx playwright install firefox`が必要）。一時的なホームディレクトリと空きポートを使うので、動いているdaemonには触れない |
+| `npm run e2e:extension` | 拡張機能が一時的なアドオンとしてFirefoxに読み込まれる（`scripts/e2e/extension-load.mjs`、PlaywrightのFirefoxで`web-ext`を使う） |
+| `node scripts/e2e/tools-smoke.mjs` | 実際のFirefoxでdaemon → Native Host → 拡張機能（インストーラ実行済み、拡張機能読み込み済み。インターネット接続が必要） |
+| `node scripts/e2e/nm-probe.mjs` | インストールしたNative Messaging hostが起動してdaemonに届く |
 
 ## Credits
 
