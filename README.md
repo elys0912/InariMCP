@@ -32,8 +32,8 @@ KitsuneMCP is deliberately narrow. If your use case is one of these, you'll be h
 
 ## Features
 
-- **41 `fox_*` tools** covering navigation, click/type/scroll, screenshots (visible/full page/all tabs), tab management, console/network log capture, script execution and wait helpers. Prefixed `fox_` instead of `browser_` so it doesn't collide with Playwright MCP if you run both. Not all of them work on every backend yet: see [Tool availability](#tool-availability).
-- **Tool profiles (`FOX_CAPS`)** — registering all 41 tools costs real context tokens. Pick profiles (`core`, `logs`, `script`, …) to only load what you need. See [`FOX_CAPS` profiles](#fox_caps-profiles).
+- **21 `fox_*` tools** covering navigation, click/type/scroll, screenshots (visible/full page/all tabs), tab management, console/network log capture, script execution and wait helpers. Related operations share one tool with a mode argument (`fox_wait` with `for: "url"`, `fox_tab` with `action: "close"`, …); the 41 earlier tool names still work, see [Tool name migration](#tool-name-migration). Prefixed `fox_` instead of `browser_` so it doesn't collide with Playwright MCP if you run both. Not all of them work on every backend yet: see [Tool availability](#tool-availability).
+- **Tool profiles (`FOX_CAPS`)** — registering every tool costs real context tokens. Pick profiles (`core`, `logs`, `script`, …) to only load what you need. See [`FOX_CAPS` profiles](#fox_caps-profiles).
 - **8-layer safety guard (Layers 0–7)** — container scope (0), rate limit (1), URL scheme check and block/allow lists (2–3), read-only pass-through for observation tools (4), read-only mode (5), script-execution toggle (6) and human approval on protected domains such as banks, payment processors and `.gov` (7). Every decision is written to a JSONL audit log. The guard is always on; only container scoping (Layer 0) needs opt-in.
 - **Human approval outside the page** — an action on a protected site is approved by you, either in Claude Code's own confirmation dialog (MCP elicitation) or in the KitsuneMCP toolbar popup in Firefox. Nothing inside the page can approve it. See [Human approval for protected sites](#human-approval-for-protected-sites).
 - **Container isolation (opt-in)** — using Firefox's `contextualIdentities`, you can restrict the agent to a dedicated container so your banking/email sessions in other tabs stay invisible to it. This is a Firefox-only capability; Chromium has nothing equivalent.
@@ -288,14 +288,14 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 | `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host | Address of the HTTP/WS server. A non-loopback value logs a warning. Legacy: `CLAUDE_BROWSER_HOST` |
 | `FOX_HTTP_PORT` | `8765` | daemon, relay, Native Host, uninstaller | HTTP port (also the daemon's singleton lock). Legacy: `CLAUDE_BROWSER_HTTP_PORT` |
 | `FOX_WS_PORT` | `8766` | daemon, Native Host | WebSocket port the Native Host connects to. Legacy: `CLAUDE_BROWSER_WS_PORT` |
-| `FOX_CAPS` | unset (all tools) | relay | Tool profiles, comma-separated (see [below](#fox_caps-profiles)). **Not a safety boundary** — it only trims which tool schemas this session registers, to save context tokens. The daemon accepts every tool from every caller; actual restrictions (read-only, no scripts, URL limits, container scope) come from `safety.json` / the safety guard |
+| `FOX_CAPS` | unset (all tools) | relay | Tool profiles, comma-separated (see [below](#fox_caps-profiles)); `legacy` lists the earlier tool names instead (see [Tool name migration](#tool-name-migration)). **Not a safety boundary** — it only trims which tool schemas this session registers, to save context tokens. The daemon accepts every tool from every caller; actual restrictions (read-only, no scripts, URL limits, container scope) come from `safety.json` / the safety guard |
 | `FOX_HEADLESS` | unset | daemon | `1` / `true` / `yes` uses the headless Playwright backend; anything else leaves it off (an unrecognised value such as `on` is logged as a warning). Legacy: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | Launch timeout of the headless Firefox in **milliseconds** (not seconds). Legacy: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | Playwright's Firefox | daemon (headless only) | Path to the Firefox binary Playwright launches. Legacy: `CLAUDE_BROWSER_EXECUTABLE` |
 | `FOX_SCREENSHOTS_DIR` | `~/.kitsune-mcp/screenshots` | Native Host (extension path), daemon (headless path, `GET /screenshots`) | Where screenshots are saved. Legacy: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
 | `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | At each Native Host start, screenshots it saved under a generated name and older than this many days are deleted (`0` keeps everything). Files saved under a `filename` you chose, and headless screenshots, are never deleted |
 | `FOX_READ_ONLY` | unset | daemon | `1` / `true` / `yes` forces read-only mode. Legacy: `CLAUDE_BROWSER_READ_ONLY` |
-| `FOX_ALLOW_SCRIPTS` | unset | daemon | `0` / `false` / `no` / `off` disables the script tools (`fox_execute_script`, `fox_eval_chain`, `fox_wait_and_act`, `fox_inject_observer`, `fox_remove_observer`). Legacy: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
+| `FOX_ALLOW_SCRIPTS` | unset | daemon | `0` / `false` / `no` / `off` disables the script tools (`fox_evaluate`, `fox_observer`; earlier names `fox_execute_script`, `fox_eval_chain`, `fox_wait_and_act`, `fox_inject_observer`, `fox_remove_observer`). Legacy: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
 | `FOX_SAFETY_CONFIG` | `~/.kitsune-mcp/safety.json` | daemon | Alternate path of the safety policy file. Legacy: `CLAUDE_BROWSER_SAFETY_CONFIG` |
 | `FOX_APPROVAL_ELICITATION` | on | relay, daemon | `0` / `false` / `off` / `no` turns approval through MCP elicitation off: protected-site actions are then always approved in the Firefox popup |
 | `FOX_DAEMON_IDLE_TIMEOUT` | `600` | daemon | Seconds without a relay, a Native Host or a running call before the daemon exits (`0` = never) |
@@ -307,16 +307,49 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 
 | Profile | Tools |
 |---|---|
-| `core` | `fox_navigate`, `fox_click`, `fox_type`, `fox_press_key`, `fox_screenshot`, `fox_snapshot`, `fox_get_elements`, `fox_get_text`, `fox_find_text`, `fox_get_tabs`, `fox_create_tab`, `fox_close_tab`, `fox_switch_tab`, `fox_wait_for_element` |
-| `logs` | `fox_start_logging`, `fox_stop_logging`, `fox_get_console_logs`, `fox_get_network_logs`, `fox_clear_logs` |
-| `script` | `fox_execute_script`, `fox_eval_chain`, `fox_inject_observer`, `fox_remove_observer` |
-| `workflow` | `fox_run_workflow`, `fox_audit_page`, `fox_wait_and_act` |
+| `core` | `fox_navigate`, `fox_click`, `fox_type`, `fox_press_key`, `fox_set_value`, `fox_screenshot`, `fox_snapshot`, `fox_read`, `fox_find`, `fox_tabs`, `fox_tab`, `fox_interact`, `fox_wait`, `fox_handle_dialog` |
+| `logs` | `fox_logging`, `fox_get_logs` |
+| `script` | `fox_evaluate`, `fox_observer` |
+| `workflow` | `fox_evaluate` (its `wait_and_act` mode; the earlier `fox_run_workflow` and `fox_audit_page` were never implemented and are gone) |
 | `human` | `fox_request_approval`, `fox_detect_captcha` |
-| `container` | `fox_list_containers`, `fox_open_in_container` |
-| `wait` | `fox_wait_for_element`, `fox_wait_for_network_idle`, `fox_wait_for_navigation`, `fox_wait_for_url` |
+| `container` | `fox_tabs`, `fox_tab` (containers are `fox_tabs` with `what: "containers"` and `fox_tab` with `action: "create"` and `container`) |
+| `wait` | `fox_wait` |
 | `all` | every tool (same as leaving `FOX_CAPS` unset) |
 
-`fox_safety_status` is always registered. Seven tools belong to no profile and are only registered with `all` or without `FOX_CAPS`: `fox_get_page_info`, `fox_set_value`, `fox_select_option`, `fox_hover`, `fox_scroll`, `fox_highlight`, `fox_handle_dialog`. Unknown profile names are ignored with a warning on stderr.
+`fox_safety_status` is always registered, and every tool is in at least one profile. Unknown profile names are ignored with a warning on stderr. `legacy` (alone, or with other profiles: `legacy,core`) registers the earlier tool names and their earlier profiles instead; see [Tool name migration](#tool-name-migration).
+
+### Tool name migration
+
+The 41 earlier tools were merged into 21: related operations became one tool with a mode argument. The browser side did not change; each call of a new tool runs exactly what the earlier tool ran.
+
+- New sessions list the new names. With `FOX_CAPS=legacy` a session lists the earlier names instead (their descriptions start with `[Deprecated: …]`).
+- The daemon accepts both: the earlier names keep working over HTTP (`POST /mcp/call`) whatever `FOX_CAPS` says.
+- The first call of an earlier name in a daemon run adds a note naming the replacement to the result (and to `daemon.log`). The audit log records such a call under the new tool name with the earlier name as `legacyTool`.
+- Human approval of a protected-site action is bound to the name and arguments of the call as made: retry with the same name and arguments.
+
+| Earlier tool | New call | Argument changes |
+|---|---|---|
+| `fox_get_page_info` | `fox_read` `mode: "info"` | |
+| `fox_get_text` | `fox_read` `mode: "text"` | |
+| `fox_get_elements` | `fox_find` `by: "selector"` | |
+| `fox_find_text` | `fox_find` `by: "text"` | `query` → `text` |
+| `fox_get_tabs` | `fox_tabs` `what: "tabs"` | |
+| `fox_list_containers` | `fox_tabs` `what: "containers"` | |
+| `fox_create_tab` | `fox_tab` `action: "create"` | |
+| `fox_open_in_container` | `fox_tab` `action: "create"` with `container` | `containerName` → `container.name`, `cookieStoreId` → `container.cookieStoreId`; `url` required |
+| `fox_close_tab` | `fox_tab` `action: "close"` | |
+| `fox_switch_tab` | `fox_tab` `action: "switch"` | |
+| `fox_set_value` | `fox_set_value` (`kind: "input"`, the default) | |
+| `fox_select_option` | `fox_set_value` `kind: "select"` | `value` / `text` / `index` → `option: { value }` / `{ text }` / `{ index }` (exactly one) |
+| `fox_hover`, `fox_scroll`, `fox_highlight` | `fox_interact` `action: "hover"` / `"scroll"` / `"highlight"` | |
+| `fox_wait_for_element`, `fox_wait_for_network_idle`, `fox_wait_for_navigation`, `fox_wait_for_url` | `fox_wait` `for: "element"` / `"network_idle"` / `"navigation"` / `"url"` | `for: "url"` needs `url` or `urlPattern` |
+| `fox_start_logging`, `fox_stop_logging`, `fox_clear_logs` | `fox_logging` `action: "start"` / `"stop"` / `"clear"` | |
+| `fox_get_console_logs`, `fox_get_network_logs` | `fox_get_logs` `kind: "console"` / `"network"` | |
+| `fox_execute_script`, `fox_eval_chain`, `fox_wait_and_act` | `fox_evaluate` `mode: "script"` / `"chain"` / `"wait_and_act"` | `wait_and_act`: `timeoutMs` → `timeout` |
+| `fox_inject_observer`, `fox_remove_observer` | `fox_observer` `action: "inject"` / `"remove"` | |
+| `fox_run_workflow`, `fox_audit_page` | none | were not implemented on any backend; still callable by name, with the same error |
+
+Unchanged: `fox_screenshot`, `fox_snapshot`, `fox_navigate`, `fox_click`, `fox_type`, `fox_press_key`, `fox_handle_dialog`, `fox_request_approval`, `fox_detect_captcha`, `fox_safety_status`.
 
 ### `safety.json`
 
@@ -325,7 +358,7 @@ Auto-generated on first run at `~/.kitsune-mcp/safety.json` (or `FOX_SAFETY_CONF
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Safety guard on |
-| `read_only` | `false` | Refuse the tools that change page or browser state (input, navigation, tabs, scripts); observation, waiting, logging and UI-only tools (`fox_hover`, `fox_scroll`, `fox_highlight`, `fox_switch_tab`) still work |
+| `read_only` | `false` | Refuse the tools that change page or browser state (input, navigation, tabs, scripts); observation, waiting, logging and UI-only tools (`fox_interact`, `fox_tab` with `action: "switch"`) still work |
 | `allow_script_execution` | `true` | Allow the script tools |
 | `confirm_protected_actions` | `true` | Ask a human before acting on (or screenshotting / logging) a protected site |
 | `allow_password_typing` | `false` | Allow `fox_type` / `fox_set_value` on password fields (`type="password"`, `autocomplete` `current-password` / `new-password`) |
@@ -359,7 +392,7 @@ When a tool would act on a URL matching `protected_url_patterns` (and `confirm_p
 1. in Claude Code's own confirmation dialog (MCP elicitation), when the client supports it and `FOX_APPROVAL_ELICITATION` is not turned off;
 2. otherwise in Firefox: the KitsuneMCP toolbar button shows an amber count (plus an OS notification), and you approve or deny in its popup.
 
-An approval covers one call of that tool with exactly those arguments on that host, must be given before the request expires (120 s; the Firefox popup waits at most 60 s), and is carried by a one-time token that only the relay sees (the model never does). Nothing in the page — buttons, `fox_click`, `fox_execute_script` — can approve it. One risk is accepted while elicitation approval is on: the answer reaches the daemon over local HTTP, so a local process that can read `~/.kitsune-mcp/api_token` could approve its own requests. Set `FOX_APPROVAL_ELICITATION=0` to require the Firefox popup (headless mode then cannot approve at all).
+An approval covers one call of that tool with exactly those arguments on that host, must be given before the request expires (120 s; the Firefox popup waits at most 60 s), and is carried by a one-time token that only the relay sees (the model never does). Nothing in the page — buttons, `fox_click`, `fox_evaluate` — can approve it. One risk is accepted while elicitation approval is on: the answer reaches the daemon over local HTTP, so a local process that can read `~/.kitsune-mcp/api_token` could approve its own requests. Set `FOX_APPROVAL_ELICITATION=0` to require the Firefox popup (headless mode then cannot approve at all).
 
 `fox_request_approval` is a separate, plain yes/no question to you in the same popup; its answer does not unlock protected sites.
 
@@ -397,15 +430,14 @@ This project is **under active, incremental development** — not ready for gene
 
 | Tools | Extension path | Headless |
 |---|---|---|
-| `fox_run_workflow`, `fox_audit_page` | not implemented | not implemented |
 | `fox_snapshot` | not implemented | returns the accessibility tree as YAML text |
-| `fox_eval_chain`, `fox_wait_and_act`, `fox_handle_dialog` | not implemented | work |
-| `fox_inject_observer`, `fox_remove_observer` | work | work (one observer per page; `fox_remove_observer` returns only the number of changes) |
-| `fox_start_logging`, `fox_stop_logging`, `fox_get_console_logs`, `fox_get_network_logs`, `fox_clear_logs` | work | not supported |
+| `fox_evaluate` `mode: "chain"` / `"wait_and_act"`, `fox_handle_dialog` | not implemented | work |
+| `fox_observer` | works | works (one observer per page; `action: "remove"` returns only the number of changes) |
+| `fox_logging`, `fox_get_logs` | work | not supported |
 | `fox_navigate` with `action: "hard_refresh"`; `fox_screenshot` with `scope: "all_tabs"` or `"scroll_capture"` | work | not supported |
-| `fox_list_containers`, `fox_open_in_container` | work | not supported (no containers) |
-| `fox_request_approval` | work | always refused (nobody to ask) |
-| everything else | work | work, but many parameters are ignored (listed in the result's `warnings`; see [known issues](docs/known-issues.md)) |
+| `fox_tabs` `what: "containers"`, `fox_tab` `action: "create"` with `container` | work | not supported (no containers) |
+| `fox_request_approval` | works | always refused (nobody to ask) |
+| everything else | works | works, but many parameters are ignored (listed in the result's `warnings`; see [known issues](docs/known-issues.md)) |
 
 A tool that is not implemented returns an error (`Not implemented in extension: …` / `Unsupported headless action: …`) rather than doing nothing silently.
 

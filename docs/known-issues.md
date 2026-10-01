@@ -6,7 +6,7 @@ Limitations and caveats known in the current version of KitsuneMCP (v0.1.x).
 
 ## Safety guard
 
-- **Protected-domain confirmation can be asked for on a tab that is not protected**: acting tools without a `url` argument (`fox_click`, `fox_type`, …) are checked by the Extension against the real URL of the target tab, so an action on another tab or from another session cannot slip through. The shared daemon runs the same check against the last URL it saw for that tab — for a call without `tabId`, the tab it last saw as active, shared by all sessions. When the active tab changed without the daemon seeing it (you switched tabs by hand), a call can be asked for confirmation because of the previous tab. Running `fox_get_tabs` once updates what the daemon knows. In headless mode only the server-side check applies
+- **Protected-domain confirmation can be asked for on a tab that is not protected**: acting tools without a `url` argument (`fox_click`, `fox_type`, …) are checked by the Extension against the real URL of the target tab, so an action on another tab or from another session cannot slip through. The shared daemon runs the same check against the last URL it saw for that tab — for a call without `tabId`, the tab it last saw as active, shared by all sessions. When the active tab changed without the daemon seeing it (you switched tabs by hand), a call can be asked for confirmation because of the previous tab. Running `fox_tabs` once updates what the daemon knows. In headless mode only the server-side check applies
 - **Old-style regular expressions in the blocked / protected lists still match anywhere in the URL**: a pattern from an earlier version that cannot be read as a host pattern (see "`safety.json`" in the README) keeps its old meaning there — an unanchored regular expression over the whole URL — and the daemon logs a warning. Rewrite it as a host pattern or as `re:` (which always matches the whole URL). In `allowed_url_patterns` such a pattern is a configuration error
 - **A broken `safety.json` refuses every tool**: when the file cannot be read, is not valid JSON, has a value of the wrong type or a URL pattern that cannot be used, the daemon logs the error to stderr (`daemon.log`) and refuses every tool except `fox_safety_status` (which shows the error) until the file is fixed and the daemon restarted. Check the result with `fox_safety_status` after editing it
 - **The shared daemon uses the environment of whoever started it**: environment variables such as `FOX_READ_ONLY` are read only from the process that actually launched the daemon. A daemon started by Firefox (the Native Host) inherits Firefox's environment; `claude mcp add --env` values are not used. Put settings that must apply in `~/.kitsune-mcp/safety.json` (see the README). When a session and the daemon disagree, a warning appears at session start and in the `fox_safety_status` result
@@ -16,32 +16,32 @@ Limitations and caveats known in the current version of KitsuneMCP (v0.1.x).
 
 - **A local process can approve its own requests through MCP elicitation**: approval for a protected-site action is asked in Claude Code's confirmation dialog (MCP elicitation) when available, otherwise in the Firefox toolbar popup. The elicitation answer reaches the daemon over local HTTP, so a process that can read `~/.kitsune-mcp/api_token` can approve its own request (an accepted risk). Set `FOX_APPROVAL_ELICITATION=0` to allow approvals in the popup only
 - **An approval is bound to the hostname, not to the path or port** (by design): the approved call may act on any path, port or scheme of the approved hostname; the exact tool and arguments are still bound, and the approval is used once
-- **UI-only tools skip the protected-site confirmation** (by design): `fox_hover`, `fox_scroll`, `fox_highlight` and `fox_switch_tab` (class `interact`) change no page data, so they run on protected sites without approval, as observation tools do (read-only mode allows them too)
+- **UI-only tools skip the protected-site confirmation** (by design): `fox_interact` and `fox_tab` with `action: "switch"` (class `interact`) change no page data, so they run on protected sites without approval, as observation tools do (read-only mode allows them too)
 - **Headless mode may be unable to approve**: headless has no popup to ask in. When the client does not support elicitation, or `FOX_APPROVAL_ELICITATION=0` is set, protected-site actions cannot be approved and are refused. `fox_request_approval` always fails in headless mode
 - **Withdrawing a CAPTCHA banner is not guaranteed**: approvals are asked outside the page (in the popup), but the CAPTCHA banner of `fox_detect_captcha` is still shown in the page. The banner closes on its own timer, before the server gives up. If the server times out first (e.g. a delayed message), it tells the Extension to withdraw the banner; if that message does not arrive either, the banner can stay. Clicking a leftover banner does nothing: the server discards the answer (Claude has already received the timeout error)
 
 ## Tools
 
-- **Some tools are not implemented**: on the extension path, `fox_snapshot`, `fox_run_workflow`, `fox_audit_page`, `fox_handle_dialog`, `fox_eval_chain` and `fox_wait_and_act` return `Not implemented in extension: <name>`. `fox_run_workflow` and `fox_audit_page` are not implemented in headless mode either. See "Tool availability" in the README
-- **The DOM tools work in the top frame only**: on the extension path, `fox_click`, `fox_type`, `fox_get_elements`, `fox_get_text`, `fox_execute_script`, the logging tools and the wait tools act on the top document of the tab; content inside iframes and shadow DOM is not reached (a `text` locator does not search there either). `fox_find_text` (`browser.find`) does search every frame
-- **Clicks, typing, keys and hover are synthetic events**: `fox_click`, `fox_type`, `fox_press_key` and `fox_hover` dispatch DOM events in the page (`isTrusted` is `false`). Pages that require real user input (opening pop-ups, clipboard access, some frameworks) may ignore them, and the browser performs no default action for a key (no focus move on Tab, no scrolling). Enter in a form field is the exception: the form is submitted the way a real Enter does. `fox_type` waits `delay` ms per character, shortened so that all delays together stay within 10 s
-- **`fox_wait_for_navigation` only waits for navigations that finish after the call**: a navigation that already finished (after a click, say) does not count, so fast navigations time out. When the destination is known, use `fox_wait_for_url` (it returns at once if the URL already matches)
-- **`fox_wait_for_network_idle` sees only part of the traffic**: only the page's own fetch / XHR calls in the top frame are counted. Requests already running before the first call on that page, and requests made by `fox_execute_script`, are not seen
+- **Some tools are not implemented**: on the extension path, `fox_snapshot`, `fox_handle_dialog` and `fox_evaluate` with `mode: "chain"` or `"wait_and_act"` return `Not implemented in extension: <name>`. The earlier `fox_run_workflow` and `fox_audit_page` (no longer listed) are not implemented on any backend. See "Tool availability" in the README
+- **The DOM tools work in the top frame only**: on the extension path, `fox_click`, `fox_type`, `fox_find` with `by: "selector"`, `fox_read`, `fox_evaluate`, the logging tools and `fox_wait` act on the top document of the tab; content inside iframes and shadow DOM is not reached (a `text` locator does not search there either). `fox_find` with `by: "text"` (`browser.find`) does search every frame
+- **Clicks, typing, keys and hover are synthetic events**: `fox_click`, `fox_type`, `fox_press_key` and `fox_interact` with `action: "hover"` dispatch DOM events in the page (`isTrusted` is `false`). Pages that require real user input (opening pop-ups, clipboard access, some frameworks) may ignore them, and the browser performs no default action for a key (no focus move on Tab, no scrolling). Enter in a form field is the exception: the form is submitted the way a real Enter does. `fox_type` waits `delay` ms per character, shortened so that all delays together stay within 10 s
+- **`fox_wait` with `for: "navigation"` only waits for navigations that finish after the call**: a navigation that already finished (after a click, say) does not count, so fast navigations time out. When the destination is known, use `for: "url"` (it returns at once if the URL already matches)
+- **`fox_wait` with `for: "network_idle"` sees only part of the traffic**: only the page's own fetch / XHR calls in the top frame are counted. Requests already running before the first call on that page, and requests made by `fox_evaluate`, are not seen
 - **Some `fox_screenshot` arguments behave unexpectedly**: images reach the client only as saved files (a path and a `resource_link`), never as base64, so `saveToFile: false` captures nothing and returns only the tab information, and `includeData` has no effect. Saving under an existing `filename` overwrites the file (the result has `imageOverwritten` and a warning). `scope: "viewport"` with a background tab briefly brings that tab to the front, captures it and switches back. `scope: "scroll_capture"` takes no images: it returns element information per scroll position
-- **`fox_set_value` reports success even when nothing changed**: on an element that is not an input, a textarea, a select or contenteditable, or on a select without an option of that value
+- **`fox_set_value` with `kind: "input"` reports success even when nothing changed**: on an element that is not an input, a textarea, a select or contenteditable, or on a select without an option of that value
 - **While a native dialog (alert / confirm / prompt) is open, commands to that tab time out**: the extension path cannot see or handle the dialog
-- **Pages that content scripts cannot enter do not support the reading and acting tools**: Firefox's JSON viewer, `about:` pages, addons.mozilla.org, etc. Tools that only use the tabs API, such as `fox_screenshot` and `fox_get_tabs`, still work
-- **`fox_execute_script` runs in the content script's isolated world**:
+- **Pages that content scripts cannot enter do not support the reading and acting tools**: Firefox's JSON viewer, `about:` pages, addons.mozilla.org, etc. Tools that only use the tabs API, such as `fox_screenshot` and `fox_tabs`, still work
+- **`fox_evaluate` with `mode: "script"` runs in the content script's isolated world**:
   - it sees the page's DOM, but not the variables and functions the page's own scripts define (`window.myApp`, …)
   - `console.log` inside the script is not logged. Return the result instead (a JSON-compatible value)
-  - `fetch` / XHR called from the script is neither logged nor counted by `fox_wait_for_network_idle`. To observe the page's own traffic, `fox_click` a button in the page
+  - `fetch` / XHR called from the script is neither logged nor counted by `fox_wait` with `for: "network_idle"`. To observe the page's own traffic, `fox_click` a button in the page
   - `script` is evaluated as a script and the value of its last expression is returned. A top-level `return` is not allowed (wrap it: `(() => { ...; return x; })()`)
   - it runs in the top frame only
   - in headless mode it runs in the page's own world through Playwright's `page.evaluate`, so the points above do not apply there
 
 ## Headless mode
 
-- **Some tools are not supported**: the 5 logging tools, `fox_navigate`'s `hard_refresh`, `fox_screenshot`'s `all_tabs` / `scroll_capture`, the 2 container tools, `fox_run_workflow` and `fox_audit_page`. `fox_request_approval` always fails
+- **Some tools are not supported**: `fox_logging` and `fox_get_logs`, `fox_navigate`'s `hard_refresh`, `fox_screenshot`'s `all_tabs` / `scroll_capture`, containers (`fox_tabs` with `what: "containers"`, `fox_tab` with `container`). `fox_request_approval` always fails
 - **Playwright is an optional dependency**: without it (`npm ci --omit=optional`), a daemon with `FOX_HEADLESS=1` exits at start with `FOX_HEADLESS needs the optional dependency playwright, which is not installed` in `daemon.log`. The extension path does not need it. `npm run build` does (the headless backend imports its types), and so do `npm run test:e2e` and `npm run e2e:extension`
 - **Container scope refuses everything**: headless mode has no Firefox containers, so with `container_scope.enabled` in `safety.json` every browser command is refused (the daemon logs a warning at start). Start the headless daemon with its own `safety.json` that turns container scope off (`FOX_SAFETY_CONFIG`)
 - **Many arguments are ignored** (the result lists them in `warnings`):
@@ -49,16 +49,16 @@ Limitations and caveats known in the current version of KitsuneMCP (v0.1.x).
   - `fox_click`: only `selector` or `x` + `y` (no `xpath`, `text`, `doubleClick`, `rightClick`)
   - `fox_type`: only `selector` and `text` (with `selector` the existing content is replaced, without it the focused element receives the text; `clear`, `pressEnter`, `delay`, `placeholder`, `name`, `id` are ignored)
   - `fox_screenshot`: `saveToFile` (always saved to a file)
-  - `fox_get_page_info`: returns the URL and title only
-  - `fox_get_elements`: `limit` is ignored (at most 50, tag / text / position only)
-  - `fox_find_text`: returns the count only (`caseSensitive`, `entireWord`, `includeRectData` ignored)
-  - `fox_get_tabs`: `urlPattern`, `includeFavicon` and `limit` ignored (id, URL, title and active only)
-  - `fox_create_tab`: `active` ignored (the new tab always becomes active)
-  - `fox_highlight`: `duration`, `label` ignored (red outline for 2 s)
-  - `fox_wait_for_element`: `visible: false` is ignored (waits until visible)
-  - `fox_wait_for_network_idle`: `idleTime` ignored
-  - `fox_wait_for_navigation`: `waitUntil`, `urlPattern` ignored
-  - `fox_inject_observer` / `fox_remove_observer`: `observerId` is ignored (one observer per page). `fox_remove_observer` returns only the number of changes
+  - `fox_read` `mode: "info"`: returns the URL and title only
+  - `fox_find` `by: "selector"`: `limit` is ignored (at most 50, tag / text / position only)
+  - `fox_find` `by: "text"`: returns the count only (`caseSensitive`, `entireWord`, `includeRectData` ignored)
+  - `fox_tabs` `what: "tabs"`: `urlPattern`, `includeFavicon` and `limit` ignored (id, URL, title and active only)
+  - `fox_tab` `action: "create"`: `active` ignored (the new tab always becomes active)
+  - `fox_interact` `action: "highlight"`: `duration`, `label` ignored (red outline for 2 s)
+  - `fox_wait` `for: "element"`: `visible: false` is ignored (waits until visible)
+  - `fox_wait` `for: "network_idle"`: `idleTime` ignored
+  - `fox_wait` `for: "navigation"`: `waitUntil`, `urlPattern` ignored
+  - `fox_observer`: `observerId` is ignored (one observer per page). `action: "remove"` returns only the number of changes
 - **Dialogs nobody expected are dismissed**: a dialog (alert / confirm / prompt) that no `fox_handle_dialog` is waiting for is dismissed after 2 seconds and reported in the next result on that tab. To accept one, call `fox_handle_dialog` before the action that opens it; when no dialog comes within its `timeout`, it stays armed for the next dialog on that tab for 30 seconds
 
 ## Log capture
@@ -66,7 +66,7 @@ Limitations and caveats known in the current version of KitsuneMCP (v0.1.x).
 - **Logs from inline scripts right at page load can be missed**: on a tab with logging on, the content script is injected again early (`document_start`) after every navigation, but that is asynchronous, so `console.log` from inline `<script>` in `<head>` / `<body>` is not recorded if the injection is late. Logs from code that runs later (`setTimeout`, etc.) are captured (hooking every page all the time would catch them reliably, but is not done for privacy reasons)
 - **Logs inside iframes are not collected**: the top frame only
 - **Entries from the last moment before a navigation can be lost**: logs are kept per tab in the Extension's background and survive reloads and navigations, but the page sends them in small batches (every 250 ms), and a batch still in flight when the old page unloads is lost
-- **Logging stays on per tab**: once `fox_start_logging` is called on a tab, it keeps recording across sites until `fox_stop_logging` or the tab is closed (recording pauses while the tab is on a protected site)
+- **Logging stays on per tab**: once `fox_logging` with `action: "start"` is called on a tab, it keeps recording across sites until `action: "stop"` or the tab is closed (recording pauses while the tab is on a protected site)
 - **Only some sources are captured**: console means calls to `console.log` / `warn` / `error` / `info` / `debug` only — uncaught exceptions and the browser's own errors are not included. Network means the page's `fetch` / XHR only — images, scripts, CSS, WebSocket, etc. are not. The latest 500 entries of each are kept per tab
 - **Secrets in network logs are only partly masked**: the `authorization`, `cookie`, `set-cookie`, `proxy-authorization` and `x-api-key` headers are masked in the page; the daemon also masks other credential headers and fields (API keys, tokens, CSRF tokens, session IDs, passwords, secrets) and secret values in URLs, form bodies and JSON bodies (`token=`, `"password": "…"`, Bearer / Basic values, JWTs). Anything else in headers and request / response bodies (first 1000 / 5000 characters) is recorded as it is
 

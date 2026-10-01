@@ -32,8 +32,8 @@ KitsuneMCPは意図的に用途を絞っている。以下に当てはまる場�
 
 ## 特徴
 
-- **41個の`fox_*`ツール** — ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、タブ管理、コンソール/ネットワークログ収集、スクリプト実行、待機をカバー。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
-- **ツールプロファイル（`FOX_CAPS`）** — 41個全てのツールを登録すると実際にコンテキストトークンを消費する。プロファイル（`core`、`logs`、`script`など）を選んで必要な分だけ読み込める。[`FOX_CAPS`のプロファイル](#fox_capsのプロファイル)を参照。
+- **21個の`fox_*`ツール** — ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、タブ管理、コンソール/ネットワークログ収集、スクリプト実行、待機をカバー。関連する操作は1つのツールにまとめ、モード引数で切り替える（`fox_wait`の`for: "url"`、`fox_tab`の`action: "close"`など）。以前の41個のツール名も使える。[ツール名の移行](#ツール名の移行)を参照。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
+- **ツールプロファイル（`FOX_CAPS`）** — 全てのツールを登録すると実際にコンテキストトークンを消費する。プロファイル（`core`、`logs`、`script`など）を選んで必要な分だけ読み込める。[`FOX_CAPS`のプロファイル](#fox_capsのプロファイル)を参照。
 - **8層の安全ガード（レイヤー0〜7）** — コンテナスコープ（0）、レート制限（1）、URLスキームの確認とブロック/許可リスト（2〜3）、観察系ツールの通過（4）、読み取り専用モード（5）、スクリプト実行トグル（6）、銀行・決済処理業者・`.gov`などの保護対象ドメインでの人による承認（7）。判定はすべてJSONLの監査ログに残る。ガード自体は常に動作していて、オプトインが必要なのはコンテナスコープ（レイヤー0）だけ。
 - **ページの外での承認** — 保護対象サイトでの操作は、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのKitsuneMCPツールバーのポップアップで人が承認する。ページの中からは承認できない。[保護対象サイトでの人による承認](#保護対象サイトでの人による承認)を参照。
 - **コンテナ分離（オプトイン）** — Firefoxの`contextualIdentities`を使い、エージェントを専用コンテナに制限できる。これにより、他のタブで開いている銀行・メールのセッションをエージェントから見えなくできる。これはFirefox専用の機能で、Chromiumには同等のものが存在しない。
@@ -288,14 +288,14 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host | HTTP/WSサーバーのアドレス。ループバック以外なら警告を出す。旧名: `CLAUDE_BROWSER_HOST` |
 | `FOX_HTTP_PORT` | `8765` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
 | `FOX_WS_PORT` | `8766` | daemon、Native Host | Native Hostが接続するWebSocketのポート。旧名: `CLAUDE_BROWSER_WS_PORT` |
-| `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、スクリプト禁止、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
+| `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。`legacy`を指定すると、代わりに以前のツール名を一覧にする（[ツール名の移行](#ツール名の移行)を参照）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、スクリプト禁止、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
 | `FOX_HEADLESS` | 未設定 | daemon | `1` / `true` / `yes`でヘッドレスPlaywrightバックエンドを使う。それ以外は無効（`on`など認識できない値は警告をログに出す）。旧名: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない）。旧名: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | PlaywrightのFirefox | daemon（ヘッドレスのみ） | Playwrightが起動するFirefoxバイナリのパス。旧名: `CLAUDE_BROWSER_EXECUTABLE` |
 | `FOX_SCREENSHOTS_DIR` | `~/.kitsune-mcp/screenshots` | Native Host（拡張機能経路）、daemon（ヘッドレス経路、`GET /screenshots`） | スクリーンショットの保存先。旧名: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
 | `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | Native Hostが起動するたびに、自動で付けた名前で保存したスクリーンショットのうち、この日数より古いものを削除する（`0`ですべて残す）。`filename`を指定して保存したものと、ヘッドレスのスクリーンショットは削除しない |
 | `FOX_READ_ONLY` | 未設定 | daemon | `1` / `true` / `yes`で読み取り専用モードを強制する。旧名: `CLAUDE_BROWSER_READ_ONLY` |
-| `FOX_ALLOW_SCRIPTS` | 未設定 | daemon | `0` / `false` / `no` / `off`でスクリプト系ツール（`fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act`、`fox_inject_observer`、`fox_remove_observer`）を無効化する。旧名: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
+| `FOX_ALLOW_SCRIPTS` | 未設定 | daemon | `0` / `false` / `no` / `off`でスクリプト系ツール（`fox_evaluate`、`fox_observer`。以前の名前は`fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act`、`fox_inject_observer`、`fox_remove_observer`）を無効化する。旧名: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
 | `FOX_SAFETY_CONFIG` | `~/.kitsune-mcp/safety.json` | daemon | 安全ポリシーファイルの代替パス。旧名: `CLAUDE_BROWSER_SAFETY_CONFIG` |
 | `FOX_APPROVAL_ELICITATION` | 有効 | 中継、daemon | `0` / `false` / `off` / `no`でMCP elicitationによる承認を無効にする。保護対象サイトでの操作は常にFirefoxのポップアップで承認することになる |
 | `FOX_DAEMON_IDLE_TIMEOUT` | `600` | daemon | 中継・Native Host・実行中の呼び出しがどれもない状態が何秒続いたらdaemonが終了するか（`0`で終了しない） |
@@ -307,16 +307,49 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 | プロファイル | ツール |
 |---|---|
-| `core` | `fox_navigate`、`fox_click`、`fox_type`、`fox_press_key`、`fox_screenshot`、`fox_snapshot`、`fox_get_elements`、`fox_get_text`、`fox_find_text`、`fox_get_tabs`、`fox_create_tab`、`fox_close_tab`、`fox_switch_tab`、`fox_wait_for_element` |
-| `logs` | `fox_start_logging`、`fox_stop_logging`、`fox_get_console_logs`、`fox_get_network_logs`、`fox_clear_logs` |
-| `script` | `fox_execute_script`、`fox_eval_chain`、`fox_inject_observer`、`fox_remove_observer` |
-| `workflow` | `fox_run_workflow`、`fox_audit_page`、`fox_wait_and_act` |
+| `core` | `fox_navigate`、`fox_click`、`fox_type`、`fox_press_key`、`fox_set_value`、`fox_screenshot`、`fox_snapshot`、`fox_read`、`fox_find`、`fox_tabs`、`fox_tab`、`fox_interact`、`fox_wait`、`fox_handle_dialog` |
+| `logs` | `fox_logging`、`fox_get_logs` |
+| `script` | `fox_evaluate`、`fox_observer` |
+| `workflow` | `fox_evaluate`（その`wait_and_act`モード。以前の`fox_run_workflow`と`fox_audit_page`は実装されないまま廃止した） |
 | `human` | `fox_request_approval`、`fox_detect_captcha` |
-| `container` | `fox_list_containers`、`fox_open_in_container` |
-| `wait` | `fox_wait_for_element`、`fox_wait_for_network_idle`、`fox_wait_for_navigation`、`fox_wait_for_url` |
+| `container` | `fox_tabs`、`fox_tab`（コンテナは`what: "containers"`の`fox_tabs`と、`action: "create"`と`container`を指定した`fox_tab`） |
+| `wait` | `fox_wait` |
 | `all` | 全ツール（`FOX_CAPS`未設定と同じ） |
 
-`fox_safety_status`は常に登録される。次の7本はどのプロファイルにも属さず、`all`か`FOX_CAPS`未設定のときだけ登録される: `fox_get_page_info`、`fox_set_value`、`fox_select_option`、`fox_hover`、`fox_scroll`、`fox_highlight`、`fox_handle_dialog`。知らないプロファイル名はstderrに警告を出して無視する。
+`fox_safety_status`は常に登録され、すべてのツールが少なくとも1つのプロファイルに入っている。知らないプロファイル名はstderrに警告を出して無視する。`legacy`（単独、または他のプロファイルと一緒に: `legacy,core`）は、代わりに以前のツール名とその以前のプロファイルを登録する。[ツール名の移行](#ツール名の移行)を参照。
+
+### ツール名の移行
+
+以前の41個のツールを21個にまとめた。関連する操作を、モード引数を持つ1つのツールにした。ブラウザ側は変わっておらず、新しいツールの呼び出しは、以前のツールが実行していたものとまったく同じことを実行する。
+
+- 新しいセッションは新しい名前を一覧にする。`FOX_CAPS=legacy`のセッションは代わりに以前の名前を一覧にする（説明は`[Deprecated: …]`で始まる）。
+- daemonは両方を受け付ける。以前の名前は、`FOX_CAPS`の設定に関係なく、HTTP（`POST /mcp/call`）でも引き続き使える。
+- daemonの起動中に以前の名前を最初に呼ぶと、結果（と`daemon.log`）に置き換え先を示す注記が付く。監査ログはその呼び出しを新しいツール名で記録し、以前の名前を`legacyTool`に入れる。
+- 保護対象サイトの操作に対する人の承認は、呼び出しの名前と引数に結び付く。同じ名前と引数で再試行すること。
+
+| 以前のツール | 新しい呼び出し | 引数の変更 |
+|---|---|---|
+| `fox_get_page_info` | `fox_read` `mode: "info"` | |
+| `fox_get_text` | `fox_read` `mode: "text"` | |
+| `fox_get_elements` | `fox_find` `by: "selector"` | |
+| `fox_find_text` | `fox_find` `by: "text"` | `query` → `text` |
+| `fox_get_tabs` | `fox_tabs` `what: "tabs"` | |
+| `fox_list_containers` | `fox_tabs` `what: "containers"` | |
+| `fox_create_tab` | `fox_tab` `action: "create"` | |
+| `fox_open_in_container` | `fox_tab` `action: "create"`（`container`付き） | `containerName` → `container.name`、`cookieStoreId` → `container.cookieStoreId`。`url`は必須 |
+| `fox_close_tab` | `fox_tab` `action: "close"` | |
+| `fox_switch_tab` | `fox_tab` `action: "switch"` | |
+| `fox_set_value` | `fox_set_value`（`kind: "input"`、既定） | |
+| `fox_select_option` | `fox_set_value` `kind: "select"` | `value` / `text` / `index` → `option: { value }` / `{ text }` / `{ index }`（どれか1つだけ） |
+| `fox_hover`、`fox_scroll`、`fox_highlight` | `fox_interact` `action: "hover"` / `"scroll"` / `"highlight"` | |
+| `fox_wait_for_element`、`fox_wait_for_network_idle`、`fox_wait_for_navigation`、`fox_wait_for_url` | `fox_wait` `for: "element"` / `"network_idle"` / `"navigation"` / `"url"` | `for: "url"`には`url`か`urlPattern`が要る |
+| `fox_start_logging`、`fox_stop_logging`、`fox_clear_logs` | `fox_logging` `action: "start"` / `"stop"` / `"clear"` | |
+| `fox_get_console_logs`、`fox_get_network_logs` | `fox_get_logs` `kind: "console"` / `"network"` | |
+| `fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act` | `fox_evaluate` `mode: "script"` / `"chain"` / `"wait_and_act"` | `wait_and_act`: `timeoutMs` → `timeout` |
+| `fox_inject_observer`、`fox_remove_observer` | `fox_observer` `action: "inject"` / `"remove"` | |
+| `fox_run_workflow`、`fox_audit_page` | なし | どのバックエンドでも未実装だった。名前での呼び出しは今もでき、同じエラーになる |
+
+変更なし: `fox_screenshot`、`fox_snapshot`、`fox_navigate`、`fox_click`、`fox_type`、`fox_press_key`、`fox_handle_dialog`、`fox_request_approval`、`fox_detect_captcha`、`fox_safety_status`。
 
 ### `safety.json`
 
@@ -325,7 +358,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | キー | 既定値 | 意味 |
 |---|---|---|
 | `enabled` | `true` | 安全ガードを有効にする |
-| `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ、スクリプト）を拒否する。観察・待機・ログ・UIだけを変えるツール（`fox_hover`、`fox_scroll`、`fox_highlight`、`fox_switch_tab`）は使える |
+| `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ、スクリプト）を拒否する。観察・待機・ログ・UIだけを変えるツール（`fox_interact`、`action: "switch"`の`fox_tab`）は使える |
 | `allow_script_execution` | `true` | スクリプト系ツールを許可する |
 | `confirm_protected_actions` | `true` | 保護対象サイトでの操作（スクリーンショット・ログ収集を含む）の前に人に尋ねる |
 | `allow_password_typing` | `false` | パスワード欄（`type="password"`、`autocomplete`が`current-password` / `new-password`）への`fox_type` / `fox_set_value`を許可する |
@@ -359,7 +392,7 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 1. クライアントが対応していて、`FOX_APPROVAL_ELICITATION`が無効にされていなければ、Claude Code自身の確認ダイアログ（MCP elicitation）で
 2. そうでなければFirefoxで。KitsuneMCPのツールバーボタンに黄色の件数が出て（OSの通知も出る）、ポップアップで承認か拒否をする
 
-承認が効くのは、そのツールをその引数のまま、そのホストで1回呼ぶことだけ。要求の期限（120秒。Firefoxのポップアップが待つのは最大60秒）までに答える必要があり、承認は中継だけが見る1回限りのトークンで運ばれる（モデルには見えない）。ページの中のもの — ボタン、`fox_click`、`fox_execute_script` — では承認できない。elicitationでの承認が有効な間は、1つのリスクを受け入れている: 回答はローカルのHTTPでdaemonに届くので、`~/.kitsune-mcp/api_token`を読めるローカルのプロセスは自分の要求を自分で承認できる。Firefoxのポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する（ヘッドレスモードでは承認できなくなる）。
+承認が効くのは、そのツールをその引数のまま、そのホストで1回呼ぶことだけ。要求の期限（120秒。Firefoxのポップアップが待つのは最大60秒）までに答える必要があり、承認は中継だけが見る1回限りのトークンで運ばれる（モデルには見えない）。ページの中のもの — ボタン、`fox_click`、`fox_evaluate` — では承認できない。elicitationでの承認が有効な間は、1つのリスクを受け入れている: 回答はローカルのHTTPでdaemonに届くので、`~/.kitsune-mcp/api_token`を読めるローカルのプロセスは自分の要求を自分で承認できる。Firefoxのポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する（ヘッドレスモードでは承認できなくなる）。
 
 `fox_request_approval`はこれとは別の、同じポップアップであなたに尋ねる単純な質問で、その答えで保護対象サイトの操作が許可されることはない。
 
@@ -397,13 +430,12 @@ daemon はセッションごとに新しく起動されるわけではない。C
 
 | ツール | 拡張機能経路 | ヘッドレス |
 |---|---|---|
-| `fox_run_workflow`、`fox_audit_page` | 未実装 | 未実装 |
 | `fox_snapshot` | 未実装 | アクセシビリティツリーをYAMLのテキストで返す |
-| `fox_eval_chain`、`fox_wait_and_act`、`fox_handle_dialog` | 未実装 | 動く |
-| `fox_inject_observer`、`fox_remove_observer` | 動く | 動く（1ページに1つ。`fox_remove_observer`は変更の件数だけを返す） |
-| `fox_start_logging`、`fox_stop_logging`、`fox_get_console_logs`、`fox_get_network_logs`、`fox_clear_logs` | 動く | 非対応 |
+| `fox_evaluate`の`mode: "chain"` / `"wait_and_act"`、`fox_handle_dialog` | 未実装 | 動く |
+| `fox_observer` | 動く | 動く（1ページに1つ。`action: "remove"`は変更の件数だけを返す） |
+| `fox_logging`、`fox_get_logs` | 動く | 非対応 |
 | `fox_navigate`の`action: "hard_refresh"`、`fox_screenshot`の`scope: "all_tabs"` / `"scroll_capture"` | 動く | 非対応 |
-| `fox_list_containers`、`fox_open_in_container` | 動く | 非対応（コンテナがない） |
+| `fox_tabs`の`what: "containers"`、`fox_tab`の`action: "create"`に`container`を付けたもの | 動く | 非対応（コンテナがない） |
 | `fox_request_approval` | 動く | 常に拒否（尋ねる相手がいない） |
 | その他すべて | 動く | 動くが、無視される引数が多い（結果の`warnings`に並ぶ。[既知の制約](docs/known-issues.ja.md)を参照） |
 
