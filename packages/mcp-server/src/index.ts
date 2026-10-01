@@ -17,6 +17,10 @@
  *
  *   node dist/index.js --doctor   read-only installation / daemon check
  *                                 (doctor/). Also `doctor`.
+ *   node dist/index.js --stop-daemon [--force]
+ *                                 graceful stop of the running daemon over
+ *                                 its signed POST /daemon/shutdown
+ *                                 (relay/daemon-client.ts stopDaemon).
  *
  * `--help` / `--version` print and exit before anything else happens (no
  * daemon, token or log file); an unknown argument exits with code 2
@@ -51,6 +55,14 @@ async function main(): Promise<void> {
       // Read-only checks; no process handlers, no daemon (doctor/checks.ts)
       const { runDoctor } = await import('./doctor/run.js');
       process.exitCode = await runDoctor();
+      return;
+    }
+    case 'stop-daemon': {
+      // Talks to the daemon only: no relay, no daemon start, no token creation.
+      const { DaemonClient } = await import('./relay/daemon-client.js');
+      const result = await new DaemonClient('stop').stopDaemon(command.force);
+      process.stdout.write(`${result.message}\n`);
+      process.exitCode = result.ok ? 0 : 1;
       return;
     }
     case 'daemon': {

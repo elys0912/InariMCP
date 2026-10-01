@@ -97,6 +97,12 @@ export interface DoctorContext {
 }
 
 const HEALTH_TIMEOUT_MS = 2_000;
+/** The graceful way to stop the daemon (signed POST /daemon/shutdown through the relay CLI). */
+const STOP_DAEMON = 'stop the daemon with `node packages/mcp-server/dist/index.js --stop-daemon`';
+/** For daemons --stop-daemon cannot talk to (older protocol, no token, impostor). */
+function stopByPid(ctx: DoctorContext): string {
+  return `end the process listening on port ${ctx.port} by PID`;
+}
 /** The Native Host's WebSocket reconnect backoff tops out at this (ENV_DEFAULTS.BACKOFF_MAX_MS). */
 const RECONNECT_BACKOFF_MAX_S = 60;
 const NM_HOST_NAME = 'kitsune_mcp';
@@ -368,7 +374,7 @@ export function checkBuild(ctx: DoctorContext): CheckResult {
       id: 'build',
       status: 'WARN',
       detail: `sources newer than dist: ${stale.join(', ')}`,
-      fix: 'run npm run build, then stop the daemon and reload the Extension so the new build is used',
+      fix: `run npm run build, then ${STOP_DAEMON} and reload the Extension so the new build is used`,
     };
   }
   return { id: 'build', status: 'OK', detail: 'dist is newer than src in every package' };
@@ -593,7 +599,7 @@ export function checkDaemon(ctx: DoctorContext): CheckResult {
   const id = 'daemon';
   const { kind, health } = ctx.daemon;
   const version = typeof health?.['version'] === 'string' ? health['version'] : 'unknown';
-  const stop = `stop the process listening on port ${ctx.port} (and restart Firefox); the next tool call starts the installed daemon`;
+  const stop = `${STOP_DAEMON} (and restart Firefox); the next tool call starts the installed daemon`;
   switch (kind) {
     case 'down':
       return {
@@ -614,14 +620,14 @@ export function checkDaemon(ctx: DoctorContext): CheckResult {
         id,
         status: 'FAIL',
         detail: `daemon of another protocol (protocol ${String(health?.['protocol'] ?? '1 or older')}, version ${version}; this build needs ${DAEMON_PROTOCOL_VERSION})`,
-        fix: stop,
+        fix: `${stopByPid(ctx)} (an older daemon has no --stop-daemon); then restart Firefox; the next tool call starts the installed daemon`,
       };
     case 'impostor':
       return {
         id,
         status: 'FAIL',
         detail: `the daemon on ${ctx.baseUrl} cannot prove it holds ${ctx.tokenPath}`,
-        fix: `api_token was replaced after it started, or another program impersonates it: ${stop}`,
+        fix: `api_token was replaced after it started, or another program impersonates it: ${stopByPid(ctx)} (--stop-daemon cannot sign for it), then restart Firefox`,
       };
     case 'unverified':
       return { id, status: 'WARN', detail: `v${version} answers, proof not checked (no api_token)`, fix: 'see the token item' };
@@ -653,13 +659,13 @@ export function checkToken(ctx: DoctorContext): CheckResult {
         id,
         status: 'FAIL',
         detail: `the daemon is running but ${ctx.tokenPath} is missing: relays and the Native Host report it as unavailable`,
-        fix: `stop the process listening on port ${ctx.port} (a new daemon writes a new token), then restart Firefox`,
+        fix: `${stopByPid(ctx)} (--stop-daemon needs the token; a new daemon writes a new one), then restart Firefox`,
       };
     }
     return { id, status: 'OK', detail: `${ctx.tokenPath} not created yet (the daemon creates it on start)` };
   }
   if (ctx.token === undefined) {
-    return { id, status: 'FAIL', detail: `${ctx.tokenPath} is empty`, fix: `delete it and stop the daemon on port ${ctx.port}` };
+    return { id, status: 'FAIL', detail: `${ctx.tokenPath} is empty`, fix: `delete it and ${stopByPid(ctx)}` };
   }
   if (ctx.deps.platform === 'win32') {
     return { id, status: 'OK', detail: `${ctx.tokenPath} present (file modes do not apply on Windows; the profile ACL protects it)` };
@@ -692,7 +698,7 @@ export function checkSettings(ctx: DoctorContext): CheckResult {
       id,
       status: 'WARN',
       detail: `${diffs.join('; ')} (session = ${source})`,
-      fix: 'the running daemon\'s settings apply to every session: stop it and start a session with the wanted settings (a daemon started by Firefox has Firefox\'s environment)',
+      fix: `the running daemon's settings apply to every session: ${STOP_DAEMON} and start a session with the wanted settings (a daemon started by Firefox has Firefox's environment)`,
     };
   }
   return { id, status: 'OK', detail: `daemon settings match ${source}` };
@@ -877,7 +883,7 @@ export function checkLogs(ctx: DoctorContext): CheckResult {
     };
   }
   if (oversized.length > 0) {
-    return { id, status: 'WARN', detail: `${oversized.join(', ')} not rotated; ${detail}`, fix: 'stop the daemon and Firefox, then delete or move the large file' };
+    return { id, status: 'WARN', detail: `${oversized.join(', ')} not rotated; ${detail}`, fix: `${STOP_DAEMON} and quit Firefox, then delete or move the large file` };
   }
   return { id, status: 'OK', detail };
 }

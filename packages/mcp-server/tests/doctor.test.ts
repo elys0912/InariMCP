@@ -730,7 +730,7 @@ describe('doctor: runDoctor', () => {
     expect(out).toContain(`KitsuneMCP doctor v${PACKAGE_VERSION} (linux, node v${process.versions.node})`);
     // Ids are padded to the longest one ('native-messaging'), fix lines line up with the details.
     expect(out).toMatch(/^FAIL {2}token {13}the daemon is running/m);
-    expect(out).toMatch(/^ {24}fix: stop the process listening on port /m);
+    expect(out).toMatch(/^ {24}fix: end the process listening on port /m);
     expect(out).toMatch(/\n\d+ OK, \d+ WARN, [1-9]\d* FAIL, \d+ SKIP\n$/);
   });
 
