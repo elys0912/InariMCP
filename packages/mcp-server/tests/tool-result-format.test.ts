@@ -276,7 +276,7 @@ describe('relay handler: warning blocks', () => {
     baseUrl: 'http://daemon.test',
     ready: vi.fn(async () => true),
     callTool: vi.fn(async () => ({ content: [{ type: 'text', text: 'done' }] }) as CallToolResult),
-    settingsMismatch: vi.fn(async () => ['settings differ']),
+    checkSettings: vi.fn(async () => ['settings differ']),
     ...over,
   }) as never;
 
@@ -295,6 +295,6 @@ describe('relay handler: warning blocks', () => {
     const handlers = createRelayHandlers(client, [], () => {});
     const result = await handlers.handlerFor('fox_safety_status')({}, {});
     expect(text(result)).toEqual(['nope']);
-    expect(client.settingsMismatch).not.toHaveBeenCalled();
+    expect(client.checkSettings).not.toHaveBeenCalled();
   });
 });

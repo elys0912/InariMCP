@@ -1,11 +1,11 @@
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient } from '../src/relay/daemon-client.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { startHttpBridge } from '../src/transport/http-bridge.js';
 import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION } from '@kitsune-mcp/shared/node';
-import { TOKEN } from './helpers/ws.js';
+import { TOKEN, waitFor } from './helpers/ws.js';
 
 // HOME / USERPROFILE point at a temporary directory: tests/setup/isolate-home.ts
 
@@ -159,5 +159,75 @@ describe('DaemonClient and oversized calls', () => {
     const result = await c.callTool('fox_type', { text: 'x'.repeat(1_100_000) });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toMatch(/request size limit/);
+  });
+});
+
+describe('DaemonClient: refused signature (X-3 / L-4)', () => {
+  const other = 'e'.repeat(64);
+
+  it('tool call: one fixed message, the unsigned body is not passed on', async () => {
+    const c = client(await realDaemon(), other);
+    await c.checkHealth();
+    const text = JSON.stringify((await c.callTool('fox_safety_status', {})).content);
+    expect(text).toMatch(/refused this session's signature/);
+    expect(text).not.toContain('Unauthorized');
+  });
+
+  it('approval: the same message as the tool call', async () => {
+    const c = client(await realDaemon(), other);
+    const reply = await c.reportElicitation('req-x', true);
+    expect(reply).toMatchObject({ success: false, approved: false });
+    expect(reply.error).toMatch(/refused this session's signature/);
+  });
+});
+
+describe('DaemonClient: elicitation answer refused by the daemon (X-1)', () => {
+  it('keeps reason elicitation_disabled from the signed 403', async () => {
+    vi.stubEnv('FOX_APPROVAL_ELICITATION', '0');
+    try {
+      const c = client(await realDaemon());
+      const reply = await c.reportElicitation('req-x', true);
+      expect(reply).toMatchObject({ success: false, approved: false, reason: 'elicitation_disabled' });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe('DaemonClient: daemon shutting down (Q-6)', () => {
+  it('waits for the stopping daemon to go away and sends the call once more', async () => {
+    let releaseShutdown: ((v: Record<string, unknown>) => void) | undefined;
+    const stopping = await startHttpBridge({
+      host: '127.0.0.1', port: 0, apiToken: TOKEN, connectionManager: getConnectionManager(),
+      shutdown: {
+        prepare: () => new Promise((resolve) => { releaseShutdown = resolve; }),
+        exit: () => undefined,
+      },
+    });
+    servers.push(stopping);
+    const port = portOf(stopping);
+    const c = client(port);
+    await c.checkHealth();
+    // Put the daemon into "shutting down" (the answer waits for prepare).
+    const stopRequest = c.stopDaemon(false, 5_000);
+    await waitFor(() => releaseShutdown !== undefined);
+
+    // The next daemon comes up on the same port once the old one is gone.
+    const ensure = vi.spyOn(c, 'ensureDaemon').mockImplementation(async () => {
+      servers.push(await startHttpBridge({ host: '127.0.0.1', port, apiToken: TOKEN, connectionManager: getConnectionManager() }));
+      return true;
+    });
+    setTimeout(() => {
+      releaseShutdown?.({});
+      servers.splice(servers.indexOf(stopping), 1);
+      stopping.closeAllConnections();
+      stopping.close();
+    }, 300);
+
+    const result = await c.callTool('fox_safety_status', {});
+    expect(result.isError).not.toBe(true);
+    expect(JSON.stringify(result.content)).toContain('readOnly');
+    expect(ensure).toHaveBeenCalledTimes(1);
+    await stopRequest;
   });
 });

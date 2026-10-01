@@ -42,14 +42,18 @@ export async function runRelay(): Promise<void> {
   // daemon that is already running is checked first (briefly), so a settings
   // mismatch can still go into the server instructions. Otherwise the first
   // tool call waits for the daemon (client.ready()) and carries the warning.
+  // Each request is capped at PRECHECK_TIMEOUT_MS, so the losing side of the
+  // race ends by itself within the budget; its result is only dropped.
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined;
   const known = await Promise.race([
     (async (): Promise<string[] | null> => {
       if (!(await client.checkHealth(PRECHECK_TIMEOUT_MS))) return null;
       const protocol = client.protocolMismatch();
       return protocol !== undefined ? [protocol] : client.checkSettings(PRECHECK_TIMEOUT_MS);
     })(),
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), PRECHECK_BUDGET_MS)),
+    new Promise<null>((resolve) => { budgetTimer = setTimeout(() => resolve(null), PRECHECK_BUDGET_MS); }),
   ]);
+  clearTimeout(budgetTimer);
   for (const w of known ?? []) log(`WARNING: ${w}`);
 
   const mcpServer = new McpServer(

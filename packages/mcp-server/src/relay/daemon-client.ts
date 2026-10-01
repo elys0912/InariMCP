@@ -34,7 +34,7 @@ import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 import { maxCommandTimeoutMs } from '../connection/manager.js';
-import type { ApprovalReply } from './approval.js';
+import { isApprovalReason, type ApprovalReply } from './approval.js';
 import { RELAY_HEARTBEAT_MS } from '../daemon/activity.js';
 import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
 import { daemonLogPath, kitsuneHealth, spawnDetachedDaemon, stderrLogger } from '@kitsune-mcp/shared/node';
@@ -53,6 +53,13 @@ import { isRecord } from '@kitsune-mcp/shared';
 const DAEMON_STARTUP_WAIT_MS = 15_000;
 const HEALTH_POLL_INTERVAL_MS = 200;
 const HEALTH_TIMEOUT_MS = 2_000;
+/** POST /approval/elicitation only records an answer: no browser round trip. */
+const ELICITATION_REPORT_TIMEOUT_MS = 10_000;
+/**
+ * How long a tool call answered "shutting down" (signed 503: not run) waits
+ * for that daemon to go away before it is sent once more (to a new daemon).
+ */
+const SHUTDOWN_RETRY_WAIT_MS = 20_000;
 /**
  * Added on top of the daemon's longest command timeout: covers the daemon's
  * own wait for the headless backend to boot (FOX_HEADLESS_STARTUP_TIMEOUT,
@@ -79,8 +86,19 @@ interface HttpReply {
 
 class ConnectionRefusedError extends Error {}
 
-/** How long stopDaemon() waits for the daemon to go away (its own drain cap is 10 s). */
+/** How long stopDaemon() waits for the daemon to go away (twice its drain cap, daemon/main.ts SHUTDOWN_DRAIN_MS). */
 const DAEMON_STOP_WAIT_MS = 20_000;
+
+/**
+ * Our signature was refused even after reading the token again (unsigned
+ * 403): the daemon holds another token. The unsigned body is not used: it
+ * may come from any program on the port.
+ */
+function signatureRefused(baseUrl: string): string {
+  return `The KitsuneMCP daemon at ${baseUrl} refused this session's signature ` +
+    '(api_token replaced since the daemon started?). Stop the daemon (node dist/index.js --stop-daemon, ' +
+    'or end its process) and call the tool again.';
+}
 
 export interface StopDaemonResult {
   /** False when something went wrong (a daemon may still be running). */
@@ -299,6 +317,7 @@ export class DaemonClient {
 
     let restarted = false;
     let tokenReloaded = false;
+    let shutdownRetried = false;
     for (;;) {
       // Look again before refusing: the user may have stopped the old
       // daemon since (then nothing answers, and the request below starts one).
@@ -333,13 +352,27 @@ export class DaemonClient {
         return errorResult(`KitsuneMCP daemon request failed (${this.baseUrl}): ${msg}`);
       }
 
-      if (reply.status === 403 && !reply.verified && !tokenReloaded) {
-        // Signature refused: token file replaced since we read it (or the
-        // daemon was replaced by an older build): read it again once, after
-        // a fresh /health.
-        tokenReloaded = true;
-        await this.checkHealth();
-        continue;
+      if (reply.status === 403 && !reply.verified) {
+        if (!tokenReloaded) {
+          // Signature refused: token file replaced since we read it (or the
+          // daemon was replaced by an older build): read it again once, after
+          // a fresh /health.
+          tokenReloaded = true;
+          await this.checkHealth();
+          continue;
+        }
+        return errorResult(this.protocolMismatch() ?? signatureRefused(this.baseUrl));
+      }
+
+      if (reply.status === 503 && reply.verified && !shutdownRetried) {
+        // The daemon is shutting down and did not run the call: wait until it
+        // is gone, then send it once more (the next request starts a daemon).
+        shutdownRetried = true;
+        log(`daemon is shutting down: retrying ${name} once it is gone`);
+        if (await this.waitUntilGone(SHUTDOWN_RETRY_WAIT_MS, signal)) {
+          restarted = false;
+          continue;
+        }
       }
 
       if (reply.status === 413) {
@@ -350,7 +383,7 @@ export class DaemonClient {
         );
       }
 
-      if (!reply.verified && reply.status !== 403) {
+      if (!reply.verified) {
         return errorResult(
           `The answer from ${this.baseUrl} is not signed by the KitsuneMCP daemon: another ` +
           'program may be using its port, or the daemon uses a different API token. ' +
@@ -407,7 +440,7 @@ export class DaemonClient {
         ok: false,
         stopped: false,
         message: reply.status === 403
-          ? `the daemon at ${this.baseUrl} refused the signature (api_token replaced since it started?)`
+          ? signatureRefused(this.baseUrl)
           : `the answer from ${this.baseUrl} is not signed by the KitsuneMCP daemon — not trusting it`,
       };
     }
@@ -419,12 +452,8 @@ export class DaemonClient {
     const b = isRecord(reply.body) ? reply.body : {};
     const pid = typeof b['pid'] === 'number' ? b['pid'] : undefined;
 
-    const deadline = Date.now() + waitMs;
-    while (Date.now() < deadline) {
-      await sleep(HEALTH_POLL_INTERVAL_MS);
-      if (!(await this.checkHealth(HEALTH_TIMEOUT_MS))) {
-        return { ok: true, stopped: true, pid, message: `daemon${pid !== undefined ? ` (PID ${pid})` : ''} stopped` };
-      }
+    if (await this.waitUntilGone(waitMs)) {
+      return { ok: true, stopped: true, pid, message: `daemon${pid !== undefined ? ` (PID ${pid})` : ''} stopped` };
     }
     return {
       ok: false,
@@ -434,13 +463,23 @@ export class DaemonClient {
     };
   }
 
+  /** Poll /health until nothing answers. False when it still answers after `waitMs` (or on abort). */
+  private async waitUntilGone(waitMs: number, signal?: AbortSignal): Promise<boolean> {
+    const deadline = Date.now() + waitMs;
+    while (Date.now() < deadline && signal?.aborted !== true) {
+      await sleep(HEALTH_POLL_INTERVAL_MS);
+      if (!(await this.checkHealth(HEALTH_TIMEOUT_MS))) return true;
+    }
+    return false;
+  }
+
   // -------------------------------------------------------------------------
   // Approvals
   // -------------------------------------------------------------------------
 
   /** Report the human's answer to this relay's MCP elicitation. */
   reportElicitation(requestId: string, approved: boolean): Promise<ApprovalReply> {
-    return this.postApproval('/approval/elicitation', { requestId, approved }, HEALTH_TIMEOUT_MS * 5);
+    return this.postApproval('/approval/elicitation', { requestId, approved }, ELICITATION_REPORT_TIMEOUT_MS);
   }
 
   /** Ask in the Extension's popup; resolves when the human answered or it timed out. */
@@ -464,13 +503,23 @@ export class DaemonClient {
     signal?: AbortSignal,
   ): Promise<ApprovalReply> {
     const body = JSON.stringify(payload);
-    for (let attempt = 0; attempt < 2; attempt++) {
+    let tokenReloaded = false;
+    for (;;) {
       const token = this.readToken();
-      if (token === undefined) break;
+      if (token === undefined) {
+        return { success: false, approved: false, error: 'KitsuneMCP daemon is not available (no API token)' };
+      }
       const reply = await this.request('POST', urlPath, body, timeoutMs, token, signal);
       // Unsigned 403: our signature was refused (token file replaced): read it
-      // again. A signed 403 is the daemon's answer (e.g. elicitation disabled).
-      if (reply.status === 403 && !reply.verified && attempt === 0) continue;
+      // again once, as callTool() does. A signed 403 is the daemon's answer
+      // (elicitation disabled).
+      if (reply.status === 403 && !reply.verified) {
+        if (!tokenReloaded) {
+          tokenReloaded = true;
+          continue;
+        }
+        return { success: false, approved: false, error: signatureRefused(this.baseUrl) };
+      }
       if (!reply.verified) {
         return {
           success: false,
@@ -479,19 +528,20 @@ export class DaemonClient {
         };
       }
       const b = isRecord(reply.body) ? reply.body : {};
+      const reason = isApprovalReason(b['reason']) ? { reason: b['reason'] } : {};
       if (reply.status !== 200) {
         const error = typeof b['error'] === 'string' ? b['error'] : `HTTP ${reply.status}`;
-        return { success: false, approved: false, error };
+        // reason kept: elicitation_disabled (403) sends the relay to the browser.
+        return { success: false, approved: false, ...reason, error };
       }
       return {
         success: b['success'] === true,
         approved: b['approved'] === true,
-        ...(typeof b['reason'] === 'string' ? { reason: b['reason'] } : {}),
+        ...reason,
         ...(typeof b['approvalToken'] === 'string' ? { approvalToken: b['approvalToken'] } : {}),
         ...(typeof b['error'] === 'string' ? { error: b['error'] } : {}),
       };
     }
-    return { success: false, approved: false, error: 'KitsuneMCP daemon is not available (no API token)' };
   }
 
   private toCallToolResult(name: string, reply: HttpReply): CallToolResult {
@@ -502,8 +552,6 @@ export class DaemonClient {
       return errorResult(`KitsuneMCP daemon returned a malformed result for ${name}`);
     }
 
-    const mismatch = reply.status === 403 ? this.protocolMismatch() : undefined;
-    if (mismatch !== undefined) return errorResult(mismatch);
     const error = typeof body['error'] === 'string' ? body['error'] : `HTTP ${reply.status}`;
     const issues = Array.isArray(body['issues'])
       ? `\n\nDetails: ${JSON.stringify(body['issues'])}`

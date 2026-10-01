@@ -16,7 +16,8 @@ export interface RelayClient {
   readonly baseUrl: string;
   ready(): Promise<boolean>;
   callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<CallToolResult>;
-  settingsMismatch(timeoutMs?: number): Promise<string[]>;
+  /** Settings warnings; null when the daemon's settings could not be read. */
+  checkSettings(timeoutMs?: number): Promise<string[] | null>;
   protocolMismatch?(): string | undefined;
 }
 
@@ -28,6 +29,10 @@ type Content = CallToolResult['content'];
 function warningBlocks(warnings: string[]): Content {
   return warnings.map((w) => ({ type: 'text' as const, text: `WARNING: ${w}` }));
 }
+
+/** fox_safety_status when /daemon/info could not be read: "unknown" is not "the same". */
+export const SETTINGS_UNKNOWN_NOTE =
+  "NOTE: the shared daemon's settings could not be read, so whether they match this session's is unknown.";
 
 export interface RelayHandlers {
   /** Handler factory for registerTools(). */
@@ -49,24 +54,23 @@ export function createRelayHandlers(
   invoke: Invoke = (toolName, args, signal) => client.callTool(toolName, args, signal),
 ): RelayHandlers {
   let delivered = knownWarnings !== null;
-  let notice: Promise<string[]> | null = null;
+  /** The background check; null = not started, or the last one could not read the settings. */
+  let notice: Promise<string[] | null> | null = null;
 
-  const checkNotice = (): Promise<string[]> => {
+  /** Resolves null when the daemon (or its settings) could not be checked: a later call tries again. */
+  const checkNotice = (): Promise<string[] | null> => {
     notice ??= client.ready()
       .then(async (ok) => {
-        if (!ok) {
-          // No daemon yet: forget this attempt, a later call checks again.
-          notice = null;
-          return [];
-        }
+        if (!ok) return null; // no daemon yet
         const protocol = client.protocolMismatch?.();
-        const warnings = protocol !== undefined ? [protocol] : await client.settingsMismatch();
-        for (const w of warnings) log(`WARNING: ${w}`);
+        const warnings = protocol !== undefined ? [protocol] : await client.checkSettings();
+        for (const w of warnings ?? []) log(`WARNING: ${w}`);
         return warnings;
       })
-      .catch(() => {
-        notice = null;
-        return [];
+      .catch(() => null)
+      .then((warnings) => {
+        if (warnings === null) notice = null;
+        return warnings;
       });
     return notice;
   };
@@ -86,17 +90,23 @@ export function createRelayHandlers(
       if (toolName === 'fox_safety_status') {
         // Re-check on every status call: the daemon may have been restarted
         // by another session since this relay started.
+        const mismatch = await client.checkSettings();
+        if (mismatch === null) {
+          return { ...result, content: [...result.content, { type: 'text' as const, text: SETTINGS_UNKNOWN_NOTE }] };
+        }
         delivered = true;
-        const mismatch = await client.settingsMismatch();
         if (mismatch.length === 0) return result;
         return { ...result, content: [...result.content, ...warningBlocks(mismatch)] };
       }
 
       if (!delivered) {
-        delivered = true;
         const warnings = await checkNotice();
-        if (warnings.length > 0) {
-          return { ...result, content: [...result.content, ...warningBlocks(warnings)] };
+        // Another call may have delivered them while this one waited.
+        if (warnings !== null && !delivered) {
+          delivered = true;
+          if (warnings.length > 0) {
+            return { ...result, content: [...result.content, ...warningBlocks(warnings)] };
+          }
         }
       }
       return result;

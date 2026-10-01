@@ -134,7 +134,7 @@ describe('obtainApproval: elicitation first, popup as fallback', () => {
   it('no channel at all → unavailable, with the reason', async () => {
     const d = deps({
       canElicit: false,
-      askBrowser: vi.fn(async () => ({ success: false, approved: false, reason: 'no_browser', error: 'No Firefox connected' })),
+      askBrowser: vi.fn(async () => ({ success: false, approved: false, reason: 'no_browser' as const, error: 'No Firefox connected' })),
     });
     const outcome = await obtainApproval(INFO, d);
     expect(outcome.kind).toBe('unavailable');
@@ -172,5 +172,39 @@ describe('callWithApproval', () => {
     expect(call).toHaveBeenCalledTimes(2);
     expect(d.reportElicitation).toHaveBeenCalledTimes(1);
     expect(findApprovalRequest(result)).not.toBeNull();
+  });
+});
+
+describe('obtainApproval: daemon refuses elicitation answers (X-1)', () => {
+  const disabled = {
+    success: false,
+    approved: false,
+    reason: 'elicitation_disabled',
+    error: 'Approval by MCP elicitation is turned off (FOX_APPROVAL_ELICITATION); ask in the browser popup',
+  };
+
+  it('asks in the browser when the human approved but the daemon does not take elicitation answers', async () => {
+    const d = deps({ reportElicitation: vi.fn(async () => disabled) as never });
+    const outcome = await obtainApproval(INFO, d);
+    expect(outcome).toEqual({ kind: 'approved', via: 'browser', token: 'kat_b' });
+    expect(d.askBrowser).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a "no" as a no (the human is not asked twice)', async () => {
+    const d = deps({
+      elicit: vi.fn(async () => ({ action: 'decline' })) as never,
+      reportElicitation: vi.fn(async () => disabled) as never,
+    });
+    const outcome = await obtainApproval(INFO, d);
+    expect(outcome).toEqual({ kind: 'not_approved', via: 'elicitation', reason: 'declined' });
+    expect(d.askBrowser).not.toHaveBeenCalled();
+  });
+
+  it('other daemon failures are still reported as unavailable, without the browser', async () => {
+    const d = deps({
+      reportElicitation: vi.fn(async () => ({ success: false, approved: false, reason: 'unknown_request', error: 'gone' })) as never,
+    });
+    expect((await obtainApproval(INFO, d)).kind).toBe('unavailable');
+    expect(d.askBrowser).not.toHaveBeenCalled();
   });
 });

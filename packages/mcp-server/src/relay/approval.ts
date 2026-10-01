@@ -11,8 +11,10 @@
  *      approve=true, anything else = no) is reported to the daemon
  *      (POST /approval/elicitation). A timeout counts as "no answer".
  *   2. Otherwise — or when the elicitation request fails for any other
- *      reason (method not found, transport error) — the Extension's toolbar
- *      popup (POST /approval/browser), with a badge and an OS notification.
+ *      reason (method not found, transport error), or the daemon does not
+ *      take elicitation answers (its FOX_APPROVAL_ELICITATION is off:
+ *      `elicitation_disabled`) — the Extension's toolbar popup
+ *      (POST /approval/browser), with a badge and an OS notification.
  *
  * The LLM never sees the token: it travels only relay → daemon.
  */
@@ -25,6 +27,7 @@ import type {
   ElicitResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import { isRecord } from '@kitsune-mcp/shared';
+import type { ApprovalReason } from '../tools/approval-flow.js';
 
 /** `details.approval` of a confirmation_required result. */
 export interface ApprovalInfo {
@@ -37,11 +40,33 @@ export interface ApprovalInfo {
   expiresAt: number;
 }
 
-/** Daemon answer of POST /approval/elicitation and /approval/browser. */
+export type { ApprovalReason };
+
+/** Every ApprovalReason, so a value read off the wire can be checked (keys checked by the compiler). */
+const APPROVAL_REASONS: Readonly<Record<ApprovalReason, true>> = {
+  approved: true,
+  declined: true,
+  timeout: true,
+  cancelled: true,
+  unknown_request: true,
+  elicitation_disabled: true,
+  no_browser: true,
+  browser_error: true,
+};
+
+export function isApprovalReason(v: unknown): v is ApprovalReason {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(APPROVAL_REASONS, v);
+}
+
+/**
+ * Daemon answer of POST /approval/elicitation and /approval/browser
+ * (tools/approval-flow.ts). `reason` is absent when the relay could not get
+ * an answer from the daemon at all.
+ */
 export interface ApprovalReply {
   success: boolean;
   approved: boolean;
-  reason?: string;
+  reason?: ApprovalReason;
   approvalToken?: string;
   error?: string;
 }
@@ -75,7 +100,10 @@ export function findApprovalRequest(result: CallToolResult): ApprovalInfo | null
     if (!isRecord(parsed) || parsed['confirmationRequired'] !== true) continue;
     const a = parsed['approval'];
     if (!isRecord(a)) continue;
-    const str = (k: string): string | null => (typeof a[k] === 'string' ? (a[k] as string) : null);
+    const str = (k: string): string | null => {
+      const v = a[k];
+      return typeof v === 'string' ? v : null;
+    };
     const requestId = str('requestId');
     const toolName = str('toolName');
     const host = str('host');
@@ -162,11 +190,21 @@ export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Pr
       deps.log?.(`elicitation failed (${elicitationProblem}) — asking in the browser instead`);
     }
     if (answer !== null) {
+      const approved = elicitationApproved(answer);
+      let reply: ApprovalReply;
       try {
-        return fromReply('elicitation', await deps.reportElicitation(info.requestId, elicitationApproved(answer)));
+        reply = await deps.reportElicitation(info.requestId, approved);
       } catch (err: unknown) {
         return { kind: 'unavailable', detail: err instanceof Error ? err.message : String(err) };
       }
+      if (reply.reason !== 'elicitation_disabled') return fromReply('elicitation', reply);
+      // The running daemon does not take elicitation answers (its
+      // FOX_APPROVAL_ELICITATION differs from this relay's). A "no" stays a
+      // no; a "yes" would be lost, so the human is asked in the browser
+      // (the request is still open in the daemon).
+      if (!approved) return { kind: 'not_approved', via: 'elicitation', reason: 'declined' };
+      elicitationProblem = reply.error ?? 'the daemon does not accept elicitation answers';
+      deps.log?.(`daemon refused the elicitation answer (${elicitationProblem}) — asking in the browser instead`);
     }
   }
 
@@ -201,6 +239,10 @@ export function describeOutcome(outcome: ApprovalOutcome): string {
       return `The human declined this call ${where(outcome.via)}. Do not retry it unless the user asks you to.`;
     case 'unavailable':
       return `KitsuneMCP could not ask the human: ${outcome.detail}.`;
+    default: {
+      const unhandled: never = outcome;
+      return String(unhandled);
+    }
   }
 }
 

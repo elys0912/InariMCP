@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { DaemonClient } from '../src/relay/daemon-client.js';
-import { createRelayHandlers, type RelayClient } from '../src/relay/handler.js';
+import { SETTINGS_UNKNOWN_NOTE, createRelayHandlers, type RelayClient } from '../src/relay/handler.js';
 
 const ok = (text = 'done'): CallToolResult => ({ content: [{ type: 'text', text }] });
 const failed: CallToolResult = { content: [{ type: 'text', text: 'nope' }], isError: true };
@@ -9,13 +9,13 @@ const failed: CallToolResult = { content: [{ type: 'text', text: 'nope' }], isEr
 function fakeClient(over: Partial<RelayClient> = {}): RelayClient & {
   ready: ReturnType<typeof vi.fn>;
   callTool: ReturnType<typeof vi.fn>;
-  settingsMismatch: ReturnType<typeof vi.fn>;
+  checkSettings: ReturnType<typeof vi.fn>;
 } {
   return {
     baseUrl: 'http://daemon.test',
     ready: vi.fn(async () => true),
     callTool: vi.fn(async () => ok()),
-    settingsMismatch: vi.fn(async () => []),
+    checkSettings: vi.fn(async () => []),
     ...over,
   } as never;
 }
@@ -68,7 +68,7 @@ describe('relay tool handler', () => {
 
   it('adds the mismatch warning to the first successful result only', async () => {
     const client = fakeClient();
-    client.settingsMismatch.mockResolvedValue(['settings differ']);
+    client.checkSettings.mockResolvedValue(['settings differ']);
     const logs: string[] = [];
     const handlers = createRelayHandlers(client, null, (m) => logs.push(m));
     handlers.startNotice();
@@ -77,7 +77,7 @@ describe('relay tool handler', () => {
     expect(texts(first)).toEqual(['done', 'WARNING: settings differ']);
     const second = await call(handlers);
     expect(texts(second)).toEqual(['done']);
-    expect(client.settingsMismatch).toHaveBeenCalledTimes(1);
+    expect(client.checkSettings).toHaveBeenCalledTimes(1);
     expect(logs).toEqual(['WARNING: settings differ']);
   });
 
@@ -86,7 +86,7 @@ describe('relay tool handler', () => {
     client.ready
       .mockResolvedValueOnce(false) // startNotice(): no daemon yet
       .mockResolvedValue(true); //     first tool call: it is up by now
-    client.settingsMismatch.mockResolvedValue(['settings differ']);
+    client.checkSettings.mockResolvedValue(['settings differ']);
     const handlers = createRelayHandlers(client, null, () => {});
     handlers.startNotice();
     await new Promise((r) => setTimeout(r, 0));
@@ -96,7 +96,7 @@ describe('relay tool handler', () => {
   it('carries the warning over a failed first call to the next successful one', async () => {
     const client = fakeClient();
     client.callTool.mockResolvedValueOnce(failed);
-    client.settingsMismatch.mockResolvedValue(['settings differ']);
+    client.checkSettings.mockResolvedValue(['settings differ']);
     const handlers = createRelayHandlers(client, null, () => {});
     expect(texts(await call(handlers))).toEqual(['nope']);
     expect(texts(await call(handlers))).toEqual(['done', 'WARNING: settings differ']);
@@ -106,27 +106,47 @@ describe('relay tool handler', () => {
     const client = fakeClient();
     const handlers = createRelayHandlers(client, ['settings differ'], () => {});
     expect(texts(await call(handlers))).toEqual(['done']);
-    expect(client.settingsMismatch).not.toHaveBeenCalled();
+    expect(client.checkSettings).not.toHaveBeenCalled();
   });
 
   it('re-checks on every fox_safety_status call', async () => {
     const client = fakeClient();
-    client.settingsMismatch.mockResolvedValue(['settings differ']);
+    client.checkSettings.mockResolvedValue(['settings differ']);
     const handlers = createRelayHandlers(client, [], () => {});
     const a = await call(handlers, 'fox_safety_status');
     const b = await call(handlers, 'fox_safety_status');
     expect(texts(a)).toEqual(['done', 'WARNING: settings differ']);
     expect(texts(b)).toEqual(['done', 'WARNING: settings differ']);
-    expect(client.settingsMismatch).toHaveBeenCalledTimes(2);
+    expect(client.checkSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it('X-4 fox_safety_status says the settings are unknown when /daemon/info cannot be read', async () => {
+    const client = fakeClient();
+    client.checkSettings.mockResolvedValue(null);
+    const handlers = createRelayHandlers(client, [], () => {});
+    const r = await call(handlers, 'fox_safety_status');
+    expect(texts(r)).toEqual(['done', SETTINGS_UNKNOWN_NOTE]);
+  });
+
+  it('L-3 a failed background check is not remembered: the next call checks again', async () => {
+    const client = fakeClient();
+    client.checkSettings
+      .mockResolvedValueOnce(null) // first check: /daemon/info timed out
+      .mockResolvedValue(['settings differ']);
+    const handlers = createRelayHandlers(client, null, () => {});
+    expect(texts(await call(handlers))).toEqual(['done']);
+    expect(texts(await call(handlers))).toEqual(['done', 'WARNING: settings differ']);
+    expect(texts(await call(handlers))).toEqual(['done']);
+    expect(client.checkSettings).toHaveBeenCalledTimes(2);
   });
 
   it('five parallel first calls all succeed and the daemon is checked once', async () => {
     const client = fakeClient();
-    client.settingsMismatch.mockResolvedValue(['settings differ']);
+    client.checkSettings.mockResolvedValue(['settings differ']);
     const handlers = createRelayHandlers(client, null, () => {});
     const results = await Promise.all([1, 2, 3, 4, 5].map(() => call(handlers)));
     expect(results.every((r) => !r.isError)).toBe(true);
     expect(results.filter((r) => texts(r).length === 2)).toHaveLength(1);
-    expect(client.settingsMismatch).toHaveBeenCalledTimes(1);
+    expect(client.checkSettings).toHaveBeenCalledTimes(1);
   });
 });
