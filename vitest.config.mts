@@ -10,7 +10,8 @@ import { defineConfig } from 'vitest/config';
  *
  * Tests live outside `src/`, so each package's tsconfig (`include: ["src"]`,
  * `rootDir: "src"`) never compiles them into `dist/`. Vitest transpiles them
- * on the fly; they are not type-checked by `npm run build`.
+ * on the fly; they are not type-checked by `npm run build`, but by
+ * `npm run typecheck` (tsconfig.test.json, with the same shared aliases).
  *
  * packages/extension is not a project here: its sources are classic scripts
  * (no import/export, browser globals, loaded in order by manifest.json), so
