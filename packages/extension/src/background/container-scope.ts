@@ -3,11 +3,25 @@
 
 import type { ContainerScope, CommandResult, ScopeFilter, ScopeDecision } from "./types";
 
-/** Parse the `containerScope` field attached by the MCP Server. */
-export function parseContainerScope(raw: unknown): ContainerScope | null {
-  if (typeof raw !== "object" || raw === null) return null;
+/** parseContainerScope. */
+export type ParsedContainerScope =
+  | { kind: "absent" }
+  | { kind: "scope"; scope: ContainerScope }
+  | { kind: "invalid" };
+
+/**
+ * Parse the `containerScope` field attached by the MCP Server. Absent (the
+ * server omits it when container_scope is off) is no scope; anything else
+ * that is not `{ containerName: <non-empty string> }` is `invalid` and the
+ * command is refused: an unusable scope must not switch Layer 0 off.
+ */
+export function parseContainerScope(raw: unknown): ParsedContainerScope {
+  if (raw === undefined) return { kind: "absent" };
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { kind: "invalid" };
   const name = (raw as Record<string, unknown>).containerName;
-  return typeof name === "string" && name !== "" ? { containerName: name } : null;
+  return typeof name === "string" && name !== ""
+    ? { kind: "scope", scope: { containerName: name } }
+    : { kind: "invalid" };
 }
 
 export function outOfScope(error: string): CommandResult {

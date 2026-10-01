@@ -7,7 +7,9 @@ import { auditLogPath, defaultSafetyConfigPath } from '@kitsune-mcp/shared/node'
 
 const ContainerScopeSchema = z.object({
   enabled: z.boolean(),
-  containerName: z.string(),
+  // An empty name is not a container: the Extension refuses such a scope
+  // (config_error), so it is a config error here too, enabled or not.
+  containerName: z.string().min(1),
 });
 
 export const SafetyConfigSchema = z.object({

@@ -57,11 +57,24 @@ export async function handleCommand(message: NativeMessage): Promise<CommandResu
 
   // Container scope check (Layer 0). The MCP Server attaches
   // `containerScope` to every command when container_scope.enabled is true.
+  // A scope that is there but unusable fails closed, like the URL rules
+  // below.
   const containerScope = parseContainerScope(message.containerScope);
+  if (containerScope.kind === "invalid") {
+    result = {
+      success: false,
+      safetyDecision: "config_error",
+      error:
+        "Refused: the container scope attached by the MCP Server could not be used " +
+        "(Extension and MCP Server versions may not match).",
+    };
+    postWireResponse(message, result);
+    return result;
+  }
   let scope: ScopeFilter | null = null;
-  if (containerScope) {
+  if (containerScope.kind === "scope") {
     const selfScoped = entry !== undefined && entry.scope !== "tab";
-    const decision = await enforceContainerScope(selfScoped, target, containerScope);
+    const decision = await enforceContainerScope(selfScoped, target, containerScope.scope);
     if (!decision.allowed) {
       result = outOfScope(decision.error);
       postWireResponse(message, result);

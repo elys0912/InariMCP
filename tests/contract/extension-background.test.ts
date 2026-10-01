@@ -308,7 +308,7 @@ describe('3.A4 target tab resolved once', () => {
     const start = background.indexOf('async function handleCommand(');
     const body = background.slice(start, background.indexOf('\n}\n', start));
     expect(body.match(/resolveTab\(/g)).toHaveLength(2); // the pin + the post-op URL report on the pinned id
-    expect(body).toMatch(/enforceContainerScope\(selfScoped, target, containerScope\)/);
+    expect(body).toMatch(/enforceContainerScope\(selfScoped, target, containerScope\.scope\)/);
     expect(body).toMatch(/checkProtectedTarget\(target, protectedPatterns, approvedHost\)/);
   });
 });
