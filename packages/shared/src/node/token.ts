@@ -7,7 +7,14 @@
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { apiTokenPath } from './paths.js';
+import { errnoCode } from '../util.js';
+import { apiTokenPath, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from './paths.js';
+
+/** Random bytes of a new token (64 hex characters). */
+const TOKEN_BYTES = 32;
+/** How long to wait for another daemon's token content: TOKEN_WAIT_TRIES × TOKEN_WAIT_MS. */
+const TOKEN_WAIT_TRIES = 20;
+const TOKEN_WAIT_MS = 50;
 
 /**
  * Read the token file: undefined when it does not exist or is empty. Any
@@ -18,7 +25,7 @@ function readTokenStrict(tokenPath: string): string | undefined {
   try {
     content = fs.readFileSync(tokenPath, 'utf-8');
   } catch (err: unknown) {
-    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return undefined;
+    if (errnoCode(err) === 'ENOENT') return undefined;
     throw err;
   }
   const token = content.trim();
@@ -55,21 +62,21 @@ export function loadOrCreateApiToken(tokenPath: string = apiTokenPath()): string
   // Create the file exclusively ('wx'): when two daemons start at the same
   // moment, only one of them writes a token and the other reads it, so the
   // token on disk always matches the one the surviving daemon holds.
-  const token = crypto.randomBytes(32).toString('hex');
-  fs.mkdirSync(path.dirname(tokenPath), { recursive: true, mode: 0o700 });
+  const token = crypto.randomBytes(TOKEN_BYTES).toString('hex');
+  fs.mkdirSync(path.dirname(tokenPath), { recursive: true, mode: PRIVATE_DIR_MODE });
   try {
-    fs.writeFileSync(tokenPath, token, { mode: 0o600, flag: 'wx' });
+    fs.writeFileSync(tokenPath, token, { mode: PRIVATE_FILE_MODE, flag: 'wx' });
     process.stderr.write(`[KitsuneMCP] Generated new API token at ${tokenPath}\n`);
     return token;
   } catch (err: unknown) {
-    if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST')) throw err;
+    if (errnoCode(err) !== 'EEXIST') throw err;
   }
 
   // Someone else created it: wait briefly for its content.
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < TOKEN_WAIT_TRIES; i++) {
     const other = readTokenStrict(tokenPath);
     if (other !== undefined) return other;
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, TOKEN_WAIT_MS);
   }
 
   // Still empty: either a corrupt file or a writer that is very slow. Do not

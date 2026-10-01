@@ -3,7 +3,10 @@ import {
   BROWSER_ACTIONS,
   BrowserActionSchema,
   ENV_DEFAULTS,
+  errnoCode,
+  formatZodIssues,
   parseBrowserResponse,
+  shortId,
 } from '@kitsune-mcp/shared';
 
 describe('BROWSER_ACTIONS', () => {
@@ -56,5 +59,27 @@ describe('parseBrowserResponse', () => {
     const parsed = parseBrowserResponse({ requestId: 7, success: true });
     expect(parsed).toMatchObject({ ok: false, requestId: undefined });
     expect(parseBrowserResponse(null)).toMatchObject({ ok: false, requestId: undefined });
+  });
+});
+
+describe('util helpers (R2-A)', () => {
+  it('errnoCode returns a string code only', () => {
+    expect(errnoCode(Object.assign(new Error('x'), { code: 'ENOENT' }))).toBe('ENOENT');
+    expect(errnoCode({ code: 1 })).toBeUndefined();
+    expect(errnoCode(new Error('x'))).toBeUndefined();
+    expect(errnoCode(null)).toBeUndefined();
+    expect(errnoCode('ENOENT')).toBeUndefined();
+  });
+
+  it('formatZodIssues joins path: message pairs, (root) for an empty path', () => {
+    expect(formatZodIssues([
+      { path: ['data', 0, 'x'], message: 'Required' },
+      { path: [], message: 'Expected object' },
+    ])).toBe('data.0.x: Required; (root): Expected object');
+    expect(formatZodIssues([])).toBe('');
+  });
+
+  it('shortId gives up to 6 base-36 characters', () => {
+    expect(shortId()).toMatch(/^[a-z0-9]{1,6}$/);
   });
 });

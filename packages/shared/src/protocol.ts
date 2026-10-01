@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { BrowserActionSchema } from './actions.js';
+import { MAX_PORT } from './constants.js';
+import { formatZodIssues, isRecord } from './util.js';
 
 // ---------------------------------------------------------------------------
 // Error codes
@@ -57,7 +59,7 @@ export const WireUrlRuleSchema = z.discriminatedUnion('kind', [
     scheme: z.string().nullable(),
     hosts: z.enum(['tree', 'sub', 'exact']),
     host: z.string(),
-    port: z.number().int().min(1).max(65535).nullable().optional(),
+    port: z.number().int().min(1).max(MAX_PORT).nullable().optional(),
     path: z.string().nullable(),
     pathMatch: z.enum(['strict', 'loose']),
   }),
@@ -221,16 +223,9 @@ export function parseBrowserResponse(raw: unknown): ParsedBrowserResponse {
     return { ok: true, response: result.data };
   }
 
-  let requestId: string | undefined;
-  if (typeof raw === 'object' && raw !== null && 'requestId' in raw) {
-    const id: unknown = (raw as { requestId: unknown }).requestId;
-    if (typeof id === 'string') requestId = id;
-  }
-
-  const issues = result.error.issues
-    .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
-    .join('; ');
-  return { ok: false, requestId, error: `Invalid browser response: ${issues}` };
+  const id = isRecord(raw) ? raw['requestId'] : undefined;
+  const requestId = typeof id === 'string' ? id : undefined;
+  return { ok: false, requestId, error: `Invalid browser response: ${formatZodIssues(result.error.issues)}` };
 }
 
 // ---------------------------------------------------------------------------

@@ -4,10 +4,10 @@
  * starting the daemon or the WebSocket connection).
  */
 
-import { parseHostMessage } from '@kitsune-mcp/shared';
+import { isRecord, parseHostMessage, type HostLocalAction, type HostLocalMessage } from '@kitsune-mcp/shared';
 import { readMessage, sendMessage } from './protocol.js';
 import { serverEntryPath, type DaemonInfo, type ServerLauncher } from './server-launcher.js';
-import type { ServerConnection } from './ws-client.js';
+import type { ServerCommand, ServerConnection } from './ws-client.js';
 import { externalizeScreenshots, saveScreenshot } from './screenshot-store.js';
 import { log } from './logger.js';
 import { HOST_VERSION } from './version.js';
@@ -30,6 +30,15 @@ const inFlight = new Map<string, InFlight>();
  */
 const IN_FLIGHT_TTL_MS = 10 * 60_000;
 
+/** Screenshots the Extension took on its own (saved locally; 'no image data' when invalid). */
+const SCREENSHOT_ACTIONS: ReadonlySet<HostLocalAction> = new Set<HostLocalAction>(['saveScreenshot', 'screenshotTaken']);
+
+type ScreenshotMessage = Extract<HostLocalMessage, { action: 'saveScreenshot' | 'screenshotTaken' }>;
+
+function isScreenshotMessage(message: HostLocalMessage | undefined): message is ScreenshotMessage {
+  return message !== undefined && SCREENSHOT_ACTIONS.has(message.action);
+}
+
 function pruneInFlight(now: number): void {
   for (const [id, entry] of inFlight) {
     if (now - entry.sentAt > IN_FLIGHT_TTL_MS) inFlight.delete(id);
@@ -41,19 +50,15 @@ function pruneInFlight(now: number): void {
 // ---------------------------------------------------------------------------
 
 export function handleServerCommand(
-  command: Record<string, unknown>,
+  command: ServerCommand,
   connection: ServerConnection,
 ): void {
-  const requestId = String(command['requestId']);
-  const action = String(command['action']);
+  const { requestId, action } = command;
   log(`command from server: ${action} (requestId ${requestId})`);
 
   const data = command['data'];
-  const filename =
-    typeof data === 'object' && data !== null && !Array.isArray(data) &&
-    typeof (data as Record<string, unknown>)['filename'] === 'string'
-      ? (data as Record<string, string>)['filename']
-      : undefined;
+  const rawFilename = isRecord(data) ? data['filename'] : undefined;
+  const filename = typeof rawFilename === 'string' ? rawFilename : undefined;
 
   const now = Date.now();
   pruneInFlight(now);
@@ -123,8 +128,7 @@ export function processMessage(
   const parsed = parseHostMessage(message);
   if (!parsed.ok && parsed.action !== undefined) {
     log(parsed.error);
-    const screenshot = parsed.action === 'saveScreenshot' || parsed.action === 'screenshotTaken';
-    replyToExtension(message, { success: false, error: screenshot ? 'no image data' : parsed.error });
+    replyToExtension(message, { success: false, error: SCREENSHOT_ACTIONS.has(parsed.action) ? 'no image data' : parsed.error });
     return;
   }
   const local = parsed.ok ? parsed.message : undefined;
@@ -167,7 +171,7 @@ export function processMessage(
 
   // Screenshots the Extension took on its own (popup / context menu): these
   // are not MCP tool calls, so they are only saved locally.
-  if (local?.action === 'saveScreenshot' || local?.action === 'screenshotTaken') {
+  if (isScreenshotMessage(local)) {
     const imageData = typeof local.data === 'string' ? local.data : local.data.imageData;
     const filename = local.filename;
     try {

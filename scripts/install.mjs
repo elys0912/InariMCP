@@ -11,16 +11,24 @@
 import {
   CLAUDE_NAME, MIN_NODE_MAJOR, UsageError, buildManifest, buildWrapper, claudeAddArgs,
   claudeConfigPath, claudeEntryState, claudeRemoveArgs, dataPaths, detectFirefox, findClaudeEntries,
-  formatCommand, httpEndpoint, isAscii, isWsl, manifestState, nmManifestTargets, nodeMajor, nodeVersionManager,
+  formatCommand, httpEndpoint, isAscii, isWsl, lookup, manifestState, nmManifestTargets, nodeMajor, nodeVersionManager,
   parseInstallArgs, parseRegDefaultValue, pathApi, repoPaths, samePath, serializeJson,
 } from './lib/core.mjs';
 import {
-  confirm, defaultDeps, exists, exitOnBrokenPipe, findClaude, isMain, makeReporter, npmInvocation, readTextOrNull,
-  regQueryDefault, regSetDefault, runProgram, which, writeFileAtomic,
+  CMD_TIMEOUT_MS, NPM_TIMEOUT_MS, PROGRAM_TIMEOUT_MS, confirm, defaultDeps, exists, exitOnBrokenPipe, findClaude,
+  isMain, makeReporter, npmInvocation, readTextOrNull, regQueryDefault, regSetDefault, runProgram, which,
+  writeFileAtomic,
 } from './lib/system.mjs';
 import { installUsage, manualForPlatform, manualMarkdown } from './lib/texts.mjs';
 
 class Fatal extends Error {}
+
+/** claudeEntryState() → how a found registration is described. */
+const ENTRY_STATE_TEXT = {
+  same: 'matches this installation',
+  'stale-node': 'this repository, but another node (bare "node" depends on PATH)',
+  different: 'points elsewhere',
+};
 
 /**
  * @param {string[]} argv
@@ -78,7 +86,7 @@ async function install(argv, deps, r) {
   let version = deps.nodeVersion;
   if (opts.node) {
     if (!fsx(nodePath)) throw new Fatal(`--node: ${nodePath} does not exist`);
-    const v = deps.run(nodePath, ['--version'], { timeoutMs: 20_000 });
+    const v = deps.run(nodePath, ['--version'], { timeoutMs: CMD_TIMEOUT_MS });
     version = v.status === 0 ? String(v.stdout).trim() : '';
   }
   const major = nodeMajor(version);
@@ -123,7 +131,7 @@ async function install(argv, deps, r) {
         r.plan(`run ${formatCommand(npm.file, full, platform)}`);
         continue;
       }
-      const res = runProgram(deps, npm.file, full, { cwd: repo.repoRoot, inherit: true, timeoutMs: 1_800_000 });
+      const res = runProgram(deps, npm.file, full, { cwd: repo.repoRoot, inherit: true, timeoutMs: NPM_TIMEOUT_MS });
       if (res.status !== 0) throw new Fatal(`npm ${args.join(' ')} failed (exit code ${res.status ?? res.error?.message})`);
     }
   }
@@ -328,9 +336,7 @@ async function claudeStep(deps, r, opts, { nodePath, serverEntry, repo, home, en
   const describe = (e) => formatCommand(String(e.entry.command ?? ''), (Array.isArray(e.entry.args) ? e.entry.args : []).map(String), platform);
   for (const e of found) {
     const st = claudeEntryState(e.entry, { nodePath, serverEntry, platform });
-    const text = st === 'same' ? 'matches this installation'
-      : st === 'stale-node' ? 'this repository, but another node (bare "node" depends on PATH)'
-        : 'points elsewhere';
+    const text = lookup(ENTRY_STATE_TEXT, st, 'registration state');
     r.info(`registered (scope ${e.scope}): ${describe(e)} — ${text}`);
   }
   if (otherLocal.length > 0) {
@@ -371,7 +377,7 @@ async function claudeStep(deps, r, opts, { nodePath, serverEntry, repo, home, en
       r.plan(`run ${formatCommand(claude, args, platform)} (in ${repo.repoRoot})`);
       continue;
     }
-    const res = runProgram(deps, claude, args, { cwd: repo.repoRoot, inherit: true, timeoutMs: 120_000 });
+    const res = runProgram(deps, claude, args, { cwd: repo.repoRoot, inherit: true, timeoutMs: PROGRAM_TIMEOUT_MS });
     if (res.status !== 0) {
       r.warn(`claude ${args.slice(0, 2).join(' ')} failed (exit code ${res.status ?? res.error?.message}). Register by hand:`);
       r.info(`  ${manual}`);

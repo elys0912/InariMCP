@@ -1,5 +1,8 @@
 export const ENV_PREFIX = 'FOX_' as const;
 
+/** Highest TCP port number (ports are 1..MAX_PORT). */
+export const MAX_PORT = 65_535;
+
 export const ENV = {
   FOX_PORT: 'FOX_PORT',
   FOX_HOST: 'FOX_HOST',
@@ -10,6 +13,8 @@ export const ENV = {
   FOX_HEADLESS_STARTUP_TIMEOUT: 'FOX_HEADLESS_STARTUP_TIMEOUT',
   FOX_EXECUTABLE: 'FOX_EXECUTABLE',
   FOX_SCREENSHOTS_DIR: 'FOX_SCREENSHOTS_DIR',
+  /** Days to keep screenshots the Native Host saved (Native Host screenshot-store.ts). */
+  FOX_SCREENSHOT_RETENTION_DAYS: 'FOX_SCREENSHOT_RETENTION_DAYS',
   FOX_DEBUG: 'FOX_DEBUG',
   FOX_CONTAINER: 'FOX_CONTAINER',
   FOX_READ_ONLY: 'FOX_READ_ONLY',

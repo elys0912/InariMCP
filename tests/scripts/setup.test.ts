@@ -13,9 +13,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as serverAuth from '@kitsune-mcp/shared/node';
+import { MAX_PORT as SHARED_MAX_PORT } from '@kitsune-mcp/shared';
 import {
   AUTH_HEADER, CLAUDE_NAME, HOST_NAME, UsageError, WIN_REG_KEY, buildManifest, buildPosixWrapper,
-  buildWindowsWrapper, buildWrapper, claudeConfigPath, claudeEntryState, classifyProcesses,
+  buildWindowsWrapper, buildWrapper, claudeConfigPath, httpEndpoint, isLoopbackHost, lookup, MAX_PORT, claudeEntryState, classifyProcesses,
   commandInvocation, computeMac, dataPaths, findClaudeEntries, formatCommand, manifestState, nmManifestTargets,
   nodeVersionManager, parseArgs, parseInstallArgs, parsePsOutput, parseRegDefaultValue,
   parseTabOutput, parseUninstallArgs, serializeJson, shellQuote, signPost,
@@ -42,6 +43,15 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 // Command line
 // ---------------------------------------------------------------------------
+
+describe('lookup (R2-A SC-C4)', () => {
+  it('returns the listed text and throws for an unlisted key', () => {
+    const table = { same: 'a', different: 'b' };
+    expect(lookup(table, 'same', 'state')).toBe('a');
+    expect(() => lookup(table, 'other', 'state')).toThrow('unknown state: other');
+    expect(() => lookup(table, 'toString', 'state')).toThrow('unknown state: toString');
+  });
+});
 
 describe('parseArgs', () => {
   const spec = {
@@ -1253,6 +1263,21 @@ describe('daemon authentication copy', () => {
     expect(s.headers[AUTH_HEADER.signature]).toBe(serverAuth.computeMac(
       token, serverAuth.MAC_LABEL.httpRequest, 'POST', '/daemon/shutdown', '1000', nonce, serverAuth.sha256Hex(body),
     ));
+  });
+
+  it('isLoopbackHost and MAX_PORT agree with @kitsune-mcp/shared (R2-A V-6, S12)', () => {
+    const hosts = [
+      'localhost', 'LOCALHOST', ' localhost ', '127.0.0.1', '127.1.2.3', '[::1]', '::1', '::ffff:127.0.0.1',
+      '[::FFFF:127.0.0.1]', ' 127.0.0.1	', '0.0.0.0', '', '::', '128.0.0.1', '127.0.0', '10.0.0.1',
+      'example.test', 'localhost.example.test', '[::2]', '127.0.0.1.example.test',
+    ];
+    for (const host of hosts) {
+      expect(isLoopbackHost(host), host).toBe(serverAuth.isLoopbackHost(host));
+    }
+    expect(MAX_PORT).toBe(SHARED_MAX_PORT);
+    expect(httpEndpoint({ FOX_HOST: '[::ffff:127.0.0.1]', FOX_HTTP_PORT: String(MAX_PORT) }))
+      .toEqual({ host: '::ffff:127.0.0.1', port: MAX_PORT });
+    expect(httpEndpoint({ FOX_HTTP_PORT: String(MAX_PORT + 1) }).port).toBe(8765);
   });
   // TODO(test): stopDaemonGracefully outcomes (stopped / refused / unanswered / still-running) and the uninstall daemon branch
 });

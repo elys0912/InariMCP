@@ -15,15 +15,29 @@
 import {
   CLAUDE_NAME, UsageError, claudeConfigPath, claudeRemoveArgs, classifyProcesses, dataPaths,
   findClaudeEntries, formatCommand, httpEndpoint, nmManifestTargets, parseRegDefaultValue,
-  parseUninstallArgs, pathApi, repoPaths, samePath,
+  lookup, parseUninstallArgs, pathApi, repoPaths, samePath,
 } from './lib/core.mjs';
 import {
-  confirm, defaultDeps, exists, exitOnBrokenPipe, findClaude, isMain, listNodeProcesses, makeReporter, probeDaemon,
-  readTextOrNull, regDeleteKey, regQueryDefault, removeTreeSafe, runProgram, stopDaemonGracefully, stopProcess,
+  PROGRAM_TIMEOUT_MS, confirm, defaultDeps, exists, exitOnBrokenPipe, findClaude, isMain, listNodeProcesses,
+  makeReporter, probeDaemon, readTextOrNull, regDeleteKey, regQueryDefault, removeTreeSafe, runProgram, stopDaemonGracefully, stopProcess,
 } from './lib/system.mjs';
 import { manualForPlatform, manualMarkdown, uninstallUsage } from './lib/texts.mjs';
 
 class Fatal extends Error {}
+
+/** stopDaemonGracefully() outcomes other than 'stopped' → what is reported before signalling. */
+const SHUTDOWN_OUTCOME_TEXT = {
+  refused: 'was refused (older daemon?)',
+  unanswered: 'got no answer',
+  'still-running': 'did not stop it in time',
+};
+
+/** stopProcess() results other than 'failed' → how the stop is reported. */
+const STOP_RESULT_TEXT = {
+  stopped: 'stopped',
+  killed: 'killed after the grace period',
+  gone: 'already gone',
+};
 
 export async function runUninstall(argv, overrides = {}) {
   const deps = { ...defaultDeps(), ...overrides };
@@ -200,7 +214,7 @@ async function uninstall(argv, deps, r) {
             }
             r.info(`daemon answered the stop request but PID ${pid} is still alive — sending a signal`);
           } else {
-            r.info(`POST /daemon/shutdown ${outcome === 'refused' ? 'was refused (older daemon?)' : outcome === 'unanswered' ? 'got no answer' : 'did not stop it in time'} — sending a signal`);
+            r.info(`POST /daemon/shutdown ${lookup(SHUTDOWN_OUTCOME_TEXT, outcome, 'shutdown outcome')} — sending a signal`);
           }
         } else if (kind === 'daemon' && daemonStopped && !deps.isAlive(pid)) {
           r.ok(`daemon PID ${pid}: already gone`);
@@ -211,7 +225,7 @@ async function uninstall(argv, deps, r) {
           r.warn(`could not stop ${kind} PID ${pid}`);
           problems++;
         } else {
-          r.ok(`${kind} PID ${pid}: ${result === 'killed' ? 'killed after the grace period' : result === 'gone' ? 'already gone' : 'stopped'}`);
+          r.ok(`${kind} PID ${pid}: ${lookup(STOP_RESULT_TEXT, result, 'stop result')}`);
         }
       }
       if (!dry && daemon.kind === 'kitsune') {
@@ -361,7 +375,7 @@ async function claudeStep(deps, r, opts, { repo, home, env, platform }) {
       r.plan(`run ${formatCommand(claude, args, platform)} (in ${repo.repoRoot})`);
       continue;
     }
-    const res = runProgram(deps, claude, args, { cwd: repo.repoRoot, inherit: true, timeoutMs: 120_000 });
+    const res = runProgram(deps, claude, args, { cwd: repo.repoRoot, inherit: true, timeoutMs: PROGRAM_TIMEOUT_MS });
     if (res.status === 0) r.ok(`removed '${CLAUDE_NAME}' (scope ${s})`);
     else {
       r.warn(`claude mcp remove --scope ${s} failed (exit code ${res.status ?? res.error?.message})`);

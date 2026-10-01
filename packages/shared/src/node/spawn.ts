@@ -8,6 +8,7 @@ import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { rotateIfLarge } from './log.js';
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from './paths.js';
 
 export interface DetachedDaemonOptions {
   /** mcp-server's dist/index.js. */
@@ -31,9 +32,9 @@ export interface DetachedDaemonOptions {
 export function spawnDetachedDaemon(options: DetachedDaemonOptions): number | undefined {
   let logFd: number | 'ignore' = 'ignore';
   try {
-    fs.mkdirSync(path.dirname(options.logPath), { recursive: true, mode: 0o700 });
+    fs.mkdirSync(path.dirname(options.logPath), { recursive: true, mode: PRIVATE_DIR_MODE });
     rotateIfLarge(options.logPath, { copyTruncate: true });
-    logFd = fs.openSync(options.logPath, 'a', 0o600);
+    logFd = fs.openSync(options.logPath, 'a', PRIVATE_FILE_MODE);
   } catch {
     // Logging is best-effort
   }

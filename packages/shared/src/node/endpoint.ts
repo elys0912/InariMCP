@@ -11,7 +11,7 @@
  * default (reported through `onInvalid` when given).
  */
 
-import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '../constants.js';
+import { ENV, ENV_DEFAULTS, LEGACY_ENV, MAX_PORT } from '../constants.js';
 
 type Env = Record<string, string | undefined>;
 
@@ -20,7 +20,7 @@ export type InvalidPortHandler = (name: string, raw: string, fallback: number) =
 
 function portOf(raw: string): number | undefined {
   const n = Number(raw);
-  return Number.isInteger(n) && n > 0 && n < 65536 ? n : undefined;
+  return Number.isInteger(n) && n > 0 && n <= MAX_PORT ? n : undefined;
 }
 
 export function parsePort(raw: string | undefined, fallback: number): number {

@@ -62,12 +62,16 @@ export const AUTH_HEADER = {
 /** Accepted clock difference for signed HTTP requests (same machine). */
 export const HTTP_SIGNATURE_WINDOW_MS = 60_000;
 
-const NONCE_RE = /^[0-9a-f]{32}$/;
-const MAC_RE = /^[0-9a-f]{64}$/;
+/** Random bytes of a nonce (128 bits). */
+const NONCE_BYTES = 16;
+/** Bytes of an HMAC-SHA256. */
+const MAC_BYTES = 32;
+const NONCE_RE = new RegExp(`^[0-9a-f]{${NONCE_BYTES * 2}}$`);
+const MAC_RE = new RegExp(`^[0-9a-f]{${MAC_BYTES * 2}}$`);
 
 /** 128-bit random nonce, lowercase hex. */
 export function newNonce(): string {
-  return crypto.randomBytes(16).toString('hex');
+  return crypto.randomBytes(NONCE_BYTES).toString('hex');
 }
 
 export function isNonce(value: unknown): value is string {

@@ -132,7 +132,7 @@ describe('startOutsideJob', () => {
       named('b', second),
       named('c', async () => { throw new Error('unused'); }),
     ]);
-    expect(r).toEqual({ via: 'b' });
+    expect(r).toEqual({ ok: true, via: 'b' });
     expect(second).toHaveBeenCalledTimes(1);
   });
 
@@ -141,7 +141,7 @@ describe('startOutsideJob', () => {
       named('a', async () => { throw new Error('one'); }),
       named('b', async () => { throw new Error('two'); }),
     ]);
-    expect(r).toEqual({ via: 'none', errors: ['a: one', 'b: two'] });
+    expect(r).toEqual({ ok: false, errors: ['a: one', 'b: two'] });
   });
 });
 

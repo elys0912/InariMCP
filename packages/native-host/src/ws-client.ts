@@ -31,7 +31,7 @@
  */
 
 import WebSocket from 'ws';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord } from '@kitsune-mcp/shared';
 import type { ServerLauncher } from './server-launcher.js';
 import { log } from './logger.js';
 import { AUTH_PROTOCOL, MAC_LABEL, computeMac, isNonce, macMatches, newNonce } from '@kitsune-mcp/shared/node';
@@ -41,7 +41,14 @@ const AUTH_TIMEOUT_MS = 10_000;
 const SERVER_SILENCE_MS = 75_000;
 const POLICY_VIOLATION = 1008;
 
-export type CommandHandler = (command: Record<string, unknown>) => void;
+/** A server frame with a string `action` and `requestId`; other fields as sent. */
+export type ServerCommand = Record<string, unknown> & { action: string; requestId: string };
+
+export type CommandHandler = (command: ServerCommand) => void;
+
+function isServerCommand(frame: Record<string, unknown>): frame is ServerCommand {
+  return typeof frame['action'] === 'string' && typeof frame['requestId'] === 'string';
+}
 
 /** What ServerConnection needs from ServerLauncher. */
 export type ConnectionTarget = Pick<ServerLauncher, 'host' | 'wsPort' | 'getApiToken' | 'reloadApiToken'>;
@@ -185,11 +192,11 @@ export class ServerConnection {
         log('invalid JSON from MCP server — ignored');
         return;
       }
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      if (!isRecord(parsed)) {
         log('non-object frame from MCP server — ignored');
         return;
       }
-      const frame = parsed as Record<string, unknown>;
+      const frame = parsed;
 
       if (handshake.step === 'await-challenge') {
         const serverNonce = frame['nonce'];
@@ -233,7 +240,7 @@ export class ServerConnection {
         return;
       }
 
-      if (typeof frame['action'] === 'string' && typeof frame['requestId'] === 'string') {
+      if (isServerCommand(frame)) {
         this.onCommand(frame);
       } else {
         log('unrecognised frame from MCP server — ignored');

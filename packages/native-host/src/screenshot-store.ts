@@ -27,16 +27,24 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ENV, LEGACY_ENV, isRecord } from '@kitsune-mcp/shared';
+import { ENV, LEGACY_ENV, isRecord, shortId } from '@kitsune-mcp/shared';
 import { defaultScreenshotsDir } from '@kitsune-mcp/shared/node';
 
-const DATA_URL_RE = /^data:(image\/(?:png|jpeg|webp));base64,/i;
+/** Image types accepted in a screenshot data URL. */
+const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+type ImageMime = (typeof IMAGE_MIMES)[number];
 
-const EXT_BY_MIME: Record<string, string> = {
+const EXT_BY_MIME: Record<ImageMime, string> = {
   'image/png': '.png',
   'image/jpeg': '.jpg',
   'image/webp': '.webp',
 };
+
+const DATA_URL_RE = new RegExp(`^data:(${IMAGE_MIMES.join('|')});base64,`, 'i');
+
+function isImageMime(value: string): value is ImageMime {
+  return (IMAGE_MIMES as readonly string[]).includes(value);
+}
 
 export function getScreenshotsDir(): string {
   const envDir =
@@ -49,10 +57,12 @@ export function getScreenshotsDir(): string {
 /** Names produced by uniqueStem() + saveScreenshot()'s suffix. */
 const GENERATED_NAME_RE = /^screenshot_\d{13}_[a-z0-9]{1,6}(?:_tab\d+|_\d+)?\.(?:png|jpg|webp)$/;
 const DEFAULT_RETENTION_DAYS = 30;
-const RETENTION_ENV = 'FOX_SCREENSHOT_RETENTION_DAYS';
+const MS_PER_DAY = 86_400_000;
+/** Longest stem kept from a caller-chosen filename. */
+const MAX_STEM_LENGTH = 120;
 
 export function retentionDays(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env[RETENTION_ENV]?.trim();
+  const raw = env[ENV.FOX_SCREENSHOT_RETENTION_DAYS]?.trim();
   if (raw === undefined || raw === '') return DEFAULT_RETENTION_DAYS;
   const n = Number(raw);
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_RETENTION_DAYS;
@@ -71,7 +81,7 @@ export function pruneScreenshots(days: number = retentionDays(), now: number = D
       if (!GENERATED_NAME_RE.test(name)) continue;
       const filePath = path.join(dir, name);
       try {
-        if (now - fs.statSync(filePath).mtimeMs > days * 86_400_000) {
+        if (now - fs.statSync(filePath).mtimeMs > days * MS_PER_DAY) {
           fs.unlinkSync(filePath);
           removed++;
         }
@@ -96,7 +106,7 @@ export function screenshotsDirNeedsAclCheck(platform: string = process.platform)
 }
 
 function uniqueStem(): string {
-  return `screenshot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return `screenshot_${Date.now()}_${shortId()}`;
 }
 
 /**
@@ -109,7 +119,7 @@ function sanitizeFilename(requested: string | undefined, ext: string, suffix: st
     const base = path.basename(requested.replace(/\\/g, '/'));
     const withoutExt = base.replace(/\.(png|jpe?g|webp)$/i, '');
     const safe = withoutExt.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '');
-    if (safe) stem = safe.slice(0, 120);
+    if (safe) stem = safe.slice(0, MAX_STEM_LENGTH);
   }
   return `${stem}${suffix}${ext}`;
 }
@@ -143,8 +153,8 @@ export function saveScreenshotFile(
     const head = imageData.split(',', 1)[0]!.slice(0, 60);
     throw new Error(`unsupported screenshot data URL (${head}); expected PNG, JPEG or WebP as base64`);
   }
-  const mime = match?.[1]?.toLowerCase() ?? 'image/png';
-  const ext = EXT_BY_MIME[mime] ?? '.png';
+  const mime = match?.[1]?.toLowerCase();
+  const ext = EXT_BY_MIME[mime !== undefined && isImageMime(mime) ? mime : 'image/png'];
   const base64 = match ? imageData.slice(match[0].length) : imageData;
 
   const bytes = Buffer.from(base64, 'base64');
@@ -250,7 +260,8 @@ export function externalizeScreenshots(
   }
 
   if (warnings.length > 0) {
-    const existing = Array.isArray(data['warnings']) ? (data['warnings'] as unknown[]) : [];
+    const previous = data['warnings'];
+    const existing: unknown[] = Array.isArray(previous) ? previous : [];
     data['warnings'] = [...existing, ...warnings];
   }
 }
