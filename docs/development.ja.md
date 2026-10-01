@@ -16,7 +16,7 @@
 ```bash
 npm ci
 npm run build           # 全workspace（「ビルド」を参照）
-npm run typecheck       # typecheckスクリプトを持つworkspace（現在は拡張機能だけ）
+npm run typecheck       # typecheckスクリプトを持つworkspace（現在は拡張機能だけ）のあとtypecheck:tests
 npm test                # Vitest。e2e以外の全プロジェクト
 npm run lint:ext        # packages/extensionのweb-ext lint
 npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefoxに読み込まれるか
@@ -51,7 +51,7 @@ npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefo
 - 最初に`dist/`を消すので、古いファイルがパッケージに入ることはない。
 - ターゲットは`firefox<strict_min_versionのメジャー番号>`。出力は縮小しない（AMOの審査で読めるように）。
 - `npm run build:dev -w @kitsune-mcp/extension`はリンク付きのソースマップ（`dist/**/*.js.map`）も書く（`web-ext-config.mjs`でパッケージから除く）。
-- esbuildは型検査をしない。型検査は`npm run typecheck`（`tsc --noEmit`。拡張機能の`build`も最初に実行する）が行う。ソースはES module（`moduleResolution: bundler`、`isolatedModules`、`verbatimModuleSyntax`、`noUnusedLocals`、`noUnusedParameters`、`@types/node`なし）。
+- esbuildは型検査をしない。型検査は拡張機能の`typecheck`スクリプト（`tsc -p tsconfig.json --noEmit`。拡張機能の`build`とルートの`npm run typecheck`が実行する）が行う。ソースはES module（`moduleResolution: bundler`、`isolatedModules`、`verbatimModuleSyntax`、`noUnusedLocals`、`noUnusedParameters`、`@types/node`なし）。
 - バンドルにzodか`packages/shared/src/node`が入る、バンドルが`"use strict";`で始まらない、`manifest.json`が読み込むファイルがない、のどれかでビルドは失敗する。
 - スクリプトを`packages/extension`の外に置いているのは、web-extが`web-ext-config.mjs`で除外していないファイルをすべてパッケージに入れるため。
 
@@ -85,6 +85,8 @@ npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefo
 ## テスト
 
 `vitest.config.mts`のプロジェクトは`shared`、`mcp-server`、`native-host`（`packages/<pkg>/tests/`）、`contract`（`tests/contract/`）、`scripts`（`tests/scripts/`）、`e2e`（`tests/e2e/`。`npm run test:e2e`のときだけ）。拡張機能はプロジェクトにしていない。`background.ts`と`content.ts`はトップレベルでブラウザのリスナーを登録するので、契約テストはそのソースを読むか、副作用のないモジュール（`action-map.ts`、`approval.ts`、`url-rule.ts`）をimportする。テストファイルはどれも一時的なホームディレクトリで動く。
+
+`npm run typecheck:tests`（`npm run typecheck`の後半）は、`tsconfig.test.json`でテストを型検査する。対象は`packages/*/tests`、`tests/contract`、`tests/e2e`、`tests/scripts`、`tests/setup`。`bundler`の解決方法と、`vitest.config.mts`と同じ`@kitsune-mcp/shared`のパスを使うので、ビルドは要らない。
 
 ゴールデンファイル（`tests/golden/`）は、うっかり変えてはならない動作を記録している。ツール呼び出しごとのBrowserCommandと安全ガードの判定（`tests/contract/tool-golden.test.ts`）と、セッションの`tools/list`（`tests/contract/tools-list.test.ts`）である。意図して変更したときは`UPDATE_GOLDEN=1 npx vitest run <test file>`で作り直し、差分を確認する。`node scripts/tools-list-size.mjs`は両方のツール一覧のサイズを表示する。
 
