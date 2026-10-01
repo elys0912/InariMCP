@@ -241,3 +241,45 @@ describe('warnings and timeouts', () => {
     }
   });
 });
+
+describe('type without selector: password guard follows the focus (WP30)', () => {
+  const BOX = 'position:absolute;left:0;top:0;width:300px;height:60px;border:0;margin:0';
+  const FIELD = (type: string): string => `<input type=${type} style="${BOX}">`;
+  const frameDoc = (type: string): string =>
+    `<!doctype html><body style="margin:0">${FIELD(type)}</body>`;
+
+  async function typeAfterClick(body: string): Promise<Result> {
+    await load(body);
+    const click = await browser.execute('click', undefined, { x: 20, y: 20 });
+    expect(click['success']).toBe(true);
+    return browser.execute('type', undefined, { text: 'x', allowPassword: false });
+  }
+
+  real('refuses a focused password field inside a same-origin iframe', async () => {
+    const r = await typeAfterClick(`<iframe srcdoc="${frameDoc('password').replace(/"/g, '&quot;')}" style="${BOX}"></iframe>`);
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toMatch(/password field/);
+  });
+
+  real('refuses a focused password field inside a cross-origin (data:) iframe', async () => {
+    const src = `data:text/html,${encodeURIComponent(frameDoc('password'))}`;
+    const r = await typeAfterClick(`<iframe src="${src}" style="${BOX}"></iframe>`);
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toMatch(/password field/);
+  });
+
+  real('refuses a focused password field inside an open shadow root', async () => {
+    const r = await typeAfterClick(
+      `<div id="h"></div><script>h.attachShadow({ mode: 'open' }).innerHTML = '${FIELD('password')}';</script>`,
+    );
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toMatch(/password field/);
+  });
+
+  real('still types into a text field inside an iframe', async () => {
+    const r = await typeAfterClick(`<iframe srcdoc="${frameDoc('text').replace(/"/g, '&quot;')}" style="${BOX}"></iframe>`);
+    expect(r['success']).toBe(true);
+  });
+  // TODO(test): focus inside a closed shadow root is not seen (documented
+  //   limitation of headless/focus.ts).
+});

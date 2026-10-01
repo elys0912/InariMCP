@@ -7,7 +7,9 @@
  * fox_type / fox_set_value command (overriding any caller argument), and
  * each backend refuses a password field unless it is `true`:
  *   - Extension: content.ts assertNotPasswordField() reads options.allowPassword
- *   - headless:  backend.ts checks the element with isPasswordElement()
+ *   - headless:  headless/actions.ts checks the element with isPasswordElement()
+ *                (the focused one through iframes / shadow roots:
+ *                headless/focus.ts focusedIsPassword)
  * The selector check below only refuses early what is visibly a password
  * field; the backends check the element actually targeted.
  */
@@ -38,6 +40,18 @@ export function isPasswordElement(el: Element | null): boolean {
     autocomplete === 'current-password' ||
     autocomplete === 'new-password'
   );
+}
+
+/**
+ * The focused element of the current document, followed into open shadow
+ * roots (document.activeElement is only the shadow host). An <iframe> is
+ * returned as is: its document is another frame (headless/focus.ts follows
+ * it). Self-contained, so Playwright can serialise it into the page.
+ */
+export function deepActiveElement(): Element | null {
+  let el: Element | null = document.activeElement;
+  while (el && el.shadowRoot && el.shadowRoot.activeElement) el = el.shadowRoot.activeElement;
+  return el;
 }
 
 /** Early refusal when the locator itself names a password field. */

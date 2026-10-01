@@ -178,11 +178,10 @@ describe('headless _guardedFill (Playwright)', () => {
     expect(String(r['error'])).toContain(PASSWORD_REFUSAL);
   });
 
-  // Known hole, not a regression: without a selector the guard looks at the
-  // top document's activeElement, which is the <iframe> or the shadow host —
-  // never the password field inside it. The Extension path has the same
-  // limit. Fixed here so a change to either is deliberate.
-  real('does not see a focused password field inside an iframe', async () => {
+  // Without a selector the guard follows the focus from the top document's
+  // activeElement (the <iframe> / shadow host) to the field inside it
+  // (headless/focus.ts, WP30). The Extension path still has the old limit.
+  real('refuses a focused password field inside an iframe', async () => {
     await load('<iframe id="f"></iframe>');
     await script(
       'const d = document.getElementById("f").contentDocument;' +
@@ -191,12 +190,13 @@ describe('headless _guardedFill (Playwright)', () => {
     );
     expect(await script('document.activeElement.tagName')).toBe('IFRAME');
     const r: Result = await browser.execute('type', undefined, { text: 'secret' });
-    expect(r['success']).toBe(true);
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain(PASSWORD_REFUSAL);
     expect(await script('document.getElementById("f").contentDocument.getElementById("pw").value'))
-      .toBe('secret');
+      .toBe('');
   });
 
-  real('does not see a focused password field inside a shadow root', async () => {
+  real('refuses a focused password field inside an open shadow root', async () => {
     await load('<div id="host"></div>');
     await script(
       'const root = document.getElementById("host").attachShadow({ mode: "open" });' +
@@ -205,8 +205,9 @@ describe('headless _guardedFill (Playwright)', () => {
     );
     expect(await script('document.activeElement.id')).toBe('host');
     const r: Result = await browser.execute('type', undefined, { text: 'secret' });
-    expect(r['success']).toBe(true);
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain(PASSWORD_REFUSAL);
     expect(await script('document.getElementById("host").shadowRoot.getElementById("pw").value'))
-      .toBe('secret');
+      .toBe('');
   });
 });

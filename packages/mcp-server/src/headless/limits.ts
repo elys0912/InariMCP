@@ -57,3 +57,5 @@ export const DIALOG_MESSAGE_PREVIEW_CHARS = 80;
 export const SCROLL_DEFAULT_AMOUNT_PX = 300;
 /** Viewport of the headless browser context. */
 export const VIEWPORT = { width: 1280, height: 800 } as const;
+/** fox_type without selector: iframes followed to find the focused element (deeper: refused). */
+export const FOCUS_MAX_FRAME_DEPTH = 8;
