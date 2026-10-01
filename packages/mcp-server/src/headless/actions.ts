@@ -10,6 +10,25 @@ import type { BrowserAction } from '@kitsune-mcp/shared';
 import { argTimeout, filterAriaSnapshot } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
 import { getScreenshotsDir } from '../utils/screenshot.js';
+import {
+  AVAILABLE_OPTIONS_MAX,
+  ELEMENT_TEXT_MAX_CHARS,
+  ELEMENT_TIMEOUT_MS,
+  GET_ELEMENTS_MAX,
+  GET_TEXT_DEFAULT_MAX_LENGTH,
+  HIGHLIGHT_MS,
+  HISTORY_TIMEOUT_MS,
+  NAVIGATE_TIMEOUT_MS,
+  SCROLL_DEFAULT_AMOUNT_PX,
+  SELECT_OPTION_TIMEOUT_MS,
+  SNAPSHOT_MAX_CHARS,
+  WAIT_AND_ACT_DEFAULT_MS,
+  WAIT_AND_ACT_POLL_MS,
+  WAIT_FOR_ELEMENT_DEFAULT_MS,
+  WAIT_FOR_NAVIGATION_DEFAULT_MS,
+  WAIT_FOR_NETWORK_IDLE_DEFAULT_MS,
+  WAIT_FOR_URL_DEFAULT_MS,
+} from './limits.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -116,7 +135,7 @@ const navigate: ActionHandler = async ({ page, args, host }) => {
     target = await host.context.newPage();
     host.adoptTab(target);
   }
-  await target.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await target.goto(url, { waitUntil: 'domcontentloaded', timeout: NAVIGATE_TIMEOUT_MS });
   return {
     success: true,
     url: target.url(),
@@ -149,16 +168,13 @@ const screenshot: ActionHandler = async ({ page, args }) => {
   };
 };
 
-/** fox_snapshot text is cut at this many characters. */
-const SNAPSHOT_MAX_CHARS = 50_000;
-
 // --- snapshot (accessibility tree as text; images are fox_screenshot's job) ---
 const snapshot: ActionHandler = async ({ page, args }) => {
   const sel = (args['selector'] as string) || 'body';
   const loc = page.locator(sel);
   const matches = await loc.count();
   if (matches === 0) return { success: false, error: `No element matches selector: ${sel}` };
-  const raw = await loc.first().ariaSnapshot({ timeout: 10_000 });
+  const raw = await loc.first().ariaSnapshot({ timeout: ELEMENT_TIMEOUT_MS });
   const text = filterAriaSnapshot(raw, {
     ...(typeof args['maxDepth'] === 'number' ? { maxDepth: args['maxDepth'] } : {}),
     ...(args['includeText'] === false ? { includeText: false } : {}),
@@ -182,7 +198,7 @@ const click: ActionHandler = async ({ page, args }) => {
   const x = args['x'] as number | undefined;
   const y = args['y'] as number | undefined;
   if (selector) {
-    await page.click(selector, { timeout: 10_000 });
+    await page.click(selector, { timeout: ELEMENT_TIMEOUT_MS });
   } else if (x !== undefined && y !== undefined) {
     await page.mouse.click(x, y);
   } else {
@@ -214,25 +230,25 @@ const scroll: ActionHandler = async ({ page, args }) => {
   // Same precedence as the extension: toElement, then direction (of selector or window).
   const toElement = args['toElement'] as string | undefined;
   if (toElement) {
-    const found = await page.evaluate((sel: string) => {
+    const found = await page.evaluate(({ sel, maxText }: { sel: string; maxText: number }) => {
       const el = document.querySelector(sel);
       if (!el) return null;
       el.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
       const r = el.getBoundingClientRect();
       return {
         tag: el.tagName.toLowerCase(),
-        text: (el.textContent ?? '').trim().slice(0, 100),
+        text: (el.textContent ?? '').trim().slice(0, maxText),
         box: { x: r.x, y: r.y, width: r.width, height: r.height },
         position: { x: window.scrollX, y: window.scrollY },
       };
-    }, toElement);
+    }, { sel: toElement, maxText: ELEMENT_TEXT_MAX_CHARS });
     if (!found) return { success: false, error: `No element matches toElement: ${toElement}` };
     return { success: true, scrolled: true, element: { tag: found.tag, text: found.text, box: found.box }, position: found.position, url: page.url() };
   }
 
   const direction = (args['direction'] as string | undefined) ?? 'down';
-  const rawAmount = Number(args['amount'] ?? 300);
-  const amount = Number.isFinite(rawAmount) ? Math.abs(rawAmount) : 300;
+  const rawAmount = Number(args['amount'] ?? SCROLL_DEFAULT_AMOUNT_PX);
+  const amount = Number.isFinite(rawAmount) ? Math.abs(rawAmount) : SCROLL_DEFAULT_AMOUNT_PX;
   const moved = await page.evaluate(
     ({ sel, dir, amt }: { sel: string | null; dir: string; amt: number }) => {
       const el = sel ? document.querySelector(sel) : null;
@@ -289,10 +305,11 @@ const highlight: ActionHandler = async ({ page, args }) => {
   const selector = (args['selector'] as string) ?? '';
   await page.$eval(
     selector,
-    (el: Element) => {
+    (el: Element, ms: number) => {
       (el as HTMLElement).style.outline = '3px solid red';
-      setTimeout(() => { (el as HTMLElement).style.outline = ''; }, 2000);
+      setTimeout(() => { (el as HTMLElement).style.outline = ''; }, ms);
     },
+    HIGHLIGHT_MS,
   );
   return { success: true };
 };
@@ -307,10 +324,10 @@ const getElements: ActionHandler = async ({ page, args }) => {
   const selector = (args['selector'] as string) ?? 'a, button, input, select, textarea';
   const elements = await page.$$(selector);
   const results: Record<string, unknown>[] = [];
-  for (const el of elements.slice(0, 50)) {
+  for (const el of elements.slice(0, GET_ELEMENTS_MAX)) {
     try {
       const tag = await el.evaluate((e: Element) => e.tagName.toLowerCase());
-      const text = ((await el.innerText()) ?? '').slice(0, 100);
+      const text = ((await el.innerText()) ?? '').slice(0, ELEMENT_TEXT_MAX_CHARS);
       const box = await el.boundingBox();
       results.push({ tag, text, box });
     } catch {
@@ -330,14 +347,14 @@ const executeScript: ActionHandler = async ({ page, args }) => {
 // --- wait_for_element ---
 const waitForElement: ActionHandler = async ({ page, args }) => {
   const selector = (args['selector'] as string) ?? '';
-  const timeout = argTimeout(args, 10_000);
+  const timeout = argTimeout(args, WAIT_FOR_ELEMENT_DEFAULT_MS);
   await page.waitForSelector(selector, { timeout });
   return { success: true };
 };
 
 // --- wait_for_network_idle ---
 const waitForNetworkIdle: ActionHandler = async ({ page, args }) => {
-  const timeout = argTimeout(args, 10_000);
+  const timeout = argTimeout(args, WAIT_FOR_NETWORK_IDLE_DEFAULT_MS);
   await page.waitForLoadState('networkidle', { timeout });
   return { success: true };
 };
@@ -435,7 +452,7 @@ const selectOption: ActionHandler = async ({ page, args }) => {
       ...(want.index !== undefined ? { index: want.index } : {}),
       ...(want.text !== undefined ? { text: want.text } : {}),
     },
-    { timeout: 5_000 },
+    { timeout: SELECT_OPTION_TIMEOUT_MS },
   );
   if (info.kind === 'not-select') {
     return { success: false, error: `Element is not a <select>: ${selector}` };
@@ -446,10 +463,10 @@ const selectOption: ActionHandler = async ({ page, args }) => {
     return {
       success: false,
       error: `No option matches ${what}`,
-      availableOptions: info.options.slice(0, 20),
+      availableOptions: info.options.slice(0, AVAILABLE_OPTIONS_MAX),
     };
   }
-  const chosen = await page.selectOption(selector, { index: info.idx }, { timeout: 5_000 });
+  const chosen = await page.selectOption(selector, { index: info.idx }, { timeout: SELECT_OPTION_TIMEOUT_MS });
   if (chosen.length === 0) {
     return { success: false, error: `Option was not selected: ${selector}` };
   }
@@ -459,13 +476,13 @@ const selectOption: ActionHandler = async ({ page, args }) => {
 
 // --- go_back ---
 const goBack: ActionHandler = async ({ page }) => {
-  await page.goBack({ waitUntil: 'domcontentloaded', timeout: 15_000 });
+  await page.goBack({ waitUntil: 'domcontentloaded', timeout: HISTORY_TIMEOUT_MS });
   return { success: true, url: page.url(), title: await page.title() };
 };
 
 // --- go_forward ---
 const goForward: ActionHandler = async ({ page }) => {
-  await page.goForward({ waitUntil: 'domcontentloaded', timeout: 15_000 });
+  await page.goForward({ waitUntil: 'domcontentloaded', timeout: HISTORY_TIMEOUT_MS });
   return { success: true, url: page.url(), title: await page.title() };
 };
 
@@ -488,8 +505,8 @@ const pressKey: ActionHandler = async ({ page, args }) => {
 // --- get_text ---
 const getText: ActionHandler = async ({ page, args }) => {
   const selector = (args['selector'] as string) || 'body';
-  const maxLength = Number(args['maxLength'] ?? 20_000);
-  const text = await page.innerText(selector, { timeout: 10_000 });
+  const maxLength = Number(args['maxLength'] ?? GET_TEXT_DEFAULT_MAX_LENGTH);
+  const text = await page.innerText(selector, { timeout: ELEMENT_TIMEOUT_MS });
   const truncated = text.length > maxLength;
   return {
     success: true,
@@ -551,8 +568,8 @@ const evalChain: ActionHandler = async ({ page, args }) => {
 const waitAndAct: ActionHandler = async ({ page, args }) => {
   const condition = (args['condition'] as string) ?? 'true';
   const actionScript = (args['actionScript'] as string) ?? '';
-  const pollMs = (args['pollIntervalMs'] as number) ?? 200;
-  const timeoutMs = argTimeout(args, 15_000);
+  const pollMs = (args['pollIntervalMs'] as number) ?? WAIT_AND_ACT_POLL_MS;
+  const timeoutMs = argTimeout(args, WAIT_AND_ACT_DEFAULT_MS);
   let elapsed = 0;
   while (elapsed < timeoutMs) {
     try {
@@ -657,7 +674,7 @@ const solveCaptcha: ActionHandler = async ({ page, args }) => {
 
 // --- wait_for_navigation ---
 const waitForNavigation: ActionHandler = async ({ page, args }) => {
-  const timeout = argTimeout(args, 30_000);
+  const timeout = argTimeout(args, WAIT_FOR_NAVIGATION_DEFAULT_MS);
   await page.waitForNavigation({ timeout });
   return { success: true, url: page.url(), title: await page.title() };
 };
@@ -670,7 +687,7 @@ const waitForUrl: ActionHandler = async ({ page, args }) => {
   if (!exact && !regex) {
     return { success: false, error: 'Must provide url or urlPattern' };
   }
-  const timeout = argTimeout(args, 15_000);
+  const timeout = argTimeout(args, WAIT_FOR_URL_DEFAULT_MS);
   // A plain string would be read as a glob ('?' and '*' in query
   // strings), so compare the exact URL with a predicate instead.
   await page.waitForURL(

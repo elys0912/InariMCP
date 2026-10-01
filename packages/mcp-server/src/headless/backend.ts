@@ -3,6 +3,13 @@ import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { headlessStartupTimeoutMs } from '../utils/headless-env.js';
 import { argTimeout, ignoredParamWarnings } from './helpers.js';
 import { headlessRoute, type TabHost } from './actions.js';
+import {
+  ARM_TTL_MS,
+  DIALOG_GRACE_MS,
+  DIALOG_MESSAGE_PREVIEW_CHARS,
+  HANDLE_DIALOG_DEFAULT_MS,
+  VIEWPORT,
+} from './limits.js';
 import { stderrLogger } from '@kitsune-mcp/shared/node';
 
 // ---------------------------------------------------------------------------
@@ -10,11 +17,6 @@ import { stderrLogger } from '@kitsune-mcp/shared/node';
 // ---------------------------------------------------------------------------
 
 const log = stderrLogger('Headless');
-
-/** Longest a dialog nobody asked for may stay open before it is dismissed (it blocks the page). */
-const DIALOG_GRACE_MS = 2_000;
-/** An armed fox_handle_dialog applies to the next dialog within this time only. */
-const ARM_TTL_MS = 30_000;
 
 interface DialogEvent {
   type: string;
@@ -89,7 +91,7 @@ export class HeadlessBrowser {
     });
 
     this._context = await this._browser.newContext({
-      viewport: { width: 1280, height: 800 },
+      viewport: { ...VIEWPORT },
     });
 
     this._page = await this._context.newPage();
@@ -227,7 +229,7 @@ export class HeadlessBrowser {
       result['dialogs'] = events;
       for (const ev of events.filter((e) => e.auto)) {
         warnings.push(
-          `dialog "${ev.message.slice(0, 80)}" was dismissed automatically; ` +
+          `dialog "${ev.message.slice(0, DIALOG_MESSAGE_PREVIEW_CHARS)}" was dismissed automatically; ` +
           'call fox_handle_dialog before the action that opens a dialog to accept it',
         );
       }
@@ -309,7 +311,7 @@ export class HeadlessBrowser {
     }
     const action = args['action'] === 'accept' ? 'accept' : 'dismiss';
     const promptText = args['promptText'] as string | undefined;
-    const timeout = argTimeout(args, 10_000);
+    const timeout = argTimeout(args, HANDLE_DIALOG_DEFAULT_MS);
 
     const settle = async (d: Dialog): Promise<Record<string, unknown>> => {
       const info = await this._settle(d, action, promptText);
