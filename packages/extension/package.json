@@ -18,5 +18,8 @@
     "build": "npm run typecheck && node ../../scripts/build-extension.mjs",
     "build:dev": "npm run typecheck && node ../../scripts/build-extension.mjs --dev",
     "clean": "rimraf --glob dist \"*.tsbuildinfo\""
+  },
+  "dependencies": {
+    "@kitsune-mcp/shared": "*"
   }
 }

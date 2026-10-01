@@ -24,8 +24,13 @@
       "types": "./dist/node/index.d.ts",
       "default": "./dist/node/index.js"
     },
+    "./action-names": {
+      "types": "./dist/action-names.d.ts",
+      "default": "./dist/action-names.js"
+    },
     "./package.json": "./package.json"
   },
+  "sideEffects": false,
   "scripts": {
     "build": "tsc -b",
     "clean": "rimraf --glob dist \"*.tsbuildinfo\""

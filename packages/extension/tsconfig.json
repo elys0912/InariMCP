@@ -17,7 +17,13 @@
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    "sourceMap": false
+    "sourceMap": false,
+    // The shared sources, as scripts/build-extension.mjs resolves them. Only
+    // the browser-safe entry points (the build refuses @kitsune-mcp/shared/node).
+    "paths": {
+      "@kitsune-mcp/shared": ["../shared/src/index.ts"],
+      "@kitsune-mcp/shared/action-names": ["../shared/src/action-names.ts"]
+    }
   },
   "include": ["src"]
 }
