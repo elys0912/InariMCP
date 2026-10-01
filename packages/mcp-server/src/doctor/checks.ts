@@ -17,9 +17,10 @@ import * as fs from 'node:fs';
 import type * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { ENV, isRecord, LEGACY_ENV } from '@kitsune-mcp/shared';
 
-import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, macMatches, newNonce, signRequest, verifyResponse } from '../transport/auth.js';
+import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, macMatches, newNonce, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
+import { apiTokenPath, dataDir as kitsuneDataDir, kitsuneHealth } from '@kitsune-mcp/shared/node';
 import { DAEMON_SETTING_KEYS, readApiTokenFile, resolveHost, resolveHttpPort } from '../utils/endpoint.js';
 import { MAX_LOG_BYTES } from '../utils/log-file.js';
 import { DEFAULT_CONFIG, SafetyConfigSchema, getAuditLogPath } from '../safety/config.js';
@@ -101,10 +102,6 @@ const RECONNECT_BACKOFF_MAX_S = 60;
 const NM_HOST_NAME = 'kitsune_mcp';
 const CLAUDE_SERVER_NAME = 'kitsune-mcp';
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
 function parseJson(raw: string | Buffer): unknown {
   try {
     return JSON.parse(raw.toString());
@@ -133,9 +130,7 @@ export async function probeDaemon(deps: DoctorDeps, token: string | undefined): 
   const reply = await deps.get('/health', { [AUTH_HEADER.nonce]: nonce }, HEALTH_TIMEOUT_MS);
   if (reply === undefined) return { kind: 'down' };
   const health = parseJson(reply.raw);
-  if (reply.status !== 200 || !isRecord(health) || health['status'] !== 'ok' || health['service'] !== 'kitsune-mcp') {
-    return { kind: 'foreign' };
-  }
+  if (kitsuneHealth(reply.status, health) === undefined || !isRecord(health)) return { kind: 'foreign' };
   if (health['protocol'] !== DAEMON_PROTOCOL_VERSION) return { kind: 'incompatible', health };
   if (token === undefined) return { kind: 'unverified', health };
   if (!macMatches(health['proof'], computeMac(token, MAC_LABEL.health, nonce))) return { kind: 'impostor', health };
@@ -218,8 +213,8 @@ export function readClaudeRegistrations(deps: DoctorDeps): DoctorContext['claude
 }
 
 export async function gatherContext(deps: DoctorDeps): Promise<DoctorContext> {
-  const dataDir = path.join(os.homedir(), '.kitsune-mcp');
-  const tokenPath = path.join(dataDir, 'api_token');
+  const dataDir = kitsuneDataDir();
+  const tokenPath = apiTokenPath();
   const token = readApiTokenFile(tokenPath);
   const port = resolveHttpPort();
   return {

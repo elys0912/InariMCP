@@ -12,7 +12,7 @@ import {
   newNonce,
   signRequest,
   verifyResponse,
-} from '../src/transport/auth.js';
+} from '@kitsune-mcp/shared/node';
 import { TOKEN, waitFor } from './helpers/ws.js';
 
 // HOME / USERPROFILE point at a temporary directory: tests/setup/isolate-home.ts

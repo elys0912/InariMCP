@@ -23,7 +23,7 @@ import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserAction, BrowserCommand, ToolResult } from '@kitsune-mcp/shared';
-import { ErrorCode } from '@kitsune-mcp/shared';
+import { ErrorCode, isRecord } from '@kitsune-mcp/shared';
 import { getSafetyGuard, OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS } from '../safety/guard.js';
 import type { SafetyDenial } from '../safety/guard.js';
 import {
@@ -469,10 +469,6 @@ function confirmationToCallResult(
 // ---------------------------------------------------------------------------
 // Screenshot post-processing (resource_link, never base64)
 // ---------------------------------------------------------------------------
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /**
  * Collect screenshot file paths from a browser response payload.

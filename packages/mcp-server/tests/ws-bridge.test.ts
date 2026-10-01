@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket, { type WebSocketServer } from 'ws';
 import { BrowserConnectionManager } from '../src/connection/manager.js';
 import { startWebSocketServer, type WsBridgeOptions } from '../src/transport/ws-bridge.js';
-import { AUTH_PROTOCOL, MAC_LABEL, computeMac, newNonce } from '../src/transport/auth.js';
+import { AUTH_PROTOCOL, MAC_LABEL, computeMac, newNonce } from '@kitsune-mcp/shared/node';
 import { TOKEN, authenticate, closed, connect, nextFrame, sleep, waitFor } from './helpers/ws.js';
 
 let servers: WebSocketServer[] = [];

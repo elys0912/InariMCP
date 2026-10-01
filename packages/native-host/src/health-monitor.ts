@@ -18,7 +18,8 @@
  */
 
 import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
-import { isUsable, type ServerLauncher } from './server-launcher.js';
+import { isUsable } from '@kitsune-mcp/shared/node';
+import type { ServerLauncher } from './server-launcher.js';
 import { log } from './logger.js';
 
 /** What HealthMonitor needs from ServerLauncher. */

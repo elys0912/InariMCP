@@ -24,13 +24,12 @@
  */
 
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { ENV } from '@kitsune-mcp/shared';
+import { MAX_LOG_BYTES, nativeHostLogPath, rotateIfLarge as rotateFile } from '@kitsune-mcp/shared/node';
 
 const PREFIX = '[KitsuneMCP:NativeHost]';
-/** Rotate once the file grows beyond this (5 MB). */
-export const MAX_LOG_BYTES = 5 * 1_048_576;
+export { MAX_LOG_BYTES };
 /** After a failed rotation, try again no sooner than this (not on every line). */
 export const ROTATE_RETRY_MS = 60_000;
 
@@ -40,7 +39,7 @@ const DISABLED_VALUES = new Set(['0', 'off', 'false', 'no', 'none']);
 export function resolveLogPath(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const raw = env[ENV.FOX_NATIVE_HOST_LOG]?.trim();
   if (raw === undefined || raw === '') {
-    return path.join(os.homedir(), '.kitsune-mcp', 'logs', 'native-host.log');
+    return nativeHostLogPath();
   }
   if (DISABLED_VALUES.has(raw.toLowerCase())) return undefined;
   return path.resolve(raw);
@@ -74,41 +73,17 @@ function tighten(filePath: string): void {
 }
 
 /**
- * Rename `filePath` to `<file>.old` when it is larger than MAX_LOG_BYTES.
- * Also used for daemon.log (server-launcher.ts), which a running daemon keeps
- * open for appending: with `copyTruncate` the content is copied to
- * `<file>.old` and the file truncated in place, so the daemon keeps writing to
- * the right file (lines written in between are lost, which is acceptable).
- * Returns true when the file is small enough afterwards (or does not exist).
+ * Rotate `filePath` when it is larger than MAX_LOG_BYTES (shared/node log.ts).
+ * `copyTruncate` for daemon.log, which a running daemon keeps open.
+ * A failure is noted on stderr; returns false then (the caller decides when
+ * to retry), true when the file is small enough or does not exist.
  */
 export function rotateIfLarge(filePath: string, copyTruncate = false): boolean {
-  try {
-    const st = fs.statSync(filePath);
-    if (st.size <= MAX_LOG_BYTES) return true;
-    // rename replaces an existing .old on POSIX; on Windows remove it first.
-    const old = `${filePath}.old`;
-    try {
-      fs.rmSync(old, { force: true });
-    } catch {
-      // ignore — rename below reports the real problem
-    }
-    if (copyTruncate) {
-      // The file is held open by another process: a rename would only make it
-      // keep writing to `.old` (Node opens files with delete sharing).
-      fs.copyFileSync(filePath, old);
-      fs.truncateSync(filePath, 0);
-    } else {
-      fs.renameSync(filePath, old);
-    }
-    return true;
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return true;
-    // e.g. another host process (second Firefox profile) holds the file
-    // open on Windows. Keep appending; the caller decides when to retry.
-    stderrNote(`log rotation skipped: ${err instanceof Error ? err.message : String(err)}`);
-    return false;
-  }
+  return rotateFile(filePath, {
+    copyTruncate,
+    // e.g. another host process (second Firefox profile) holds the file open on Windows
+    onError: (err) => stderrNote(`log rotation skipped: ${err instanceof Error ? err.message : String(err)}`),
+  });
 }
 
 function openSink(filePath: string): FileSink | null {

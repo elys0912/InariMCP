@@ -25,15 +25,14 @@ import { isElicitationApprovalEnabled } from '../safety/approval.js';
 import type { ApprovalDeps } from './approval.js';
 import { createRelayHandlers } from './handler.js';
 import { PACKAGE_VERSION } from '../version.js';
+import { stderrLogger } from '@kitsune-mcp/shared/node';
 
 const SERVER_NAME = 'kitsune-mcp';
 /** Longest wait, before the MCP connect, for an already-running daemon's settings. */
 const PRECHECK_BUDGET_MS = 800;
 const PRECHECK_TIMEOUT_MS = 400;
 
-function log(msg: string): void {
-  process.stderr.write(`[KitsuneMCP:relay] ${msg}\n`);
-}
+const log = stderrLogger('relay');
 
 export async function runRelay(): Promise<void> {
   const relayId = crypto.randomBytes(4).toString('hex');

@@ -8,6 +8,7 @@ import type { ApprovalGrant } from './approval.js';
 import { compileUrlPatterns, normalizeUrl } from './url-pattern.js';
 import type { PatternListName, UrlPattern } from './url-pattern.js';
 import { OBSERVE_TOOLS, SCRIPT_TOOLS } from '../tools/classification.js';
+import { isRecord } from '@kitsune-mcp/shared';
 
 // Derived from the tool schemas; re-exported for the existing importers.
 export { OBSERVE_TOOLS, SCRIPT_TOOLS };
@@ -61,10 +62,6 @@ export interface SafetyStatus {
   protectedUrlPatterns: string[];
   configFile: string;
   auditLog: string | null;
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 function isHttp(url: string): boolean {

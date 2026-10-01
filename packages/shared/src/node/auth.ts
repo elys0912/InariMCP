@@ -28,9 +28,7 @@
  *
  *  GET /health with x-kitsune-nonce: N adds `proof: MAC('health', N)`.
  *
- * packages/mcp-server/src/transport/auth.ts and packages/native-host/src/auth.ts
- * are identical copies (the Native Host cannot import mcp-server, and shared
- * has no Node types); tests/contract/auth.test.ts keeps them identical.
+ * Used by both sides through `@kitsune-mcp/shared/node`.
  */
 
 import * as crypto from 'node:crypto';

@@ -10,8 +10,8 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { defaultScreenshotsDir } from '@kitsune-mcp/shared/node';
 
 // ---------------------------------------------------------------------------
 // Directory resolution
@@ -30,7 +30,7 @@ export function getScreenshotsDir(): string {
     process.env[ENV.FOX_SCREENSHOTS_DIR] ??
     process.env[LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR];
   if (envDir) return envDir;
-  return path.join(os.homedir(), '.kitsune-mcp', 'screenshots');
+  return defaultScreenshotsDir();
 }
 
 // ---------------------------------------------------------------------------

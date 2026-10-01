@@ -24,6 +24,7 @@ import type {
   ElicitRequestFormParams,
   ElicitResult,
 } from '@modelcontextprotocol/sdk/types.js';
+import { isRecord } from '@kitsune-mcp/shared';
 
 /** `details.approval` of a confirmation_required result. */
 export interface ApprovalInfo {
@@ -58,10 +59,6 @@ export interface ApprovalDeps {
   askBrowser(requestId: string): Promise<ApprovalReply>;
   now?: () => number;
   log?: (msg: string) => void;
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 /** The approval request of a confirmation_required result, if any. */

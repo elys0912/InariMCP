@@ -78,7 +78,7 @@ import {
   macMatches,
   responseMac,
   sha256Hex,
-} from './auth.js';
+} from '@kitsune-mcp/shared/node';
 import { PACKAGE_VERSION } from '../version.js';
 
 // ---------------------------------------------------------------------------

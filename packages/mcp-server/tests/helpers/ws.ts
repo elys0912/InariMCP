@@ -4,7 +4,7 @@
  */
 
 import WebSocket from 'ws';
-import { AUTH_PROTOCOL, MAC_LABEL, computeMac, newNonce } from '../../src/transport/auth.js';
+import { AUTH_PROTOCOL, MAC_LABEL, computeMac, newNonce } from '@kitsune-mcp/shared/node';
 
 export const TOKEN = 'f'.repeat(64);
 

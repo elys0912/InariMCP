@@ -21,10 +21,14 @@ import { defineConfig } from 'vitest/config';
 
 /** Resolve the shared package to its sources, so tests do not need a build. */
 const sharedSrc = fileURLToPath(new URL('./packages/shared/src/index.ts', import.meta.url));
+const sharedNodeSrc = fileURLToPath(new URL('./packages/shared/src/node/index.ts', import.meta.url));
 
 export default defineConfig({
   resolve: {
-    alias: [{ find: /^@kitsune-mcp\/shared$/, replacement: sharedSrc }],
+    alias: [
+      { find: /^@kitsune-mcp\/shared\/node$/, replacement: sharedNodeSrc },
+      { find: /^@kitsune-mcp\/shared$/, replacement: sharedSrc },
+    ],
   },
   test: {
     // forks, not threads: tests/setup/isolate-home.ts changes HOME/USERPROFILE

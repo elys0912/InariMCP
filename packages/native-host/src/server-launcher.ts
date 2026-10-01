@@ -17,127 +17,44 @@
  * instead of being trusted. The token never travels (auth.ts).
  */
 
-import { spawn } from 'node:child_process';
 import * as net from 'node:net';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
-import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
-import { log, rotateIfLarge } from './logger.js';
-import { daemonEnvFrom, defaultDeps, startOutsideJob, sweepRunDir } from './outside-job.js';
+import { ENV, ENV_DEFAULTS } from '@kitsune-mcp/shared';
 import {
   AUTH_HEADER,
   DAEMON_PROTOCOL_VERSION,
-  MAC_LABEL,
-  computeMac,
-  macMatches,
+  dataDir,
+  daemonLogPath,
+  evaluateHealth,
+  isUsable,
   newNonce,
+  readApiTokenFile,
+  readPackageVersion,
+  resolveHost,
+  resolveHttpPort,
+  resolveWsPort,
   signRequest,
+  spawnDetachedDaemon,
   verifyResponse,
-} from './auth.js';
+  type HealthVerdict,
+  type InvalidPortHandler,
+} from '@kitsune-mcp/shared/node';
+import { log, rotateIfLarge } from './logger.js';
+import { daemonEnvFrom, defaultDeps, startOutsideJob, sweepRunDir } from './outside-job.js';
 
-function resolveHost(): string {
-  return (
-    process.env[ENV.FOX_HOST] ??
-    process.env[LEGACY_ENV.CLAUDE_BROWSER_HOST] ??
-    ENV_DEFAULTS.FOX_HOST
-  );
-}
-
-/**
- * A TCP port from the environment: an integer in 1..65535, else the default
- * (with a log line). Same rule as the daemon's utils/endpoint.ts, so both
- * sides end up on the same port.
- */
-export function parsePort(raw: string | undefined, fallback: number, name: string): number {
-  if (raw === undefined || raw === '') return fallback;
-  const n = Number(raw);
-  if (Number.isInteger(n) && n > 0 && n < 65536) return n;
+/** A port variable is set but unusable: say so, the default applies. */
+const reportInvalidPort: InvalidPortHandler = (name, raw, fallback) => {
   log(`ignoring ${name}='${raw}' (not a port number 1-65535) — using ${fallback}`);
-  return fallback;
-}
-
-function resolvePort(): number {
-  const name = process.env[ENV.FOX_HTTP_PORT] !== undefined ? ENV.FOX_HTTP_PORT : LEGACY_ENV.CLAUDE_BROWSER_HTTP_PORT;
-  return parsePort(process.env[name], ENV_DEFAULTS.FOX_HTTP_PORT, name);
-}
-
-function resolveWsPort(): number {
-  const name = process.env[ENV.FOX_WS_PORT] !== undefined ? ENV.FOX_WS_PORT : LEGACY_ENV.CLAUDE_BROWSER_WS_PORT;
-  return parsePort(process.env[name], ENV_DEFAULTS.FOX_WS_PORT, name);
-}
-
-// ---------------------------------------------------------------------------
-// /health evaluation
-// ---------------------------------------------------------------------------
-
-/**
- * What answered GET /health:
- *  down         nothing (connection refused, timeout)
- *  foreign      something that is not a KitsuneMCP daemon
- *  incompatible a KitsuneMCP daemon of another protocol (an older build)
- *  impostor     claims to be the daemon but cannot prove it holds the token
- *  unverified   a compatible daemon; no token yet to check its proof
- *  ok           a compatible daemon that proved it holds our token
- */
-export type HealthVerdict =
-  | { kind: 'down' }
-  | { kind: 'foreign' }
-  | { kind: 'incompatible'; protocol: unknown; version?: string }
-  | { kind: 'impostor' }
-  | { kind: 'unverified'; version?: string }
-  | { kind: 'ok'; version?: string };
-
-/** Classify a /health answer: strict JSON, protocol, and the nonce proof when we have a token. */
-export function evaluateHealth(
-  statusCode: number | undefined,
-  body: string,
-  token: string | undefined,
-  nonce: string,
-): HealthVerdict {
-  if (statusCode !== 200) return { kind: 'foreign' };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return { kind: 'foreign' };
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return { kind: 'foreign' };
-  const health = parsed as Record<string, unknown>;
-  if (health['status'] !== 'ok' || health['service'] !== 'kitsune-mcp') return { kind: 'foreign' };
-
-  const version = typeof health['version'] === 'string' ? health['version'] : undefined;
-  const withVersion = version === undefined ? {} : { version };
-  if (health['protocol'] !== DAEMON_PROTOCOL_VERSION) {
-    return { kind: 'incompatible', protocol: health['protocol'], ...withVersion };
-  }
-  if (token === undefined) return { kind: 'unverified', ...withVersion };
-  if (!macMatches(health['proof'], computeMac(token, MAC_LABEL.health, nonce))) return { kind: 'impostor' };
-  return { kind: 'ok', ...withVersion };
-}
-
-/** A daemon we can use: compatible, and not caught failing its proof. */
-export function isUsable(verdict: HealthVerdict): boolean {
-  return verdict.kind === 'ok' || verdict.kind === 'unverified';
-}
+};
 
 /** Version of the mcp-server package next to us, i.e. of a daemon we would start. */
 function installedDaemonVersion(): string | undefined {
-  try {
-    const pkg = JSON.parse(
-      fs.readFileSync(path.resolve(__dirname, '..', '..', 'mcp-server', 'package.json'), 'utf-8'),
-    ) as Record<string, unknown>;
-    return typeof pkg['version'] === 'string' ? pkg['version'] : undefined;
-  } catch {
-    return undefined;
-  }
+  return readPackageVersion(path.resolve(__dirname, '..', '..', 'mcp-server', 'package.json'));
 }
 
-/** Same file the relays use for a detached daemon's stderr. */
-export function daemonLogPath(): string {
-  return path.join(os.homedir(), '.kitsune-mcp', 'logs', 'daemon.log');
-}
+export { daemonLogPath };
 
 /** Policy settings the daemon reads from its environment (mcp-server/src/safety/config.ts). */
 const DAEMON_POLICY_VARS = [ENV.FOX_READ_ONLY, ENV.FOX_ALLOW_SCRIPTS, ENV.FOX_SAFETY_CONFIG] as const;
@@ -159,7 +76,7 @@ export function daemonEnvNote(env: NodeJS.ProcessEnv = process.env): string {
 
 /** Working directory of a daemon we start: stable, never Firefox's (may be locked or removable). */
 function daemonCwd(): string {
-  return path.dirname(path.dirname(daemonLogPath()));
+  return dataDir();
 }
 
 /** How long start() waits for a daemon it spawned to answer /health. */
@@ -200,9 +117,9 @@ export class ServerLauncher {
     readToken?: () => string | undefined;
   } = {}) {
     this.host = options.host ?? resolveHost();
-    this.httpPort = options.httpPort ?? resolvePort();
-    this.wsPort = options.wsPort ?? resolveWsPort();
-    this.readTokenFile = options.readToken ?? (() => this.loadApiToken());
+    this.httpPort = options.httpPort ?? resolveHttpPort(reportInvalidPort);
+    this.wsPort = options.wsPort ?? resolveWsPort(reportInvalidPort);
+    this.readTokenFile = options.readToken ?? (() => readApiTokenFile());
     this.cachedApiToken = this.readTokenFile();
   }
 
@@ -294,35 +211,20 @@ export class ServerLauncher {
       );
     }
 
-    let logFd: number | 'ignore' = 'ignore';
     try {
-      logFd = fs.openSync(daemonLogPath(), 'a', 0o600);
-    } catch {
-      // Logging is best-effort
-    }
-
-    try {
-      const child = spawn(process.execPath, [serverEntry, '--daemon'], {
-        stdio: ['ignore', 'ignore', logFd],
-        detached: true,
-        windowsHide: true,
+      const pid = spawnDetachedDaemon({
+        entry: serverEntry,
+        logPath: daemonLogPath(),
         cwd: daemonCwd(),
+        onError: (err) => log(`daemon spawn error: ${err.message}`),
       });
-      child.on('error', (err) => log(`daemon spawn error: ${err.message}`));
-      // Don't keep the Native Host alive for the daemon, nor the other way round.
-      child.unref();
-
       this.restartAttempts++;
       this.lastStableTime = Date.now();
-      log(`started daemon (PID: ${child.pid ?? 'unknown'}, attempt #${this.restartAttempts})`);
+      log(`started daemon (PID: ${pid ?? 'unknown'}, attempt #${this.restartAttempts})`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       log(`failed to start daemon: ${msg}`);
       return false;
-    } finally {
-      if (typeof logFd === 'number') {
-        try { fs.closeSync(logFd); } catch { /* ignore */ }
-      }
     }
 
     return this.waitUntilHealthy();
@@ -600,19 +502,6 @@ export class ServerLauncher {
   // -------------------------------------------------------------------------
   // Private helpers
   // -------------------------------------------------------------------------
-
-  private loadApiToken(): string | undefined {
-    const tokenPath = path.join(os.homedir(), '.kitsune-mcp', 'api_token');
-    try {
-      if (fs.existsSync(tokenPath)) {
-        const token = fs.readFileSync(tokenPath, 'utf-8').trim();
-        if (token.length > 0) return token;
-      }
-    } catch {
-      // Token file missing or unreadable
-    }
-    return undefined;
-  }
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
