@@ -25,7 +25,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserAction, BrowserCommand, ToolResult } from '@kitsune-mcp/shared';
 import { ErrorCode, isRecord } from '@kitsune-mcp/shared';
 import { getSafetyGuard, OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS } from '../safety/guard.js';
-import type { SafetyDenial } from '../safety/guard.js';
+import type { CallLabel, SafetyDenial } from '../safety/guard.js';
 import {
   REQUEST_TTL_MS,
   approvalTargetFor,
@@ -42,6 +42,7 @@ import { applyPasswordPolicy, passwordSelectorRefusal } from '../safety/password
 import { audit } from '../safety/audit.js';
 import type { AuditDecision } from '../safety/audit.js';
 import { getConnectionManager } from '../connection/manager.js';
+import { resolveOperation } from './operations.js';
 
 // ---------------------------------------------------------------------------
 // Action-name mapping
@@ -403,11 +404,11 @@ export interface ApprovalRequestDetails {
  * the relay.
  */
 function confirmationToCallResult(
-  toolName: string,
-  args: Record<string, unknown>,
+  label: CallLabel,
   denial: SafetyDenial,
   tokenRejected: boolean,
 ): CallToolResult {
+  const { tool: toolName, args } = label;
   const protectedUrl = denial.elicitation?.protectedUrl ?? '';
   const matchedPattern = denial.elicitation?.matchedPattern ?? '';
   const target = approvalTargetFor(toolName, args, protectedUrl);
@@ -512,6 +513,20 @@ function screenshotResourceLinks(paths: string[]): CallToolResult['content'] {
   }));
 }
 
+/** audit() under the names the caller used (see CallLabel). */
+function auditCall(
+  label: CallLabel,
+  url: string | null,
+  decision: AuditDecision,
+  transport: string,
+): void {
+  if (label.replacedBy !== undefined) {
+    audit(label.replacedBy, label.args, url, decision, transport, label.tool);
+  } else {
+    audit(label.tool, label.args, url, decision, transport);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // createToolHandler — factory for MCP tool callbacks
 // ---------------------------------------------------------------------------
@@ -536,14 +551,19 @@ export interface ToolCallOptions {
 }
 
 export function createToolHandler(
-  toolName: string,
+  calledName: string,
   transport: string = 'stdio',
 ): (args: Record<string, unknown>, options?: ToolCallOptions) => Promise<CallToolResult> {
   return async (
-    args: Record<string, unknown>,
+    calledArgs: Record<string, unknown>,
     options: ToolCallOptions = {},
   ): Promise<CallToolResult> => {
     const guard = getSafetyGuard();
+
+    // The operation the call runs (tools/operations.ts): from here on the
+    // guard, the password guard and the command are those of the operation;
+    // messages, approvals and the audit log use the name the caller used.
+    const { op: toolName, args, label } = resolveOperation(calledName, calledArgs);
 
     // -----------------------------------------------------------------------
     // fox_safety_status: server-internal, no browser command needed
@@ -563,14 +583,14 @@ export function createToolHandler(
     const token = options.approvalToken;
     const presented = typeof token === 'string' && token !== '';
     const grant: ApprovalGrant | null = presented
-      ? getApprovalStore().consume(token, toolName, hashArgs(args))
+      ? getApprovalStore().consume(token, label.tool, hashArgs(label.args))
       : null;
     const tokenRejected = presented && grant === null;
 
-    const denial = guard.check(toolName, args, transport, grant);
+    const denial = guard.check(toolName, args, transport, grant, label);
     if (denial !== null) {
       if (denial.safetyDecision === 'confirmation_required') {
-        return confirmationToCallResult(toolName, args, denial, tokenRejected);
+        return confirmationToCallResult(label, denial, tokenRejected);
       }
       return safetyDenialToCallResult({ ...denial, decision: denial.safetyDecision });
     }
@@ -636,8 +656,9 @@ export function createToolHandler(
         typeof reportedUrl === 'string' && reportedUrl ? reportedUrl : null,
         transport,
         typeof reportedPattern === 'string' && reportedPattern ? reportedPattern : null,
+        label,
       );
-      return confirmationToCallResult(toolName, args, confirmation, tokenRejected);
+      return confirmationToCallResult(label, confirmation, tokenRejected);
     }
 
     // Other Extension-side safety refusals (Layer 0 out_of_scope; Layer 3
@@ -654,7 +675,7 @@ export function createToolHandler(
       const auditDecision: AuditDecision =
         decision === 'out_of_scope' ? 'out_of_scope' : listDecision ? decision : 'denied';
       if (guard.config.auditLog) {
-        audit(toolName, args, refusedUrl ?? (args['url'] as string) ?? null, auditDecision, transport);
+        auditCall(label, refusedUrl ?? (args['url'] as string) ?? null, auditDecision, transport);
       }
       return safetyDenialToCallResult({
         error: response.error ?? `Refused by browser safety check (${decision})`,
@@ -676,7 +697,7 @@ export function createToolHandler(
     if (response.success) {
       const resultData = response.data ?? {};
       guard.noteUrl(resultData, args, toolName);
-      const reached = guard.checkReachedUrl(toolName, args, resultData, transport);
+      const reached = guard.checkReachedUrl(toolName, args, resultData, transport, label);
       if (reached !== null) {
         return safetyDenialToCallResult({ ...reached, decision: reached.safetyDecision });
       }
@@ -691,9 +712,8 @@ export function createToolHandler(
     const sanitizedData = sanitizeResult(response.data);
 
     // Audit log
-    audit(
-      toolName,
-      args,
+    auditCall(
+      label,
       (args['url'] as string) ?? null,
       response.success ? 'allowed' : 'denied',
       transport,

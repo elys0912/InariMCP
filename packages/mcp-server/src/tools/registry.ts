@@ -31,10 +31,11 @@ export type ToolCallHandler = (
 // ---------------------------------------------------------------------------
 
 /**
- * Named profiles that group tool names.
+ * Named profiles that group tool names, as they were before the WP13
+ * consolidation (FOX_CAPS=legacy,<profile>).
  * `fox_safety_status` is always registered regardless of profile.
  */
-const PROFILES: Record<string, string[]> = {
+const LEGACY_PROFILES: Record<string, string[]> = {
   core: [
     'fox_navigate',
     'fox_click',
@@ -94,6 +95,13 @@ const PROFILES: Record<string, string[]> = {
 /** Tool that is always registered regardless of profile. */
 const ALWAYS_REGISTERED = 'fox_safety_status';
 
+/**
+ * FOX_CAPS segment that selects the pre-consolidation tool names instead
+ * of the current ones. Alone it means all of them; the other segments then
+ * name LEGACY_PROFILES.
+ */
+const LEGACY_SEGMENT = 'legacy';
+
 // ---------------------------------------------------------------------------
 // Profile resolution
 // ---------------------------------------------------------------------------
@@ -112,20 +120,23 @@ function resolveToolSet(capsEnv: string | undefined): Set<string> {
     return new Set(Object.keys(TOOL_SCHEMAS));
   }
 
-  const segments = capsEnv
+  const all = capsEnv
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
+  const legacy = all.includes(LEGACY_SEGMENT);
+  const segments = all.filter((s) => s !== LEGACY_SEGMENT);
+  const profiles = LEGACY_PROFILES;
 
-  // "all" → register everything
-  if (segments.includes('all')) {
+  // "all" (or legacy alone) → register everything
+  if (segments.includes('all') || (legacy && segments.length === 0)) {
     return new Set(Object.keys(TOOL_SCHEMAS));
   }
 
   const toolSet = new Set<string>();
 
   for (const segment of segments) {
-    const profileTools = PROFILES[segment];
+    const profileTools = profiles[segment];
     if (profileTools) {
       for (const t of profileTools) {
         toolSet.add(t);
