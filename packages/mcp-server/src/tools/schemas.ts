@@ -78,7 +78,7 @@ const foxScreenshotSchema = z.object({
   tabId,
   saveToFile: z.boolean().optional().default(true).describe(
     'Save the image to a file and return it as a resource_link (default). Images are never returned ' +
-    'inline, so false captures nothing and only returns the tab info',
+    'inline, so false captures nothing and only returns the tab info (headless: ignored, always saved)',
   ),
   filename: z.string().optional().describe('Optional filename for saved screenshot'),
   // all_tabs options
@@ -424,21 +424,21 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_screenshot: {
     name: 'fox_screenshot',
     description:
-      'Take a screenshot of the current browser tab. Supports multiple scopes: viewport (visible area), full_page (entire scrollable page), all_tabs (capture every open tab), or scroll_capture (scroll through page collecting element info at each position). Images are saved to files and returned as resource_link. all_tabs fails when no tab could be captured.',
+      'Take a screenshot. scope: viewport (visible area; a background tab given by tabId is briefly brought to the front, then switched back), full_page (entire scrollable page; falls back to the visible area when it cannot, fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls the page and returns the interactive elements visible at each position). Images are saved to files and returned as resource_link, never as base64; saveToFile=false captures nothing, includeData has no effect, and the same filename overwrites the file. Headless: viewport and full_page only.',
     inputSchema: foxScreenshotSchema,
     classification: 'observe',
   },
   fox_snapshot: {
     name: 'fox_snapshot',
     description:
-      'Get a structured accessibility snapshot of the page (similar to Playwright accessibility tree). Returns an indented text representation of the page structure — more token-efficient than a screenshot and broader than fox_get_elements. Useful for understanding overall page layout and interactive elements.',
+      'Extension path: not implemented (returns an error); use fox_get_page_info, fox_get_elements or fox_get_text there. Headless: returns the accessibility tree of the page (or of the first element matching selector) as indented YAML text (Playwright ariaSnapshot), filtered by maxDepth, includeText and roles, cut at 50000 characters.',
     inputSchema: foxSnapshotSchema,
     classification: 'observe',
   },
   fox_get_elements: {
     name: 'fox_get_elements',
     description:
-      'Find and return information about elements matching a CSS selector, including tag, text, attributes, and bounding box.',
+      'List elements matching a CSS selector (querySelectorAll: the first `limit` matches, plus the total count). Per element: tag, id, classes, name, type, text (first 200 chars), value (password fields masked), href, src, placeholder, ariaLabel, role, disabled, checked, visible, position (viewport coordinates incl. centerX/centerY) and a generated CSS selector. Headless: tag, text and bounding box only, at most 50.',
     inputSchema: foxGetElementsSchema,
     classification: 'observe',
   },
@@ -459,14 +459,14 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_get_page_info: {
     name: 'fox_get_page_info',
     description:
-      'Get information about the current page including URL, title, interactive elements, forms, and headings.',
+      'Get an overview of the current page: URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, and h1-h3 headings. Password values are masked. Not in any FOX_CAPS profile. Headless: URL and title only.',
     inputSchema: foxGetPageInfoSchema,
     classification: 'observe',
   },
   fox_get_tabs: {
     name: 'fox_get_tabs',
     description:
-      'Get list of open browser tabs (URL, title, active status, loading state, audio). Defaults to current window, max 50 tabs. Use urlPattern to filter or currentWindowOnly=false for all windows.',
+      'List open browser tabs: id, url, title, active, windowId, pinned, status (loading/complete), audible; plus totals and a summary. Defaults to the current window and at most 50 tabs. Use urlPattern (regex, applied before limit) to filter, currentWindowOnly=false for all windows, includeFavicon=true for favicon URLs. Headless: id, url, title and active only; arguments are ignored.',
     inputSchema: foxGetTabsSchema,
     classification: 'observe',
   },
@@ -482,14 +482,14 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_click: {
     name: 'fox_click',
     description:
-      'Click on an element in the browser. Can target by CSS selector, XPath, text content, or coordinates. Supports double-click and right-click. Works in the top document only (not inside iframes or shadow DOM); fails on a disabled element. The click is a synthetic DOM event (isTrusted=false), which some sites ignore.',
+      'Click an element, located by selector (CSS), xpath, text or x+y viewport coordinates, checked in that order. Works in the top document only (not inside iframes or shadow DOM); fails on a disabled element. The element is scrolled into view and receives synthetic mousedown/mouseup/click events (isTrusted=false, not a real OS click; pages that require real user input may ignore it). doubleClick/rightClick send dblclick/contextmenu instead. Returns the clicked element\'s info. Headless: selector or x+y only.',
     inputSchema: foxClickSchema,
     classification: 'act',
   },
   fox_type: {
     name: 'fox_type',
     description:
-      'Type text into an input field or editable element. Can target by selector, placeholder, name, or id; without any of them, types into the focused field. Optionally clear existing content first and press Enter after. Key events are synthetic (isTrusted=false).',
+      'Type text into an input, textarea or contenteditable element, located by selector, id, name or placeholder (in that order); without any of them, types into the focused field. The `text` value is never used to find the element. Fails on a disabled element; password fields are refused. Types character by character with synthetic key events (isTrusted=false), waiting `delay` ms per character (0 = none; shortened so all delays stay within 10 s); fox_set_value is faster for long values. clear empties the field first. pressEnter also submits the enclosing form like a real Enter (unless a keydown handler cancels it). Headless: selector and text only (with selector the field is filled, else the focused element receives the keys).',
     inputSchema: foxTypeSchema,
     classification: 'act',
   },
@@ -503,7 +503,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_set_value: {
     name: 'fox_set_value',
     description:
-      'Set the value of an input element directly (without typing simulation). Faster than fox_type for programmatic value assignment.',
+      'Set the value of an input, textarea, select or contenteditable element directly (no key events), then dispatch input and change events. Faster than fox_type and suited to long values. Reports success even when the element is of another kind (nothing changes) or, for a select, when no option has that value. Password fields are refused. Not in any FOX_CAPS profile.',
     inputSchema: foxSetValueSchema,
     classification: 'act',
   },
@@ -566,14 +566,14 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_wait_for_network_idle: {
     name: 'fox_wait_for_network_idle',
     description:
-      'Wait for network requests (fetch/XHR) to settle. Use after actions that trigger API calls. Counts the top page\'s requests from the first call on this page (earlier in-flight requests are not seen). Fails when the network does not become idle within the timeout.',
+      'Wait until the page\'s own fetch/XHR requests (top frame) have been idle for idleTime ms. Use after actions that trigger API calls. Requests made by fox_execute_script, and requests already in flight before the first call on this page, are not seen. Fails when the network does not become idle within the timeout. Headless: uses Playwright\'s networkidle; idleTime is ignored.',
     inputSchema: foxWaitForNetworkIdleSchema,
     classification: 'wait',
   },
   fox_wait_for_navigation: {
     name: 'fox_wait_for_navigation',
     description:
-      'Wait for a page navigation to complete. Useful after clicking links or submitting forms that cause a full page load.',
+      'Wait for the tab\'s next top-level navigation to finish (waitUntil: load or domcontentloaded), optionally only one whose URL matches the urlPattern regex. Only navigations that finish after this call count: a fast navigation already done (e.g. right after fox_click) is missed and the call times out. When the destination URL is known, prefer fox_wait_for_url, which returns at once if the URL already matches. Headless: waitUntil and urlPattern are ignored.',
     inputSchema: foxWaitForNavigationSchema,
     classification: 'wait',
   },
@@ -589,21 +589,21 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_start_logging: {
     name: 'fox_start_logging',
     description:
-      'Start capturing console logs and network requests of the tab (top page). Use before performing actions you want to monitor. Logs are kept per tab across reloads and navigations (the newest 500 console and 500 network entries) until fox_clear_logs or the tab is closed.',
+      'Start capturing console logs and fetch/XHR requests of the tab (top frame). Use before performing actions you want to monitor. Logs are kept per tab across reloads and navigations (the newest 500 console and 500 network entries) until fox_clear_logs or the tab is closed. Refused on a protected site unless approved; recording pauses while the tab is on one. Not supported in headless mode.',
     inputSchema: foxStartLoggingSchema,
     classification: 'logging',
   },
   fox_stop_logging: {
     name: 'fox_stop_logging',
     description:
-      'Stop capturing console logs and network requests. Logs are preserved and can still be retrieved (until fox_clear_logs or the tab is closed).',
+      'Stop capturing console logs and network requests on this tab. Logs are preserved and can still be retrieved (until fox_clear_logs or the tab is closed). Not supported in headless mode.',
     inputSchema: foxStopLoggingSchema,
     classification: 'logging',
   },
   fox_get_console_logs: {
     name: 'fox_get_console_logs',
     description:
-      'Retrieve captured console logs (log, error, warn, info, debug). Filter by level or search text.',
+      'Return console messages captured since fox_start_logging on this tab (the most recent `limit`, filtered by level and/or a case-insensitive search text). Captured: page calls to console.log/warn/error/info/debug in the top frame only; not uncaught exceptions, browser errors, iframes, or console.log inside fox_execute_script. Kept per tab across reloads and navigations (the newest 500) until fox_clear_logs or the tab is closed. currentPageReached=false means the current page could not be asked for its latest entries. Paused while the tab is on a protected site. Not supported in headless mode.',
     inputSchema: foxGetConsoleLogsSchema,
     classification: 'logging',
     annotations: { readOnlyHint: true },
@@ -611,14 +611,15 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_get_network_logs: {
     name: 'fox_get_network_logs',
     description:
-      'Retrieve captured network requests and responses (fetch/XHR). Filter by URL pattern, HTTP method, status code, or errors only.',
+      'Return fetch/XHR requests captured since fox_start_logging on this tab (the most recent `limit`), filtered by URL regex, HTTP method, status code, or errors only (network error or status >= 400). Images, scripts, CSS and WebSocket traffic are not captured. Authorization, cookie, API-key and token headers and secret fields in URLs and bodies are masked; other headers and bodies (truncated) are returned as recorded. Kept per tab across navigations like the console logs. Not supported in headless mode.',
     inputSchema: foxGetNetworkLogsSchema,
     classification: 'logging',
     annotations: { readOnlyHint: true },
   },
   fox_clear_logs: {
     name: 'fox_clear_logs',
-    description: 'Clear all captured console and/or network logs.',
+    description:
+      'Clear captured console and/or network logs of this tab. Not supported in headless mode.',
     inputSchema: foxClearLogsSchema,
     classification: 'logging',
   },
@@ -627,28 +628,28 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_execute_script: {
     name: 'fox_execute_script',
     description:
-      'Execute JavaScript code in the browser context. Requires script execution to be enabled in safety config.',
+      'Run JavaScript in the tab\'s top frame and return the value of the last expression (use a JSON-compatible value; a top-level `return` is not allowed, wrap code in an IIFE). Extension path: runs in the content script\'s isolated world; it sees the page DOM, but not variables or functions defined by the page\'s own scripts, and its console.log and fetch/XHR are not captured by the logging tools. Headless: runs in the page\'s own world (Playwright page.evaluate). Refused when script execution is disabled (allow_script_execution in safety.json or FOX_ALLOW_SCRIPTS=0).',
     inputSchema: foxExecuteScriptSchema,
     classification: 'script',
   },
   fox_eval_chain: {
     name: 'fox_eval_chain',
     description:
-      'Execute a sequence of JavaScript expressions sharing state between steps. Each step receives the prior result as `$prev`. Console output is captured per step. Ideal for multi-turn inspection without round-tripping.',
+      'Extension path: not implemented (returns an error). Headless only: evaluate a sequence of JavaScript expressions in the page; each step receives the prior result as `$prev`, and console output is captured per step.',
     inputSchema: foxEvalChainSchema,
     classification: 'script',
   },
   fox_inject_observer: {
     name: 'fox_inject_observer',
     description:
-      'Start a MutationObserver on an element (default body) that collects DOM changes (attributes, child list, subtree). The changes are returned by fox_remove_observer (the last 100). The observer ends when the page reloads or navigates. Requires script execution enabled.',
+      'Start a MutationObserver on an element (default body) that collects DOM changes (attributes, child list, subtree). The changes are returned by fox_remove_observer (the last 100). The observer ends when the page reloads or navigates. Requires script execution enabled. Headless: one observer per page (a new call replaces it, observerId is ignored); changes collect in window.__fox_mutations.',
     inputSchema: foxInjectObserverSchema,
     classification: 'script',
   },
   fox_remove_observer: {
     name: 'fox_remove_observer',
     description:
-      'Remove an observer started by fox_inject_observer and get the changes it collected (the last 100). Fails when no observer with that ID exists on the current page.',
+      'Remove an observer started by fox_inject_observer and get the changes it collected (the last 100). Fails when no observer with that ID exists on the current page. Headless: observerId is ignored and only the number of changes is returned.',
     inputSchema: foxRemoveObserverSchema,
     classification: 'script',
     annotations: { destructiveHint: false },
@@ -658,28 +659,28 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_run_workflow: {
     name: 'fox_run_workflow',
     description:
-      'Run a declarative multi-step browser workflow with per-step assertions — an end-to-end test runner. Each step calls a browser tool; optional assertions check URL, text, or selector after each step. Failing steps capture a screenshot.',
+      'Not implemented yet on any backend: always returns an error. Call the individual tools instead.',
     inputSchema: foxRunWorkflowSchema,
     classification: 'workflow',
   },
   fox_audit_page: {
     name: 'fox_audit_page',
     description:
-      'Audit the current page: heading structure, images missing alt text, unlabeled form inputs, empty links/buttons, meta/title info, viewport and element counts, plus an optional screenshot.',
+      'Not implemented yet on any backend: always returns an error. Use fox_get_page_info, fox_get_elements and fox_screenshot instead.',
     inputSchema: foxAuditPageSchema,
     classification: 'observe',
   },
   fox_wait_and_act: {
     name: 'fox_wait_and_act',
     description:
-      "Poll the page until a JS condition is met, then execute an action script. Use for waiting on async UI state (e.g. 'wait until #result is visible, then click it').",
+      'Extension path: not implemented (returns an error). Headless only: poll the page until a JS condition is truthy, then run actionScript and return its result. Use for waiting on async UI state.',
     inputSchema: foxWaitAndActSchema,
     classification: 'script',
   },
   fox_handle_dialog: {
     name: 'fox_handle_dialog',
     description:
-      'Handle a browser dialog (alert, confirm, or prompt). Accept or dismiss the dialog, and optionally enter text for prompt dialogs.',
+      'Extension path: not implemented (returns an error; commands to a tab showing an alert/confirm/prompt time out there). Headless only: wait for the next dialog and accept or dismiss it (promptText for prompts). Call it before the action that opens the dialog: it does not block other commands, and when no dialog comes within timeout it arms itself for the next dialog on the tab (30 s). Dialogs nobody handles are dismissed automatically after 2 s and reported in the next result of that tab. Not in any FOX_CAPS profile.',
     inputSchema: foxHandleDialogSchema,
     classification: 'act',
   },

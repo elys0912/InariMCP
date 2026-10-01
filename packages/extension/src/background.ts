@@ -2943,8 +2943,8 @@ browser.notifications?.onClicked?.addListener((notificationId) => {
   browser.browserAction.openPopup?.()?.catch(() => {});
 });
 
-// Block external messages (design doc 7.8 -- prevent command injection from
-// other extensions)
+// Block external messages: no other extension may send commands (prevents
+// command injection through runtime.sendMessage from another extension)
 browser.runtime.onMessageExternal.addListener(
   (
     _message: unknown,

@@ -25,16 +25,16 @@
 
   "setupHostMissingTitle": { "message": "セットアップが必要" },
   "setupHostMissingText": {
-    "message": "Firefox が KitsuneMCP の Native Host を見つけられません。KitsuneMCP のフォルダ（リポジトリを clone したもの）でインストーラを実行してください:"
+    "message": "Firefox が KitsuneMCP の Native Host を見つけられません。KitsuneMCP のフォルダ（リポジトリを clone したもの）でビルドしてインストーラを実行してください:"
   },
-  "setupHostMissingNote": { "message": "実行したら「再確認」を押してください。" },
+  "setupHostMissingNote": { "message": "実行したら「再確認」を押してください。Flatpak 版の Firefox はインストール手順を見てください（インストーラの再実行だけでは直りません）。" },
   "setupHostErrorTitle": { "message": "Native Host が動いていません" },
   "setupHostErrorText": {
     "message": "Native Host は登録されていますが、起動に失敗しました（$1）。よくある原因は Node.js の更新や移動で、インストーラを実行し直すと直ります:"
   },
   "setupHostOutdatedTitle": { "message": "Native Host が古くなっています" },
   "setupHostOutdatedText": {
-    "message": "ブラウザ操作はそのまま使えますが、KitsuneMCP のフォルダがこの拡張より古い版です。そのフォルダで最新版を取得して、インストーラを実行し直してください（ビルドと Native Host の更新もまとめて行います）:"
+    "message": "ブラウザ操作はそのまま使えますが、KitsuneMCP のフォルダがこの拡張より古い版です。そのフォルダで最新版を取得してビルドし、インストーラを実行し直してください（Native Host を更新します）:"
   },
   "setupHostOutdatedNote": { "message": "更新したら Firefox を再起動してください。" },
   "setupDetails": { "message": "詳細: $1" },

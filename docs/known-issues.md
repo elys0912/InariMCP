@@ -1,35 +1,82 @@
-# 既知の制約と注意点
+# Known issues and caveats
 
-KitsuneMCP の現行版（v0.1.x）で分かっている制約・注意点をまとめたもの。
+**English** | [日本語](./known-issues.ja.md)
 
-## 安全ガード
+Limitations and caveats known in the current version of KitsuneMCP (v0.1.x).
 
-- **保護ドメインの確認が、保護されていないタブでも求められることがある**: `url` 引数を取らない操作系ツール（`fox_click`, `fox_type` など）は、Extension が実際の対象タブの URL で保護ドメインかを判定するので、別のタブやセッションの操作ですり抜けることはない。ただし共有サーバー（daemon）も、全セッション共通の「最後に見た URL」で同じ確認をしている。そのため、保護サイトで拒否された直後などは、別の保護されていないタブへの操作も確認を求められることがある。`fox_get_page_info` などで対象のページを一度読むと解消する（古い Extension と組み合わせたときの守りとして、サーバー側の確認は残している）。headless ではサーバー側の確認だけが働く
-- **承認・CAPTCHA バナーの取り下げは確実ではない**: バナーは自前のタイマーでサーバーより先に閉じる。通信の遅れなどでサーバーが先にタイムアウトした場合も、サーバーが拡張に取り下げを指示して閉じる。ただしその指示自体が届かないと、バナーが残ることがある。残ったバナーを押しても、答えはサーバーで捨てられるだけで何も実行されない（Claude には既にタイムアウトのエラーが返っている）
-- **共有サーバーの設定は、最初に起動した側の環境変数が使われる**: `FOX_READ_ONLY` などの環境変数は、daemon を実際に起動したプロセスのものだけが読まれる。確実に効かせたい設定は `~/.kitsune-mcp/safety.json` に書く（README の該当節を参照）。セッションと daemon で設定が食い違っているときは、セッション開始時と `fox_safety_status` の結果に警告が出る
+## Safety guard
 
-## ツール
+- **Protected-domain confirmation can be asked for on a tab that is not protected**: acting tools without a `url` argument (`fox_click`, `fox_type`, …) are checked by the Extension against the real URL of the target tab, so an action on another tab or from another session cannot slip through. The shared daemon runs the same check against the last URL it saw for that tab — for a call without `tabId`, the tab it last saw as active, shared by all sessions. When the active tab changed without the daemon seeing it (you switched tabs by hand), a call can be asked for confirmation because of the previous tab. Running `fox_get_tabs` once updates what the daemon knows. In headless mode only the server-side check applies
+- **Old-style regular expressions in the blocked / protected lists still match anywhere in the URL**: a pattern from an earlier version that cannot be read as a host pattern (see "`safety.json`" in the README) keeps its old meaning there — an unanchored regular expression over the whole URL — and the daemon logs a warning. Rewrite it as a host pattern or as `re:` with an anchor. In `allowed_url_patterns` such a pattern is a configuration error
+- **A broken `safety.json` refuses every tool**: when the file cannot be read, is not valid JSON, has a value of the wrong type or a URL pattern that cannot be used, the daemon logs the error to stderr (`daemon.log`) and refuses every tool except `fox_safety_status` (which shows the error) until the file is fixed and the daemon restarted. Check the result with `fox_safety_status` after editing it
+- **The shared daemon uses the environment of whoever started it**: environment variables such as `FOX_READ_ONLY` are read only from the process that actually launched the daemon. A daemon started by Firefox (the Native Host) inherits Firefox's environment; `claude mcp add --env` values are not used. Put settings that must apply in `~/.kitsune-mcp/safety.json` (see the README). When a session and the daemon disagree, a warning appears at session start and in the `fox_safety_status` result
 
-- **Extension 経路で未実装のツールが8本ある**: `fox_snapshot`, `fox_run_workflow`, `fox_audit_page`, `fox_inject_observer`, `fox_remove_observer`, `fox_handle_dialog`, `fox_eval_chain`, `fox_wait_and_act`。呼ぶと `Not implemented in extension` が返る（headless では動くものもある）
-- **ネイティブダイアログ（alert / confirm / prompt）の表示中は、そのタブへのコマンドがタイムアウトする**: Extension 経路ではダイアログを検知・操作できない
-- **headless の `fox_handle_dialog` は待機中に他の操作を止めない**: 待っている間にダイアログが出なければ、次のダイアログ（30 秒以内）を指定の動作で処理する「予約」になる。予約も待機もないダイアログは 2 秒後に自動で dismiss され、そのとき実行中の操作の結果に `dialogs` と警告が付く。承認したいときは、ダイアログを開く操作の前に `fox_handle_dialog` を呼ぶ
-- **headless では `container_scope` が有効だと全コマンドが拒否される**: headless に Firefox のコンテナがないため、安全側（fail-closed）で拒否する。headless 用に `container_scope.enabled: false` の `safety.json` を別に作り、`FOX_SAFETY_CONFIG` で指定して daemon を起動し直すか、Extension 経路を使う。`fox_safety_status` は拒否されない
-- **content script が入れないページでは、読み取り・操作系のツールが使えない**: Firefox の JSON ビューア、`about:` ページ、addons.mozilla.org など。`fox_screenshot` や `fox_get_tabs` のようにタブ API だけで動くツールは使える
-- **`fox_execute_script` は content script の隔離された環境で実行される**:
-  - スクリプト内の `console.log` はログに残らない。結果は戻り値で返す
-  - スクリプトから呼んだ `fetch` / XHR は、ログにも `fox_wait_for_network_idle` の判定にも数えられない。ページ自身の通信を確認したいときは、ページ内のボタンを `fox_click` する
-  - `script` は式として評価されるので、トップレベルの `return` は使えない（`(() => { ...; return x; })()` の形にする）
+## Human approval
 
-## ログ収集
+- **A local process can approve its own requests through MCP elicitation**: approval for a protected-site action is asked in Claude Code's confirmation dialog (MCP elicitation) when available, otherwise in the Firefox toolbar popup. The elicitation answer reaches the daemon over local HTTP, so a process that can read `~/.kitsune-mcp/api_token` can approve its own request (an accepted risk). Set `FOX_APPROVAL_ELICITATION=0` to allow approvals in the popup only
+- **Headless mode may be unable to approve**: headless has no popup to ask in. When the client does not support elicitation, or `FOX_APPROVAL_ELICITATION=0` is set, protected-site actions cannot be approved and are refused. `fox_request_approval` always fails in headless mode
+- **Withdrawing a CAPTCHA banner is not guaranteed**: approvals are asked outside the page (in the popup), but the CAPTCHA banner of `fox_detect_captcha` is still shown in the page. The banner closes on its own timer, before the server gives up. If the server times out first (e.g. a delayed message), it tells the Extension to withdraw the banner; if that message does not arrive either, the banner can stay. Clicking a leftover banner does nothing: the server discards the answer (Claude has already received the timeout error)
 
-- **ページ読み込み直後のインラインスクリプトのログは取り逃すことがある**: `<head>` / `<body>` 直下のインライン `<script>` の `console.log` は、content script の起動が間に合わないと記録されない。`setTimeout` などで遅れて動く処理のログは取れる（全ページに常時フックを入れれば確実に取れるが、プライバシーの観点で採らない）
-- **iframe 内のログは収集しない**: トップフレームだけが対象
-- **ページを移動すると、直前のページのログは消える**
-- **ログ収集はタブ単位で続く**: 一度 `fox_start_logging` したタブは、別のサイトに移動しても `fox_stop_logging` するかタブを閉じるまで収集が続く
+## Tools
 
-## インストール・運用
+- **Some tools are not implemented**: on the extension path, `fox_snapshot`, `fox_run_workflow`, `fox_audit_page`, `fox_handle_dialog`, `fox_eval_chain` and `fox_wait_and_act` return `Not implemented in extension: <name>`. `fox_run_workflow` and `fox_audit_page` are not implemented in headless mode either. See "Tool availability" in the README
+- **The DOM tools work in the top frame only**: on the extension path, `fox_click`, `fox_type`, `fox_get_elements`, `fox_get_text`, `fox_execute_script`, the logging tools and the wait tools act on the top document of the tab; content inside iframes and shadow DOM is not reached (a `text` locator does not search there either). `fox_find_text` (`browser.find`) does search every frame
+- **Clicks, typing, keys and hover are synthetic events**: `fox_click`, `fox_type`, `fox_press_key` and `fox_hover` dispatch DOM events in the page (`isTrusted` is `false`). Pages that require real user input (opening pop-ups, clipboard access, some frameworks) may ignore them, and the browser performs no default action for a key (no focus move on Tab, no scrolling). Enter in a form field is the exception: the form is submitted the way a real Enter does. `fox_type` waits `delay` ms per character, shortened so that all delays together stay within 10 s
+- **`fox_wait_for_navigation` only waits for navigations that finish after the call**: a navigation that already finished (after a click, say) does not count, so fast navigations time out. When the destination is known, use `fox_wait_for_url` (it returns at once if the URL already matches)
+- **`fox_wait_for_network_idle` sees only part of the traffic**: only the page's own fetch / XHR calls in the top frame are counted. Requests already running before the first call on that page, and requests made by `fox_execute_script`, are not seen
+- **Some `fox_screenshot` arguments behave unexpectedly**: images reach the client only as saved files (a path and a `resource_link`), never as base64, so `saveToFile: false` captures nothing and returns only the tab information, and `includeData` has no effect. Saving under an existing `filename` overwrites the file (the result has `imageOverwritten` and a warning). `scope: "viewport"` with a background tab briefly brings that tab to the front, captures it and switches back. `scope: "scroll_capture"` takes no images: it returns element information per scroll position
+- **`fox_set_value` reports success even when nothing changed**: on an element that is not an input, a textarea, a select or contenteditable, or on a select without an option of that value
+- **While a native dialog (alert / confirm / prompt) is open, commands to that tab time out**: the extension path cannot see or handle the dialog
+- **Pages that content scripts cannot enter do not support the reading and acting tools**: Firefox's JSON viewer, `about:` pages, addons.mozilla.org, etc. Tools that only use the tabs API, such as `fox_screenshot` and `fox_get_tabs`, still work
+- **`fox_execute_script` runs in the content script's isolated world**:
+  - it sees the page's DOM, but not the variables and functions the page's own scripts define (`window.myApp`, …)
+  - `console.log` inside the script is not logged. Return the result instead (a JSON-compatible value)
+  - `fetch` / XHR called from the script is neither logged nor counted by `fox_wait_for_network_idle`. To observe the page's own traffic, `fox_click` a button in the page
+  - `script` is evaluated as a script and the value of its last expression is returned. A top-level `return` is not allowed (wrap it: `(() => { ...; return x; })()`)
+  - it runs in the top frame only
+  - in headless mode it runs in the page's own world through Playwright's `page.evaluate`, so the points above do not apply there
 
-- **Node.js を入れ替えたらインストーラを再実行する**: Native Host のラッパー（`run-host.cmd` / `run-host.sh`）には、インストール時点の node の絶対パスが埋め込まれる。そのパスが無くなった場合は PATH 上の `node` で起動する（v0.1.4 以降のインストーラで作ったラッパー）が、Firefox を起動した環境の PATH に node が無いと起動できない。Node をアップグレード・切り替えた後は `scripts/install.ps1` / `scripts/install.sh` を再実行する
-- **Ubuntu の Snap 版 Firefox では Native Messaging が動かない可能性がある**: `apt install firefox` で入るのは Snap 版。Mozilla の APT リポジトリから deb 版を入れること（`install.sh` も警告を出す）
-- **macOS は未検証**: `install.sh` / `uninstall.sh` は Linux（WSL2 の Ubuntu 24.04）では確認済みだが、macOS 固有のパス（`~/Library/Application Support/...`）の処理は実機の macOS で動かしたことがない
-- **daemon.log は共有サーバーの起動時にしか切り替わらない**: `~/.kitsune-mcp/logs/` のログは 5 MB を超えると `<ファイル名>.old` に退避される（1世代だけ残る）。`native-host.log` と監査ログは書き込みのたびに確認するが、`daemon.log` は共有サーバー（daemon）の出力をそのままつないでいるので、確認するのは daemon を起動するときだけ。daemon を再起動しないまま長く動かすと、それまで 5 MB を超えて伸び続ける
+## Headless mode
+
+- **Some tools are not supported**: the 5 logging tools, `fox_navigate`'s `hard_refresh`, `fox_screenshot`'s `all_tabs` / `scroll_capture`, the 2 container tools, `fox_run_workflow` and `fox_audit_page`. `fox_request_approval` always fails
+- **Container scope refuses everything**: headless mode has no Firefox containers, so with `container_scope.enabled` in `safety.json` every browser command is refused (the daemon logs a warning at start). Start the headless daemon with its own `safety.json` that turns container scope off (`FOX_SAFETY_CONFIG`)
+- **Many arguments are ignored** (the result lists them in `warnings`):
+  - `fox_navigate`: `waitForLoad` (always waits for `domcontentloaded`), `bypassCache` (`refresh` is a normal reload)
+  - `fox_click`: only `selector` or `x` + `y` (no `xpath`, `text`, `doubleClick`, `rightClick`)
+  - `fox_type`: only `selector` and `text` (with `selector` the existing content is replaced, without it the focused element receives the text; `clear`, `pressEnter`, `delay`, `placeholder`, `name`, `id` are ignored)
+  - `fox_screenshot`: `saveToFile` (always saved to a file)
+  - `fox_get_page_info`: returns the URL and title only
+  - `fox_get_elements`: `limit` is ignored (at most 50, tag / text / position only)
+  - `fox_find_text`: returns the count only (`caseSensitive`, `entireWord`, `includeRectData` ignored)
+  - `fox_get_tabs`: `urlPattern`, `includeFavicon` and `limit` ignored (id, URL, title and active only)
+  - `fox_create_tab`: `active` ignored (the new tab always becomes active)
+  - `fox_highlight`: `duration`, `label` ignored (red outline for 2 s)
+  - `fox_wait_for_element`: `visible: false` is ignored (waits until visible)
+  - `fox_wait_for_network_idle`: `idleTime` ignored
+  - `fox_wait_for_navigation`: `waitUntil`, `urlPattern` ignored
+  - `fox_inject_observer` / `fox_remove_observer`: `observerId` is ignored (one observer per page). `fox_remove_observer` returns only the number of changes
+- **Dialogs nobody expected are dismissed**: a dialog (alert / confirm / prompt) that no `fox_handle_dialog` is waiting for is dismissed after 2 seconds and reported in the next result on that tab. To accept one, call `fox_handle_dialog` before the action that opens it; when no dialog comes within its `timeout`, it stays armed for the next dialog on that tab for 30 seconds
+
+## Log capture
+
+- **Logs from inline scripts right at page load can be missed**: on a tab with logging on, the content script is injected again early (`document_start`) after every navigation, but that is asynchronous, so `console.log` from inline `<script>` in `<head>` / `<body>` is not recorded if the injection is late. Logs from code that runs later (`setTimeout`, etc.) are captured (hooking every page all the time would catch them reliably, but is not done for privacy reasons)
+- **Logs inside iframes are not collected**: the top frame only
+- **Entries from the last moment before a navigation can be lost**: logs are kept per tab in the Extension's background and survive reloads and navigations, but the page sends them in small batches (every 250 ms), and a batch still in flight when the old page unloads is lost
+- **Logging stays on per tab**: once `fox_start_logging` is called on a tab, it keeps recording across sites until `fox_stop_logging` or the tab is closed (recording pauses while the tab is on a protected site)
+- **Only some sources are captured**: console means calls to `console.log` / `warn` / `error` / `info` / `debug` only — uncaught exceptions and the browser's own errors are not included. Network means the page's `fetch` / XHR only — images, scripts, CSS, WebSocket, etc. are not. The latest 500 entries of each are kept per tab
+- **Secrets in network logs are only partly masked**: the `authorization`, `cookie`, `set-cookie`, `proxy-authorization` and `x-api-key` headers are masked in the page; the daemon also masks other credential headers and fields (API keys, tokens, CSRF tokens, session IDs, passwords, secrets) and secret values in URLs, form bodies and JSON bodies (`token=`, `"password": "…"`, Bearer / Basic values, JWTs). Anything else in headers and request / response bodies (first 1000 / 5000 characters) is recorded as it is
+
+## Installation and operation
+
+- **Re-run the installer after changing Node.js**: the Native Host wrapper (`~/.kitsune-mcp/native-host/run-host.cmd` / `run-host.sh`) embeds the absolute path of the node that ran the installer. When that path is gone, the wrapper falls back to `node` on the `PATH`, which fails if the environment Firefox was started from has no node on its `PATH`. After upgrading or switching Node.js, run `npm run setup` again (or pass `--node` with a stable path)
+- **Stop the old daemon after an update**: the daemon, the Native Host and the relays verify each other's signatures and check the protocol version. If a daemon from the old version is still running after an update, the relay or the Native Host reports "another version" / "speaks protocol" and cannot use it. Stop that daemon process (and restart Firefox if the Native Host started it); the next tool call starts a new one
+- **Native Messaging may not work with Ubuntu's Snap Firefox**: `apt install firefox` installs the Snap, which starts hosts through the xdg-desktop-portal. The installer writes the manifest for it, but whether the portal starts the host depends on the system. Install the deb from Mozilla's APT repository where it does not
+- **Native Messaging with Flatpak Firefox needs the portal**: the sandbox cannot run node from the host. The installer writes the manifest into the Flatpak directory, but Firefox reaches the host only with `widget.use-xdg-desktop-portal.native-messaging` set to `1` in `about:config` and an xdg-desktop-portal with WebExtensions support. Without that, the popup says "Setup needed" and re-running the installer does not help. This path has not been tested; a non-Flatpak Firefox is the reliable choice
+- **macOS is untested**: the macOS paths of the installer and uninstaller (`~/Library/Application Support/...`) have never run on a real Mac
+- **Without PowerShell on Windows, the daemon may stop with Firefox**: the Native Host starts the daemon outside Firefox's job object with PowerShell, then tries WMI (`cscript`) and the Task Scheduler (`schtasks`). If all of them fail, it starts the daemon inside the job and logs a warning to `native-host.log`; closing Firefox then stops the daemon and the Claude Code sessions using it. The installer and uninstaller themselves do not need PowerShell
+- **Claude Code in WSL cannot use Firefox on Windows**: each side starts its own daemon with its own `~/.kitsune-mcp/` (and API token), so a session in WSL never reaches the Windows Firefox. Run Claude Code and Firefox on the same side
+- **With several Firefox profiles open at once, only the one that connected first is used**: nothing shows which one it is
+- **The daemon can come back after uninstall**: the uninstaller removes the Firefox registration first and stops this repository's Native Hosts before the daemon, but Claude Code sessions that still use KitsuneMCP start the daemon again (and recreate the API token) on their next browser tool call. Restart them; the uninstaller lists them. When it cannot list processes (no `ps` / WMI), remove the extension or quit Firefox as well
+- **File modes (0o600 / 0o700) have no effect on Windows**: the API token, logs and screenshots under `~/.kitsune-mcp/` are protected by the access rights of the user profile folder. A `FOX_SCREENSHOTS_DIR` outside the profile makes the Native Host log a warning
+- **Log files rotate at 5 MB**: logs in `~/.kitsune-mcp/logs/` are moved to `<name>.old` once they exceed 5 MB (one generation kept). `native-host.log` and the audit log are checked on every write. `daemon.log` is checked when the daemon starts, and every hour while a Native Host is running; used from Claude Code alone, without Firefox, it keeps growing past 5 MB until the daemon restarts
+- **Development needs Node.js 22.12 or later (or 24)**: a requirement of `npm test` / `npm run test:e2e` (Vitest). KitsuneMCP itself runs on Node.js 18 or later
