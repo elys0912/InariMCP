@@ -148,7 +148,8 @@ export async function screenshotAllTabs(
 
     // Tabs on blocked / not allowlisted sites, then protected domains
     // (banking, payments, ...) are excluded. Only the counts are reported --
-    // never the URL or title of excluded tabs.
+    // never the URL or title of excluded tabs. Both counts are always
+    // reported (0 included); the reasons only when a tab was excluded.
     const beforeLists = targetTabs.length;
     targetTabs = targetTabs.filter((t) => violatesUrlLists(t.url, lists) === null);
     const excludedBlocked = beforeLists - targetTabs.length;
@@ -158,9 +159,10 @@ export async function screenshotAllTabs(
     }
     const excludedProtected = beforeProtected - targetTabs.length;
     const excluded = {
+      excludedProtected,
+      excludedBlocked,
       ...(excludedBlocked > 0
         ? {
-          excludedBlocked,
           excludedBlockedReason:
             "Tabs on sites refused by blocked_url_patterns / allowed_url_patterns in safety.json were not captured.",
         }
@@ -183,7 +185,6 @@ export async function screenshotAllTabs(
         count: 0,
         failed: 0,
         note: NO_IMAGE_NOTE,
-        excludedProtected,
         ...excluded,
       };
     }
@@ -209,7 +210,6 @@ export async function screenshotAllTabs(
       screenshots: results,
       count,
       failed,
-      excludedProtected,
       ...excluded,
     };
   } catch (error) {

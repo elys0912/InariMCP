@@ -58,7 +58,7 @@ export async function refreshTab(
 /**
  * Reload every tab `selects`, except tabs outside the container scope, tabs
  * on a blocked / not allowlisted site and tabs on a protected domain (only
- * their counts are reported, as for screenshot all_tabs).
+ * their counts are reported, both always, as for screenshot all_tabs).
  */
 export async function reloadMatchingTabs(
   selects: (tab: browser.tabs.Tab) => boolean,
@@ -91,8 +91,15 @@ export async function reloadMatchingTabs(
     reloadedCount: results.length,
     tabs: results,
     bypassCache,
+    // Both counts always (0 included); the reasons only when a tab was excluded.
     excludedProtected,
-    ...(excludedBlocked > 0 ? { excludedBlocked } : {}),
+    excludedBlocked,
+    ...(excludedBlocked > 0
+      ? {
+        excludedBlockedReason:
+          "Tabs on sites refused by blocked_url_patterns / allowed_url_patterns in safety.json were not reloaded.",
+      }
+      : {}),
     ...(excludedProtected > 0
       ? {
         excludedReason:

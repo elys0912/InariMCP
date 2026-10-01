@@ -371,7 +371,7 @@ describe('3.A8 reload_all / reload_by_url skip protected tabs', () => {
       ]).rules;
       const result = await reloadMatchingTabs(() => true, false, null, protectedRules, NO_LISTS);
       expect(reloaded).toEqual([1]);
-      expect(result).toMatchObject({ success: true, reloadedCount: 1, excludedProtected: 1 });
+      expect(result).toMatchObject({ success: true, reloadedCount: 1, excludedProtected: 1, excludedBlocked: 0 });
     } finally {
       delete (globalThis as { browser?: unknown }).browser;
     }
@@ -483,6 +483,23 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     expect(await handleCommand({ action: 'reload_all', blockedUrlRules }))
       .toMatchObject({ success: true, reloadedCount: 1, excludedBlocked: 1, excludedProtected: 0 });
     expect(reloaded).toEqual([1]);
+  });
+
+  it('WP38 both excluded counts are always there, 0 included', async () => {
+    const tabs = [fakeTab({ id: 1, url: 'https://ok.test/' })];
+    useFakeBrowser({
+      tabs: {
+        query: async () => tabs,
+        captureTab: async (id: number) => `data:${id}`,
+        reload: async () => {},
+      },
+    });
+    for (const action of ['screenshot_all_tabs', 'reload_all']) {
+      const result = await handleCommand({ action });
+      expect(result, action).toMatchObject({ success: true, excludedBlocked: 0, excludedProtected: 0 });
+      expect(result, action).not.toHaveProperty('excludedBlockedReason');
+      expect(result, action).not.toHaveProperty('excludedReason');
+    }
   });
 });
 
