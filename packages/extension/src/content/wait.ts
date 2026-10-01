@@ -7,6 +7,7 @@ import { performClick } from "./input";
 import { ensurePageHooks } from "./log-store";
 import { activeRequestCount, interceptionStatus } from "./page-hooks";
 import type {
+  ChangeType,
   WaitOptions,
   ObserverRecord,
   WaitForChangeOptions,
@@ -38,13 +39,29 @@ export async function waitForElement(
 
 const activeObservers = new Map<string, ObserverRecord>();
 
+/** Generated observer ids: a counter makes them unique within the page. */
+let observerSeq = 0;
+
+const CHANGE_TYPES: readonly ChangeType[] = ["childList", "attributes", "text"];
+
 export async function waitForChange(
   options: WaitForChangeOptions,
 ): Promise<Record<string, unknown>> {
   const timeout = options.timeout || TIMEOUTS.DEFAULT;
-  const targetSelector = options.selector || "body";
-  const target =
-    document.querySelector(targetSelector) || document.body;
+  // A selector that matches nothing fails like observeElement, instead of
+  // silently watching the whole body.
+  const target = options.selector
+    ? document.querySelector(options.selector)
+    : document.body;
+  if (!target) {
+    throw new Error(`Element not found: ${options.selector}`);
+  }
+  if (options.changeType !== undefined && !CHANGE_TYPES.includes(options.changeType)) {
+    throw new Error(
+      `Unknown changeType: ${JSON.stringify(options.changeType)} ` +
+        "(expected childList, attributes or text)",
+    );
+  }
 
   return new Promise((resolve) => {
     let resolved = false;
@@ -174,7 +191,11 @@ export function observeElement(
     throw new Error(`Element not found: ${options.selector}`);
   }
 
-  const observerId = options.observerId || `obs_${Date.now()}`;
+  // Date.now() alone repeats within a millisecond, and a repeated id
+  // silently replaces the earlier observer.
+  const observerId =
+    options.observerId ||
+    `obs_${Date.now()}_${++observerSeq}_${Math.random().toString(36).slice(2, 8)}`;
 
   if (activeObservers.has(observerId)) {
     activeObservers.get(observerId)!.observer.disconnect();

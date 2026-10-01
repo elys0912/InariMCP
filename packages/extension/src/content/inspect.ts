@@ -12,6 +12,8 @@ import {
   generateXPath,
   notFoundError,
   isTextInput,
+  truncateText,
+  truncatedValue,
 } from "./dom";
 import type {
   ElementInfo,
@@ -38,11 +40,9 @@ export function getPageInfo(): Record<string, unknown> {
           type: htmlEl.type || null,
           id: el.id || null,
           name: htmlEl.name || null,
-          text: el.textContent?.trim().substring(0, 100) || null,
+          text: truncateText(el.textContent?.trim() ?? "", 100) || null,
           href: (el as HTMLAnchorElement).href || null,
-          value: isPasswordField(el)
-            ? "[MASKED]"
-            : (htmlEl.value?.substring(0, 100) ?? null),
+          value: isPasswordField(el) ? "[MASKED]" : truncatedValue(htmlEl.value, 100),
           placeholder: htmlEl.placeholder || null,
           ariaLabel: el.getAttribute("aria-label"),
           position: {
@@ -83,10 +83,7 @@ export function getPageInfo(): Record<string, unknown> {
             id: el.id,
             placeholder: inp.placeholder,
             required: inp.required,
-            value:
-              inp.type === "password"
-                ? "[MASKED]"
-                : (inp.value?.substring(0, 50) ?? null),
+            value: inp.type === "password" ? "[MASKED]" : truncatedValue(inp.value, 50),
           };
         }),
     })),
@@ -94,7 +91,7 @@ export function getPageInfo(): Record<string, unknown> {
       .slice(0, 20)
       .map((h) => ({
         level: parseInt(h.tagName[1]),
-        text: h.textContent?.trim().substring(0, 100),
+        text: truncateText(h.textContent?.trim() ?? "", 100),
       })),
   };
 }
@@ -200,7 +197,7 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
     ) {
       elements.push({
         tag: el.tagName.toLowerCase(),
-        text: el.textContent?.trim().substring(0, 50) || null,
+        text: truncateText(el.textContent?.trim() ?? "", 50) || null,
         selector: generateSelector(el),
         position: {
           x: Math.round(rect.left + rect.width / 2),
@@ -352,7 +349,7 @@ export function getText(
     (element as HTMLElement).innerText || element.textContent || "";
 
   return {
-    text: text.slice(0, maxLength),
+    text: truncateText(text, maxLength),
     truncated: text.length > maxLength,
     totalLength: text.length,
     url: window.location.href,

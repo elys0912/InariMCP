@@ -326,6 +326,14 @@ export async function performScroll(
             behavior: "smooth",
           });
         return { scrolled: true, position: "bottom" };
+      default: {
+        // Reached only by a message that bypassed the server schema.
+        const unknown: never = options.direction;
+        throw new Error(
+          `Unknown scroll direction: ${JSON.stringify(unknown)} ` +
+            "(expected up, down, left, right, top or bottom)",
+        );
+      }
     }
 
     if (element) {

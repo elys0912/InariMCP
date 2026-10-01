@@ -30,6 +30,7 @@
 // passed to installPageHooks (log-store.ts), and it imports nothing from
 // log-store.ts.
 
+import { truncateText } from "./dom";
 import type { ConsoleLogEntry, NetworkLogEntry } from "./types";
 
 /** Console message length kept per argument / per entry. */
@@ -178,7 +179,7 @@ function describeFetch(input: unknown, init: unknown): NetworkLogEntry {
     const fromInit = readHeaders(opts.headers);
     if (fromInit) requestHeaders = fromInit;
     if (opts.body !== undefined && opts.body !== null) {
-      requestBody = safeString(opts.body).substring(0, 1000);
+      requestBody = truncateText(safeString(opts.body), 1000);
     }
   }
 
@@ -216,12 +217,12 @@ async function recordFetchResponse(
         const text = await clone.text();
         if (contentType.includes("application/json")) {
           try {
-            entry.responseBody = JSON.stringify(JSON.parse(text), null, 2).substring(0, 5000);
+            entry.responseBody = truncateText(JSON.stringify(JSON.parse(text), null, 2), 5000);
           } catch {
-            entry.responseBody = text.substring(0, 5000);
+            entry.responseBody = truncateText(text, 5000);
           }
         } else {
-          entry.responseBody = text.substring(0, 5000);
+          entry.responseBody = truncateText(text, 5000);
         }
       } catch {
         entry.responseBody = "[Could not read response]";
@@ -377,7 +378,7 @@ function installXhrHooks(pageWin: Window & typeof globalThis, sink: PageHookSink
           entry.startTime = new Date().toISOString();
           entry.requestBody =
             args[0] !== undefined && args[0] !== null
-              ? safeString(args[0]).substring(0, 1000)
+              ? truncateText(safeString(args[0]), 1000)
               : null;
 
           xhr.addEventListener("load", () => {
@@ -386,7 +387,7 @@ function installXhrHooks(pageWin: Window & typeof globalThis, sink: PageHookSink
             entry.statusText = xhr.statusText;
             entry.duration = Date.now() - startTime;
             try {
-              entry.responseBody = xhr.responseText.substring(0, 5000);
+              entry.responseBody = truncateText(xhr.responseText, 5000);
             } catch {
               // responseType other than "" / "text"
               entry.responseBody = "[Could not read response]";
@@ -394,12 +395,16 @@ function installXhrHooks(pageWin: Window & typeof globalThis, sink: PageHookSink
             sink.pushNetworkLog(entry);
           });
 
-          xhr.addEventListener("error", () => {
+          // Exactly one of load / error / abort / timeout ends a send().
+          const recordFailure = (error: string) => () => {
             if (!sink.shouldRecord()) return;
-            entry.error = "Network error";
+            entry.error = error;
             entry.duration = Date.now() - startTime;
             sink.pushNetworkLog(entry);
-          });
+          };
+          xhr.addEventListener("error", recordFailure("Network error"));
+          xhr.addEventListener("abort", recordFailure("Aborted"));
+          xhr.addEventListener("timeout", recordFailure("Timeout"));
         }
       } catch {
         // bookkeeping only
@@ -432,10 +437,12 @@ function installConsoleHooks(pageWin: Window & typeof globalThis, sink: PageHook
           sink.pushConsoleLog({
             level: method,
             timestamp: new Date().toISOString(),
-            message: args
-              .map((arg) => stringifyArg(arg).slice(0, MAX_CONSOLE_ARG_CHARS))
-              .join(" ")
-              .slice(0, MAX_CONSOLE_MESSAGE_CHARS),
+            message: truncateText(
+              args
+                .map((arg) => truncateText(stringifyArg(arg), MAX_CONSOLE_ARG_CHARS))
+                .join(" "),
+              MAX_CONSOLE_MESSAGE_CHARS,
+            ),
             url: window.location.href,
           });
         } catch {

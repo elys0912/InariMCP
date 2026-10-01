@@ -3,6 +3,22 @@
 
 import type { FindElementOptions, ElementInfo } from "./types";
 
+/**
+ * `s` cut to at most `max` UTF-16 code units, never between the two halves
+ * of a surrogate pair (a character that does not fit is dropped whole).
+ */
+export function truncateText(s: string, max: number): string {
+  if (s.length <= max) return s;
+  if (max <= 0) return "";
+  const last = s.charCodeAt(max - 1);
+  return s.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max);
+}
+
+/** An element's `value` as a truncated string (null when it has none). */
+export function truncatedValue(value: unknown, max: number): string | null {
+  return value === undefined || value === null ? null : truncateText(String(value), max);
+}
+
 export function isTextInput(el: Element): el is HTMLInputElement | HTMLTextAreaElement {
   return el.tagName === "INPUT" || el.tagName === "TEXTAREA";
 }
@@ -295,10 +311,8 @@ export function getElementInfo(element: Element): ElementInfo {
     classes: Array.from(element.classList),
     name: htmlEl.name || null,
     type: htmlEl.type || null,
-    text: element.textContent?.trim().substring(0, 200) || null,
-    value: isPassword
-      ? "[MASKED]"
-      : (htmlEl.value?.substring(0, 200) ?? null),
+    text: truncateText(element.textContent?.trim() ?? "", 200) || null,
+    value: isPassword ? "[MASKED]" : truncatedValue(htmlEl.value, 200),
     href: (element as HTMLAnchorElement).href || null,
     src: (element as HTMLImageElement).src || null,
     placeholder: htmlEl.placeholder || null,
