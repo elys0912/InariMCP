@@ -6,6 +6,15 @@ User-facing changes of KitsuneMCP, newest first. Commit hashes are given in pare
 
 ## Unreleased
 
+### Security
+
+- **An empty `container_scope.container_name` is a configuration error**: `"container_name": ""` in `safety.json` used to switch the container scope off without a word; it now refuses every tool like any other broken setting (shown by `fox_safety_status`), whether the scope is enabled or not. Give the container a name (3bb171d)
+- **The Extension refuses a command whose safety metadata it cannot use**: a container scope or a URL rule field (protected / blocked / allowed) that the MCP Server attached but that is malformed — not a list, an empty container name — now refuses the command with `config_error` instead of running it without that check. This only happens when the Extension and the MCP Server do not match; update both (3bb171d, f1db501)
+- **A URL pattern whose path holds `?` or `#` is a configuration error**: patterns compare the path of the URL only, so `example.com/a?x=1` or `example.com/a#top` matched nothing and, in `blocked_url_patterns` / `protected_url_patterns`, protected nothing without a warning. Such a pattern (also with `%3F` / `%23`) is now an error in every list. Drop the query or fragment, or write the pattern as `re:` (f1db501)
+- **Commands from the Native Host must use the wire action names**: an internal action name sent over Native Messaging is answered with `Unknown action` (the Extension's own popup still uses them) (d32eefb)
+
+## Unreleased
+
 Changes since 0.1.4. Read **Breaking** before updating, and follow [Update](../README.md#update) in the README.
 
 ### Security
