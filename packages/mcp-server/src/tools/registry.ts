@@ -1,5 +1,7 @@
 /**
- * Tool registration — bridges TOOL_SCHEMAS to McpServer.registerTool().
+ * Tool registration — bridges the public tools (public-tools.ts), or with
+ * FOX_CAPS=legacy the pre-consolidation tools (schemas.ts), to
+ * McpServer.registerTool().
  *
  * Uses the FOX_CAPS environment variable to control which tools are
  * registered, keeping token budgets manageable when other MCP servers
@@ -14,6 +16,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { TOOL_SCHEMAS } from './schemas.js';
 import { toolAnnotations } from './classification.js';
+import { PUBLIC_TOOLS } from './public-tools.js';
+import { deprecationNote } from './operations.js';
 import { ENV } from '@kitsune-mcp/shared';
 
 /**
@@ -92,13 +96,45 @@ const LEGACY_PROFILES: Record<string, string[]> = {
   ],
 };
 
+/**
+ * Named profiles that group the public tools (tools/public-tools.ts).
+ * Every public tool is in at least one. `fox_safety_status` is always
+ * registered regardless of profile.
+ */
+const PROFILES: Record<string, string[]> = {
+  core: [
+    'fox_navigate',
+    'fox_click',
+    'fox_type',
+    'fox_press_key',
+    'fox_set_value',
+    'fox_screenshot',
+    'fox_snapshot',
+    'fox_read',
+    'fox_find',
+    'fox_tabs',
+    'fox_tab',
+    'fox_interact',
+    'fox_wait',
+    'fox_handle_dialog',
+  ],
+  logs: ['fox_logging', 'fox_get_logs'],
+  script: ['fox_evaluate', 'fox_observer'],
+  // The old workflow profile: fox_wait_and_act is fox_evaluate mode=wait_and_act.
+  workflow: ['fox_evaluate'],
+  human: ['fox_request_approval', 'fox_detect_captcha'],
+  // Containers are fox_tabs what=containers and fox_tab action=create with container.
+  container: ['fox_tabs', 'fox_tab'],
+  wait: ['fox_wait'],
+};
+
 /** Tool that is always registered regardless of profile. */
 const ALWAYS_REGISTERED = 'fox_safety_status';
 
 /**
- * FOX_CAPS segment that selects the pre-consolidation tool names instead
- * of the current ones. Alone it means all of them; the other segments then
- * name LEGACY_PROFILES.
+ * FOX_CAPS segment that selects the pre-consolidation tool names (the
+ * operations of schemas.ts) instead of the public tools. Alone it means
+ * all of them; the other segments then name LEGACY_PROFILES.
  */
 const LEGACY_SEGMENT = 'legacy';
 
@@ -106,40 +142,41 @@ const LEGACY_SEGMENT = 'legacy';
 // Profile resolution
 // ---------------------------------------------------------------------------
 
+interface ToolSet {
+  /** Pre-consolidation names (FOX_CAPS contains `legacy`). */
+  legacy: boolean;
+  names: Set<string>;
+}
+
 /**
  * Resolve the set of tool names that should be registered.
  *
  * @param capsEnv - The `FOX_CAPS` value (comma-separated profile names,
- *                  or `"all"`). When undefined/empty, ALL tools are registered
- *                  for backward compatibility.
- * @returns A Set of tool names to register.
+ *                  or `"all"`, optionally with `legacy`). When
+ *                  undefined/empty, all public tools are registered.
  */
-function resolveToolSet(capsEnv: string | undefined): Set<string> {
-  // No FOX_CAPS → register everything (backward compat)
-  if (!capsEnv || capsEnv.trim() === '') {
-    return new Set(Object.keys(TOOL_SCHEMAS));
-  }
-
-  const all = capsEnv
+function resolveToolSet(capsEnv: string | undefined): ToolSet {
+  const all = (capsEnv ?? '')
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
   const legacy = all.includes(LEGACY_SEGMENT);
   const segments = all.filter((s) => s !== LEGACY_SEGMENT);
-  const profiles = LEGACY_PROFILES;
+  const catalog = legacy ? TOOL_SCHEMAS : PUBLIC_TOOLS;
+  const profiles = legacy ? LEGACY_PROFILES : PROFILES;
 
-  // "all" (or legacy alone) → register everything
-  if (segments.includes('all') || (legacy && segments.length === 0)) {
-    return new Set(Object.keys(TOOL_SCHEMAS));
+  // No profile or "all" → register everything
+  if (segments.length === 0 || segments.includes('all')) {
+    return { legacy, names: new Set(Object.keys(catalog)) };
   }
 
-  const toolSet = new Set<string>();
+  const names = new Set<string>();
 
   for (const segment of segments) {
     const profileTools = profiles[segment];
     if (profileTools) {
       for (const t of profileTools) {
-        toolSet.add(t);
+        names.add(t);
       }
     } else {
       // Unknown profile name — warn but don't crash
@@ -150,26 +187,46 @@ function resolveToolSet(capsEnv: string | undefined): Set<string> {
   }
 
   // fox_safety_status is always present
-  toolSet.add(ALWAYS_REGISTERED);
+  names.add(ALWAYS_REGISTERED);
 
-  return toolSet;
-}
-
-/**
- * Names of the tools exposed under the current FOX_CAPS (or the given
- * override; the daemon's HTTP entry points pass 'all').
- */
-export function getRegisteredToolNames(capsOverride?: string): Set<string> {
-  const toolSet = resolveToolSet(capsOverride ?? process.env[ENV.FOX_CAPS]);
-  for (const name of toolSet) {
-    if (!TOOL_SCHEMAS[name]) toolSet.delete(name);
-  }
-  return toolSet;
+  return { legacy, names };
 }
 
 // ---------------------------------------------------------------------------
 // registerTools
 // ---------------------------------------------------------------------------
+
+interface Registration {
+  description: string;
+  inputSchema: Record<string, import('zod').ZodType>;
+  annotations: Record<string, boolean>;
+}
+
+/** What tools/list shows for a public tool. */
+function publicRegistration(name: string): Registration | null {
+  const tool = PUBLIC_TOOLS[name];
+  if (!tool) return null;
+  return {
+    description: tool.description,
+    inputSchema: extractZodShape(tool.listSchema),
+    // fox_safety_status reads the server's own policy, nothing outside it.
+    annotations: name === ALWAYS_REGISTERED
+      ? { ...tool.annotations, openWorldHint: false }
+      : { ...tool.annotations },
+  };
+}
+
+/** What tools/list shows for a pre-consolidation name (FOX_CAPS=legacy). */
+function legacyRegistration(name: string): Registration | null {
+  const def = TOOL_SCHEMAS[name];
+  if (!def) return null;
+  const note = deprecationNote(name);
+  return {
+    description: note === null ? def.description : `[Deprecated: ${note}] ${def.description}`,
+    inputSchema: extractZodShape(def.inputSchema),
+    annotations: { ...toolAnnotations(def) },
+  };
+}
 
 /**
  * Register browser tools with the MCP server.
@@ -188,36 +245,20 @@ export function registerTools(
   capsOverride?: string,
 ): number {
   const capsEnv = capsOverride ?? process.env[ENV.FOX_CAPS];
-  const toolSet = resolveToolSet(capsEnv);
+  const { legacy, names } = resolveToolSet(capsEnv);
 
   let count = 0;
 
-  for (const toolName of toolSet) {
-    const def = TOOL_SCHEMAS[toolName];
-    if (!def) {
+  for (const toolName of names) {
+    const registration = legacy ? legacyRegistration(toolName) : publicRegistration(toolName);
+    if (!registration) {
       process.stderr.write(
-        `[KitsuneMCP] Tool '${toolName}' in profile but not in TOOL_SCHEMAS (skipped)\n`,
+        `[KitsuneMCP] Tool '${toolName}' in profile but not defined (skipped)\n`,
       );
       continue;
     }
 
-    // Extract the Zod object shape for McpServer.registerTool().
-    // The MCP SDK expects a ZodRawShapeCompat (Record<string, ZodType>),
-    // which is the `.shape` of a ZodObject.
-    const zodShape = extractZodShape(def.inputSchema);
-
-    const handler = handlerFactory(toolName);
-
-    server.registerTool(
-      toolName,
-      {
-        description: def.description,
-        inputSchema: zodShape,
-        // MCP tool annotations for client-side hints
-        annotations: toolAnnotations(def),
-      },
-      handler,
-    );
+    server.registerTool(toolName, registration, handlerFactory(toolName));
 
     count++;
   }

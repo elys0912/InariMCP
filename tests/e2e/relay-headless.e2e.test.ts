@@ -158,7 +158,7 @@ describe('relay → daemon → headless Firefox', () => {
   it('lists tools, navigates, reads, snapshots, screenshots and reports status', async () => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
-    for (const n of ['fox_navigate', 'fox_get_text', 'fox_snapshot', 'fox_screenshot', 'fox_safety_status']) {
+    for (const n of ['fox_navigate', 'fox_read', 'fox_snapshot', 'fox_screenshot', 'fox_safety_status']) {
       expect(names).toContain(n);
     }
 
@@ -172,7 +172,7 @@ describe('relay → daemon → headless Firefox', () => {
     daemonPid = info.pid;
     expect(info.headless).toBe(true);
 
-    const got = await client.callTool({ name: 'fox_get_text', arguments: {} });
+    const got = await client.callTool({ name: 'fox_read', arguments: { mode: 'text' } });
     expect(got.isError, text(got)).not.toBe(true);
     expect(text(got)).toContain(MARKER);
 

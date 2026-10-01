@@ -5,8 +5,10 @@
  * Regenerate (only when a change of the tool list is intended):
  *   UPDATE_GOLDEN=1 npx vitest run tests/contract/tools-list.test.ts
  *
+ * tests/golden/tools-list.json: the default list, the 21 public tools
+ * (tools/public-tools.ts).
  * tests/golden/tools-list-legacy.json: FOX_CAPS=legacy, the tools as they
- * were before the WP13 consolidation.
+ * were before the WP13 consolidation, deprecated ones marked as such.
  */
 
 import * as fs from 'node:fs';
@@ -17,6 +19,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { registerTools } from '../../packages/mcp-server/src/tools/registry.js';
+import { PUBLIC_TOOLS } from '../../packages/mcp-server/src/tools/public-tools.js';
 
 const UPDATE = process.env['UPDATE_GOLDEN'] === '1';
 const GOLDEN_DIR = fileURLToPath(new URL('../golden/', import.meta.url));
@@ -50,8 +53,26 @@ function golden(name: string, actual: unknown): unknown {
 }
 
 describe('tools/list', () => {
-  it('FOX_CAPS=legacy lists the pre-consolidation tools unchanged', async () => {
+  it('lists the public tools by default', async () => {
+    const actual = await listTools('');
+    expect(actual.map((t) => t.name).sort()).toEqual(Object.keys(PUBLIC_TOOLS).sort());
+    expect(actual).toEqual(golden('tools-list.json', actual));
+    for (const tool of actual) {
+      expect((tool.inputSchema as { type?: string }).type, tool.name).toBe('object');
+    }
+  });
+
+  it('every public tool is in a FOX_CAPS profile', async () => {
+    const profiles = ['core', 'logs', 'script', 'workflow', 'human', 'container', 'wait'];
+    const names = new Set((await listTools(profiles.join(','))).map((t) => t.name));
+    expect([...names].sort()).toEqual(Object.keys(PUBLIC_TOOLS).sort());
+  });
+
+  it('FOX_CAPS=legacy lists the pre-consolidation tools, deprecated ones marked', async () => {
     const actual = await listTools('legacy');
+    expect(actual).toHaveLength(41);
+    expect(actual.find((t) => t.name === 'fox_get_text')?.description)
+      .toMatch(/^\[Deprecated: fox_get_text is deprecated; use fox_read with mode='text'\.\] /);
     expect(actual).toEqual(golden('tools-list-legacy.json', actual));
   });
 
