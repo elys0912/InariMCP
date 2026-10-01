@@ -1,0 +1,141 @@
+// Captcha detection and the wait for the human to solve it.
+
+import { TIMEOUTS } from "./constants";
+import { createOverlayBanner } from "./overlay";
+import type { CaptchaWidget, CaptchaOptions } from "./types";
+
+/**
+ * Localized banner text (same as t() in i18n.ts).
+ */
+function msg(key: string, substitutions?: string | string[]): string {
+  return browser.i18n.getMessage(key, substitutions) || key;
+}
+
+function detectCaptcha(): { present: boolean; widgets: CaptchaWidget[] } {
+  const widgets: CaptchaWidget[] = [];
+
+  function hasResponseToken(name: string): boolean {
+    const el = document.querySelector(
+      `textarea[name="${CSS.escape(name)}"], input[name="${CSS.escape(name)}"]`,
+    ) as HTMLInputElement | HTMLTextAreaElement | null;
+    return !!(el && el.value && el.value.length > 0);
+  }
+
+  if (
+    document.querySelector(
+      '.g-recaptcha, iframe[src*="recaptcha"], #g-recaptcha-response',
+    )
+  ) {
+    widgets.push({
+      type: "recaptcha",
+      solved:
+        hasResponseToken("g-recaptcha-response") ||
+        !!document.querySelector(".recaptcha-checkbox-checked"),
+    });
+  }
+  if (
+    document.querySelector(
+      '.h-captcha, iframe[src*="hcaptcha"], textarea[name="h-captcha-response"]',
+    )
+  ) {
+    widgets.push({
+      type: "hcaptcha",
+      solved: hasResponseToken("h-captcha-response"),
+    });
+  }
+  if (
+    document.querySelector(
+      '.cf-turnstile, iframe[src*="challenges.cloudflare.com"], input[name="cf-turnstile-response"]',
+    )
+  ) {
+    widgets.push({
+      type: "turnstile",
+      solved: hasResponseToken("cf-turnstile-response"),
+    });
+  }
+  if (
+    widgets.length === 0 &&
+    document.querySelector(
+      'img[src*="captcha" i], input[name*="captcha" i], [id*="captcha" i], [class*="captcha" i]',
+    )
+  ) {
+    widgets.push({ type: "generic", solved: null });
+  }
+
+  return { present: widgets.length > 0, widgets };
+}
+
+export async function solveCaptcha(
+  options: CaptchaOptions = {},
+): Promise<Record<string, unknown>> {
+  const detection = detectCaptcha();
+  if (options.detectOnly) {
+    return { success: true, ...detection };
+  }
+  if (!detection.present) {
+    return {
+      success: true,
+      present: false,
+      message: "No captcha detected on the page.",
+    };
+  }
+  if (detection.widgets.every((w) => w.solved === true)) {
+    return {
+      success: true,
+      present: true,
+      solved: true,
+      message: "Captcha already solved.",
+      widgets: detection.widgets,
+    };
+  }
+
+  const timeoutMs = options.timeout || TIMEOUTS.CAPTCHA;
+  const start = Date.now();
+  const types = detection.widgets.map((w) => w.type).join(", ");
+
+  // Start the banner (resolves on button click or timeout)
+  const bannerPromise = createOverlayBanner({
+    id: "__fox_captcha_banner",
+    title: msg("bannerCaptchaTitle", types),
+    detail: msg("bannerCaptchaDetail"),
+    buttons: [
+      { label: msg("bannerDone"), value: "done", color: "#ffd166", textColor: "#0f3460" },
+      { label: msg("bannerCancel"), value: "cancel", color: "transparent", textColor: "#fff" },
+    ],
+    timeoutMs,
+    borderColor: "#ffd166",
+    background: "#0f3460",
+  });
+
+  // Poll for token resolution concurrently
+  const pollPromise = new Promise<string>((resolve) => {
+    const poll = setInterval(() => {
+      const now = detectCaptcha();
+      const tokened = now.widgets.filter((w) => w.solved !== null);
+      if (tokened.length && tokened.every((w) => w.solved === true)) {
+        clearInterval(poll);
+        resolve("token");
+      }
+    }, 1000);
+    // Clean up poll when banner resolves first
+    bannerPromise.then(() => clearInterval(poll));
+  });
+
+  const result = await Promise.race([bannerPromise, pollPromise]);
+  // Remove banner if poll won the race
+  const leftover = document.getElementById("__fox_captcha_banner");
+  if (leftover) leftover.remove();
+
+  const base = { success: true, present: true, elapsedMs: Date.now() - start };
+
+  if (result === "token") {
+    return { ...base, solved: true, resolvedBy: "token", widgets: detectCaptcha().widgets };
+  } else if (result === "done") {
+    return { ...base, solved: true, resolvedBy: "human", widgets: detectCaptcha().widgets };
+  } else if (result === "cancel") {
+    return { ...base, solved: false, cancelled: true };
+  } else {
+    // timeout
+    return { ...base, solved: false, timedOut: true, widgets: detectCaptcha().widgets };
+  }
+}

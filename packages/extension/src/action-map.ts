@@ -7,12 +7,12 @@
 // at the entry of handleCommand().
 //
 // Value semantics:
-//   string -> internal action name handled by background.ts
+//   string -> internal action name handled by background/dispatch.ts
 //   null   -> known wire action that the extension does not implement yet
 //             (answered with "Not implemented in extension: <name>", which is
 //             distinct from "Unknown action")
 //
-// Imported by background.ts (bundled into dist/background.js). For contract
+// Imported by background/wire.ts (bundled into dist/background.js). For contract
 // tests that load this file as a module, the same table is also exposed on
 // globalThis.
 //

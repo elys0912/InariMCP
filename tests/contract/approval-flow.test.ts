@@ -32,7 +32,7 @@ import { getConnectionManager } from '../../packages/mcp-server/src/connection/m
 import { getApprovalStore } from '../../packages/mcp-server/src/safety/approval.js';
 import { callWithApproval, findApprovalRequest } from '../../packages/mcp-server/src/relay/approval.js';
 import { startHttpBridge } from '../../packages/mcp-server/src/transport/http-bridge.js';
-import { loadExtensionFunction, readExtensionSource } from './helpers/extension-source.js';
+import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 // ---------------------------------------------------------------------------
 // Extension-side helpers (approval.ts publishes them on globalThis)
@@ -111,7 +111,8 @@ let tmpDir: string;
 beforeAll(async () => {
   await import('../../packages/extension/src/approval.ts');
   ext = (globalThis as { KITSUNE_APPROVAL?: ExtensionApproval }).KITSUNE_APPROVAL!;
-  toWireResponse = await loadExtensionFunction<ToWireResponse>('background.ts', 'toWireResponse');
+  // The test feeds plain records (not CommandResult): typed by its own alias.
+  toWireResponse = (await import('../../packages/extension/src/background/wire.ts')).toWireResponse as unknown as ToWireResponse;
 
   // The guard singleton reads this config (no audit log, no rate limit).
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-approval-'));
@@ -456,8 +457,8 @@ describe('extension: approval request handling', () => {
 });
 
 describe('extension: approval UI is outside the page', () => {
-  const background = readExtensionSource('background.ts');
-  const content = readExtensionSource('content.ts');
+  const background = readExtensionTree('background');
+  const content = readExtensionTree('content');
   const popup = readExtensionSource('popup/popup.ts');
 
   it('content.ts has no approval banner or handler', () => {
@@ -483,7 +484,7 @@ describe('extension: approval UI is outside the page', () => {
   });
 
   it('approval.ts is bundled into background.js and popup.js (imported, not loaded separately)', () => {
-    expect(readExtensionSource('background.ts')).toMatch(/^import \{[^}]*\bAPPROVAL_MESSAGE\b[^}]*\} from "\.\/approval";$/m);
+    expect(background).toMatch(/^import \{[^}]*\bAPPROVAL_MESSAGE\b[^}]*\} from "\.\.?\/approval";$/m);
     expect(readExtensionSource('popup/popup.ts')).toMatch(/^import \{[^}]*\bAPPROVAL_MESSAGE\b[^}]*\} from '\.\.\/approval';$/m);
     const manifest = JSON.parse(readExtensionSource('../manifest.json')) as { background: { scripts: string[] } };
     expect(manifest.background.scripts).toEqual(['dist/background.js']);

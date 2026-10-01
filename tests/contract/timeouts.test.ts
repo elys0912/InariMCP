@@ -42,7 +42,7 @@ import {
 } from '../../packages/mcp-server/src/connection/manager.js';
 import { RELAY_TIMEOUT_MARGIN_MS } from '../../packages/mcp-server/src/relay/daemon-client.js';
 import { TOOL_SCHEMAS } from '../../packages/mcp-server/src/tools/schemas.js';
-import { readExtensionSource, readNumericObjectConstant } from './helpers/extension-source.js';
+import { readExtensionTree, readNumericObjectConstant } from './helpers/extension-source.js';
 
 const KINDS: readonly BrowserKind[] = ['native-host', 'headless'];
 const ARG_SETS: readonly Record<string, unknown>[] = [
@@ -136,8 +136,8 @@ describe('4. timeout argument keys', () => {
 });
 
 describe('5. daemon waits longer than the extension-side fallbacks', () => {
-  const content = readNumericObjectConstant(readExtensionSource('content.ts'), 'TIMEOUTS');
-  const background = readNumericObjectConstant(readExtensionSource('background.ts'), 'TIMEOUTS');
+  const content = readNumericObjectConstant(readExtensionTree('content'), 'TIMEOUTS');
+  const background = readNumericObjectConstant(readExtensionTree('background'), 'TIMEOUTS');
 
   // Approval requests wait in the background (toolbar popup), not in the page.
   it('request_approval: daemon base > background.ts TIMEOUTS.APPROVAL', () => {
@@ -162,8 +162,8 @@ describe('5. daemon waits longer than the extension-side fallbacks', () => {
 });
 
 describe('5b. extension-side waits without a timeout argument end before the daemon (WP5)', () => {
-  const content = readNumericObjectConstant(readExtensionSource('content.ts'), 'TIMEOUTS');
-  const background = readNumericObjectConstant(readExtensionSource('background.ts'), 'TIMEOUTS');
+  const content = readNumericObjectConstant(readExtensionTree('content'), 'TIMEOUTS');
+  const background = readNumericObjectConstant(readExtensionTree('background'), 'TIMEOUTS');
 
   it.each([
     ['navigate', background, 'PAGE_LOAD'],

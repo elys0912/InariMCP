@@ -1,8 +1,8 @@
 // KitsuneMCP setup state (type only)
 //
-// Computed by background.ts (getSetupState) and sent to the popup in the
+// Computed by background/setup-badge.ts (getSetupState) and sent to the popup in the
 // `getStatus` reply. Kept in its own file so that the popup does not depend
-// on background.ts, not even for types.
+// on the background modules, not even for types.
 
 /**
  * What the user has to do next, as far as the Extension can tell:

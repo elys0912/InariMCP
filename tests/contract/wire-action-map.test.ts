@@ -1,12 +1,12 @@
 /**
  * Contract: server wire action names (shared BROWSER_ACTIONS) ⇔ Extension
- * WIRE_ACTION_MAP (packages/extension/src/action-map.ts) ⇔ background.ts
- * dispatcher.
+ * WIRE_ACTION_MAP (packages/extension/src/action-map.ts) ⇔ background
+ * dispatcher (background.ts and background/*.ts).
  */
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BROWSER_ACTIONS } from '@kitsune-mcp/shared';
-import { readExtensionSource } from './helpers/extension-source.js';
+import { readExtensionTree } from './helpers/extension-source.js';
 
 type WireMap = ReadonlyMap<string, string | null>;
 
@@ -36,7 +36,7 @@ describe('BROWSER_ACTIONS ⇔ WIRE_ACTION_MAP', () => {
   });
 
   it('every mapped internal name is a case of the background.ts dispatcher', () => {
-    const source = readExtensionSource('background.ts');
+    const source = readExtensionTree('background');
     const cases = new Set([...source.matchAll(/^\s*case "([^"]+)":/gm)].map((m) => m[1]));
     const unhandled = [...wireMap.entries()]
       .filter(([, internal]) => internal !== null && !cases.has(internal))
