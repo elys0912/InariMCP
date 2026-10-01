@@ -90,6 +90,15 @@ const MAX_BODY_BYTES = 1_048_576; // 1 MB — generous for any JSON payload
 const MAX_DRAIN_BYTES = 16 * MAX_BODY_BYTES;
 /** Upper bound of remembered nonces (far above any real request rate). */
 const MAX_REMEMBERED_NONCES = 100_000;
+/**
+ * How long a client has to send its whole body. A signed request's body is
+ * read before the signature can be checked, so this bounds what a client
+ * without the token can hold open. Tool calls send their body at once; only
+ * the answer may take minutes (requestTimeout stays 0).
+ */
+const BODY_TIMEOUT_MS = 30_000;
+/** How long a client has to send its request headers. */
+const HEADERS_TIMEOUT_MS = 10_000;
 
 // ---------------------------------------------------------------------------
 // Auth helpers
@@ -241,10 +250,14 @@ export class BodyTooLargeError extends Error {
  * rejects with BodyTooLargeError only once the client has finished sending:
  * answering (and closing) while it is still writing would reset the
  * connection, and the client would never see the 413. A client that keeps
- * sending past MAX_DRAIN_BYTES is cut off instead.
+ * sending past MAX_DRAIN_BYTES is cut off instead, and so is one that has
+ * not finished within `timeoutMs`.
  */
-function readBody(req: http.IncomingMessage): Promise<Buffer> {
+function readBody(req: http.IncomingMessage, timeoutMs: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => req.destroy(), timeoutMs);
+    timer.unref();
+    req.once('close', () => clearTimeout(timer));
     const chunks: Buffer[] = [];
     let totalLength = 0;
     const declared = Number(req.headers['content-length']);
@@ -306,6 +319,8 @@ export interface HttpBridgeOptions {
   activity?: DaemonActivity;
   /** Extra fields for GET /daemon/info (authenticated). */
   info?: () => Record<string, unknown>;
+  /** How long a client has to send its body (tests shorten it). */
+  bodyTimeoutMs?: number;
 }
 
 /**
@@ -324,6 +339,7 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
   const port = options.port ?? ENV_DEFAULTS.FOX_HTTP_PORT;
 
   const { apiToken, connectionManager, activity } = options;
+  const bodyTimeoutMs = options.bodyTimeoutMs ?? BODY_TIMEOUT_MS;
   const verifier = new SignedRequestVerifier(apiToken);
   const ready = options.ready ?? Promise.resolve();
   let isReady = options.ready === undefined;
@@ -495,7 +511,7 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
       return;
     }
 
-    readBody(req)
+    readBody(req, bodyTimeoutMs)
       .then((rawBody) => {
         if (signed && !authenticate(req, rawBody, reply)) {
           reply.error(403, 'Unauthorized');
@@ -672,6 +688,8 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
   // detect_captcha 200 s, or longer with an explicit timeout argument):
   // don't let Node's default request timeout cut them off.
   server.requestTimeout = 0;
+  // Explicit rather than Node's default (checked every connectionsCheckingInterval, 30 s).
+  server.headersTimeout = HEADERS_TIMEOUT_MS;
 
   return new Promise<http.Server>((resolve, reject) => {
     const onStartupError = (err: Error): void => {

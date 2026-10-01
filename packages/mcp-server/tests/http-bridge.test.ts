@@ -3,7 +3,7 @@ import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { getConnectionManager } from '../src/connection/manager.js';
-import { isAllowedHostHeader, startHttpBridge } from '../src/transport/http-bridge.js';
+import { isAllowedHostHeader, startHttpBridge, type HttpBridgeOptions } from '../src/transport/http-bridge.js';
 import {
   AUTH_HEADER,
   DAEMON_PROTOCOL_VERSION,
@@ -20,12 +20,13 @@ import { TOKEN, waitFor } from './helpers/ws.js';
 let server: http.Server | undefined;
 let port = 0;
 
-async function start(): Promise<void> {
+async function start(extra: Partial<HttpBridgeOptions> = {}): Promise<void> {
   server = await startHttpBridge({
     host: '127.0.0.1',
     port: 0,
     apiToken: TOKEN,
     connectionManager: getConnectionManager(),
+    ...extra,
   });
   port = (server.address() as AddressInfo).port;
 }
@@ -199,6 +200,23 @@ describe('request hygiene', () => {
     });
     expect(r).toBe(413);
   });
+
+  it('cuts a signed request whose body does not arrive in time', async () => {
+    await start({ bodyTimeoutMs: 300 });
+    const t0 = Date.now();
+    await new Promise<void>((resolve) => {
+      const sock = net.connect(port, '127.0.0.1', () => {
+        sock.write(
+          'POST /mcp/call HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 100\r\n' +
+          `${AUTH_HEADER.signature}: ${'0'.repeat(64)}\r\n\r\n{"name":`,
+        );
+      });
+      sock.on('error', () => { /* reset is fine */ });
+      sock.on('close', () => resolve());
+    });
+    expect(Date.now() - t0).toBeLessThan(3_000);
+  });
+  // TODO(test): a body sent at once is not cut while the answer takes longer than the body timeout; headersTimeout
 
   it('answers 400 to a JSON body that is not an object', async () => {
     await start();

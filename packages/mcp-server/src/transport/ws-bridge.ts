@@ -57,13 +57,21 @@ import { AUTH_PROTOCOL, computeMac, isNonce, MAC_LABEL, macMatches, newNonce, st
 
 const AUTH_TIMEOUT_MS = 5_000; // for the auth frame (the Native Host answers at once)
 /**
- * Connections that have not sent their auth frame yet. Each may buffer up to
- * MAX_PAYLOAD_BYTES before the size of its first frame can be checked, so
- * their number bounds what a local process without the token can make us hold.
+ * Connections that have not sent their auth frame yet. Bounds, with
+ * MAX_UNAUTHENTICATED_BYTES, what a local process without the token can
+ * make us hold.
  */
 const MAX_UNAUTHENTICATED = 8;
 /** Largest frame accepted before authentication (the auth frame is ~200 bytes). */
 const MAX_AUTH_FRAME_BYTES = 4_096;
+/**
+ * Raw bytes a connection may send before it has authenticated. Counted on
+ * the socket, so a large first frame is cut off while it arrives instead of
+ * being buffered up to MAX_PAYLOAD_BYTES first.
+ */
+const MAX_UNAUTHENTICATED_BYTES = 64 * 1024;
+/** How long a refused connection has to answer our close frame before it is cut. */
+const CLOSE_GRACE_MS = 1_000;
 /** Largest frame accepted at all: the Native Host's own cap on Extension frames. */
 const MAX_PAYLOAD_BYTES = ENV_DEFAULTS.NATIVE_MSG_MAX_INCOMING_SIZE;
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -196,18 +204,28 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
       log(`WebSocket error (${browserId ?? 'unauthenticated'}): ${err.message}`);
     });
 
+    /**
+     * Refuse an unauthenticated connection. close() waits for the peer's
+     * close frame (up to 30 s in `ws`); a peer that never sends it would
+     * keep the socket open, so it is cut after CLOSE_GRACE_MS.
+     */
+    const refuse = (code: number, reason: string): void => {
+      ws.close(code, reason);
+      setTimeout(() => ws.terminate(), CLOSE_GRACE_MS).unref();
+    };
+
     const origin = req.headers['origin'] as string | undefined;
 
     // ----- Origin check -----
     if (!isOriginAllowed(origin)) {
       log(`WebSocket connection refused: invalid origin "${origin}"`);
-      ws.close(POLICY_VIOLATION, 'invalid origin');
+      refuse(POLICY_VIOLATION, 'invalid origin');
       return;
     }
 
     if (unauthenticated >= MAX_UNAUTHENTICATED) {
       log(`WebSocket connection refused: ${MAX_UNAUTHENTICATED} connections already waiting for auth`);
-      ws.close(TRY_AGAIN_LATER, 'too many pending connections');
+      refuse(TRY_AGAIN_LATER, 'too many pending connections');
       return;
     }
     unauthenticated++;
@@ -218,11 +236,31 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
     };
     ws.on('close', settle);
 
+    // ----- Byte budget until the auth frame is in -----
+    // A peer still sending would not read a close frame, and `ws` would go
+    // on buffering what it sends: cut it at once.
+    let received = 0;
+    // Set by the first frame. `ws` may deliver it from inside the very
+    // 'data' event that also carries later bytes, and an emit already in
+    // progress still calls a listener removed meanwhile: those must not count.
+    let firstFrameIn = false;
+    const countBytes = (chunk: Buffer): void => {
+      if (firstFrameIn) return;
+      received += chunk.length;
+      if (received <= MAX_UNAUTHENTICATED_BYTES) return;
+      req.socket.off('data', countBytes);
+      log('WebSocket connection refused: too much data before auth');
+      ws.close(MESSAGE_TOO_BIG, 'too much data before auth');
+      ws.terminate();
+    };
+    req.socket.on('data', countBytes);
+    ws.on('close', () => req.socket.off('data', countBytes));
+
     // ----- Challenge (5 s to answer) -----
     const serverNonce = newNonce();
     const authTimer = setTimeout(() => {
       log('WebSocket connection refused: auth timeout');
-      ws.close(POLICY_VIOLATION, 'auth timeout');
+      refuse(POLICY_VIOLATION, 'auth timeout');
     }, AUTH_TIMEOUT_MS);
     ws.on('close', () => clearTimeout(authTimer));
     ws.send(JSON.stringify({ type: 'auth_challenge', protocol: AUTH_PROTOCOL, nonce: serverNonce }));
@@ -230,10 +268,12 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
     ws.once('message', (raw: Buffer | ArrayBuffer | Buffer[]) => {
       clearTimeout(authTimer);
       settle();
+      firstFrameIn = true;
+      req.socket.off('data', countBytes);
 
       if (frameLength(raw) > MAX_AUTH_FRAME_BYTES) {
         log('WebSocket connection refused: oversized auth frame');
-        ws.close(MESSAGE_TOO_BIG, 'auth frame too large');
+        refuse(MESSAGE_TOO_BIG, 'auth frame too large');
         return;
       }
 
@@ -253,7 +293,7 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
             ? 'plaintext token frame from an older Native Host (update it: this daemon uses challenge-response auth)'
             : 'no valid auth frame'),
         );
-        ws.close(POLICY_VIOLATION, legacy ? 'auth protocol mismatch' : 'auth required');
+        refuse(POLICY_VIOLATION, legacy ? 'auth protocol mismatch' : 'auth required');
         return;
       }
 
@@ -263,7 +303,7 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
         !macMatches(frame['mac'], computeMac(apiToken, MAC_LABEL.wsClient, serverNonce, clientNonce))
       ) {
         log('WebSocket connection refused: invalid auth MAC');
-        ws.close(POLICY_VIOLATION, 'auth failed');
+        refuse(POLICY_VIOLATION, 'auth failed');
         return;
       }
 
