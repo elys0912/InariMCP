@@ -581,12 +581,14 @@ describe('5.2 log buffers across a navigation', () => {
       .toEqual({ accepted: true });
     // Not the top frame, and not a tab logging is on for: refused outright.
     expect(post({ ...sender(page, 1), url: 'https://ad.test/' }, { console: [{ message: 'iframe' }] }))
-      .toEqual({ accepted: false });
+      .toEqual({ accepted: false, reason: 'not_top_frame' });
     expect(post(sender(fakeTab({ id: 12, url: 'https://app.test/' }), TOP_FRAME_ID), { console: [{ message: 'other tab' }] }))
-      .toEqual({ accepted: false });
-    // Navigated to a protected page: the listener takes the batch, the
-    // buffer drops it (recording is paused there).
-    expect(post(sender(bank, TOP_FRAME_ID), { console: [{ message: 'secret' }] })).toEqual({ accepted: true });
+      .toEqual({ accepted: false, reason: 'not_logging' });
+    // Navigated to a protected page: the buffer drops the batch (recording
+    // is paused there) and the reply says so (WP38), so the page drops what
+    // it still holds.
+    expect(post(sender(bank, TOP_FRAME_ID), { console: [{ message: 'secret' }] }))
+      .toEqual({ accepted: false, reason: 'protected_page' });
     expect(await getLogsOfTab('getConsoleLogs', bank, {}, []))
       .toMatchObject({ success: true, pausedForProtectedDomain: true, totalCount: 1 });
     // Back on a normal page: the same buffer continues.
@@ -600,7 +602,7 @@ describe('5.2 log buffers across a navigation', () => {
 
     // stop_logging keeps the buffer readable but takes no further batches.
     expect(await stopLoggingOnTab(page2)).toMatchObject({ success: true, consoleLogsCount: 2, networkLogsCount: 1 });
-    expect(post(sender(page2, TOP_FRAME_ID), { console: [{ message: 'late' }] })).toEqual({ accepted: false });
+    expect(post(sender(page2, TOP_FRAME_ID), { console: [{ message: 'late' }] })).toEqual({ accepted: false, reason: 'not_logging' });
     expect(await getLogsOfTab('getConsoleLogs', page2, {}, []))
       .toMatchObject({ loggingEnabled: false, returnedCount: 2 });
 
@@ -620,7 +622,7 @@ describe('5.2 log buffers across a navigation', () => {
 
     close(13);
     expect(await getLogsOfTab('getConsoleLogs', tab, {}, [])).toMatchObject({ totalCount: 0, loggingEnabled: false });
-    expect(post(sender(tab, TOP_FRAME_ID), { console: [{ message: 'y' }] })).toEqual({ accepted: false });
+    expect(post(sender(tab, TOP_FRAME_ID), { console: [{ message: 'y' }] })).toEqual({ accepted: false, reason: 'not_logging' });
   });
 });
 

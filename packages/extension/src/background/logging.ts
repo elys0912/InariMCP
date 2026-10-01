@@ -42,22 +42,27 @@ interface LogBuffer {
 const logBuffers = new Map<number, LogBuffer>();
 const LOG_BUFFER_LIMIT = 500;
 
+/** Why a batch of log entries was dropped (LOG_RECORD_MESSAGE reply `reason`). */
+export type LogRecordRefusal = "not_top_frame" | "not_logging" | "protected_page";
+
 /**
  * Store entries a tab's top-frame content script sent (batch, flush or stop
  * reply). Dropped when the tab has no buffer (logging never started, or the
- * buffer was released) or the page they came from is protected.
+ * buffer was released) or the page they came from is protected; the reason
+ * is returned (null: stored).
  */
 export function acceptLogRecords(
   tabId: number,
   pageUrls: (string | undefined)[],
   payload: { console?: unknown; network?: unknown },
-): void {
+): LogRecordRefusal | null {
   const buffer = logBuffers.get(tabId);
-  if (!buffer) return;
+  if (!buffer) return "not_logging";
   const patterns = loggingTabs.get(tabId)?.patterns ?? [];
-  if (pageUrls.some((u) => findProtectedMatch(u, patterns) !== undefined)) return;
+  if (pageUrls.some((u) => findProtectedMatch(u, patterns) !== undefined)) return "protected_page";
   appendLogRecords(buffer.console, payload.console, LOG_BUFFER_LIMIT);
   appendLogRecords(buffer.network, payload.network, LOG_BUFFER_LIMIT);
+  return null;
 }
 
 function logCounts(tabId: number): { consoleLogsCount: number; networkLogsCount: number } {

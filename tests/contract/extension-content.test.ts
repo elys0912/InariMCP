@@ -478,6 +478,50 @@ describe('content-side log batching', () => {
     expect(r).toEqual({ a: 1, b: 0, c: 1, d: 0, sent: 0, logging: true });
   });
 
+  real('WP38 a batch refused for a protected page drops what is still pending', async () => {
+    await load('<div>page</div>');
+    const r = await run<Record<string, number>>(
+      `let answer;
+       window.browser.runtime.sendMessage = (m) => {
+         window.__sent.push(m);
+         return new Promise((resolve) => { answer = resolve; });
+       };
+       f.log.startLogging({});
+       console.log('one');
+       await sleep(400);
+       console.log('two');
+       answer({ accepted: false, reason: 'protected_page' });
+       await sleep(0);
+       const pending = f.log.flushLogs().console.length;
+       await sleep(400);
+       return { pending, sent: records().length };`,
+    );
+    // 'one' went in the refused batch; 'two' is dropped, and its timer with it.
+    expect(r).toEqual({ pending: 0, sent: 1 });
+  });
+
+  real('WP38 clearLogs cancels the batch timer once nothing is pending', async () => {
+    await load('<div>page</div>');
+    const r = await run<boolean[]>(
+      `const set = window.setTimeout, clear = window.clearTimeout;
+       const timers = []; const cleared = [];
+       window.setTimeout = (fn, ms) => { const id = set(fn, ms); if (ms === 250) timers.push(id); return id; };
+       window.clearTimeout = (id) => { cleared.push(id); return clear(id); };
+       try {
+         f.log.startLogging({});
+         console.log('a');
+         f.log.clearLogs({ console: false });
+         const keptWhilePending = !cleared.includes(timers[0]);
+         f.log.clearLogs({});
+         return [keptWhilePending, cleared.includes(timers[0])];
+       } finally {
+         window.setTimeout = set;
+         window.clearTimeout = clear;
+       }`,
+    );
+    expect(r).toEqual([true, true]);
+  });
+
   real('pagehide hands over what is pending, with the injection flags', async () => {
     await load('<div>page</div>', 'content');
     const r = await run<Record<string, unknown>>(
