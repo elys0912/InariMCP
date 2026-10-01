@@ -81,7 +81,7 @@ export async function enforceContainerScope(
       allowed: false,
       error:
         `Container '${containerName}' does not exist, so no tab is inside the container scope. ` +
-        "Open a tab with fox_create_tab or fox_open_in_container first.",
+        "Open a tab in it first: fox_tab with action 'create' and container.",
     };
   }
 

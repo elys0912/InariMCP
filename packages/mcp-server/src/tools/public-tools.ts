@@ -162,14 +162,17 @@ function foldAnnotations(variants: Record<string, PublicVariant>): ToolAnnotatio
   };
 }
 
-/** A tool that is one operation as is. */
-function asIs(op: string): PublicTool {
+/**
+ * A tool that is one operation as is. `description` replaces the
+ * operation's own (FOX_CAPS=legacy keeps that one).
+ */
+function asIs(op: string, description?: string): PublicTool {
   const def = TOOL_SCHEMAS[op];
   if (!def || !(def.inputSchema instanceof z.ZodObject)) throw new Error(`no object schema for operation ${op}`);
   const variants = { default: { op: () => op, ops: [op] } };
   return {
     name: op,
-    description: def.description,
+    description: description ?? def.description,
     callSchema: def.inputSchema,
     listSchema: def.inputSchema,
     annotations: toolAnnotations(def),
@@ -254,7 +257,7 @@ const tabId = z.number().int().optional().describe('Tab ID (defaults to active t
 const foxRead = grouped({
   name: 'fox_read',
   description:
-    "Read the page. mode 'info': an overview of the current page: URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, and h1-h3 headings; password values are masked; headless: URL and title only. mode 'text': the visible text of the page or of the element matching selector, lighter than a screenshot.",
+    "Read the page. mode 'info': URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, h1-h3 headings; password values masked; headless: URL and title only. mode 'text': visible text of the page or of the element `selector`, cheaper than a screenshot.",
   discriminator: 'mode',
   discriminatorDescription: "What to read: 'info' (page overview) or 'text' (visible text)",
   variants: {
@@ -266,7 +269,7 @@ const foxRead = grouped({
 const foxFind = grouped({
   name: 'fox_find',
   description:
-    "Find things in the page. by 'selector': elements matching a CSS selector (querySelectorAll: the first `limit` matches, plus the total count); per element: tag, id, classes, name, type, text (first 200 chars), value (password fields masked), href, src, placeholder, ariaLabel, role, disabled, checked, visible, position (viewport coordinates incl. centerX/centerY) and a generated CSS selector; headless: tag, text and bounding box only, at most 50. by 'text': search the page text with the native browser.find API (Firefox only), across frames and outside the viewport; returns the match count and optionally bounding rects. `text` here is the words to search for, not an element locator as in fox_click.",
+    "Find in the page. by 'selector': elements matching a CSS selector (the first `limit`, plus the total count), each with tag, id, classes, name, type, text (200 chars), value (passwords masked), href, src, placeholder, ariaLabel, role, disabled, checked, visible, viewport position (incl. centerX/centerY) and a generated selector; headless: tag, text and box only, at most 50. by 'text': count matches of `text` with Firefox's browser.find (all frames, also outside the viewport), optionally with rects; `text` is the words to search for, not an element locator as in fox_click.",
   discriminator: 'by',
   discriminatorDescription: "'selector' (CSS selector) or 'text' (full-text search)",
   variants: {
@@ -284,7 +287,7 @@ const foxFind = grouped({
 const foxTabs = grouped({
   name: 'fox_tabs',
   description:
-    "List tabs or containers. what 'tabs': open browser tabs: id, url, title, active, windowId, pinned, status (loading/complete), audible; plus totals and a summary. Defaults to the current window and at most 50 tabs; urlPattern (regex, applied before limit) filters, currentWindowOnly=false lists all windows, includeFavicon=true adds favicon URLs; headless: id, url, title and active only, arguments ignored. what 'containers': Firefox container identities (name, color, icon, cookieStoreId); with container scope enabled in safety.json only the agent container; not available in headless mode.",
+    "List tabs or containers. what 'tabs': id, url, title, active, windowId, pinned, status, audible, plus totals; by default the current window and at most 50 tabs (currentWindowOnly=false for all windows; urlPattern filters before limit; includeFavicon adds favicon URLs); headless: id, url, title and active only, arguments ignored. what 'containers': Firefox containers (name, color, icon, cookieStoreId), only the agent container when container scope is enabled in safety.json; not available in headless mode.",
   discriminator: 'what',
   discriminatorDescription: "'tabs' or 'containers'",
   variants: {
@@ -347,7 +350,7 @@ const OPTION_KEYS = ['value', 'text', 'index'] as const;
 const foxSetValue = grouped({
   name: 'fox_set_value',
   description:
-    "Set a form value directly (no key events), then dispatch input and change events. kind 'input' (default): the value of an input, textarea, select or contenteditable element; faster than fox_type and suited to long values; reports success even when the element is of another kind (nothing changes) or, for a select, when no option has that value. kind 'select': select an option of a dropdown/select element by option value, visible text or index. Password fields are refused.",
+    "Set a form value directly (no key events), then dispatch input and change events; password fields are refused. kind 'input' (default): the value of an input, textarea, select or contenteditable element; faster than fox_type for long values; reports success even when nothing changed (an element of another kind, or a select without an option of that value). kind 'select': choose an option of a select element by option value, text or index.",
   discriminator: 'kind',
   discriminatorDescription: "'input' or 'select'",
   defaultVariant: 'input',
@@ -398,7 +401,7 @@ const foxInteract = grouped({
 const foxWait = grouped({
   name: 'fox_wait',
   description:
-    "Wait for a page condition; fails when it does not happen within timeout (ms). for 'element': an element matching selector appears (and is visible, unless visible=false). for 'network_idle': the page's own fetch/XHR requests (top frame) have been idle for idleTime ms; requests made by fox_evaluate, and requests already in flight before the first call on this page, are not seen; headless: Playwright's networkidle, idleTime ignored. for 'navigation': the tab's next top-level navigation finishes (waitUntil load or domcontentloaded), optionally only one whose URL matches urlPattern; only navigations finishing after this call count, so a fast one already done (e.g. right after fox_click) is missed; prefer for 'url' when the destination is known; headless: waitUntil and urlPattern ignored. for 'url': the current URL equals url or matches the urlPattern regex (one of them required); returns at once if it already does.",
+    "Wait for a page condition; fails after timeout (ms). for 'element': an element matching selector appears (and is visible, unless visible=false). for 'network_idle': the page's own top-frame fetch/XHR requests have been idle for idleTime ms; requests made by fox_evaluate, and those in flight before the first call on the page, are not seen; headless: Playwright networkidle, idleTime ignored. for 'navigation': the tab's next top-level navigation finishes (waitUntil load or domcontentloaded; optionally only one matching urlPattern); a navigation that finished before the call is missed, so prefer for 'url' when the destination is known; headless: waitUntil and urlPattern ignored. for 'url': the URL equals url or matches the urlPattern regex (one of them required); returns at once if it already does.",
   discriminator: 'for',
   discriminatorDescription: "'element', 'network_idle', 'navigation' or 'url'",
   variants: {
@@ -432,7 +435,7 @@ const foxLogging = grouped({
 const foxGetLogs = grouped({
   name: 'fox_get_logs',
   description:
-    "Return what fox_logging captured on this tab (the most recent `limit`). kind 'console': page calls to console.log/warn/error/info/debug in the top frame, filtered by level and/or a case-insensitive search text; not uncaught exceptions, browser errors, iframes, or console output of fox_evaluate; currentPageReached=false means the current page could not be asked for its latest entries. kind 'network': fetch/XHR requests filtered by URL regex, HTTP method, status code, or errors only (network error or status >= 400); images, scripts, CSS and WebSocket traffic are not captured; authorization, cookie, API-key and token headers and secret fields in URLs and bodies are masked, other headers and bodies (truncated) are returned as recorded. Paused while the tab is on a protected site. Not supported in headless mode.",
+    "Return what fox_logging captured on this tab (the latest `limit`); paused while the tab is on a protected site; not supported in headless mode. kind 'console': top-frame calls to console.log/warn/error/info/debug, filtered by level and/or a case-insensitive search text; not uncaught exceptions, browser errors, iframes or console output of fox_evaluate; currentPageReached=false means the current page could not be asked for its latest entries. kind 'network': fetch/XHR requests filtered by URL regex, method, status or errorsOnly (network error or status >= 400); no images, scripts, CSS or WebSocket traffic; authorization, cookie, API-key and token headers and secret fields in URLs and bodies are masked, other headers and bodies (truncated) are returned as recorded.",
   discriminator: 'kind',
   discriminatorDescription: "'console' or 'network'",
   variants: {
@@ -444,7 +447,7 @@ const foxGetLogs = grouped({
 const foxEvaluate = grouped({
   name: 'fox_evaluate',
   description:
-    "Run JavaScript in the tab's top frame. Refused when script execution is disabled (allow_script_execution in safety.json or FOX_ALLOW_SCRIPTS=0). mode 'script': run script and return the value of the last expression (use a JSON-compatible value; a top-level `return` is not allowed, wrap code in an IIFE); Extension path: runs in the content script's isolated world: it sees the page DOM, but not variables or functions of the page's own scripts, and its console.log and fetch/XHR are not captured by fox_logging; headless: runs in the page's own world. mode 'chain' (headless only; the Extension path returns an error): evaluate steps in order, each receiving the prior result as `$prev`, with console output captured per step. mode 'wait_and_act' (headless only; the Extension path returns an error): poll until the condition expression is truthy, then run actionScript and return its result.",
+    "Run JavaScript in the tab's top frame; refused when script execution is disabled (allow_script_execution in safety.json or FOX_ALLOW_SCRIPTS=0). mode 'script': return the value of the last expression (JSON-compatible; no top-level `return`, wrap code in an IIFE); Extension path: runs in the content script's isolated world, which sees the page DOM but not the variables of the page's own scripts, and its console.log and fetch/XHR are not captured by fox_logging; headless: runs in the page's own world. mode 'chain': evaluate steps in order, each receiving the prior result as `$prev`, console output captured per step. mode 'wait_and_act': poll until condition is truthy, then run actionScript and return its result. chain and wait_and_act are headless only (the Extension path returns an error).",
   discriminator: 'mode',
   discriminatorDescription: "'script', 'chain' or 'wait_and_act'",
   variants: {
@@ -477,16 +480,31 @@ const foxObserver = grouped({
 // Registry of the public tools
 // ---------------------------------------------------------------------------
 
+/**
+ * Public descriptions of tools that are an operation as is: shorter than
+ * the operation's, and naming the public tools.
+ */
+const AS_IS_DESCRIPTIONS: Record<string, string> = {
+  fox_screenshot:
+    "Take a screenshot. Images are saved to files and returned as resource_link, never as base64 (saveToFile=false captures nothing, includeData has no effect, the same filename overwrites the file). scope: viewport (visible area; a background tab given by tabId is briefly brought to the front), full_page (entire page; falls back to the visible area with fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls and returns the interactive elements visible at each position). Headless: viewport and full_page only.",
+  fox_snapshot:
+    "Extension path: not implemented (returns an error); use fox_read or fox_find there. Headless: the accessibility tree of the page (or of the first element matching selector) as indented YAML text (Playwright ariaSnapshot), filtered by maxDepth, includeText and roles, cut at 50000 characters.",
+  fox_click:
+    "Click an element found by selector (CSS), xpath, text or x+y viewport coordinates, in that order. Top document only (not inside iframes or shadow DOM); fails on a disabled element. The element is scrolled into view and receives synthetic mousedown/mouseup/click events (isTrusted=false: pages that require real user input may ignore them); doubleClick / rightClick send dblclick / contextmenu. Returns the clicked element's info. Headless: selector or x+y only.",
+  fox_type:
+    "Type text into an input, textarea or contenteditable element found by selector, id, name or placeholder (in that order), else into the focused field; `text` is never used to find the element. Fails on a disabled element; password fields are refused. Sends synthetic key events (isTrusted=false) `delay` ms apart (0 = none; shortened so that all delays stay within 10 s); fox_set_value is faster for long values. clear empties the field first; pressEnter also submits the form like a real Enter unless a keydown handler cancels it. Headless: selector and text only (with selector the field is filled, else the focused element receives the keys).",
+};
+
 export const PUBLIC_TOOLS: Record<string, PublicTool> = Object.fromEntries([
-  asIs('fox_screenshot'),
-  asIs('fox_snapshot'),
+  asIs('fox_screenshot', AS_IS_DESCRIPTIONS['fox_screenshot']),
+  asIs('fox_snapshot', AS_IS_DESCRIPTIONS['fox_snapshot']),
   foxRead,
   foxFind,
   foxTabs,
   foxTab,
   asIs('fox_navigate'),
-  asIs('fox_click'),
-  asIs('fox_type'),
+  asIs('fox_click', AS_IS_DESCRIPTIONS['fox_click']),
+  asIs('fox_type', AS_IS_DESCRIPTIONS['fox_type']),
   asIs('fox_press_key'),
   foxSetValue,
   foxInteract,

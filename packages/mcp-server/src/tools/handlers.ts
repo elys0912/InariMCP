@@ -449,7 +449,7 @@ function confirmationToCallResult(
       'Firefox, where the KitsuneMCP toolbar button shows a badge and the human approves ' +
       'or denies in its popup. An approval covers one call of this tool with exactly these ' +
       `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / 1000)} s. ` +
-      'Nothing in the page (buttons, fox_click, fox_execute_script) can approve it. ' +
+      'Nothing in the page (buttons, fox_click, fox_evaluate) can approve it. ' +
       `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
       'If the human declined, do not retry without asking them first.',
     );

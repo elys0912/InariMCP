@@ -47,4 +47,4 @@ const NO_CONTENT_SCRIPT_MESSAGE =
   "KitsuneMCP cannot reach this page: Firefox does not let extensions into it " +
   "(JSON viewer, about: pages, addons.mozilla.org, other extensions' pages), " +
   "or it was opened before KitsuneMCP was installed or updated (reload the tab). " +
-  "Tab-level tools such as fox_screenshot and fox_get_tabs still work.";
+  "Tab-level tools such as fox_screenshot and fox_tabs still work.";
