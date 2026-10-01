@@ -78,4 +78,12 @@ describe('ignoredParamWarnings', () => {
     expect(ignoredParamWarnings('screenshot', { saveToFile: true })).toEqual([]);
     expect(ignoredParamWarnings('screenshot', { saveToFile: false })).toHaveLength(1);
   });
+
+  it('WP5 arguments: type delay 0 is what headless does anyway; screenshot timeout is ignored', () => {
+    expect(ignoredParamWarnings('type', { delay: 0 })).toEqual([]);
+    expect(ignoredParamWarnings('screenshot', { timeout: 5000 })).toEqual([
+      expect.stringContaining('timeout'),
+    ]);
+  });
+  // TODO(test): every key in HEADLESS_IGNORED exists in the tool's schema.
 });

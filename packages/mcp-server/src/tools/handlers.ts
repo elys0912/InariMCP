@@ -24,7 +24,7 @@ import { pathToFileURL } from 'node:url';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserAction, BrowserCommand, ToolResult } from '@kitsune-mcp/shared';
 import { ErrorCode } from '@kitsune-mcp/shared';
-import { getSafetyGuard, OBSERVE_TOOLS } from '../safety/guard.js';
+import { getSafetyGuard, OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS } from '../safety/guard.js';
 import type { SafetyDenial } from '../safety/guard.js';
 import {
   REQUEST_TTL_MS,
@@ -163,10 +163,11 @@ function buildCommandData(
 // ---------------------------------------------------------------------------
 
 /**
- * Arguments the backends compile with `new RegExp()`. Case sensitivity is
- * the backend's (Extension: case-sensitive for tabs / wait_for_url /
- * wait_for_navigation / screenshot all_tabs, case-insensitive for
- * get_network_logs; headless wait_for_url: case-sensitive).
+ * Arguments the backends compile with `new RegExp()`, always without flags
+ * (case-sensitive) on both backends: fox_get_tabs, fox_screenshot all_tabs,
+ * fox_wait_for_url, fox_wait_for_navigation, fox_get_network_logs (and the
+ * Extension's reload_by_url / find_tabs). A case-insensitive part needs a
+ * character class such as `[Ee]xample`.
  */
 const REGEX_ARGUMENTS = ['urlPattern'] as const;
 
@@ -209,6 +210,15 @@ export function invalidRegexArgument(args: Record<string, unknown>): string | nu
  *     the tab, which may be stale or unknown, so the Extension refuses
  *     the command when the actual target tab is protected. Tools with a
  *     `url` are checked by the guard against that URL instead.
+ *     Sent twice: `protectedUrlRules` (URL rules, matched like the guard)
+ *     and `protectedUrlPatterns` (legacy anchored regexes, for Extension
+ *     builds that do not know the rules).
+ *   - blockedUrlRules / allowedUrlRules: when the guard is enabled and the
+ *     list is not empty, on every tool the guard checks against the target
+ *     tab's last-known URL (not tab-independent, no `url` target; the `url`
+ *     of fox_wait_for_url is not a target). The Extension refuses the
+ *     command when the actual target tab violates the lists, and multi-tab
+ *     actions skip such tabs: the guard may not know the tab's URL.
  */
 const PROTECTED_CAPTURE_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAction>([
   'screenshot',
@@ -238,10 +248,23 @@ export function attachSafetyMetadata(
     config.confirmProtectedActions &&
     config.protectedUrlPatterns.length > 0
   ) {
-    // The Extension tests each entry as a case-insensitive regex against the
-    // raw tab URL: send the anchored equivalent of each host pattern.
-    command.protectedUrlPatterns = compileUrlPatterns(config.protectedUrlPatterns, 'protected')
-      .patterns.map((p) => p.wireSource);
+    const compiled = compileUrlPatterns(config.protectedUrlPatterns, 'protected').patterns;
+    command.protectedUrlRules = compiled.map((p) => p.wire);
+    // Older Extension builds test each entry as a case-insensitive regex
+    // against the raw tab URL: the anchored equivalent of each pattern.
+    command.protectedUrlPatterns = compiled.map((p) => p.wireSource);
+  }
+
+  const urlIsTarget = hasUrl && toolName !== 'fox_wait_for_url';
+  if (config.enabled && !urlIsTarget && !TAB_INDEPENDENT_TOOLS.has(toolName)) {
+    if (config.blockedUrlPatterns.length > 0) {
+      command.blockedUrlRules = compileUrlPatterns(config.blockedUrlPatterns, 'blocked')
+        .patterns.map((p) => p.wire);
+    }
+    if (config.allowedUrlPatterns.length > 0) {
+      command.allowedUrlRules = compileUrlPatterns(config.allowedUrlPatterns, 'allowed')
+        .patterns.map((p) => p.wire);
+    }
   }
 }
 
@@ -622,18 +645,27 @@ export function createToolHandler(
       return confirmationToCallResult(toolName, args, confirmation, tokenRejected);
     }
 
-    // Other Extension-side safety refusals (e.g. Layer 0 out_of_scope):
-    // surface as SAFETY_BLOCKED, distinct from ordinary browser errors.
+    // Other Extension-side safety refusals (Layer 0 out_of_scope; Layer 3
+    // blocked_url / not_allowlisted on the actual target tab): surface as
+    // SAFETY_BLOCKED, distinct from ordinary browser errors.
     if (!response.success && response.safetyDecision) {
       const decision = response.safetyDecision;
-      const auditDecision: AuditDecision = decision === 'out_of_scope' ? 'out_of_scope' : 'denied';
+      const listDecision = decision === 'blocked_url' || decision === 'not_allowlisted';
+      const reportedUrl = response.data?.['url'];
+      const refusedUrl = typeof reportedUrl === 'string' && reportedUrl ? reportedUrl : null;
+      // Remember where the tab really is, so the next call is refused
+      // by the guard's own pre-check.
+      if (listDecision && refusedUrl !== null) guard.noteUrl({ url: refusedUrl }, args, toolName);
+      const auditDecision: AuditDecision =
+        decision === 'out_of_scope' ? 'out_of_scope' : listDecision ? decision : 'denied';
       if (guard.config.auditLog) {
-        audit(toolName, args, (args['url'] as string) ?? null, auditDecision, transport);
+        audit(toolName, args, refusedUrl ?? (args['url'] as string) ?? null, auditDecision, transport);
       }
       return safetyDenialToCallResult({
         error: response.error ?? `Refused by browser safety check (${decision})`,
         decision,
-        layer: decision === 'out_of_scope' ? 0 : undefined,
+        layer: decision === 'out_of_scope' ? 0 : listDecision ? 3 : undefined,
+        ...(listDecision && refusedUrl !== null ? { url: refusedUrl } : {}),
       });
     }
 

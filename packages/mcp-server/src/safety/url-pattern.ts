@@ -35,6 +35,8 @@
  *     folded (/admin covers /ADMIN, //admin, /%61dmin, /admin;x, /administrator).
  */
 
+import type { WireUrlRule } from '@kitsune-mcp/shared';
+
 export type PatternListName = 'blocked' | 'allowed' | 'protected';
 
 export interface UrlPattern {
@@ -43,8 +45,16 @@ export interface UrlPattern {
   readonly kind: 'host' | 'regex' | 'legacy';
   test(url: string): boolean;
   /**
-   * Equivalent regex source for the Extension, which tests
-   * `new RegExp(source, 'i')` against the raw tab URL.
+   * The same pattern as a URL rule for the Extension (BrowserCommand
+   * `protectedUrlRules` / `blockedUrlRules` / `allowedUrlRules`), which
+   * matches it like test() (extension/src/url-rule.ts, contract test
+   * tests/contract/url-rule.test.ts).
+   */
+  readonly wire: WireUrlRule;
+  /**
+   * Legacy: equivalent regex source for Extension builds that only know
+   * `protectedUrlPatterns` and test `new RegExp(source, 'i')` against the
+   * raw tab URL (percent-escapes not decoded).
    */
   readonly wireSource: string;
 }
@@ -234,7 +244,17 @@ function hostPattern(source: string, spec: HostSpec, list: PatternListName): Url
   const wireSource =
     `^${scheme}:\\/\\/(?:[^/?#]*@)?${sub}${escapeRegex(spec.host)}\\.?(?::\\d+)?${tail}`;
 
-  return { source, kind: 'host', test, wireSource };
+  const wire: WireUrlRule = {
+    kind: 'host',
+    source,
+    scheme: spec.scheme,
+    hosts: spec.hosts,
+    host: spec.host,
+    path: wantPath,
+    pathMatch: strictPath ? 'strict' : 'loose',
+  };
+
+  return { source, kind: 'host', test, wire, wireSource };
 }
 
 function regexPattern(
@@ -259,6 +279,7 @@ function regexPattern(
       if (n === null) return list !== 'allowed' && re.test(raw);
       return re.test(n.normalized) || (list !== 'allowed' && re.test(raw));
     },
+    wire: { kind: 'regex', source, re: regexSource, matchRaw: list !== 'allowed' },
     wireSource: regexSource,
   };
 }

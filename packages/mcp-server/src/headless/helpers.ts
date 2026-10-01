@@ -45,6 +45,8 @@ interface IgnoredParam {
   key: string;
   /** Schema default: a value equal to it is not worth a warning. */
   def?: unknown;
+  /** Other values that ask for what headless does anyway (no warning). */
+  same?: readonly unknown[];
   note: string;
 }
 
@@ -52,7 +54,12 @@ interface IgnoredParam {
 const HEADLESS_IGNORED: Record<string, IgnoredParam[]> = {
   navigate: [{ key: 'waitForLoad', def: true, note: 'always waits for domcontentloaded' }],
   refresh: [{ key: 'bypassCache', def: false, note: 'cache is not bypassed' }],
-  screenshot: [{ key: 'saveToFile', def: true, note: 'the screenshot is always saved to a file' }],
+  screenshot: [
+    { key: 'saveToFile', def: true, note: 'the screenshot is always saved to a file' },
+    // fox_screenshot timeout is the all_tabs time budget (WP5); scope
+    // all_tabs is not supported here, a single capture has no own timeout.
+    { key: 'timeout', note: 'it is the all_tabs time budget; all_tabs is not supported in headless mode' },
+  ],
   click: [
     { key: 'xpath', note: 'use selector or x+y' },
     { key: 'text', note: 'use selector or x+y' },
@@ -65,7 +72,7 @@ const HEADLESS_IGNORED: Record<string, IgnoredParam[]> = {
     { key: 'id', note: 'use selector' },
     { key: 'clear', def: false, note: 'existing content is always replaced' },
     { key: 'pressEnter', def: false, note: 'Enter is not pressed; use fox_press_key' },
-    { key: 'delay', def: 50, note: 'text is entered at once' },
+    { key: 'delay', def: 50, same: [0], note: 'text is entered at once' },
   ],
   get_elements: [{ key: 'limit', def: 50, note: 'always returns at most 50 elements' }],
   find_text: [
@@ -98,7 +105,7 @@ export function ignoredParamWarnings(action: string, args: Record<string, unknow
   const out: string[] = [];
   for (const p of HEADLESS_IGNORED[action] ?? []) {
     const v = args[p.key];
-    if (v === undefined || v === null || v === p.def) continue;
+    if (v === undefined || v === null || v === p.def || p.same?.includes(v)) continue;
     out.push(`${p.key}: ignored in headless mode (${p.note})`);
   }
   return out;

@@ -132,9 +132,24 @@ function shouldSkipTab(url: string | undefined): boolean {
   return EXCLUDED_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
 }
 
-function matchesPattern(url: string | undefined, pattern: string): boolean {
-  if (!url) return false;
-  return new RegExp(pattern).test(url);
+type UrlPatternArg = { ok: true; pattern: RegExp | null } | { ok: false; result: CommandResult };
+
+/**
+ * Compile a `urlPattern` argument: a regex without flags (case-sensitive),
+ * as on every urlPattern tool of both backends. null pattern when absent;
+ * a failure result when it does not compile.
+ */
+function urlPatternArg(source: unknown): UrlPatternArg {
+  if (typeof source !== "string" || source === "") return { ok: true, pattern: null };
+  try {
+    return { ok: true, pattern: new RegExp(source) };
+  } catch (error) {
+    return { ok: false, result: { success: false, error: `Invalid urlPattern: ${(error as Error).message}` } };
+  }
+}
+
+function urlMatches(url: string | undefined, pattern: RegExp): boolean {
+  return !!url && pattern.test(url);
 }
 
 type TabLoadOutcome = "complete" | "timeout" | "removed";
@@ -265,7 +280,9 @@ async function waitForNavigation(
   const targetId = tab.id;
   const timeoutMs = positiveOr(data.timeout, TIMEOUTS.NAVIGATION);
   const patternSrc = typeof data.urlPattern === "string" && data.urlPattern ? data.urlPattern : null;
-  const pattern = patternSrc ? new RegExp(patternSrc) : null;
+  const patternArg = urlPatternArg(patternSrc);
+  if (!patternArg.ok) return patternArg.result;
+  const pattern = patternArg.pattern;
   const event =
     data.waitUntil === "domcontentloaded"
       ? browser.webNavigation.onDOMContentLoaded
@@ -310,7 +327,9 @@ async function waitForUrl(
   const exact = typeof data.url === "string" && data.url ? data.url : null;
   const patternSrc = typeof data.urlPattern === "string" && data.urlPattern ? data.urlPattern : null;
   if (!exact && !patternSrc) return { success: false, error: "Must provide url or urlPattern" };
-  const pattern = !exact && patternSrc ? new RegExp(patternSrc) : null;
+  const patternArg = urlPatternArg(exact ? null : patternSrc);
+  if (!patternArg.ok) return patternArg.result;
+  const pattern = patternArg.pattern;
   const matches = (u: string | undefined): boolean =>
     !!u && (exact ? u === exact : pattern!.test(u));
 
@@ -381,7 +400,7 @@ let requestCounter = 0;
 // while the tab is on a protected page, where recording is paused. Cleared
 // by stop_logging or when the tab closes.
 interface LoggingTabState {
-  patterns: RegExp[];
+  patterns: CompiledUrlRule[];
 }
 const loggingTabs = new Map<number, LoggingTabState>();
 const TOP_FRAME_ID = 0;
@@ -866,9 +885,35 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
     }
     scope = decision.scope;
   }
-  const protectedPatterns = parseProtectedPatterns(message.protectedUrlPatterns);
+  const policy = parseUrlPolicy(message);
+  if (policy.invalid > 0) {
+    result = {
+      success: false,
+      safetyDecision: "config_error",
+      error:
+        `Refused: ${policy.invalid} URL pattern(s) attached by the MCP Server could not be used ` +
+        "(Extension and MCP Server versions may not match).",
+    };
+    postWireResponse(message, result);
+    return result;
+  }
+  const protectedPatterns = policy.protectedRules;
+  const urlLists = policy.lists;
   // Hostname a human approved for this one call (MCP Server approval token).
   const approvedHost = typeof message.approvedHost === "string" ? message.approvedHost : undefined;
+
+  // blocked / allowed lists against the real URL of the target tab (the
+  // guard only knows the last URL it saw for the tab, if any). The server
+  // attaches them to the commands its own tab check covers; the multi-tab
+  // actions skip such tabs themselves. A human approval does not lift this.
+  if (hasUrlLists(urlLists) && action !== undefined && isSingleTabAction(action)) {
+    const refusal = checkListedTarget(target, urlLists);
+    if (refusal) {
+      result = refusal;
+      postWireResponse(message, result);
+      return result;
+    }
+  }
 
   // Protected-domain check against the real URL of the target tab (not the
   // server's last-seen URL, which is shared by every session). The server
@@ -948,7 +993,7 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         result = await findTabs(data as FindTabsOptions, scope);
         break;
       case "screenshotAllTabs":
-        result = await screenshotAllTabs(data as ScreenshotOptions, scope, protectedPatterns);
+        result = await screenshotAllTabs(data as ScreenshotOptions, scope, protectedPatterns, urlLists);
         break;
       case "refresh":
         result = await refreshTab(tabId, data as RefreshOptions);
@@ -957,10 +1002,10 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
         result = await refreshTab(tabId, { ...(data as RefreshOptions), bypassCache: true });
         break;
       case "reloadAll":
-        result = await reloadAllTabs(data as ReloadAllOptions, scope, protectedPatterns);
+        result = await reloadAllTabs(data as ReloadAllOptions, scope, protectedPatterns, urlLists);
         break;
       case "reloadByUrl":
-        result = await reloadTabsByUrl(data as ReloadByUrlOptions, scope, protectedPatterns);
+        result = await reloadTabsByUrl(data as ReloadByUrlOptions, scope, protectedPatterns, urlLists);
         break;
       case "status": {
         // The popup asks for a recheck (e.g. right after running the
@@ -1184,7 +1229,7 @@ const SELF_PROTECTED_ACTIONS: ReadonlySet<string> = new Set([
  */
 function checkProtectedTarget(
   tab: browser.tabs.Tab | undefined,
-  patterns: RegExp[],
+  patterns: CompiledUrlRule[],
   approvedHost?: string,
 ): CommandResult | null {
   if (!tab) {
@@ -1204,7 +1249,7 @@ function checkProtectedTarget(
       safetyDecision: "confirmation_required",
       error: "Protected domain: confirmation required",
       url: tabUrl,
-      matchedPattern: matched.source,
+      matchedPattern: matched.rule.source,
     };
   }
   return null;
@@ -1337,32 +1382,48 @@ async function captureFullPageImage(
 async function screenshotAllTabs(
   options: ScreenshotOptions = {},
   scope: ScopeFilter | null = null,
-  protectedPatterns: RegExp[] = [],
+  protectedRules: CompiledUrlRule[] = [],
+  lists: UrlLists = NO_URL_LISTS,
 ): Promise<CommandResult> {
   try {
+    const patternArg = urlPatternArg(options.urlPattern);
+    if (!patternArg.ok) return patternArg.result;
+    const urlPattern = patternArg.pattern;
     const tabs = await browser.tabs.query({});
 
     let targetTabs = tabs.filter((t) => !shouldSkipTab(t.url) && isTabInScope(t, scope));
 
-    if (options.urlPattern) {
-      targetTabs = targetTabs.filter((t) => matchesPattern(t.url, options.urlPattern!));
+    if (urlPattern) {
+      targetTabs = targetTabs.filter((t) => urlMatches(t.url, urlPattern));
     }
 
-    // Protected domains (banking, payments, ...) are excluded by default.
-    // Only the count is reported -- never the URL or title of excluded tabs.
+    // Tabs on blocked / not allowlisted sites, then protected domains
+    // (banking, payments, ...) are excluded. Only the counts are reported --
+    // never the URL or title of excluded tabs.
+    const beforeLists = targetTabs.length;
+    targetTabs = targetTabs.filter((t) => violatesUrlLists(t.url, lists) === null);
+    const excludedBlocked = beforeLists - targetTabs.length;
     const beforeProtected = targetTabs.length;
-    if (protectedPatterns.length > 0) {
-      targetTabs = targetTabs.filter((t) => !matchesAnyPattern(t.url, protectedPatterns));
+    if (protectedRules.length > 0) {
+      targetTabs = targetTabs.filter((t) => findUrlRule(t.url, protectedRules) === undefined);
     }
     const excludedProtected = beforeProtected - targetTabs.length;
-    const excluded =
-      excludedProtected > 0
+    const excluded = {
+      ...(excludedBlocked > 0
+        ? {
+          excludedBlocked,
+          excludedBlockedReason:
+            "Tabs on sites refused by blocked_url_patterns / allowed_url_patterns in safety.json were not captured.",
+        }
+        : {}),
+      ...(excludedProtected > 0
         ? {
           excludedReason:
             "Tabs matching protected_url_patterns in safety.json were not captured " +
             "(set confirm_protected_actions to false to include them).",
         }
-        : {};
+        : {}),
+    };
 
     if (options.saveToFile === false) {
       return {
@@ -1804,9 +1865,9 @@ async function getAllTabs(
   try {
     const currentWindowOnly = options.currentWindowOnly !== false;
     const includeFavicon = options.includeFavicon === true;
-    const urlPattern = options.urlPattern
-      ? new RegExp(options.urlPattern)
-      : null;
+    const patternArg = urlPatternArg(options.urlPattern);
+    if (!patternArg.ok) return patternArg.result;
+    const urlPattern = patternArg.pattern;
     const limit = Number.isInteger(options.limit)
       ? (options.limit as number)
       : 50;
@@ -1827,12 +1888,10 @@ async function getAllTabs(
         ).size
       : windows.length;
 
-    const totalMatched = urlPattern
-      ? tabs.filter((t) => t.url && urlPattern.test(t.url)).length
-      : tabs.length;
     if (urlPattern) {
-      tabs = tabs.filter((t) => t.url && urlPattern.test(t.url));
+      tabs = tabs.filter((t) => urlMatches(t.url, urlPattern));
     }
+    const totalMatched = tabs.length;
 
     const truncated = tabs.length > limit;
     const pageTabs = tabs.slice(0, limit);
@@ -1931,8 +1990,11 @@ async function findTabs(
     if (options.url) {
       filtered = filtered.filter((t) => t.url?.startsWith(options.url!));
     }
-    if (options.urlPattern) {
-      filtered = filtered.filter((t) => matchesPattern(t.url, options.urlPattern!));
+    const patternArg = urlPatternArg(options.urlPattern);
+    if (!patternArg.ok) return patternArg.result;
+    const urlPattern = patternArg.pattern;
+    if (urlPattern) {
+      filtered = filtered.filter((t) => urlMatches(t.url, urlPattern));
     }
     if (options.title) {
       const titleLower = options.title.toLowerCase();
@@ -1997,7 +2059,8 @@ async function createNewTab(
 async function closeTab(tabId: number): Promise<CommandResult> {
   try {
     await browser.tabs.remove(tabId);
-    return { success: true };
+    // `closed`: the MCP Server's guard forgets this tab's last URL.
+    return { success: true, closed: tabId };
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }
@@ -2052,23 +2115,29 @@ async function refreshTab(
 }
 
 /**
- * Reload every tab `selects`, except tabs outside the container scope and
- * tabs on a protected domain (only their count is reported, as for
- * screenshot all_tabs).
+ * Reload every tab `selects`, except tabs outside the container scope, tabs
+ * on a blocked / not allowlisted site and tabs on a protected domain (only
+ * their counts are reported, as for screenshot all_tabs).
  */
 async function reloadMatchingTabs(
   selects: (tab: browser.tabs.Tab) => boolean,
   bypassCache: boolean,
   scope: ScopeFilter | null,
-  protectedPatterns: RegExp[],
+  protectedRules: CompiledUrlRule[],
+  lists: UrlLists,
 ): Promise<CommandResult> {
   const tabs = await browser.tabs.query({});
   const results: { id: number; url: string; reloaded: boolean }[] = [];
   let excludedProtected = 0;
+  let excludedBlocked = 0;
 
   for (const tab of tabs) {
     if (!isTabInScope(tab, scope) || !selects(tab)) continue;
-    if (matchesAnyPattern(tab.url, protectedPatterns)) {
+    if (violatesUrlLists(tab.url, lists) !== null) {
+      excludedBlocked++;
+      continue;
+    }
+    if (findUrlRule(tab.url, protectedRules) !== undefined) {
       excludedProtected++;
       continue;
     }
@@ -2082,6 +2151,7 @@ async function reloadMatchingTabs(
     tabs: results,
     bypassCache,
     excludedProtected,
+    ...(excludedBlocked > 0 ? { excludedBlocked } : {}),
     ...(excludedProtected > 0
       ? {
         excludedReason:
@@ -2095,16 +2165,19 @@ async function reloadMatchingTabs(
 async function reloadAllTabs(
   options: ReloadAllOptions = {},
   scope: ScopeFilter | null = null,
-  protectedPatterns: RegExp[] = [],
+  protectedRules: CompiledUrlRule[] = [],
+  lists: UrlLists = NO_URL_LISTS,
 ): Promise<CommandResult> {
   try {
+    const patternArg = urlPatternArg(options.urlPattern);
+    if (!patternArg.ok) return patternArg.result;
+    const urlPattern = patternArg.pattern;
     return await reloadMatchingTabs(
-      (tab) =>
-        !shouldSkipTab(tab.url) &&
-        (!options.urlPattern || matchesPattern(tab.url, options.urlPattern)),
+      (tab) => !shouldSkipTab(tab.url) && (!urlPattern || urlMatches(tab.url, urlPattern)),
       options.bypassCache || false,
       scope,
-      protectedPatterns,
+      protectedRules,
+      lists,
     );
   } catch (error) {
     return { success: false, error: (error as Error).message };
@@ -2114,20 +2187,26 @@ async function reloadAllTabs(
 async function reloadTabsByUrl(
   options: ReloadByUrlOptions,
   scope: ScopeFilter | null = null,
-  protectedPatterns: RegExp[] = [],
+  protectedRules: CompiledUrlRule[] = [],
+  lists: UrlLists = NO_URL_LISTS,
 ): Promise<CommandResult> {
   try {
     if (!options.url && !options.urlPattern) {
       return { success: false, error: "Must provide url or urlPattern" };
     }
+    const patternArg = urlPatternArg(options.url ? null : options.urlPattern);
+    if (!patternArg.ok) return patternArg.result;
+    const urlPattern = patternArg.pattern;
+    const prefix = options.url;
     return await reloadMatchingTabs(
       (tab) =>
-        options.url
-          ? !!tab.url && tab.url.startsWith(options.url)
-          : matchesPattern(tab.url, options.urlPattern!),
+        prefix
+          ? !!tab.url && tab.url.startsWith(prefix)
+          : !!urlPattern && urlMatches(tab.url, urlPattern),
       options.bypassCache !== false,
       scope,
-      protectedPatterns,
+      protectedRules,
+      lists,
     );
   } catch (error) {
     return { success: false, error: (error as Error).message };
@@ -2224,7 +2303,7 @@ function queryConsoleLogs(
   return { success: true, logs, totalCount: entries.length, returnedCount: logs.length };
 }
 
-/** fox_get_network_logs filters over a buffer (urlPattern: case-insensitive regex). */
+/** fox_get_network_logs filters over a buffer (urlPattern: case-sensitive regex, as every urlPattern). */
 function queryNetworkLogs(
   entries: Record<string, unknown>[],
   options: Record<string, unknown> = {},
@@ -2233,7 +2312,7 @@ function queryNetworkLogs(
   if (typeof options.urlPattern === "string" && options.urlPattern !== "") {
     let pattern: RegExp;
     try {
-      pattern = new RegExp(options.urlPattern, "i");
+      pattern = new RegExp(options.urlPattern);
     } catch (error) {
       return { success: false, error: `Invalid urlPattern: ${(error as Error).message}` };
     }
@@ -2283,7 +2362,7 @@ function logCounts(tabId: number): { consoleLogsCount: number; networkLogsCount:
 async function startLoggingOnTab(
   target: browser.tabs.Tab | undefined,
   data: Record<string, unknown> = {},
-  protectedPatterns: RegExp[],
+  protectedPatterns: CompiledUrlRule[],
   approvedHost: string | undefined,
 ): Promise<CommandResult> {
   // Same rule as a single-tab screenshot: refuse on a protected page, judged
@@ -2295,7 +2374,7 @@ async function startLoggingOnTab(
   const result = await sendToContentScript(tab.id, {
     action: "startLogging",
     ...data,
-    protectedPatterns: protectedPatterns.map((p) => p.source),
+    protectedPatterns: protectedPatterns.map((p) => p.rule),
   });
   if (!result.success) return result;
   loggingTabs.set(tab.id, { patterns: protectedPatterns });
@@ -2331,7 +2410,7 @@ async function getLogsOfTab(
   action: "getConsoleLogs" | "getNetworkLogs",
   target: browser.tabs.Tab | undefined,
   data: Record<string, unknown> = {},
-  protectedPatterns: RegExp[],
+  protectedPatterns: CompiledUrlRule[],
 ): Promise<CommandResult> {
   if (!target) return { success: false, error: "No target tab" };
   // Collect what the current page recorded but has not sent yet. The logs
@@ -2391,25 +2470,89 @@ function parseContainerScope(raw: unknown): ContainerScope | null {
   return typeof name === "string" && name !== "" ? { containerName: name } : null;
 }
 
-/** Compile the `protectedUrlPatterns` field (same semantics as the server: case-insensitive). */
-function parseProtectedPatterns(raw: unknown): RegExp[] {
-  if (!Array.isArray(raw)) return [];
-  const compiled: RegExp[] = [];
-  for (const pattern of raw) {
-    if (typeof pattern !== "string") continue;
-    try {
-      compiled.push(new RegExp(pattern, "i"));
-    } catch {
-      console.warn(`[KitsuneMCP] Invalid protected URL pattern ignored: ${pattern}`);
-    }
-  }
-  return compiled;
+/** blocked / allowed rules of one command (url-rule.ts). */
+interface UrlLists {
+  blocked: CompiledUrlRule[];
+  allowed: CompiledUrlRule[];
+  /** The server sent an allowed list: URLs outside it are refused. */
+  allowlistActive: boolean;
 }
 
-/** The first protected pattern that matches the URL, if any. */
-function findProtectedMatch(url: string | undefined, patterns: RegExp[]): RegExp | undefined {
-  if (!url) return undefined;
-  return patterns.find((p) => p.test(url));
+const NO_URL_LISTS: UrlLists = { blocked: [], allowed: [], allowlistActive: false };
+
+/** parseUrlPolicy. */
+interface UrlPolicy {
+  protectedRules: CompiledUrlRule[];
+  lists: UrlLists;
+  invalid: number;
+}
+
+/**
+ * The URL policy attached to a command: `protectedUrlRules` (else the
+ * legacy regex strings of `protectedUrlPatterns`, older MCP Servers),
+ * `blockedUrlRules`, `allowedUrlRules`. `invalid` counts entries that could
+ * not be used: the command is then refused (an unusable entry must not
+ * narrow the policy; the server validates them, so this means a mismatch).
+ */
+function parseUrlPolicy(message: NativeMessage): UrlPolicy {
+  const protectedSource = Array.isArray(message.protectedUrlRules)
+    ? message.protectedUrlRules
+    : message.protectedUrlPatterns;
+  const prot = compileUrlRules(protectedSource);
+  const blocked = compileUrlRules(message.blockedUrlRules);
+  const allowed = compileUrlRules(message.allowedUrlRules);
+  return {
+    protectedRules: prot.rules,
+    lists: {
+      blocked: blocked.rules,
+      allowed: allowed.rules,
+      allowlistActive: Array.isArray(message.allowedUrlRules) && message.allowedUrlRules.length > 0,
+    },
+    invalid: prot.invalid + blocked.invalid + allowed.invalid,
+  };
+}
+
+/** Whether the lists apply at all (nothing to check otherwise). */
+function hasUrlLists(lists: UrlLists): boolean {
+  return lists.blocked.length > 0 || lists.allowlistActive;
+}
+
+/** urlListViolation (url-rule.ts) over a command's lists. */
+function violatesUrlLists(
+  url: string | undefined,
+  lists: UrlLists,
+): UrlListViolation | null {
+  return urlListViolation(url, lists.blocked, lists.allowed, lists.allowlistActive);
+}
+
+/**
+ * Refuse a command whose target tab (resolved once in handleCommand) is on
+ * a URL the blocked / allowed lists refuse -- the guard's Layer 3 check on
+ * the tab's real URL, which the server may not know. Fails closed if the
+ * tab could not be resolved.
+ */
+function checkListedTarget(tab: browser.tabs.Tab | undefined, lists: UrlLists): CommandResult | null {
+  if (!tab) {
+    return {
+      success: false,
+      error: "Could not resolve the target tab for the blocked / allowed URL check",
+    };
+  }
+  const violation = violatesUrlLists(tab.url, lists);
+  if (violation === null) return null;
+  return {
+    success: false,
+    safetyDecision: violation.decision,
+    error:
+      `Refused: the target tab is on '${tab.url}', which ${violation.reason}. ` +
+      "Navigate it elsewhere (fox_navigate with a url) or close it.",
+    url: tab.url,
+  };
+}
+
+/** The first protected rule that matches the URL, if any. */
+function findProtectedMatch(url: string | undefined, patterns: CompiledUrlRule[]): CompiledUrlRule | undefined {
+  return findUrlRule(url, patterns);
 }
 
 /**
@@ -2417,18 +2560,13 @@ function findProtectedMatch(url: string | undefined, patterns: RegExp[]): RegExp
  * page: the tab's real URL against the patterns kept at start_logging and
  * those attached to the current command (either set matching pauses).
  */
-function isLoggingPausedForTab(tab: browser.tabs.Tab, commandPatterns: RegExp[]): boolean {
+function isLoggingPausedForTab(tab: browser.tabs.Tab, commandPatterns: CompiledUrlRule[]): boolean {
   const state = loggingTabs.get(tab.id);
   if (!state) return false;
   return (
     findProtectedMatch(tab.url, state.patterns) !== undefined ||
     findProtectedMatch(tab.url, commandPatterns) !== undefined
   );
-}
-
-function matchesAnyPattern(url: string | undefined, patterns: RegExp[]): boolean {
-  if (!url) return false;
-  return patterns.some((p) => p.test(url));
 }
 
 function outOfScope(error: string): CommandResult {
@@ -2726,7 +2864,7 @@ browser.runtime.onMessage.addListener(
       }
       sendResponse({
         enabled: true,
-        protectedPatterns: state.patterns.map((p) => p.source),
+        protectedPatterns: state.patterns.map((p) => p.rule),
       });
       return;
     }
@@ -2775,12 +2913,11 @@ browser.webNavigation.onCommitted.addListener((details) => {
   // Protected page: recording is paused there, so no early hooks either.
   if (findProtectedMatch(details.url, state.patterns)) return;
   console.log(`[KitsuneMCP] Early logging injection requested (tab ${details.tabId})`);
-  browser.tabs
-    .executeScript(details.tabId, {
-      file: "/dist/content.js",
-      runAt: "document_start",
-      frameId: TOP_FRAME_ID,
-    })
+  // content.js uses url-rule.js (as in manifest.json), so that goes first.
+  const inject = (file: string): Promise<unknown> =>
+    browser.tabs.executeScript(details.tabId, { file, runAt: "document_start", frameId: TOP_FRAME_ID });
+  inject("/dist/url-rule.js")
+    .then(() => inject("/dist/content.js"))
     .then(() => {
       console.log(`[KitsuneMCP] Early logging injection done (tab ${details.tabId})`);
     })

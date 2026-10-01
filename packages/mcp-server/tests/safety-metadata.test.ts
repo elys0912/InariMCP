@@ -54,6 +54,44 @@ describe('attachSafetyMetadata: containerScope (Layer 0)', () => {
   });
 });
 
+describe('attachSafetyMetadata: URL rules (WP5b)', () => {
+  const lists = { blockedUrlPatterns: ['blocked.example.test'], allowedUrlPatterns: ['example.test'] };
+
+  it('sends protectedUrlRules next to the legacy protectedUrlPatterns', () => {
+    const cmd = command('screenshot');
+    attachSafetyMetadata(cmd, config(), 'fox_screenshot', {});
+    expect(cmd.protectedUrlPatterns).toEqual(WIRE);
+    expect(cmd.protectedUrlRules).toEqual([{
+      kind: 'host', source: PATTERNS[0], scheme: null, hosts: 'tree',
+      host: 'protected.example.test', path: null, pathMatch: 'loose',
+    }]);
+  });
+
+  it('sends blocked / allowed rules to tools the guard checks against the tab URL', () => {
+    const cmd = command('click');
+    attachSafetyMetadata(cmd, config(lists), 'fox_click', { selector: '#a' });
+    expect(cmd.blockedUrlRules?.map((r) => r.source)).toEqual(['blocked.example.test']);
+    expect(cmd.allowedUrlRules).toEqual([expect.objectContaining({ host: 'example.test', pathMatch: 'strict' })]);
+    // fox_wait_for_url's url is not a target: the tab is checked.
+    const wait = command('wait_for_url');
+    attachSafetyMetadata(wait, config(lists), 'fox_wait_for_url', { url: 'https://x.test/' });
+    expect(wait.blockedUrlRules).toBeDefined();
+  });
+
+  it.each([
+    ['a url target', 'navigate', 'fox_navigate', { url: 'https://x.test/' }, {}],
+    ['a tab-independent tool', 'close_tab', 'fox_close_tab', { tabId: 1 }, {}],
+    ['the guard disabled', 'click', 'fox_click', {}, { enabled: false }],
+  ] as const)('does not send them with %s', (_label, action, tool, args, overrides) => {
+    const cmd = command(action);
+    attachSafetyMetadata(cmd, config({ ...lists, ...overrides }), tool, { ...args });
+    expect(cmd.blockedUrlRules).toBeUndefined();
+    expect(cmd.allowedUrlRules).toBeUndefined();
+  });
+  // TODO(test): handler path: an Extension refusal blocked_url / not_allowlisted
+  //   is SAFETY_BLOCKED layer 3 and its data.url is noted for the tab.
+});
+
 describe('attachSafetyMetadata: protectedUrlPatterns', () => {
   it.each([
     ['screenshot', 'fox_screenshot'],

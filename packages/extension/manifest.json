@@ -20,14 +20,14 @@
   ],
 
   "background": {
-    "scripts": ["dist/i18n.js", "dist/action-map.js", "dist/approval.js", "dist/background.js"],
+    "scripts": ["dist/i18n.js", "dist/action-map.js", "dist/approval.js", "dist/url-rule.js", "dist/background.js"],
     "persistent": true
   },
 
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["dist/content.js"],
+      "js": ["dist/url-rule.js", "dist/content.js"],
       "css": ["dist/content.css"],
       "run_at": "document_end",
       "all_frames": true
