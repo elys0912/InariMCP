@@ -94,6 +94,9 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **拡張機能のポップアップと承認**: バックグラウンドが応答しないとき、ポップアップは「Connecting...」のままにせず理由付きのエラーを表示する。現在のタブを読めなくてもボタンと承認一覧は動く。承認した操作は、末尾にドットを付けて書いたホスト（`example.com.`）でも受け付ける。承認要求・通知・ログの長い文字列は絵文字を割らずに切り詰める（bd09818）
 - **`fox_interact`の`highlight`は新しい強調表示を残す**: 前の強調表示の消去タイマーが、後の強調表示を早く消さなくなった（コンテキストメニューの「要素を調べる」も同じ）。拡張機能のcaptcha待ちバナーは、同じタブで新しいバナーに置き換わるとすぐに終わり（`superseded: true`）、captchaのトークンが入って閉じたバナーを`cancel_human_wait`が取り消したと報告しなくなった（a59434a）
 - **拡張機能のコマンドは不明な値を拒否し、ログに残す範囲を広げた**: `fox_interact`の`scroll`は不明な`direction`で`scrolled: true`を返さず失敗する。拡張機能の変化待ちは、`selector`が何にも一致しないとき（ページ全体を監視せず）と`changeType`が不明なときに失敗する。自動生成する`fox_inject_observer`のIDは同じミリ秒内でも重ならない（重なると先の監視を置き換えていた）。ネットワークログは中断（`error: "Aborted"`）とタイムアウト（`error: "Timeout"`）で終わったXHRも記録する。長さの上限で切る文字列（要素のテキストと値、`fox_get_text`、コンソールとネットワークのログ）は絵文字などBMP外の文字を途中で割らない。数値の値を持つ要素（`<li value>`）で要素一覧が失敗しなくなった（eb227e7）
+- **空の設定とトークンファイル**: 空の`FOX_HOST`は未設定として扱い、空の`FOX_HTTP_PORT` / `FOX_WS_PORT`は旧名の`CLAUDE_BROWSER_*`を使う。空または読めない`~/.kitsune-mcp/api_token`は上書きしなくなり、削除を求めるメッセージを出してdaemonが終了する（5cf492a）
+- **Native Hostの再起動回数の上限が実際の上限になった**: daemonの起動に10回失敗すると、確認のたびに起動し直すのではなく、使えるdaemonが現れるまで起動しない。PNG・JPEG・WebP以外のMIMEタイプのスクリーンショットの`data:` URLは拒否する（b82e98d）
+- **アンインストーラとインストーラの表示**: 読めないか壊れた`~/.claude.json` / `.mcp.json`は「未登録」ではなく問題として報告し（終了コード1）、別のチェックアウトを指すFirefoxの登録は警告を出す。`--help`と`--manual`の出力のパスは引用符で囲み、インストーラと`--help`が示すdaemonの確認コマンド（`curl`での/health、ポートの確認）は設定したホストとポートを使う。`cmd`に渡すことになるパスに`%`があれば拒否する（d04e56a）
 
 ### 開発者向け
 
@@ -103,3 +106,4 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **`background.ts` / `content.ts`をモジュールに分割した**: `packages/extension/src/background/`と`src/content/`の下にあり、テストから直接importできる（d71c331、cacfcda、c7d6512、9f51441、176937b）
 - **`docs/development.ja.md`**: ビルド、作業の流れ、`@kitsune-mcp/shared`の入口、テストの構成（[development.ja.md](./development.ja.md)）（9f342ae）
 - **ツール統合のためのgoldenファイル**: `tests/golden/`に、各ツール呼び出しのBrowserCommandと安全ガードの判定、セッションの`tools/list`（既定と`FOX_CAPS=legacy`）を記録する。意図した変更なら`UPDATE_GOLDEN=1 npx vitest run <テストファイル>`で作り直す。`node scripts/tools-list-size.mjs`は両方のツール一覧の大きさを表示する（e2d711b、93054cc、59dee5c）
+- **e2eのスモークテストは署名付きのリクエストを使う**: `X-API-Key`を送らなくなり、HTTPのエラーやJSONでない応答はテストの失敗になる（724b23b）
