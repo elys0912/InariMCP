@@ -26,7 +26,8 @@
  *      the daemon's wait for the largest timeout argument the schemas
  *      accept (MAX_TIMEOUT_ARG_MS, tools/schemas.ts).
  *
- * Also (5b): the Extension's own budgets for navigate / refresh / new-tab
+ * Also (5b): the Extension's own budgets for navigate / refresh / new-tab /
+ * back / forward
  * load waits (TIMEOUTS.PAGE_LOAD), screenshot all_tabs and fox_type typing
  * are shorter than the daemon's default. TIMEOUTS.NAVIGATION is only the
  * fallback of fox_wait_for_navigation, whose schema always sends a timeout.
@@ -172,6 +173,8 @@ describe('5b. extension-side waits without a timeout argument end before the dae
     ['navigate', background, 'PAGE_LOAD'],
     ['refresh', background, 'PAGE_LOAD'],
     ['hard_refresh', background, 'PAGE_LOAD'],
+    ['go_back', background, 'PAGE_LOAD'],
+    ['go_forward', background, 'PAGE_LOAD'],
     ['screenshot_all_tabs', background, 'ALL_TABS_BUDGET'],
     ['type', content, 'TYPING_BUDGET'],
   ] as const)('%s: daemon base > %s', (action, table, key) => {

@@ -485,7 +485,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_navigate: {
     name: 'fox_navigate',
     description:
-      "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R). With waitForLoad, goto / refresh fail when the page does not finish loading within 25 s or the tab is closed (the navigation itself may still complete).",
+      "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R). goto / refresh with waitForLoad, and back / forward always, fail when the page does not finish loading within 25 s or the tab is closed (the navigation itself may still complete).",
     inputSchema: foxNavigateSchema,
     classification: 'act',
   },

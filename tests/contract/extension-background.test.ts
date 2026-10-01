@@ -24,6 +24,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
 import { checkListedTarget } from '../../packages/extension/src/background/url-policy.ts';
 import { reloadMatchingTabs } from '../../packages/extension/src/background/reload.ts';
+import { navigateHistory } from '../../packages/extension/src/background/navigation.ts';
 import { captureTabsWithin, takeScreenshot } from '../../packages/extension/src/background/screenshot.ts';
 import {
   describeNativeMessage,
@@ -113,6 +114,34 @@ describe('3.A6 / 5.11 waitForTabLoad', () => {
       tabs.onRemoved.fire(7, {});
     }, (t) => t.status === 'complete', opts);
     await expect(closed).resolves.toBe('removed');
+  });
+});
+
+describe('WP30 go_back / go_forward wait for the load like navigate', () => {
+  it('returns the URL after the history load completes, not after a fixed delay', async () => {
+    vi.useFakeTimers();
+    const tabs = fakeTabs({ status: 'complete', url: 'https://b.test/' });
+    const goBack = vi.fn(async () => {
+      tabs.tab.status = 'loading';
+      tabs.tab.url = 'https://a.test/';
+      tabs.onUpdated.fire(7, { status: 'loading' }, { ...tabs.tab });
+    });
+    (globalThis as { browser?: unknown }).browser = {
+      tabs: { ...tabs, query: async () => [{ ...tabs.tab, active: true }], goBack },
+    };
+    try {
+      let settled = false;
+      const run = navigateHistory(7, 'back').finally(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(5_000); // slow page: still loading
+      expect(settled).toBe(false);
+      tabs.tab.status = 'complete';
+      tabs.onUpdated.fire(7, { status: 'complete' }, { ...tabs.tab });
+      await expect(run).resolves.toMatchObject({ success: true, url: 'https://a.test/' });
+      expect(goBack).toHaveBeenCalledWith(7);
+      expect(tabs.onUpdated.size()).toBe(0);
+    } finally {
+      delete (globalThis as { browser?: unknown }).browser;
+    }
   });
 });
 
