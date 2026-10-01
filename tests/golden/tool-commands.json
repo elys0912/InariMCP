@@ -1796,6 +1796,76 @@
     "headless": "dispatch:press_key"
   },
   {
+    "id": "press_key/locators",
+    "tool": "fox_press_key",
+    "args": {
+      "key": "Tab",
+      "xpath": "//input",
+      "text": "Name",
+      "id": "q"
+    },
+    "command": {
+      "action": "press_key",
+      "data": {
+        "key": "Tab",
+        "xpath": "//input",
+        "text": "Name",
+        "id": "q",
+        "ctrl": false,
+        "shift": false,
+        "alt": false,
+        "meta": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:press_key"
+  },
+  {
     "id": "set_value/default",
     "tool": "fox_set_value",
     "args": {

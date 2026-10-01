@@ -340,6 +340,32 @@ describe('fox_type / fox_click targets', () => {
     expect(type).toContain('Element is disabled');
   });
 
+  real('WP38 performType into a disabled focused field names it by tag / id / name', async () => {
+    await load('<input id="i" name="n">');
+    const message = await run<string>(
+      `const el = document.getElementById('i');
+       el.focus();
+       el.setAttribute('aria-disabled', 'true');
+       return await f.input.performType({ text: 'hi' }).catch((e) => e.message);`,
+    );
+    expect(message).toBe('Focused element is disabled: {"tag":"input","id":"i","name":"n"}');
+  });
+
+  real('WP38 pressKey finds its target by xpath, id and text like fox_click', async () => {
+    await load('<input id="a"><input id="b"><button>Send</button><input id="c">');
+    const r = await run<unknown[]>(
+      `const seen = [];
+       document.addEventListener('keydown', (e) => seen.push(e.target.id || e.target.tagName));
+       document.getElementById('c').focus();
+       const byXpath = await f.input.pressKey({ key: 'a', xpath: '//input[@id="a"]' });
+       const byId = await f.input.pressKey({ key: 'a', id: 'b' });
+       const byText = await f.input.pressKey({ key: 'a', text: 'Send' });
+       const missing = await f.input.pressKey({ key: 'a', id: 'nope' }).catch((e) => e.message);
+       return [byXpath.element.id, byId.element.id, byText.element.tag, seen, missing];`,
+    );
+    expect(r).toEqual(['a', 'b', 'button', ['a', 'b', 'BUTTON'], 'Element not found: {"id":"nope"}']);
+  });
+
   real('selectOption fails for an option that is not there', async () => {
     await load('<select id="s"><option value="1">One</option></select>');
     const [unknown, ok] = await run<[string, Record<string, unknown>]>(

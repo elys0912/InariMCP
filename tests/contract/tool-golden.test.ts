@@ -95,6 +95,7 @@ const CASES: Case[] = [
   ['type/password_selector', 'fox_type', { text: 'secret', selector: 'input[type=password]' }],
   ['press_key/default', 'fox_press_key', { key: 'Enter' }],
   ['press_key/options', 'fox_press_key', { key: 'a', selector: '#q', ctrl: true, shift: true, alt: true, meta: true, tabId: 2 }],
+  ['press_key/locators', 'fox_press_key', { key: 'Tab', xpath: '//input', text: 'Name', id: 'q' }],
   ['set_value/default', 'fox_set_value', { selector: '#v', value: '1' }],
   ['set_value/tab', 'fox_set_value', { selector: '#v', value: '2', tabId: 2 }],
   ['select_option/value', 'fox_select_option', { selector: 'select', value: 'a' }],
