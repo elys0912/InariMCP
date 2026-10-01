@@ -1,8 +1,28 @@
 // Overlay banner on the page (used by the captcha wait), and its
 // cancellation by cancel_human_wait.
 
+import { CAPTCHA_BANNER_ID } from "./constants";
+
+/**
+ * Value a banner resolves with when a newer banner with the same id
+ * replaces it.
+ */
+export const BANNER_SUPERSEDED = "superseded";
+
 /** finish() of each banner on screen, by banner id. */
 const activeBanners = new Map<string, (value: string) => void>();
+
+/**
+ * Close the banner `id` (if one is open), resolving its promise with
+ * `value`. Returns whether a banner was closed. Closing goes through the
+ * banner's finish(), so its entry, timer and DOM go together.
+ */
+export function closeOverlayBanner(id: string, value: string): boolean {
+  const finish = activeBanners.get(id);
+  if (!finish) return false;
+  finish(value);
+  return true;
+}
 
 /**
  * The server stopped waiting (cancel_human_wait): close the captcha banner
@@ -11,15 +31,8 @@ const activeBanners = new Map<string, (value: string) => void>();
  * them for the toolbar popup.)
  */
 export function cancelHumanWait(): Record<string, unknown> {
-  let cancelled = 0;
-  for (const id of ["__fox_captcha_banner"]) {
-    const finish = activeBanners.get(id);
-    if (finish) {
-      finish("timeout");
-      cancelled++;
-    }
-  }
-  return { success: true, cancelled: cancelled > 0 };
+  const cancelled = closeOverlayBanner(CAPTCHA_BANNER_ID, "timeout");
+  return { success: true, cancelled };
 }
 
 export function createOverlayBanner(config: {
@@ -32,6 +45,10 @@ export function createOverlayBanner(config: {
   background: string;
 }): Promise<string> {
   return new Promise((resolve) => {
+    // A banner with this id is still open: settle its promise first (it
+    // would otherwise wait for its own timeout, out of reach of
+    // cancelHumanWait), then drop any stray element with the id.
+    closeOverlayBanner(config.id, BANNER_SUPERSEDED);
     const existing = document.getElementById(config.id);
     if (existing) existing.remove();
 
@@ -71,9 +88,11 @@ export function createOverlayBanner(config: {
     banner.appendChild(textWrap);
 
     let settled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     function finish(value: string): void {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       if (activeBanners.get(config.id) === finish) activeBanners.delete(config.id);
       banner.remove();
       resolve(value);
@@ -92,6 +111,6 @@ export function createOverlayBanner(config: {
     }
 
     (document.body || document.documentElement).appendChild(banner);
-    setTimeout(() => finish("timeout"), config.timeoutMs);
+    timer = setTimeout(() => finish("timeout"), config.timeoutMs);
   });
 }

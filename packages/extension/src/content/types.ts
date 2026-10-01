@@ -56,9 +56,11 @@ export interface TypeOptions extends FindElementOptions {
   allowPassword?: boolean;
 }
 
+export type ScrollDirection = "up" | "down" | "left" | "right" | "top" | "bottom";
+
 export interface ScrollOptions extends FindElementOptions {
   toElement?: string;
-  direction?: string;
+  direction?: ScrollDirection;
   amount?: number;
   smooth?: boolean;
   block?: ScrollLogicalPosition;
@@ -75,10 +77,13 @@ export interface WaitOptions extends FindElementOptions {
   visible?: boolean;
 }
 
+/** waitForChange filter: "text" is characterData. */
+export type ChangeType = "childList" | "attributes" | "text";
+
 export interface WaitForChangeOptions {
   selector?: string;
   timeout?: number;
-  changeType?: string;
+  changeType?: ChangeType;
   waitForAll?: boolean;
   subtree?: boolean;
   attributes?: boolean;

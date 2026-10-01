@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { firefox, type Browser, type BrowserContext, type Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { readExtensionSource } from './helpers/extension-source.js';
+import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 interface ContentFns {
   escapeXPathString(s: string): string;
@@ -71,7 +71,10 @@ import * as dom from "./packages/extension/src/content/dom";
 import * as input from "./packages/extension/src/content/input";
 import * as wait from "./packages/extension/src/content/wait";
 import * as log from "./packages/extension/src/content/log-store";
-(globalThis as Record<string, unknown>).__fox = { dom, input, wait, log };
+import * as inspect from "./packages/extension/src/content/inspect";
+import * as overlay from "./packages/extension/src/content/overlay";
+import * as captcha from "./packages/extension/src/content/captcha";
+(globalThis as Record<string, unknown>).__fox = { dom, input, wait, log, inspect, overlay, captcha };
 `;
 
 const CONTENT_ENTRY = `import "./packages/extension/src/content";`;
@@ -84,6 +87,7 @@ window.browser = {
     sendMessage: (m) => { window.__sent.push(m); return Promise.resolve({ enabled: false }); },
     onMessage: { addListener: (fn) => { window.__listener = fn; } },
   },
+  i18n: { getMessage: (key) => key },
 };
 window.wrappedJSObject = window;
 window.exportFunction = (fn, target, opts) => {
@@ -543,5 +547,189 @@ describe('content-side log batching', () => {
       interception: { fetch: true, xhr: true, console: true },
       injection: { readyStateAtInit: 'complete', readyStateAtHookInstall: 'complete' },
     });
+  });
+});
+
+describe('WP44 highlight and overlay banner timers (E-05, E-06, A-07)', () => {
+  real('E-05 the timer of an earlier highlight does not remove the next one', async () => {
+    await load('<div id="a">A</div><div id="b">B</div>');
+    const r = await run<Record<string, number>>(
+      `const count = () => document.querySelectorAll('.kitsune-highlight-overlay').length;
+       f.inspect.highlightElement({ selector: '#a', duration: 400 });
+       await sleep(100);
+       f.inspect.highlightElement({ selector: '#b', duration: 10000 });
+       await sleep(500); // past the first highlight's 400 ms
+       const second = count();
+       f.inspect.highlightElement({ selector: '#a', duration: 150 });
+       f.inspect.highlightElement({ selector: '#b', duration: 0 }); // stays
+       await sleep(300);
+       return { second, persistent: count() };`,
+    );
+    expect(r).toEqual({ second: 1, persistent: 1 });
+  });
+
+  real('E-06 a banner replaced by one with the same id settles at once; cancel reaches the new one', async () => {
+    await load('<div>page</div>');
+    const r = await run<Record<string, unknown>>(
+      `const cfg = (title) => ({ id: 'b1', title, buttons: [{ label: 'x', value: 'done', color: '#fff' }],
+                                 timeoutMs: 5000, borderColor: '#fff', background: '#000' });
+       const state = { first: 'pending', second: 'pending' };
+       f.overlay.createOverlayBanner(cfg('first')).then((v) => { state.first = v; });
+       f.overlay.createOverlayBanner(cfg('second')).then((v) => { state.second = v; });
+       await sleep(0);
+       const afterReplace = { ...state, inDom: document.querySelectorAll('#b1').length };
+       const closed = f.overlay.closeOverlayBanner('b1', 'timeout');
+       await sleep(0);
+       return { afterReplace, afterClose: { ...state, inDom: document.querySelectorAll('#b1').length },
+                closed, again: f.overlay.closeOverlayBanner('b1', 'timeout') };`,
+    );
+    expect(r).toEqual({
+      afterReplace: { first: 'superseded', second: 'pending', inDom: 1 },
+      afterClose: { first: 'superseded', second: 'timeout', inDom: 0 },
+      closed: true,
+      again: false,
+    });
+  });
+
+  real('E-06 a captcha solved by its token leaves no banner for cancelHumanWait', async () => {
+    await load('<div class="g-recaptcha"></div>');
+    const r = await run<Record<string, unknown>>(
+      `const p = f.captcha.solveCaptcha({ timeout: 5000 });
+       await sleep(50);
+       const shown = !!document.getElementById('__fox_captcha_banner');
+       const ta = document.createElement('textarea');
+       ta.name = 'g-recaptcha-response'; ta.value = 'tok';
+       document.body.appendChild(ta);
+       const res = await p;
+       return { shown, resolvedBy: res.resolvedBy,
+                inDom: !!document.getElementById('__fox_captcha_banner'),
+                cancel: f.overlay.cancelHumanWait() };`,
+    );
+    expect(r).toEqual({
+      shown: true,
+      resolvedBy: 'token',
+      inDom: false,
+      cancel: { success: true, cancelled: false },
+    });
+  });
+
+  real('E-06 a second captcha wait in the tab ends the first one as superseded', async () => {
+    await load('<div class="g-recaptcha"></div>');
+    const r = await run<Record<string, unknown>[]>(
+      `const first = f.captcha.solveCaptcha({ timeout: 5000 });
+       await sleep(50);
+       const second = f.captcha.solveCaptcha({ timeout: 5000 });
+       const firstResult = await first;
+       const cancel = f.overlay.cancelHumanWait();
+       return [firstResult, await second, cancel];`,
+    );
+    expect(r[0]).toMatchObject({ solved: false, superseded: true });
+    expect(r[0]).not.toHaveProperty('timedOut');
+    // cancel_human_wait closes the newer wait (reported as a timeout).
+    expect(r[1]).toMatchObject({ solved: false, timedOut: true });
+    expect(r[2]).toEqual({ success: true, cancelled: true });
+  });
+
+  it('A-07 the captcha banner id is defined once (content/constants.ts)', () => {
+    const tree = readExtensionTree('content');
+    expect(tree.split('"__fox_captcha_banner"')).toHaveLength(2);
+    expect(readExtensionSource('content/constants.ts'))
+      .toContain('export const CAPTCHA_BANNER_ID = "__fox_captcha_banner";');
+  });
+});
+
+describe('WP44 content input checks, observer ids, XHR log and truncation (E-12, E-13, A-06, E-15, E-17)', () => {
+  it('E-17 truncateText never splits a surrogate pair', async () => {
+    const dom = await import('../../packages/extension/src/content/dom.ts');
+    expect(dom.truncateText('abc', 5)).toBe('abc');
+    expect(dom.truncateText('abc', 2)).toBe('ab');
+    expect(dom.truncateText('a\u{1F600}b', 2)).toBe('a'); // the emoji does not fit whole
+    expect(dom.truncateText('a\u{1F600}b', 3)).toBe('a\u{1F600}');
+    expect(dom.truncateText('abc', 0)).toBe('');
+    expect(dom.truncatedValue(3, 10)).toBe('3');
+    expect(dom.truncatedValue(undefined, 10)).toBeNull();
+    expect(dom.truncatedValue(null, 10)).toBeNull();
+  });
+
+  real('E-17 getText and element info cut on character boundaries; numeric values do not fail', async () => {
+    await load('<p id="p">ab\u{1F600}cd</p><ul><li id="li" value="3">x</li></ul>');
+    const r = await run<Record<string, unknown>>(
+      `const text = f.inspect.getText({ selector: '#p', maxLength: 3 });
+       const li = f.dom.getElementInfo(document.getElementById('li'));
+       return { text: text.text, truncated: text.truncated, liValue: li.value };`,
+    );
+    expect(r).toEqual({ text: 'ab', truncated: true, liValue: '3' });
+  });
+
+  real('E-12 performScroll fails for an unknown direction', async () => {
+    await load('<div style="height:3000px">tall</div>');
+    const r = await run<[string, Record<string, unknown>]>(
+      `return [
+         await f.input.performScroll({ direction: 'sideways' }).catch((e) => e.message),
+         await f.input.performScroll({ direction: 'top' }),
+       ];`,
+    );
+    expect(r[0]).toBe('Unknown scroll direction: "sideways" (expected up, down, left, right, top or bottom)');
+    expect(r[1]).toMatchObject({ scrolled: true });
+  });
+
+  real('E-13 waitForChange fails for a selector that matches nothing and for an unknown changeType', async () => {
+    await load('<div id="t"></div>');
+    const r = await run<[string, string, Record<string, unknown>]>(
+      `const missing = await f.wait.waitForChange({ selector: '#nope', timeout: 500 }).catch((e) => e.message);
+       const badType = await f.wait.waitForChange({ selector: '#t', changeType: 'bogus', timeout: 500 })
+         .catch((e) => e.message);
+       const p = f.wait.waitForChange({ selector: '#t', changeType: 'childList', timeout: 2000 });
+       setTimeout(() => document.getElementById('t').appendChild(document.createElement('i')), 50);
+       return [missing, badType, await p];`,
+    );
+    expect(r[0]).toBe('Element not found: #nope');
+    expect(r[1]).toBe('Unknown changeType: "bogus" (expected childList, attributes or text)');
+    expect(r[2]).toMatchObject({ changed: true });
+  });
+
+  real('A-06 generated observer ids do not repeat within a millisecond', async () => {
+    await load('<div id="t"></div>');
+    const r = await run<Record<string, unknown>>(
+      `const now = Date.now;
+       Date.now = () => 1000; // every call in the same millisecond
+       let a, b;
+       try {
+         a = f.wait.observeElement({ selector: '#t' }).observerId;
+         b = f.wait.observeElement({ selector: '#t' }).observerId;
+       } finally { Date.now = now; }
+       document.getElementById('t').appendChild(document.createElement('span'));
+       await sleep(50);
+       return { distinct: a !== b, a: f.wait.stopObserving({ observerId: a }).totalChanges,
+                b: f.wait.stopObserving({ observerId: b }).totalChanges };`,
+    );
+    expect(r).toEqual({ distinct: true, a: 1, b: 1 });
+  });
+
+  real('E-15 the network log records aborted and timed-out XHR requests', async () => {
+    await load('<div>page</div>');
+    const r = await run<Record<string, unknown>[]>(
+      `f.log.startLogging({});
+       const aborted = new XMLHttpRequest();
+       aborted.open('GET', '/hang?aborted');
+       aborted.send();
+       const late = new XMLHttpRequest();
+       late.open('GET', '/hang?timeout');
+       late.timeout = 200;
+       late.send();
+       await sleep(50);
+       aborted.abort();
+       await sleep(400);
+       const sent = records().flatMap((m) => m.network || []);
+       return [...sent, ...(f.log.flushLogs().network || [])]
+         .map((e) => ({ url: e.url, error: e.error }));`,
+    );
+    expect(r).toEqual(
+      expect.arrayContaining([
+        { url: '/hang?aborted', error: 'Aborted' },
+        { url: '/hang?timeout', error: 'Timeout' },
+      ]),
+    );
+    expect(r).toHaveLength(2);
   });
 });

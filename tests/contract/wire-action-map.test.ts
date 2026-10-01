@@ -110,7 +110,8 @@ describe('3.A17: observer id round trip, wire name to a fake content script', ()
     const injected = await run('inject_observer', { selector: '#panel' });
     expect(injected).toMatchObject({ success: true, observing: true, target: '#panel' });
     const id = injected.observerId as string;
-    expect(id).toMatch(/^obs_\d+$/);
+    // WP44 A-06: time, page-wide counter and a random part.
+    expect(id).toMatch(/^obs_\d+_\d+_[0-9a-z]+$/);
     // The internal name, not the wire name, reaches the content script.
     expect(sent[0]).toEqual({ action: 'observeElement', selector: '#panel' });
 
