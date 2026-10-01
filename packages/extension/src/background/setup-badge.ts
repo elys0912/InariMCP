@@ -29,15 +29,19 @@ async function getSetupState(): Promise<SetupState> {
   }
 
   let reply: HostStatusReply;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     reply = (await Promise.race([
-      sendToNativeHost({ action: "status" }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Native host status timed out")), SETUP_STATUS_TIMEOUT_MS),
-      ),
+      // The request itself gives up as well, so it does not stay pending.
+      sendToNativeHost({ action: "status" }, { timeoutMs: SETUP_STATUS_TIMEOUT_MS }),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Native host status timed out")), SETUP_STATUS_TIMEOUT_MS);
+      }),
     ])) as HostStatusReply;
   } catch (error) {
     return { kind: "hostError", error: (error as Error).message };
+  } finally {
+    clearTimeout(timer);
   }
 
   const server = reply.mcp_server ?? {};
@@ -111,8 +115,20 @@ function renderBadge(): void {
     .catch(() => {});
 }
 
+/** Order of refreshSetupState calls, and the newest one whose state was applied. */
+let setupRequested = 0;
+let setupApplied = 0;
+
+/**
+ * Work out the setup state and show it on the badge. Calls overlap (the
+ * interval, connection events, the popup's status); a result that arrives
+ * after a later call's result is dropped, and that call gets the newer state.
+ */
 export async function refreshSetupState(): Promise<SetupState> {
+  const call = ++setupRequested;
   const state = await getSetupState();
+  if (call < setupApplied) return lastSetupState;
+  setupApplied = call;
   applyBadge(state);
   return state;
 }
