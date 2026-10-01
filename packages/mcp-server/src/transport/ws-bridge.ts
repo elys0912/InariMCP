@@ -274,11 +274,11 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
         type: 'auth_ok',
         mac: computeMac(apiToken, MAC_LABEL.wsServer, serverNonce, clientNonce),
       }));
-      connectionManager.registerBrowser(id, (message: string) => {
+      connectionManager.registerBrowser(id, (command) => {
         if (ws.readyState !== ws.OPEN) {
           throw new Error('WebSocket is not open');
         }
-        ws.send(message);
+        ws.send(JSON.stringify(command));
       }, 'native-host');
 
       const now = Date.now();

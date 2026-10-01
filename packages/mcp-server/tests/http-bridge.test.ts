@@ -212,7 +212,7 @@ describe('client abort (5.5)', () => {
     await start();
     const manager = getConnectionManager();
     const sent: { action: string; requestId: string; data?: Record<string, unknown> }[] = [];
-    manager.registerBrowser('silent', (m) => { sent.push(JSON.parse(m) as (typeof sent)[number]); }, 'native-host');
+    manager.registerBrowser('silent', (m) => { sent.push(m as (typeof sent)[number]); }, 'native-host');
     try {
       const body = JSON.stringify({ name: 'fox_request_approval', arguments: { message: 'ok?' } });
       const req = http.request({

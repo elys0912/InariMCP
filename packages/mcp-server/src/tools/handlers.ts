@@ -3,11 +3,11 @@
  *
  * Each MCP tool call flows through a common pipeline:
  *   1. SafetyGuard.check()  — policy enforcement
- *   2. Argument camelize    — snake_case → camelCase for Extension
- *   3. BrowserCommand build — action + data + tabId + requestId
- *   4. sendCommand()        — forward to Extension / headless backend
- *   5. Post-processing      — URL tracking, screenshot resource_link, sanitize
- *   6. Return ToolResult    — unified envelope back to Claude Code
+ *   2. BrowserCommand build — action + data + tabId + requestId (the zod-
+ *      validated arguments as is: schema keys are camelCase, like the Extension's)
+ *   3. sendCommand()        — forward to Extension / headless backend
+ *   4. Post-processing      — URL tracking, screenshot resource_link, sanitize
+ *   5. Return ToolResult    — unified envelope back to Claude Code
  *
  * Protected sites (Layer 4/7): a `confirmation_required` answer — from the
  * guard or from the Extension — opens a human-approval request
@@ -41,7 +41,6 @@ import { compileUrlPatterns } from '../safety/url-pattern.js';
 import { applyPasswordPolicy, passwordSelectorRefusal } from '../safety/password-guard.js';
 import { audit } from '../safety/audit.js';
 import type { AuditDecision } from '../safety/audit.js';
-import { camelizeArgs } from '../utils/camelize.js';
 import { getConnectionManager } from '../connection/manager.js';
 
 // ---------------------------------------------------------------------------
@@ -127,7 +126,7 @@ function buildCommandData(
   toolName: string,
   args: Record<string, unknown>,
 ): Record<string, unknown> {
-  const data = camelizeArgs(args);
+  const data = { ...args };
 
   // fox_screenshot: add fullPage flag for full_page scope
   if (toolName === 'fox_screenshot') {
@@ -146,8 +145,8 @@ function buildCommandData(
 
   // fox_detect_captcha → solve_captcha always runs in detect-only mode: the
   // project never tries to get past a CAPTCHA, and the
-  // caller cannot override this (set after camelize, so it wins over any
-  // argument of the same name).
+  // caller cannot override this (set after the arguments, so it wins over
+  // any argument of the same name).
   if (toolName === 'fox_detect_captcha') {
     data['detectOnly'] = true;
   }
@@ -600,7 +599,7 @@ export function createToolHandler(
     // -----------------------------------------------------------------------
     const action = resolveAction(toolName, args);
     const data = buildCommandData(toolName, args);
-    // Set after camelize, so it wins over any argument of the same name.
+    // Set after the arguments, so it wins over any argument of the same name.
     applyPasswordPolicy(toolName, data, guard.config.allowPasswordTyping);
 
     // Extract tabId before sending (it goes at BrowserCommand level)

@@ -10,7 +10,7 @@ interface Sent {
 /** A browser that records commands and never answers. */
 function silentBrowser(manager: BrowserConnectionManager, id = 'b1'): Sent[] {
   const sent: Sent[] = [];
-  manager.registerBrowser(id, (m) => { sent.push(JSON.parse(m) as Sent); }, 'native-host');
+  manager.registerBrowser(id, (m) => { sent.push(m as Sent); }, 'native-host');
   return sent;
 }
 

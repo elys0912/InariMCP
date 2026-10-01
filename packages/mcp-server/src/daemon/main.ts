@@ -70,8 +70,7 @@ async function startHeadless(): Promise<void> {
   const containerWarning = headlessContainerScopeWarning(getSafetyGuard().config);
   if (containerWarning !== null) log(`WARNING: ${containerWarning}`);
 
-  connectionManager.registerBrowser('headless', (message: string) => {
-    const command = JSON.parse(message) as { action: string; tabId?: number; data?: Record<string, unknown>; requestId: string };
+  connectionManager.registerBrowser('headless', (command) => {
     headless.execute(command.action, command.tabId, command.data ?? {})
       .then((result) => {
         connectionManager.handleResponse({
