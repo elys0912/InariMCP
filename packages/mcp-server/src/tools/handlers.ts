@@ -301,7 +301,7 @@ export function toolResultToCallResult(result: ToolResult): CallToolResult {
         : '';
       return {
         content: [
-          { type: 'text' as const, text: JSON.stringify(meta, null, 2) },
+          { type: 'text' as const, text: JSON.stringify(meta) },
           { type: 'text' as const, text: `${snapshot}${truncated}` },
         ],
       };
@@ -309,7 +309,8 @@ export function toolResultToCallResult(result: ToolResult): CallToolResult {
 
     const textContent = typeof result.data === 'string'
       ? result.data
-      : JSON.stringify(result.data ?? { success: true }, null, 2);
+      // Compact: indentation costs tokens and no reader needs it.
+      : JSON.stringify(result.data ?? { success: true });
 
     return {
       content: [{ type: 'text' as const, text: textContent }],
@@ -597,7 +598,7 @@ function toolCall(
     if (toolName === 'fox_safety_status') {
       const status = guard.status();
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify(status, null, 2) }],
+        content: [{ type: 'text' as const, text: JSON.stringify(status) }],
       };
     }
 

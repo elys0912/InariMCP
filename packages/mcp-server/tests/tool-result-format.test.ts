@@ -25,6 +25,11 @@ afterEach(() => {
 });
 
 describe('toolResultToCallResult', () => {
+  it('writes result data as compact JSON (WP13-S4)', () => {
+    const r = toolResultToCallResult({ success: true, data: { url: 'https://example.test/', tabs: [{ id: 1 }] } });
+    expect(text(r)).toEqual(['{"url":"https://example.test/","tabs":[{"id":1}]}']);
+  });
+
   it('shows a headless snapshot as plain text in its own block', () => {
     const yaml = '- heading "Shop"\n- button "Buy"';
     const r = toolResultToCallResult({
