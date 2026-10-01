@@ -1,9 +1,8 @@
 /**
  * Extension background (background.ts and background/*.ts): routing and
  * robustness fixes of WP5 (review 3.A2-A9, 5.2, 5.7, 3.security). Functions
- * of the side-effect-free modules under background/ are imported directly,
- * a few are still cut out of the source (helpers/extension-source.ts); the
- * rest is checked on the source text.
+ * of the side-effect-free modules under background/ are imported directly;
+ * the rest is checked on the source text (helpers/extension-source.ts).
  *
  * TODO(test): handleCommand end to end with a fake `browser` (target tab
  *   resolved once: scope check, protected check, handler and URL report on
@@ -27,10 +26,10 @@ import { checkListedTarget } from '../../packages/extension/src/background/url-p
 import { reloadMatchingTabs } from '../../packages/extension/src/background/reload.ts';
 import { captureTabsWithin } from '../../packages/extension/src/background/screenshot.ts';
 import {
-  loadExtensionFunction,
-  readExtensionSource,
-  readExtensionTree,
-} from './helpers/extension-source.js';
+  describeNativeMessage,
+  nextReconnectAttempts,
+} from '../../packages/extension/src/background/native-connection.ts';
+import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 const background = readExtensionTree('background');
 
@@ -114,8 +113,7 @@ describe('3.A6 / 5.11 waitForTabLoad', () => {
 
 describe('3.A2 reconnect backoff', () => {
   it('starts over only after a confirmed connection stayed up for the stable period', async () => {
-    const next = await loadExtensionFunction<(a: number, c: number | null, s: number) => number>(
-      'background.ts', 'nextReconnectAttempts');
+    const next = nextReconnectAttempts;
     expect(next(4, null, 10_000)).toBe(4); // host never answered
     expect(next(4, 2_000, 10_000)).toBe(4); // crashed right after answering
     expect(next(4, 10_000, 10_000)).toBe(0);
@@ -271,7 +269,7 @@ describe('5.7 screenshot all_tabs', () => {
 
 describe('3.security native message logging', () => {
   it('logs action / requestId / key names, never values', async () => {
-    const describe_ = await loadExtensionFunction<(m: unknown) => string>('background.ts', 'describeNativeMessage');
+    const describe_ = describeNativeMessage;
     const line = describe_({ action: 'execute_script', requestId: '9', data: { script: 'secret()' } });
     expect(line).toContain('action=execute_script');
     expect(line).toContain('data=[script]');

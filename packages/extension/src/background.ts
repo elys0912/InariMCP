@@ -7,21 +7,16 @@
 // Bundled with its imports into dist/background.js (scripts/build-extension.mjs).
 
 import { t } from "./i18n";
-import {
-  parseApprovalPrompt,
-  approvalCommandResult,
-  APPROVAL_MESSAGE,
-  type ApprovalView,
-  type ApprovalDecision,
-} from "./approval";
-import type { SetupState } from "./types/setup";
+import { APPROVAL_MESSAGE } from "./approval";
 import { isSingleTabAction, SELF_PROTECTED_ACTIONS } from "./background/action-policy";
 import {
-  TIMEOUTS,
-  LOG_RECORD_MESSAGE,
-  TOP_FRAME_ID,
-  LOGGING_STATE_QUERY,
-} from "./background/constants";
+  requestApproval,
+  listApprovals,
+  decideApproval,
+  APPROVAL_NOTIFICATION_PREFIX,
+  cancelAllApprovals,
+} from "./background/approvals";
+import { LOG_RECORD_MESSAGE, TOP_FRAME_ID, LOGGING_STATE_QUERY } from "./background/constants";
 import {
   parseContainerScope,
   enforceContainerScope,
@@ -29,6 +24,7 @@ import {
   listContainers,
   openInContainer,
 } from "./background/container-scope";
+import { trackHumanWait, solveCaptcha, cancelHumanWait } from "./background/human-wait";
 import {
   startLoggingOnTab,
   stopLoggingOnTab,
@@ -40,6 +36,13 @@ import {
   wantsEarlyInjection,
   forgetTab,
 } from "./background/logging";
+import {
+  hostStatus,
+  recheckHost,
+  postToHost,
+  setConnectionHooks,
+  connectNativeHost,
+} from "./background/native-connection";
 import { navigateTo, navigateNewTab, navigateHistory } from "./background/navigation";
 import {
   performClick,
@@ -53,6 +56,7 @@ import {
 } from "./background/page-actions";
 import { refreshTab, reloadAllTabs, reloadTabsByUrl } from "./background/reload";
 import { takeScreenshot, screenshotAllTabs } from "./background/screenshot";
+import { refreshSetupState, BADGE_COLOR, SETUP_REFRESH_MS } from "./background/setup-badge";
 import { resolveTab, sendToContentScript } from "./background/tab-target";
 import { waitForNavigation, waitForUrl } from "./background/tab-wait";
 import {
@@ -82,384 +86,6 @@ import {
   checkProtectedTarget,
 } from "./background/url-policy";
 import { resolveWireAction, toWireResponse } from "./background/wire";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface PendingRequest {
-  resolve: (value: unknown) => void;
-  reject: (reason: unknown) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
-}
-
-// ---------------------------------------------------------------------------
-// State
-// ---------------------------------------------------------------------------
-
-const NATIVE_HOST_NAME = "kitsune_mcp";
-let nativePort: browser.runtime.Port | null = null;
-let isConnected = false;
-// connectNative() returns a port even when the host is not registered; that
-// failure only shows up afterwards as onDisconnect with port.error. So the
-// host counts as running only once it has answered on the current port.
-let hostConfirmed = false;
-/** port.error of the last disconnect; cleared when the host answers. */
-let lastHostError: string | null = null;
-const pendingRequests = new Map<number, PendingRequest>();
-let requestCounter = 0;
-
-// Reconnection settings
-let reconnectAttempts = 0;
-/** When the host first answered on the current port (null: not yet). */
-let hostConfirmedAt: number | null = null;
-/** A connection counts as stable (backoff starts over) after this long. */
-const STABLE_CONNECTION_MS = 10_000;
-const MAX_RECONNECT_ATTEMPTS = 20;
-const INITIAL_RECONNECT_DELAY = TIMEOUTS.RECONNECT_INITIAL;
-const MAX_RECONNECT_DELAY = TIMEOUTS.RECONNECT_MAX;
-
-// ---------------------------------------------------------------------------
-// Reconnection helpers
-// ---------------------------------------------------------------------------
-
-function getReconnectDelay(): number {
-  return Math.min(
-    INITIAL_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts),
-    MAX_RECONNECT_DELAY,
-  );
-}
-
-/**
- * Reconnect attempt counter after a disconnect. It starts over only when the
- * host had answered on the lost port and stayed up for `stableMs`; a host
- * that is missing, exits at once or crashes right after answering keeps
- * counting up, so the backoff grows instead of respawning it every second.
- * `confirmedForMs`: time since the host's first answer, null if it never did.
- */
-function nextReconnectAttempts(
-  attempts: number,
-  confirmedForMs: number | null,
-  stableMs: number,
-): number {
-  return confirmedForMs !== null && confirmedForMs >= stableMs ? 0 : attempts;
-}
-
-function scheduleReconnect(): void {
-  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-    console.error(
-      `[KitsuneMCP] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`,
-    );
-    // Reset after 60 s to allow a fresh cycle
-    setTimeout(() => {
-      reconnectAttempts = 0;
-      connectNativeHost();
-    }, 60_000);
-    return;
-  }
-
-  const delay = getReconnectDelay();
-  reconnectAttempts++;
-  console.log(
-    `[KitsuneMCP] Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`,
-  );
-  setTimeout(connectNativeHost, delay);
-}
-
-// ---------------------------------------------------------------------------
-// Native messaging
-// ---------------------------------------------------------------------------
-
-function connectNativeHost(): void {
-  if (isConnected && nativePort) {
-    console.log("[KitsuneMCP] Already connected");
-    return;
-  }
-
-  try {
-    console.log(
-      `[KitsuneMCP] Connecting to native host (attempt ${reconnectAttempts + 1})...`,
-    );
-    nativePort = browser.runtime.connectNative(NATIVE_HOST_NAME);
-    isConnected = true;
-    hostConfirmed = false;
-    hostConfirmedAt = null;
-    // reconnectAttempts is NOT reset here: connectNative() returns a port
-    // even when the host is missing or exits at once, so resetting now would
-    // defeat the backoff (a new host process every second). It is reset in
-    // handleDisconnect once a connection proved stable.
-    console.log("[KitsuneMCP] Port opened to native host");
-
-    nativePort.onMessage.addListener(handleNativeMessage);
-    nativePort.onDisconnect.addListener(handleDisconnect);
-    // The answer confirms the host (see hostConfirmed). A missing host
-    // rejects this via handleDisconnect, which refreshes the badge itself.
-    sendToNativeHost({ action: "ping" }).then(
-      () => { void refreshSetupState(); },
-      () => {},
-    );
-  } catch (error) {
-    console.error("[KitsuneMCP] Failed to connect to native host:", error);
-    isConnected = false;
-    nativePort = null;
-    scheduleReconnect();
-  }
-}
-
-function handleDisconnect(port: browser.runtime.Port): void {
-  console.log("[KitsuneMCP] Disconnected from native host");
-  if (port.error) {
-    console.error("[KitsuneMCP] Disconnect error:", port.error);
-    lastHostError = port.error.message;
-  } else if (!hostConfirmed) {
-    lastHostError = "Native host exited without answering";
-  }
-  reconnectAttempts = nextReconnectAttempts(
-    reconnectAttempts,
-    hostConfirmedAt === null ? null : Date.now() - hostConfirmedAt,
-    STABLE_CONNECTION_MS,
-  );
-  isConnected = false;
-  hostConfirmed = false;
-  hostConfirmedAt = null;
-  nativePort = null;
-
-  for (const [, entry] of pendingRequests) {
-    clearTimeout(entry.timeoutId);
-    entry.reject(new Error("Native host disconnected - reconnecting..."));
-  }
-  pendingRequests.clear();
-  // Nobody is left to receive an answer: withdraw open approval requests.
-  cancelAllApprovals();
-
-  void refreshSetupState();
-  scheduleReconnect();
-}
-
-/**
- * One-line summary of a Native Messaging frame for the console: action,
- * requestId and the top-level / data key names -- never the values, which
- * can hold scripts, typed text, form values or page content.
- */
-function describeNativeMessage(raw: unknown): string {
-  if (typeof raw !== "object" || raw === null) return `(${typeof raw})`;
-  const m = raw as Record<string, unknown>;
-  const parts: string[] = [];
-  if (typeof m.action === "string") parts.push(`action=${m.action.slice(0, 64)}`);
-  if (typeof m.requestId === "string" || typeof m.requestId === "number") {
-    parts.push(`requestId=${String(m.requestId).slice(0, 64)}`);
-  }
-  if (typeof m.success === "boolean") parts.push(`success=${m.success}`);
-  const keys = Object.keys(m).filter((k) => k !== "action" && k !== "requestId" && k !== "success");
-  if (keys.length > 0) parts.push(`keys=[${keys.slice(0, 20).join(",")}]`);
-  const data = m.data;
-  if (typeof data === "object" && data !== null && !Array.isArray(data)) {
-    const dataKeys = Object.keys(data);
-    if (dataKeys.length > 0) parts.push(`data=[${dataKeys.slice(0, 20).join(",")}]`);
-  }
-  return parts.join(" ");
-}
-
-function handleNativeMessage(raw: unknown): void {
-  const message = raw as NativeMessage;
-  console.log(`[KitsuneMCP] Received from native host: ${describeNativeMessage(raw)}`);
-
-  if (!hostConfirmed) {
-    hostConfirmed = true;
-    lastHostError = null;
-    hostConfirmedAt = Date.now();
-  }
-
-  if (typeof message.requestId === "number" && pendingRequests.has(message.requestId)) {
-    const entry = pendingRequests.get(message.requestId)!;
-    pendingRequests.delete(message.requestId);
-    // BUG FIX: clear the timeout so it doesn't fire after resolution
-    clearTimeout(entry.timeoutId);
-
-    if (message.error) {
-      entry.reject(new Error(message.error));
-    } else {
-      entry.resolve(message);
-    }
-  } else if (message.action) {
-    handleCommand(message);
-  }
-}
-
-function sendToNativeHost(
-  message: NativeMessage,
-  retryCount = 0,
-): Promise<unknown> {
-  const MAX_RETRIES = 3;
-  const RETRY_DELAY = 1000;
-
-  return new Promise((resolve, reject) => {
-    if (!isConnected || !nativePort) {
-      connectNativeHost();
-
-      setTimeout(() => {
-        if (!isConnected || !nativePort) {
-          if (retryCount < MAX_RETRIES) {
-            console.log(
-              `[KitsuneMCP] Not connected, retrying (${retryCount + 1}/${MAX_RETRIES})...`,
-            );
-            setTimeout(() => {
-              sendToNativeHost(message, retryCount + 1)
-                .then(resolve)
-                .catch(reject);
-            }, RETRY_DELAY);
-          } else {
-            reject(new Error("Not connected to native host after retries"));
-          }
-          return;
-        }
-        doSend();
-      }, 500);
-      return;
-    }
-
-    doSend();
-
-    function doSend(): void {
-      const requestId = ++requestCounter;
-      message.requestId = requestId;
-
-      const timeoutId = setTimeout(() => {
-        if (pendingRequests.has(requestId)) {
-          pendingRequests.delete(requestId);
-          reject(new Error("Request timeout"));
-        }
-      }, TIMEOUTS.COMMAND);
-
-      pendingRequests.set(requestId, { resolve, reject, timeoutId });
-
-      try {
-        nativePort!.postMessage(message);
-      } catch (error) {
-        pendingRequests.delete(requestId);
-        clearTimeout(timeoutId);
-
-        if (retryCount < MAX_RETRIES) {
-          console.log("[KitsuneMCP] Send failed, reconnecting and retrying...");
-          isConnected = false;
-          nativePort = null;
-          setTimeout(() => {
-            sendToNativeHost(message, retryCount + 1)
-              .then(resolve)
-              .catch(reject);
-          }, RETRY_DELAY);
-        } else {
-          reject(error);
-        }
-      }
-    }
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Setup state (popup guidance + toolbar badge)
-// ---------------------------------------------------------------------------
-
-/** Native Host reply to `status` (packages/native-host/src/index.ts). */
-interface HostStatusReply {
-  mcp_server?: { url?: string; available?: boolean; relays?: number | null };
-  claude_register_command?: string;
-}
-
-const NATIVE_HOST_MISSING = /No such native application/i;
-/** The host checks /health and /daemon/info with 3 s timeouts each. */
-const SETUP_STATUS_TIMEOUT_MS = 5_000;
-/** Matches the relay heartbeat, so a new session shows up within ~30 s. */
-const SETUP_REFRESH_MS = 30_000;
-const BADGE_COLOR = "#D9372B";
-
-async function getSetupState(): Promise<SetupState> {
-  if (!hostConfirmed || !nativePort) {
-    if (lastHostError === null) return { kind: "connecting" };
-    return NATIVE_HOST_MISSING.test(lastHostError)
-      ? { kind: "hostMissing", error: lastHostError }
-      : { kind: "hostError", error: lastHostError };
-  }
-
-  let reply: HostStatusReply;
-  try {
-    reply = (await Promise.race([
-      sendToNativeHost({ action: "status" }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Native host status timed out")), SETUP_STATUS_TIMEOUT_MS),
-      ),
-    ])) as HostStatusReply;
-  } catch (error) {
-    return { kind: "hostError", error: (error as Error).message };
-  }
-
-  const server = reply.mcp_server ?? {};
-  const serverUrl = typeof server.url === "string" ? server.url : undefined;
-  // Native Hosts before 0.1.2 do not send `relays` at all (current ones send
-  // null when the daemon info is unavailable): not a daemon problem.
-  if (server.available === true && !("relays" in server)) {
-    return { kind: "hostOutdated", serverUrl };
-  }
-  if (server.available !== true || typeof server.relays !== "number") {
-    return { kind: "daemonDown", serverUrl };
-  }
-  if (server.relays === 0) {
-    return {
-      kind: "noSession",
-      serverUrl,
-      registerCommand:
-        typeof reply.claude_register_command === "string" ? reply.claude_register_command : undefined,
-    };
-  }
-  return { kind: "ready", serverUrl, relays: server.relays };
-}
-
-/** Toolbar tooltip per state (message keys); null = the plain name. */
-const BADGE_TITLE_KEYS: Record<SetupState["kind"], string | null> = {
-  connecting: null,
-  hostMissing: "badgeSetupNeeded",
-  hostError: "badgeHostError",
-  hostOutdated: "badgeHostOutdated",
-  daemonDown: "badgeDaemonDown",
-  noSession: "badgeNoSession",
-  ready: null,
-};
-
-const APPROVAL_BADGE_COLOR = "#E5A00D";
-let lastSetupState: SetupState = { kind: "connecting" };
-
-function applyBadge(state: SetupState): void {
-  lastSetupState = state;
-  renderBadge();
-}
-
-/**
- * Pending approval requests take precedence (count on an amber badge): the
- * popup is where the human answers them. Otherwise the setup state.
- */
-function renderBadge(): void {
-  const pending = pendingApprovals.size;
-  if (pending > 0) {
-    browser.browserAction.setBadgeBackgroundColor({ color: APPROVAL_BADGE_COLOR }).catch(() => {});
-    browser.browserAction.setBadgeText({ text: String(pending) }).catch(() => {});
-    browser.browserAction.setTitle({ title: t("badgeApprovalPending", String(pending)) }).catch(() => {});
-    return;
-  }
-  const state = lastSetupState;
-  const attention = state.kind !== "ready" && state.kind !== "connecting";
-  const titleKey = BADGE_TITLE_KEYS[state.kind];
-  browser.browserAction.setBadgeBackgroundColor({ color: BADGE_COLOR }).catch(() => {});
-  browser.browserAction.setBadgeText({ text: attention ? "!" : "" }).catch(() => {});
-  browser.browserAction
-    .setTitle({ title: titleKey === null ? "KitsuneMCP" : t(titleKey) })
-    .catch(() => {});
-}
-
-async function refreshSetupState(): Promise<SetupState> {
-  const state = await getSetupState();
-  applyBadge(state);
-  return state;
-}
 
 // ---------------------------------------------------------------------------
 // Command dispatcher
@@ -640,14 +266,13 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
       case "status": {
         // The popup asks for a recheck (e.g. right after running the
         // installer) so it need not wait for the reconnect backoff.
-        if (data?.recheck === true && !hostConfirmed) {
-          reconnectAttempts = 0;
-          connectNativeHost();
+        if (data?.recheck === true && !hostStatus().confirmed) {
+          recheckHost();
         }
         const setup = await refreshSetupState();
         result = {
           success: true,
-          connected: hostConfirmed,
+          connected: hostStatus().confirmed,
           version: browser.runtime.getManifest().version,
           setup,
         };
@@ -757,9 +382,9 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
  * sendResponse instead.
  */
 function postWireResponse(message: NativeMessage, result: CommandResult): void {
-  if (nativePort && message.requestId) {
+  if (message.requestId) {
     try {
-      nativePort.postMessage(toWireResponse(message.requestId, result));
+      postToHost(toWireResponse(message.requestId, result));
     } catch (e) {
       // Port disconnected meanwhile, or the result is not serializable. The
       // server fails the request on its own timeout / WS disconnect.
@@ -769,172 +394,6 @@ function postWireResponse(message: NativeMessage, result: CommandResult): void {
       );
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// Approval requests (toolbar popup, never the page)
-// ---------------------------------------------------------------------------
-//
-// A request_approval command stays pending here until the human decides in
-// the popup (APPROVAL_MESSAGE.DECIDE, accepted from extension pages only),
-// it times out, the server withdraws it (cancel_human_wait) or the Native
-// Host disconnects. The badge shows how many are pending. The answer is the
-// command's response, on the server's own requestId.
-
-interface PendingApproval {
-  view: ApprovalView;
-  /** requestId of the request_approval command (cancel_human_wait key). */
-  requestId: string;
-  finish: (decision: ApprovalDecision) => void;
-}
-
-/** Pending requests by ApprovalView.id, in arrival order. */
-const pendingApprovals = new Map<string, PendingApproval>();
-const APPROVAL_NOTIFICATION_PREFIX = "kitsune-approval-";
-
-function requestApproval(
-  requestId: number | string | undefined,
-  data: Record<string, unknown> = {},
-): Promise<CommandResult> {
-  const key = requestId === undefined ? `local-${Date.now()}` : String(requestId);
-  const view = parseApprovalPrompt(data, key, Date.now(), TIMEOUTS.APPROVAL);
-  if (view === null) {
-    return Promise.resolve({ success: false, error: "Malformed approval request" });
-  }
-  // A repeated id (server retry) replaces the older entry.
-  pendingApprovals.get(view.id)?.finish("cancelled");
-
-  return new Promise<CommandResult>((resolve) => {
-    let settled = false;
-    const finish = (decision: ApprovalDecision): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (pendingApprovals.get(view.id)?.finish === finish) pendingApprovals.delete(view.id);
-      browser.notifications?.clear?.(APPROVAL_NOTIFICATION_PREFIX + view.id)?.catch(() => {});
-      renderBadge();
-      resolve(approvalCommandResult(view, decision, Date.now()));
-    };
-    const timer = setTimeout(() => finish("timeout"), Math.max(0, view.deadline - Date.now()));
-    pendingApprovals.set(view.id, { view, requestId: key, finish });
-    renderBadge();
-    notifyApproval(view);
-  });
-}
-
-/** OS notification pointing at the toolbar popup (best effort). */
-function notifyApproval(view: ApprovalView): void {
-  try {
-    if (!browser.notifications) return;
-    const message =
-      view.kind === "protected_action"
-        ? t("notifyApprovalProtected", [view.toolName ?? "", view.host ?? ""])
-        : t("notifyApprovalQuestion", (view.message || t("notifyApprovalDefault")).slice(0, 160));
-    browser.notifications
-      .create(APPROVAL_NOTIFICATION_PREFIX + view.id, {
-        type: "basic",
-        title: t("notifyApprovalTitle"),
-        message,
-        iconUrl: browser.runtime.getURL("icons/icon.svg"),
-      })
-      .catch(() => {});
-  } catch {
-    // Notifications unavailable -- the badge still shows the request
-  }
-}
-
-function cancelAllApprovals(): void {
-  for (const entry of [...pendingApprovals.values()]) entry.finish("cancelled");
-}
-
-/** Popup: the pending requests, oldest first. */
-function listApprovals(): ApprovalView[] {
-  return [...pendingApprovals.values()].map((entry) => entry.view);
-}
-
-/** Popup: the human's decision on one request. */
-function decideApproval(id: unknown, approved: unknown): CommandResult {
-  const entry = typeof id === "string" ? pendingApprovals.get(id) : undefined;
-  if (!entry) return { success: false, error: "This request is no longer pending" };
-  if (typeof approved !== "boolean") return { success: false, error: "approved must be a boolean" };
-  entry.finish(approved ? "approved" : "denied");
-  return { success: true };
-}
-
-// ---------------------------------------------------------------------------
-// Captcha
-// ---------------------------------------------------------------------------
-
-/**
- * Tabs showing a captcha banner for a server command (requestId → tabId),
- * so that cancel_human_wait can withdraw it after the server stopped waiting.
- */
-const humanWaits = new Map<string, number>();
-
-/**
- * Run a banner-showing handler on a pinned tab and remember that tab under
- * the command's requestId while the handler waits for the human.
- */
-async function trackHumanWait(
-  requestId: number | string | undefined,
-  tabId: number | undefined,
-  run: (tabId: number | undefined) => Promise<CommandResult>,
-): Promise<CommandResult> {
-  let pinned = tabId;
-  try {
-    pinned = (await resolveTab(tabId))?.id ?? tabId;
-  } catch {
-    // run() reports the missing tab itself
-  }
-  const key = requestId === undefined ? undefined : String(requestId);
-  if (key !== undefined && pinned !== undefined) humanWaits.set(key, pinned);
-  try {
-    return await run(pinned);
-  } finally {
-    if (key !== undefined) humanWaits.delete(key);
-  }
-}
-
-/**
- * The server gave up waiting on a command: withdraw its approval request,
- * or the captcha banner it showed.
- */
-async function cancelHumanWait(data: Record<string, unknown> = {}): Promise<CommandResult> {
-  const target = data.requestId;
-  if (typeof target !== "string" && typeof target !== "number") {
-    return { success: true, cancelled: false };
-  }
-  const key = String(target);
-  for (const entry of pendingApprovals.values()) {
-    if (entry.requestId === key) {
-      entry.finish("cancelled");
-      return { success: true, cancelled: true };
-    }
-  }
-  const tabId = humanWaits.get(key);
-  if (tabId === undefined) return { success: true, cancelled: false };
-  return sendToContentScript(tabId, { action: "cancelHumanWait" });
-}
-
-async function solveCaptcha(
-  tabId: number | undefined,
-  data: { detectOnly?: boolean } & Record<string, unknown> = {},
-): Promise<CommandResult> {
-  if (!data.detectOnly) {
-    try {
-      if (browser.notifications) {
-        await browser.notifications.create({
-          type: "basic",
-          title: t("notifyCaptchaTitle"),
-          message: t("notifyCaptchaMessage"),
-          iconUrl: browser.runtime.getURL("icons/icon.svg"),
-        });
-      }
-    } catch {
-      // Notifications unavailable
-    }
-  }
-  return sendToContentScript(tabId, { action: "solveCaptcha", ...data });
 }
 
 // ---------------------------------------------------------------------------
@@ -1085,9 +544,9 @@ browser.contextMenus.onClicked.addListener(
   ): void => {
     if (info.menuItemId === "kitsune-screenshot") {
       void takeScreenshot(tab.id).then((result) => {
-        if (!result.success || !nativePort) return;
+        if (!result.success) return;
         try {
-          nativePort.postMessage({
+          postToHost({
             action: "screenshotTaken",
             data: result.imageData,
             tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
@@ -1116,6 +575,14 @@ browser.contextMenus.onClicked.addListener(
 // Initialize
 // ---------------------------------------------------------------------------
 
+setConnectionHooks({
+  onCommand: (message) => { void handleCommand(message); },
+  onConfirmed: () => { void refreshSetupState(); },
+  onDisconnected: () => {
+    cancelAllApprovals();
+    void refreshSetupState();
+  },
+});
 browser.browserAction.setBadgeBackgroundColor({ color: BADGE_COLOR }).catch(() => {});
 connectNativeHost();
 // Session count changes without any event reaching the Extension.
