@@ -14,6 +14,8 @@ KitsuneMCPの現行版（v0.1.x）で分かっている制約と注意点。
 ## 人による承認
 
 - **ローカルのプロセスはMCP elicitationで自分の要求を承認できる**: 保護対象サイトでの操作の承認は、使えればClaude Codeの確認ダイアログ（MCP elicitation）で、そうでなければFirefoxのツールバーのポップアップで尋ねる。elicitationの回答はローカルのHTTPでdaemonに届くので、`~/.kitsune-mcp/api_token`を読めるプロセスは自分の要求を自分で承認できる（受け入れているリスク）。ポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する
+- **承認はホスト名に結び付き、パスやポートには結び付かない**（仕様）: 承認した呼び出しは、承認したホスト名のどのパス・ポート・スキームでも動く。ツールと引数の完全一致と1回限りであることは変わらない
+- **UIだけを変えるツールは保護対象サイトの確認を通らない**（仕様）: `fox_hover`、`fox_scroll`、`fox_highlight`、`fox_switch_tab`（分類`interact`）はページのデータを変えないので、観察系のツールと同じく、保護対象サイトでも承認なしで動く（読み取り専用モードでも使える）
 - **ヘッドレスモードでは承認できない場合がある**: ヘッドレスには尋ねるためのポップアップがない。クライアントがelicitationに対応していないか、`FOX_APPROVAL_ELICITATION=0`が設定されていると、保護対象サイトでの操作は承認できずに拒否される。ヘッドレスモードの`fox_request_approval`は常に失敗する
 - **CAPTCHAバナーの取り下げは保証されない**: 承認はページの外（ポップアップ）で尋ねるが、`fox_detect_captcha`のCAPTCHAバナーは今もページの中に出る。バナーは自分のタイマーで、サーバーが待つのをやめる前に閉じる。サーバーが先にタイムアウトした場合（メッセージが遅れたときなど）は拡張機能にバナーの取り下げを指示するが、そのメッセージも届かないとバナーが残ることがある。残ったバナーを押しても何も起きない（Claudeはすでにタイムアウトのエラーを受け取っていて、サーバーはその回答を捨てる）
 
@@ -39,6 +41,7 @@ KitsuneMCPの現行版（v0.1.x）で分かっている制約と注意点。
 ## ヘッドレスモード
 
 - **対応していないツールがある**: ログ収集の5本、`fox_navigate`の`hard_refresh`、`fox_screenshot`の`all_tabs` / `scroll_capture`、コンテナの2本、`fox_run_workflow`、`fox_audit_page`。`fox_request_approval`は常に失敗する
+- **Playwrightは任意の依存**: 入っていないと（`npm ci --omit=optional`）、`FOX_HEADLESS=1`のdaemonは起動時に`daemon.log`へ`FOX_HEADLESS needs the optional dependency playwright, which is not installed`と出して終了する。拡張機能経路では不要。`npm run build`には必要（ヘッドレスバックエンドがその型をimportする）で、`npm run test:e2e`と`npm run e2e:extension`にも必要
 - **コンテナスコープを有効にするとすべて拒否される**: ヘッドレスモードにはFirefoxのコンテナがないので、`safety.json`で`container_scope.enabled`にしているとブラウザへのコマンドはすべて拒否される（daemonは起動時に警告を出す）。ヘッドレスのdaemonは、コンテナスコープを切った専用の`safety.json`（`FOX_SAFETY_CONFIG`）で起動すること
 - **無視される引数が多い**（結果の`warnings`に並ぶ）:
   - `fox_navigate`: `waitForLoad`（常に`domcontentloaded`まで待つ）、`bypassCache`（`refresh`は通常の再読み込み）
@@ -78,5 +81,5 @@ KitsuneMCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **Firefoxのプロファイルを複数同時に開くと、先に接続した1つだけが使われる**: どれが使われているかはどこにも表示されない
 - **アンインストールの後にdaemonが戻ってくることがある**: アンインストーラは最初にFirefoxへの登録を外し、daemonより先にこのリポジトリのNative Hostを止めるが、KitsuneMCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す（APIトークンも作り直す）。それらのセッションを再起動すること（アンインストーラが一覧を出す）。プロセスの一覧を取れない場合（`ps` / WMIがない）は、拡張機能を外すかFirefoxも終了する
 - **Windowsではファイルのモード（0o600 / 0o700）が効かない**: `~/.kitsune-mcp/`のAPIトークン、ログ、スクリーンショットは、ユーザープロファイルのフォルダのアクセス権で守られる。プロファイルの外の`FOX_SCREENSHOTS_DIR`を指定すると、Native Hostが警告をログに出す
-- **ログファイルは5 MBで切り替わる**: `~/.kitsune-mcp/logs/`のログは5 MBを超えると`<名前>.old`に退避される（1世代だけ残る）。`native-host.log`と監査ログは書き込みのたびに確認する。`daemon.log`はdaemonの起動時と、Native Hostが動いている間は1時間ごとに確認する。FirefoxなしでClaude Codeだけから使っていると、daemonが再起動するまで5 MBを超えて大きくなる
+- **ログファイルは5 MBで切り替わる**: `~/.kitsune-mcp/logs/`のログは5 MBを超えると`<名前>.old`に退避される（1世代だけ残る）。`daemon.log`は動いているdaemonが開いたままなので、複製してから中身を空にする（copy-truncate。その間に書かれた行は失われる）。`native-host.log`と監査ログは書き込みのたびに確認する。`daemon.log`はdaemonの起動時と、Native Hostが動いている間は1時間ごとに確認する。FirefoxなしでClaude Codeだけから使っていると、daemonが再起動するまで5 MBを超えて大きくなる
 - **開発にはNode.js 22.12以上（または24）が必要**: `npm test` / `npm run test:e2e`（Vitest）の要件。KitsuneMCP自体はNode.js 18以上で動く
