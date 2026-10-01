@@ -19,40 +19,41 @@
 // in a new tab (closed again at the end). Needs internet access.
 //
 // Usage: node scripts/e2e/tools-smoke.mjs
-//   FOX_HOST / FOX_HTTP_PORT override the daemon address (default 127.0.0.1:8765)
+//   FOX_HOST / FOX_HTTP_PORT override the daemon address (default 127.0.0.1:8765;
+//   same rules as the installer: loopback hosts only, legacy CLAUDE_BROWSER_* names)
+// Requests are signed with the API token (the token itself is never sent).
 // Exit code: 0 = all checks pass, 1 = at least one failed
 
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import path from 'node:path';
+import { dataPaths, httpEndpoint, signPost } from '../lib/core.mjs';
+import { httpGet, httpPost } from '../lib/system.mjs';
+import { interpretCallResponse, truncate as short } from './smoke-core.mjs';
 
-const base = `http://${process.env.FOX_HOST || '127.0.0.1'}:${process.env.FOX_HTTP_PORT || '8765'}`;
-const tokenPath = path.join(homedir(), '.kitsune-mcp', 'api_token');
+const CALL_TIMEOUT_MS = 60_000;
+
+const endpoint = httpEndpoint(process.env);
+const base = `http://${endpoint.host.includes(':') ? `[${endpoint.host}]` : endpoint.host}:${endpoint.port}`;
+const { tokenPath } = dataPaths(process.platform, homedir());
 if (!existsSync(tokenPath)) {
   console.error(`API token not found: ${tokenPath} (is the daemon running?)`);
   process.exit(1);
 }
-const apiKey = readFileSync(tokenPath, 'utf8').trim();
+const apiToken = readFileSync(tokenPath, 'utf8').trim();
 
-const health = await fetch(`${base}/health`).then((r) => r.json()).catch(() => undefined);
+const healthRes = await httpGet({ ...endpoint, urlPath: '/health' });
+let health;
+try { health = healthRes ? JSON.parse(healthRes.body.toString('utf8')) : undefined; } catch { health = undefined; }
 if (!health?.browsers_connected) {
   console.error(`no browser connected (${base}/health: ${JSON.stringify(health) ?? 'no answer'})`);
   process.exit(1);
 }
 
 async function call(name, args = {}) {
-  const res = await fetch(`${base}/mcp/call`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
-    body: JSON.stringify({ name, arguments: args }),
-  });
-  // The HTTP API wraps the MCP CallToolResult: { success, result }
-  const outer = await res.json();
-  const result = outer.result ?? {};
-  const text = (result.content ?? []).filter((c) => c.type === 'text').map((c) => c.text).join('\n');
-  let data;
-  try { data = JSON.parse(text); } catch { data = undefined; }
-  return { isError: outer.success === false || Boolean(result.isError), text, data, content: result.content ?? [] };
+  const body = JSON.stringify({ name, arguments: args });
+  const signed = signPost(apiToken, '/mcp/call', body);
+  const res = await httpPost({ ...endpoint, urlPath: '/mcp/call', headers: signed.headers, body, timeoutMs: CALL_TIMEOUT_MS });
+  return interpretCallResponse(res);
 }
 
 const results = [];
@@ -60,7 +61,6 @@ function check(label, cond, detail = '') {
   results.push(Boolean(cond));
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${label}${detail ? `  — ${detail}` : ''}`);
 }
-const short = (s, n = 120) => String(s ?? '').replace(/\s+/g, ' ').slice(0, n);
 const tabCount = (r) => (Array.isArray(r.data?.tabs) ? r.data.tabs.length : NaN);
 
 const tabs0 = await call('fox_get_tabs');
@@ -94,10 +94,12 @@ if (newTabId !== undefined) {
   const close = await call('fox_close_tab', { tabId: newTabId });
   const tabs2 = await call('fox_get_tabs');
   check('fox_close_tab', !close.isError && tabCount(tabs2) === before, `tabs -> ${tabCount(tabs2)}`);
+} else {
+  check('fox_close_tab', false, 'skipped: no new tab');
 }
 
 const safety = await call('fox_safety_status');
-check('fox_safety_status', !safety.isError && safety.data?.success !== false, short(safety.text, 80));
+check('fox_safety_status', !safety.isError && safety.data !== undefined && safety.data.success !== false, short(safety.text, 80));
 
 const passed = results.filter(Boolean).length;
 console.log(`\n${passed}/${results.length} PASS`);
