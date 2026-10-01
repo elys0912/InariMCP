@@ -340,7 +340,7 @@ URL patterns are matched against the parsed URL, not the raw string, so `example
 | `*.example.com` | subdomains only |
 | `example.com/admin` | ... whose path starts with `/admin` (`example.com/*` = any path) |
 | `https://example.com` | ... over that scheme only |
-| `re:<regex>` | a case-insensitive regex over the normalised URL (`scheme://host[:port]/path?query#hash`, no user name or password); anchor it yourself |
+| `re:<regex>` | a case-insensitive regex over the normalised URL (`scheme://host[:port]/path?query#hash`, no user name or password) that must match the whole URL: it is always anchored as `^(?:<regex>)$`, so `re:example\.com` does not match `https://example.com.attacker.net/`; end it with `.*` for a prefix (`re:https://example\.com/.*`) |
 
 Host and scheme compare case-insensitively. In `allowed_url_patterns` a path matches as written (at a segment boundary: `/admin` does not cover `/administrator`); in the blocked and protected lists it matches any continuation after decoding `%xx` escapes, collapsing repeated slashes and folding case. Regular expressions from earlier versions keep working where possible: simple ones (`paypal\.com`, `\.gov(/|$)`, `^https://a\.example/`) are read as the equivalent host pattern; any other one keeps its old meaning (anywhere in the URL) in the blocked and protected lists, with a warning, and is an error in the allowed list.
 

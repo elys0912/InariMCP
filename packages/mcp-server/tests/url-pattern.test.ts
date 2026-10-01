@@ -100,17 +100,36 @@ describe('host patterns', () => {
 
 describe('re: patterns', () => {
   it('in blocked / protected lists also test the raw URL (what the Extension sees)', () => {
-    const r = matcher('re:^https://bank\\.test/', 'protected');
+    const r = matcher('re:^https://bank\\.test/.*', 'protected');
     expect(r('https://bank.test./x')).toBe(true);
-    const allowed = matcher('re:^https://u@', 'allowed');
+    const allowed = matcher('re:^https://u@.*', 'allowed');
     expect(allowed('https://u@example.test/')).toBe(false);
   });
 
   it('test the normalised URL, case-insensitively', () => {
-    const r = matcher('re:^https://mychart\\.');
+    const r = matcher('re:^https://mychart\\..*');
     expect(r('https://MyChart.clinic.test/')).toBe(true);
     expect(r('https://user@mychart.clinic.test/')).toBe(true);
     expect(r('https://attacker.test/mychart.x')).toBe(false);
+  });
+
+  it('must match the whole URL, in every list (M3)', () => {
+    for (const list of ['blocked', 'allowed', 'protected'] as const) {
+      const host = matcher('re:example\\.com', list);
+      expect(host('https://example.com.attacker.net/'), list).toBe(false);
+      expect(host('https://attacker.net/?example.com'), list).toBe(false);
+      const prefix = matcher('re:https://example\\.com/.*', list);
+      expect(prefix('https://example.com/a?b'), list).toBe(true);
+      expect(prefix('https://example.com.attacker.net/'), list).toBe(false);
+      // Anchors written by the user are not doubled; an escaped `$` stays literal.
+      const anchored = matcher('re:^https://example\\.com/$', list);
+      expect(anchored('https://example.com/'), list).toBe(true);
+      expect(anchored('https://example.com/x'), list).toBe(false);
+      expect(matcher('re:https://example\\.com/a\\$', list)('https://example.com/a$'), list).toBe(true);
+    }
+    const [p] = compileUrlPatterns(['re:^https://example\\.com/$'], 'allowed').patterns;
+    expect(p!.wire).toMatchObject({ kind: 'regex', re: '^(?:https://example\\.com/)$' });
+    expect(p!.wireSource).toBe('^(?:https://example\\.com/)$');
   });
 
   it('are fatal when invalid, in every list', () => {

@@ -11,10 +11,14 @@
  *   host + path    `example.com/admin`   ... whose path starts with /admin
  *                                        (`example.com/*` = any path)
  *   scheme         `https://example.com` ... over that scheme only
- *   regex          `re:<regex>`          tested (case-insensitive) against the
+ *   regex          `re:<regex>`          must match the whole (case-insensitive)
  *                                        normalised URL: scheme://host[:port]
  *                                        /path?query#hash, lower-case host, no
- *                                        userinfo. Anchor it yourself.
+ *                                        userinfo. Always anchored as
+ *                                        ^(?:<regex>)$ in every list, so
+ *                                        `re:example\.com` does not match
+ *                                        https://example.com.attacker.net/;
+ *                                        end it with `.*` for "starts with".
  *
  * Earlier releases treated every pattern as an unanchored regex over the raw
  * URL. Such legacy patterns keep working where possible:
@@ -257,6 +261,21 @@ function hostPattern(source: string, spec: HostSpec, list: PatternListName): Url
   return { source, kind: 'host', test, wire, wireSource };
 }
 
+/**
+ * `re:` source -> a regex that must match the whole URL: ^(?:inner)$, where a
+ * leading `^` and an unescaped trailing `$` already written are dropped
+ * (without the m flag anchors are idempotent; this only avoids doubling them).
+ */
+function anchorRegex(src: string): string {
+  let inner = src.startsWith('^') ? src.slice(1) : src;
+  if (inner.endsWith('$')) {
+    let backslashes = 0;
+    for (let i = inner.length - 2; i >= 0 && inner[i] === '\\'; i--) backslashes++;
+    if (backslashes % 2 === 0) inner = inner.slice(0, -1);
+  }
+  return `^(?:${inner})$`;
+}
+
 function regexPattern(
   source: string,
   regexSource: string,
@@ -299,7 +318,9 @@ export function compileUrlPatterns(
     }
 
     if (s.startsWith('re:')) {
-      const compiled = regexPattern(source, s.slice(3), 'regex', list);
+      // Always a whole-URL match, in every list (the legacy branch below
+      // keeps its old unanchored meaning).
+      const compiled = regexPattern(source, anchorRegex(s.slice(3)), 'regex', list);
       if (typeof compiled === 'string') {
         issues.push({ pattern: source, message: `invalid regex: ${compiled}`, fatal: true });
       } else {
@@ -334,7 +355,7 @@ export function compileUrlPatterns(
         message:
           'not a host pattern (e.g. "example.com", "*.example.com", "example.com/path"); ' +
           'an allowlist entry that is a bare regex could match unintended URLs. ' +
-          'Rewrite it as a host pattern, or as "re:^https://example\\.com/" with explicit anchors',
+          'Rewrite it as a host pattern, or as "re:https://example\\.com/.*" (re: matches the whole URL)',
         fatal: true,
       });
       continue;
@@ -350,7 +371,7 @@ export function compileUrlPatterns(
       pattern: source,
       message:
         'legacy regex, matched anywhere in the URL; rewrite it as a host pattern ' +
-        'or as "re:" with explicit anchors',
+        'or as "re:" (which matches the whole URL)',
       fatal: false,
     });
   }

@@ -37,7 +37,7 @@ export const DEFAULT_CONFIG: SafetyConfig = {
   blockedUrlPatterns: [],
   allowedUrlPatterns: [],
   // Host patterns (safety/url-pattern.ts): a host matches itself and its
-  // subdomains; `re:` marks a regex over the normalised URL.
+  // subdomains; `re:` marks a regex that must match the whole normalised URL.
   protectedUrlPatterns: [
     'paypal.com',
     'venmo.com',
@@ -56,7 +56,7 @@ export const DEFAULT_CONFIG: SafetyConfig = {
     'healthcare.gov',
     // Any host with a `mychart` label (patient portals: mychart.<org>.org,
     // www.mychart.<org>.com ...).
-    're:^https?://(?:[^/?#@]+\\.)?mychart\\.',
+    're:https?://(?:[^/?#@]+\\.)?mychart\\..*',
   ],
   containerScope: {
     enabled: false,

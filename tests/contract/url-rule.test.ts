@@ -56,7 +56,8 @@ const PATTERNS = [
   '^https://exact\\.test/',
   'paypal\\.test',
   '\\.gov\\.test(/|$)',
-  're:^https://re\\.test/(a|b)/',
+  're:^https://re\\.test/(a|b)/.*',
+  're:example\\.test',
   'bank|credit',
 ];
 
