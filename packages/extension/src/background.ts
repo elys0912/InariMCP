@@ -9,11 +9,11 @@
 // Entry: the modules under background/ have no top-level side effects; this
 // file wires them together and starts the background at load time.
 // Layers (a module imports only from lower ones):
-//   L0 types / constants / wire / log-records / action-policy
+//   L0 types / constants / wire / log-records
 //   L1 tab-target / tab-wait / native-connection
 //   L2 setup-badge / url-policy / container-scope
 //   L3 approvals / screenshot / tabs / navigation / reload / page-actions / logging
-//   L4 human-wait / dispatch
+//   L4 human-wait / action-table / dispatch
 //   L5 listeners / context-menu
 // native-connection reaches the dispatcher, the approvals and the badge only
 // through the hooks set here.

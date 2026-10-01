@@ -29,6 +29,7 @@ import {
   describeNativeMessage,
   nextReconnectAttempts,
 } from '../../packages/extension/src/background/native-connection.ts';
+import { ACTION_TABLE } from '../../packages/extension/src/background/action-table.ts';
 import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 const background = readExtensionTree('background');
@@ -141,7 +142,7 @@ describe('3.A4 target tab resolved once', () => {
     const start = background.indexOf('async function handleCommand(');
     const body = background.slice(start, background.indexOf('\n}\n', start));
     expect(body.match(/resolveTab\(/g)).toHaveLength(2); // the pin + the post-op URL report on the pinned id
-    expect(body).toMatch(/enforceContainerScope\(action, target, containerScope\)/);
+    expect(body).toMatch(/enforceContainerScope\(selfScoped, target, containerScope\)/);
     expect(body).toMatch(/checkProtectedTarget\(target, protectedPatterns, approvedHost\)/);
   });
 });
@@ -175,7 +176,8 @@ describe('3.A8 reload_all / reload_by_url skip protected tabs', () => {
     } finally {
       delete (globalThis as { browser?: unknown }).browser;
     }
-    expect(background).toMatch(/SELF_PROTECTED_ACTIONS[^;]*"reloadAll",\s*"reloadByUrl"/);
+    expect(ACTION_TABLE.get('reloadAll')?.protectedCheck).toBe('handler');
+    expect(ACTION_TABLE.get('reloadByUrl')?.protectedCheck).toBe('handler');
   });
 });
 

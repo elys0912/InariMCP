@@ -32,6 +32,7 @@ import { getConnectionManager } from '../../packages/mcp-server/src/connection/m
 import { getApprovalStore } from '../../packages/mcp-server/src/safety/approval.js';
 import { callWithApproval, findApprovalRequest } from '../../packages/mcp-server/src/relay/approval.js';
 import { startHttpBridge } from '../../packages/mcp-server/src/transport/http-bridge.js';
+import { ACTION_TABLE } from '../../packages/extension/src/background/action-table.ts';
 import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 // ---------------------------------------------------------------------------
@@ -488,9 +489,7 @@ describe('extension: approval UI is outside the page', () => {
   });
 
   it('request_approval and cancel_human_wait need no tab (container scope, A7)', () => {
-    const m = /const SCOPE_NO_TAB_ACTIONS[^=]*=\s*new Set\(\[([^\]]*)\]\)/.exec(background);
-    expect(m).not.toBeNull();
-    const names = [...m![1]!.matchAll(/"([^"]+)"/g)].map((x) => x[1]);
+    const names = [...ACTION_TABLE].filter(([, d]) => d.scope === 'noTab').map(([name]) => name);
     expect(names).toEqual(expect.arrayContaining(['status', 'requestApproval', 'cancelHumanWait']));
   });
 
