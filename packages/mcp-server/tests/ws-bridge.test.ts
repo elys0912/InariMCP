@@ -129,7 +129,59 @@ describe('ws-bridge unauthenticated connection cap', () => {
     expect(await closed(extra)).toBe(1013);
     for (const p of pending) p.ws.close();
   });
-  // TODO(test): a slot is freed after auth success / failure / close, and the 5 s auth timeout frees it too
+
+  /** Whether a new connection gets a challenge (a free slot) rather than 1013. */
+  async function slotFree(port: number): Promise<boolean> {
+    try {
+      const { ws } = await connect(port);
+      ws.terminate();
+      await closed(ws);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  it('a slot is freed by auth success, auth failure and close', async () => {
+    const { port } = await startBridge();
+    const pending = await Promise.all(Array.from({ length: 8 }, () => connect(port)));
+    expect(await slotFree(port)).toBe(false);
+
+    // success: the first pending one authenticates
+    const first = pending[0]!;
+    const clientNonce = newNonce();
+    first.ws.send(JSON.stringify({
+      type: 'auth', protocol: AUTH_PROTOCOL, nonce: clientNonce,
+      mac: computeMac(TOKEN, MAC_LABEL.wsClient, String(first.challenge['nonce']), clientNonce),
+    }));
+    expect((await nextFrame(first.ws))['type']).toBe('auth_ok');
+    expect(await slotFree(port)).toBe(true);
+
+    // failure: the second sends a bad MAC; refused, slot back without waiting for the grace period
+    pending[1]!.ws.send(JSON.stringify({ type: 'auth', protocol: AUTH_PROTOCOL, nonce: newNonce(), mac: '0'.repeat(64) }));
+    expect(await closed(pending[1]!.ws)).toBe(1008);
+    // close: the third goes away
+    pending[2]!.ws.close();
+    await closed(pending[2]!.ws);
+
+    // 8 - 3 = 5 still pending: three more fit, the fourth does not
+    const more = await Promise.all(Array.from({ length: 3 }, () => connect(port)));
+    expect(await slotFree(port)).toBe(false);
+    for (const p of [...pending, ...more]) p.ws.terminate();
+  });
+
+  it('the 5 s auth timeout frees the slot and cuts a peer that ignores the close frame', async () => {
+    const { port } = await startBridge();
+    // Raw sockets never answer the close frame: only terminate() ends them.
+    const socks = await Promise.all(Array.from({ length: 8 }, () => rawUpgrade(port)));
+    const allClosed = Promise.all(socks.map(socketClosed));
+    expect(await slotFree(port)).toBe(false);
+    const t0 = Date.now();
+    await allClosed;
+    // auth timeout (5 s) + grace (1 s), well before ws's own 30 s close timeout
+    expect(Date.now() - t0).toBeLessThan(8_000);
+    expect(await slotFree(port)).toBe(true);
+  }, 15_000);
 });
 
 /** Header of a masked client text frame announcing `length` payload bytes (mask key 0). */
@@ -173,7 +225,20 @@ describe('ws-bridge refused connections are cut', () => {
     await done;
     expect(sent).toBeLessThan(1_048_576);
   });
-  // TODO(test): the byte count stops after auth (large frames from an authenticated host pass); auth timeout is also cut after the grace period
+
+  it('stops counting after auth: an authenticated host may send frames far above 64 KB', async () => {
+    const { manager, port } = await startBridge();
+    const { ws, ok } = await authenticate(port);
+    expect(ok['type']).toBe('auth_ok');
+    await waitFor(() => manager.nativeHostCount === 1);
+    // A 1 MB event frame (no requestId): logged and dropped, the connection stays.
+    ws.send(JSON.stringify({ type: 'big', pad: 'x'.repeat(1_048_576) }));
+    await sleep(300);
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+    expect(manager.nativeHostCount).toBe(1);
+    ws.close();
+  });
+  // The auth timeout's grace-period cut: 'the 5 s auth timeout frees the slot …' above.
 });
 
 describe('ws-bridge robustness', () => {

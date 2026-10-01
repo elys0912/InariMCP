@@ -10,7 +10,7 @@ import {
 } from '../src/utils/endpoint.js';
 import { loadConfig } from '../src/safety/config.js';
 
-// TODO(test): 未署名の /daemon/info は従来どおり null / []（daemon-client の checkSettings）
+// Unsigned /daemon/info (daemon-client checkSettings → null / []): daemon-client.test.ts
 
 describe('effective daemon settings', () => {
   it('FOX_HEADLESS true / 1 and the old name compare equal', () => {
