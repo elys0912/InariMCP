@@ -88,6 +88,28 @@ describe('DaemonClient against an impostor', () => {
     const { port } = await impostor();
     await expect(client(port).settingsMismatch()).resolves.toEqual([]);
   });
+
+  it('unsigned /daemon/info that reports other settings is unknown (null), not a mismatch', async () => {
+    // Settings that would differ from this session's if they were believed.
+    const s = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          pid: 1,
+          settings: { FOX_READ_ONLY: '1', FOX_SAFETY_CONFIG: 'forged.json' },
+          effectiveSettings: { FOX_READ_ONLY: 'on', FOX_SAFETY_CONFIG: 'forged.json' },
+        }));
+      });
+    });
+    await new Promise<void>((resolve) => s.listen(0, '127.0.0.1', () => resolve()));
+    servers.push(s);
+    const c = client(portOf(s));
+    await expect(c.checkSettings()).resolves.toBeNull();
+    await expect(c.settingsMismatch()).resolves.toEqual([]);
+    // Without a token there is nothing to verify with: also unknown.
+    await expect(client(portOf(s), undefined).checkSettings()).resolves.toBeNull();
+  });
 });
 
 describe('DaemonClient against an older daemon', () => {

@@ -216,7 +216,7 @@ describe('request hygiene', () => {
     });
     expect(Date.now() - t0).toBeLessThan(3_000);
   });
-  // TODO(test): a body sent at once is not cut while the answer takes longer than the body timeout; headersTimeout
+  // A slow answer after a body sent at once, and headersTimeout: 'body / header timeouts' at the end of the file.
 
   it('answers 400 to a JSON body that is not an object', async () => {
     await start();
@@ -271,5 +271,35 @@ describe('isAllowedHostHeader', () => {
   it('accepts the configured host name and a missing header', () => {
     expect(isAllowedHostHeader('myhost.local:8765', 'myhost.local')).toBe(true);
     expect(isAllowedHostHeader(undefined, '127.0.0.1')).toBe(true);
+  });
+});
+
+describe('body / header timeouts', () => {
+  it('a body sent at once is not cut while the answer takes longer than the body timeout', async () => {
+    await start({ bodyTimeoutMs: 200 });
+    const manager = getConnectionManager();
+    // A browser that answers every command after 600 ms (3x the body timeout).
+    manager.registerBrowser('slow', (m) => {
+      setTimeout(() => manager.handleResponse({ requestId: m.requestId, success: true, data: { tabs: [] } }), 600);
+    }, 'native-host');
+    try {
+      const t0 = Date.now();
+      const r = await request(
+        'POST', '/mcp/call', { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' },
+        JSON.stringify({ name: 'fox_get_tabs', arguments: {} }),
+      );
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(500);
+      expect(r.status).toBe(200);
+    } finally {
+      manager.unregisterBrowser('slow');
+    }
+  });
+
+  it('requests may take as long as they need (requestTimeout 0); headers have 10 s', async () => {
+    // Node enforces headersTimeout on its connectionsCheckingInterval (30 s),
+    // too slow to observe here: the configuration is what is checked.
+    await start();
+    expect(server!.requestTimeout).toBe(0);
+    expect(server!.headersTimeout).toBe(10_000);
   });
 });
