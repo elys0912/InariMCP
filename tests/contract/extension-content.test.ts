@@ -212,6 +212,8 @@ describe('WP30 context menu "inspect element" uses the contextmenu target, not p
     const menu = readExtensionSource('background/context-menu.ts');
     expect(menu).not.toMatch(/info\.page[XY]|page[XY]\?: number/);
     expect(menu).toMatch(/\{ action: "inspectElement" \}/);
+    // WP38: nor does the contextMenus type declare them any more.
+    expect(readExtensionSource('types/browser.d.ts')).not.toMatch(/page[XY]\?: number/);
   });
   // TODO(test): in a real Firefox: right-click an element (also in an
   //   iframe) → "inspect element" highlights that element.
