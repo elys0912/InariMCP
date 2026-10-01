@@ -51,6 +51,8 @@ export interface SafetyDenial {
   success: false;
   safetyDecision: string;
   error: string;
+  /** The URL the denial is about, when it names one (details.url of the tool result). */
+  url?: string;
   confirmationRequired?: true;
   elicitation?: {
     protectedUrl: string;
@@ -204,6 +206,7 @@ export class SafetyGuard {
       'blocked_after_navigation',
       `${label?.tool ?? toolName} ended on '${url}', which ${violation.reason}. The result is withheld. ` +
       'Navigate the tab elsewhere (fox_navigate with a url) or close it.',
+      url,
     );
   }
 
@@ -580,8 +583,8 @@ export class SafetyGuard {
     return true;
   }
 
-  private _deny(decision: string, message: string): SafetyDenial {
-    return { success: false, safetyDecision: decision, error: message };
+  private _deny(decision: string, message: string, url?: string): SafetyDenial {
+    return { success: false, safetyDecision: decision, error: message, ...(url !== undefined ? { url } : {}) };
   }
 
   private _compilePatterns(): void {

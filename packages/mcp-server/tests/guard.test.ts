@@ -245,7 +245,7 @@ describe('the reached URL and the tab URL against blocked/allowed lists (2.B3)',
   it('withholds a result that ended on a blocked site', () => {
     const g = guard({ blockedUrlPatterns: ['blocked.test'] });
     const denial = g.checkReachedUrl('fox_click', {}, { url: 'https://www.blocked.test/landing' });
-    expect(denial?.safetyDecision).toBe('blocked_after_navigation');
+    expect(denial).toMatchObject({ safetyDecision: 'blocked_after_navigation', url: 'https://www.blocked.test/landing' });
     expect(g.checkReachedUrl('fox_click', {}, { url: 'https://fine.test/' })).toBeNull();
   });
 
@@ -343,9 +343,12 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     stubBrowser({ success: true, data: { url: 'https://www.blocked.test/landing', text: 'secret' } });
     const result = await createToolHandler('fox_click')({ tabId: 3, selector: '#go' });
     expect(result.isError).toBe(true);
-    expect(details(result)).toMatchObject({ code: 'SAFETY_BLOCKED', decision: 'blocked_after_navigation' });
-    // The URL is named in the message; a post-hoc denial carries no details.url.
-    expect(result.content[0]).toMatchObject({ text: expect.stringContaining('https://www.blocked.test/landing') });
+    // The reached URL is in details.url, as for the Extension's blocked_url refusals.
+    expect(details(result)).toMatchObject({
+      code: 'SAFETY_BLOCKED',
+      decision: 'blocked_after_navigation',
+      url: 'https://www.blocked.test/landing',
+    });
     expect(JSON.stringify(result.content)).not.toContain('secret');
     // Noted first, so the pre-check refuses the next call on that tab.
     expect(g.urlFor(3)).toBe('https://www.blocked.test/landing');
