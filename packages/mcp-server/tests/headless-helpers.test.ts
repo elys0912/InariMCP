@@ -1,5 +1,9 @@
+import * as fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
+import type { AnyZodObject, ZodTypeAny } from 'zod';
 import { argTimeout, filterAriaSnapshot, ignoredParamWarnings } from '../src/headless/helpers.js';
+import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
 
 describe('argTimeout', () => {
   it('accepts timeoutMs and timeout, timeoutMs first', () => {
@@ -85,5 +89,54 @@ describe('ignoredParamWarnings', () => {
       expect.stringContaining('timeout'),
     ]);
   });
-  // TODO(test): every key in HEADLESS_IGNORED exists in the tool's schema.
+});
+
+describe('HEADLESS_IGNORED against the tool schemas', () => {
+  // The table is not exported: read its action / key pairs from the source.
+  const source = fs.readFileSync(new URL('../src/headless/helpers.ts', import.meta.url), 'utf-8');
+  const block = source.slice(source.indexOf('const HEADLESS_IGNORED'), source.indexOf('export function ignoredParamWarnings'));
+  const table = new Map<string, string[]>();
+  let action = '';
+  for (const line of block.split(/\r?\n/)) {
+    const a = /^ {2}(\w+): \[/.exec(line);
+    if (a) { action = a[1]!; table.set(action, []); }
+    for (const k of line.matchAll(/key: '(\w+)'/g)) table.get(action)!.push(k[1]!);
+  }
+
+  // Which tools send which wire action, as recorded by tests/contract/tool-golden.test.ts.
+  interface Entry { id: string; tool: string; command: { action: string; data: Record<string, unknown> } | null }
+  const golden = JSON.parse(fs.readFileSync(new URL('../../../tests/golden/tool-commands.json', import.meta.url), 'utf-8')) as Entry[];
+  const toolsOf = (wire: string) => [...new Set(golden.filter((e) => e.command?.action === wire).map((e) => e.tool))];
+
+  it('was read from the source', () => {
+    expect(table.size).toBeGreaterThan(10);
+    expect(table.get('type')).toContain('pressEnter');
+  });
+
+  it('every ignored key is an argument of a tool sending that action', () => {
+    for (const [wire, keys] of table) {
+      const tools = toolsOf(wire);
+      expect(tools.length, wire).toBeGreaterThan(0);
+      for (const key of keys) {
+        const known = tools.some((t) => key in (TOOL_SCHEMAS[t]!.inputSchema as AnyZodObject).shape);
+        expect(known, `${wire}.${key} (${tools.join(', ')})`).toBe(true);
+      }
+    }
+  });
+
+  it('an argument left at its schema default produces no warning', () => {
+    let checked = 0;
+    for (const [wire, keys] of table) {
+      for (const key of keys) {
+        for (const tool of toolsOf(wire)) {
+          const field = (TOOL_SCHEMAS[tool]!.inputSchema as AnyZodObject).shape[key] as ZodTypeAny | undefined;
+          if (!(field instanceof z.ZodDefault)) continue;
+          const def: unknown = (field._def.defaultValue as () => unknown)();
+          expect(ignoredParamWarnings(wire, { [key]: def }), `${tool} ${wire}.${key} = ${JSON.stringify(def)}`).toEqual([]);
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(10);
+  });
 });

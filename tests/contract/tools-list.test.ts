@@ -14,12 +14,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { registerTools } from '../../packages/mcp-server/src/tools/registry.js';
 import { PUBLIC_TOOLS } from '../../packages/mcp-server/src/tools/public-tools.js';
+import { TOOL_SCHEMAS } from '../../packages/mcp-server/src/tools/schemas.js';
 
 const UPDATE = process.env['UPDATE_GOLDEN'] === '1';
 const GOLDEN_DIR = fileURLToPath(new URL('../golden/', import.meta.url));
@@ -88,4 +89,34 @@ describe('tools/list', () => {
   });
 });
 
-// TODO(test): unknown profile names next to legacy; legacy combined with all.
+describe('FOX_CAPS boundaries', () => {
+  const names = async (caps: string) => (await listTools(caps)).map((t) => t.name);
+
+  it('legacy with all lists every earlier tool; all with a profile lists every public tool', async () => {
+    expect(await names('legacy,all')).toEqual(Object.keys(TOOL_SCHEMAS).sort());
+    expect(await names('all,core')).toEqual(Object.keys(PUBLIC_TOOLS).sort());
+  });
+
+  it('an unknown profile is ignored with a warning, next to legacy too', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(await names('legacy,nope')).toEqual(['fox_safety_status']);
+      expect(await names('nope,logs')).toEqual(['fox_get_logs', 'fox_logging', 'fox_safety_status']);
+      const warnings = stderr.mock.calls.map(([chunk]) => String(chunk)).filter((t) => t.includes("Unknown FOX_CAPS profile: 'nope'"));
+      expect(warnings).toHaveLength(2);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('segments are trimmed and compared case-insensitively', async () => {
+    expect(await names(' Legacy , WAIT ')).toEqual(await names('legacy,wait'));
+    expect(await names(' , ')).toEqual(Object.keys(PUBLIC_TOOLS).sort());
+  });
+
+  it('fox_safety_status is marked as closed-world in the public list only', async () => {
+    const status = async (caps: string) => (await listTools(caps)).find((t) => t.name === 'fox_safety_status')!;
+    expect((await status('')).annotations).toMatchObject({ openWorldHint: false });
+    expect((await status('legacy')).annotations).not.toHaveProperty('openWorldHint');
+  });
+});

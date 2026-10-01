@@ -48,4 +48,3 @@ describe('public tools and operations', () => {
   });
 });
 
-// TODO(test): every variant's op / toOp against its operation schema; FOX_CAPS profile coverage.
