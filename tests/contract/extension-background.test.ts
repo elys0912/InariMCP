@@ -411,7 +411,9 @@ describe('WP5b URL rules and urlPattern arguments', () => {
 
   it('close_tab reports the closed tab id; rules are preferred over legacy patterns', () => {
     expect(background).toMatch(/return \{ success: true, closed: tabId \}/);
-    expect(background).toMatch(/Array\.isArray\(message\.protectedUrlRules\)\s*\?\s*message\.protectedUrlRules\s*:\s*message\.protectedUrlPatterns/);
+    // R2-C E-03: a protectedUrlRules that is there but not an array is not
+    // replaced by the legacy field (compileUrlRules counts it as unusable).
+    expect(background).toMatch(/message\.protectedUrlRules !== undefined\s*\?\s*message\.protectedUrlRules\s*:\s*message\.protectedUrlPatterns/);
   });
   it('url-rule.ts is bundled into background.js and content.js (manifest and early injection load one file)', () => {
     const manifest = JSON.parse(readExtensionSource('../manifest.json')) as {

@@ -10,6 +10,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { BrowserCommandSchema } from '@kitsune-mcp/shared';
 import { handleCommand } from '../../packages/extension/src/background/dispatch.ts';
+import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
+import { DEFAULT_CONFIG } from '../../packages/mcp-server/src/safety/config.js';
 
 const tab = { id: 1, url: 'https://app.example.test/page', cookieStoreId: 'c-agent' } as browser.tabs.Tab;
 
@@ -37,6 +39,9 @@ function installBrowser(): void {
 afterEach(() => {
   delete (globalThis as { browser?: unknown }).browser;
 });
+
+const hostRule = (host: string, path: string | null = null): Record<string, unknown> =>
+  ({ kind: 'host', source: host, scheme: null, hosts: 'tree', host, port: null, path, pathMatch: 'loose' });
 
 describe('E-01 / A-02 containerScope', () => {
   it.each([
@@ -73,5 +78,53 @@ describe('E-01 / A-02 containerScope', () => {
     const base = { action: 'click', requestId: 'r1' };
     expect(BrowserCommandSchema.safeParse({ ...base, containerScope: { containerName: '' } }).success).toBe(false);
     expect(BrowserCommandSchema.safeParse({ ...base, containerScope: { containerName: 'agent' } }).success).toBe(true);
+  });
+});
+
+describe('E-03 URL rule fields that are not arrays', () => {
+  const NOT_ARRAYS: [string, unknown][] = [['a string', 'https://a.example'], ['an object', {}], ['null', null], ['a number', 1]];
+
+  for (const field of ['protectedUrlRules', 'blockedUrlRules', 'allowedUrlRules', 'protectedUrlPatterns']) {
+    it.each(NOT_ARRAYS)(`${field} as %s is refused as config_error`, async (_label, value) => {
+      installBrowser();
+      const result = await handleCommand({ action: 'get_page_info', [field]: value });
+      expect(result).toMatchObject({ success: false, safetyDecision: 'config_error' });
+      expect(sent).toEqual([]);
+    });
+  }
+
+  it('an unusable protectedUrlRules does not fall back to the legacy protectedUrlPatterns', async () => {
+    installBrowser();
+    const result = await handleCommand({
+      action: 'get_page_info',
+      protectedUrlRules: 'bank.test',
+      protectedUrlPatterns: ['bank\\.test'],
+    });
+    expect(result).toMatchObject({ success: false, safetyDecision: 'config_error' });
+  });
+
+  it('the legacy protectedUrlPatterns alone (older servers) still works', async () => {
+    installBrowser();
+    expect(await handleCommand({ action: 'get_page_info', protectedUrlPatterns: ['app\\.example\\.test'] }))
+      .toMatchObject({ success: false, safetyDecision: 'confirmation_required' });
+    expect(await handleCommand({ action: 'get_page_info', protectedUrlPatterns: ['bank\\.test'] }))
+      .toMatchObject({ success: true });
+  });
+});
+
+describe('A-01 a host rule path with a query or fragment', () => {
+  it.each(['protectedUrlRules', 'blockedUrlRules', 'allowedUrlRules'])('in %s is refused as config_error', async (field) => {
+    installBrowser();
+    const result = await handleCommand({ action: 'get_page_info', [field]: [hostRule('app.example.test', '/page?x=1')] });
+    expect(result).toMatchObject({ success: false, safetyDecision: 'config_error' });
+    expect(result.error).toMatch(/1 URL pattern\(s\)/);
+    expect(sent).toEqual([]);
+  });
+
+  it('the guard puts such a safety.json pattern in the config-error state', () => {
+    for (const list of ['blockedUrlPatterns', 'allowedUrlPatterns', 'protectedUrlPatterns'] as const) {
+      const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, [list]: ['example.test/a?x=1'] });
+      expect(g.check('fox_screenshot', {})?.safetyDecision, list).toBe('config_error');
+    }
   });
 });

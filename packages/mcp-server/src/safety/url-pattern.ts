@@ -175,6 +175,17 @@ function parseHostForm(s: string): ParseResult {
     if (port < 1 || port > 65535) return { error: `'${m[4]}' is not a valid port (1-65535)` };
   }
   let path: string | null = m[5] ?? null;
+  // The path is compared with the URL's path only, which never holds a query
+  // or fragment: such a pattern would match nothing. `%3F` / `%23` are refused
+  // too, since blocked / protected paths are compared decoded and the wire
+  // rule must not carry a `?` / `#` (the Extension refuses such a rule).
+  if (path !== null && /[?#]|%3f|%23/i.test(path)) {
+    return {
+      error:
+        "'?', '#' (or %3F, %23) cannot appear in a path: patterns compare the URL path only, " +
+        'not the query or fragment. Drop them, or use "re:" for a whole-URL match',
+    };
+  }
   // A trailing `/*` is the usual way to write "any path below".
   if (path !== null && path.endsWith('/*')) path = path.slice(0, -1);
   if (path !== null && path.includes('*')) {

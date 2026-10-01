@@ -183,6 +183,29 @@ describe('other issues', () => {
     expect(compileUrlPatterns(['  '], 'blocked').issues[0]!.fatal).toBe(true);
   });
 
+  it('R2-C A-01: a query or fragment in a host pattern path is fatal in every list', () => {
+    const sources = [
+      'example.test/a?x=1', 'example.test/a#f', 'example.test/?x=1', 'example.test/#top',
+      'https://example.test/login?next=1', 'example.test:8443/a?x', 'example.test/a%3Fx', 'example.test/a%23f',
+      '[::1]/a?x',
+    ];
+    for (const list of ['blocked', 'allowed', 'protected'] as const) {
+      for (const source of sources) {
+        const { patterns, issues } = compileUrlPatterns([source], list);
+        expect(patterns, `${list} ${source}`).toEqual([]);
+        expect(issues.map((i) => i.fatal), `${list} ${source}`).toEqual([true]);
+        expect(issues[0]!.message).toMatch(/cannot appear in a path/);
+      }
+    }
+  });
+
+  it('R2-C A-01: a legacy regex with an escaped ? stays a legacy regex', () => {
+    const { patterns, issues } = compileUrlPatterns(['example\\.test/a\\?x=1'], 'blocked');
+    expect(patterns[0]!.kind).toBe('legacy');
+    expect(issues.every((i) => !i.fatal)).toBe(true);
+    expect(patterns[0]!.test('https://example.test/a?x=1')).toBe(true);
+  });
+
   it('a bare single label warns that it is not a substring match', () => {
     const { patterns, issues } = compileUrlPatterns(['paypal'], 'blocked');
     expect(patterns).toHaveLength(1);
