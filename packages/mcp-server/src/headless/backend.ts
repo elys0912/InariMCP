@@ -657,7 +657,8 @@ export class HeadlessBrowser {
           return { success: false, error: `No headless tab with id ${tabId}` };
         }
         await this._tabs.get(tabId)!.close();
-        return { success: true, closedTabId: tabId };
+        // `closed` as on the Extension; closedTabId kept for older readers.
+        return { success: true, closed: tabId, closedTabId: tabId };
       }
 
       // --- focus_tab ---

@@ -17,6 +17,56 @@ export const ErrorCode = {
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 
 // ---------------------------------------------------------------------------
+// URL rule  (one safety.json URL pattern, as the Extension matches it)
+// ---------------------------------------------------------------------------
+
+/**
+ * One blocked / allowed / protected URL pattern of safety.json, compiled by
+ * the MCP Server (safety/url-pattern.ts) into the form the Extension
+ * matches against a tab URL (extension/src/url-rule.ts applies the same
+ * rules; tests/contract/url-rule.test.ts checks both give the same result).
+ *
+ *   host   the URL is parsed; `host` (lower-case, punycode) compares to its
+ *          hostname without a trailing dot: `hosts` 'tree' = the host and
+ *          every subdomain, 'sub' = subdomains only, 'exact' = the host only.
+ *          `scheme` (lower-case, no ':') restricts the scheme when not null.
+ *          `path` (null = any) is a prefix of the URL path:
+ *            'strict' (allowed list): as written, case-sensitive, at a
+ *                     segment boundary unless it ends with '/';
+ *            'loose'  (blocked / protected): `path` is already normalised;
+ *                     the URL path is compared after percent-decoding,
+ *                     collapsing repeated slashes and lower-casing, as a
+ *                     plain prefix (/admin covers /administrator).
+ *   regex  `re` is tested with flag i against the normalised URL
+ *          (scheme://host[:port]/path?query#hash, lower-case host without a
+ *          trailing dot, no userinfo); with `matchRaw` also against the URL
+ *          as given (blocked / protected lists: over-matching errs on the
+ *          safe side).
+ *
+ * `source` is the pattern as written in safety.json (reported back as
+ * `matchedPattern`, never matched itself).
+ */
+export const WireUrlRuleSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('host'),
+    source: z.string(),
+    scheme: z.string().nullable(),
+    hosts: z.enum(['tree', 'sub', 'exact']),
+    host: z.string(),
+    path: z.string().nullable(),
+    pathMatch: z.enum(['strict', 'loose']),
+  }),
+  z.object({
+    kind: z.literal('regex'),
+    source: z.string(),
+    re: z.string(),
+    matchRaw: z.boolean(),
+  }),
+]);
+
+export type WireUrlRule = z.infer<typeof WireUrlRuleSchema>;
+
+// ---------------------------------------------------------------------------
 // BrowserCommand  (MCP Server → Extension / Headless Backend)
 // ---------------------------------------------------------------------------
 
@@ -32,7 +82,31 @@ export const BrowserCommandSchema = z.object({
    */
   containerScope: z.object({ containerName: z.string() }).optional(),
   /**
-   * Protected-domain regex patterns (safety.json `protected_url_patterns`).
+   * Protected-domain patterns (safety.json `protected_url_patterns`) as
+   * URL rules. Attached to the same commands as `protectedUrlPatterns`
+   * below; an Extension that knows this field uses it instead of
+   * `protectedUrlPatterns`.
+   */
+  protectedUrlRules: z.array(WireUrlRuleSchema).optional(),
+  /**
+   * safety.json `blocked_url_patterns` / `allowed_url_patterns` as URL
+   * rules. Attached when the guard is enabled and the list is not empty, to
+   * every command the guard checks against the target tab's last-known URL
+   * (tools that act on or read an existing tab without a `url` target; see
+   * attachSafetyMetadata). The Extension refuses the command when the
+   * actual target tab is on an http(s) URL that a blocked rule matches
+   * (safetyDecision "blocked_url") or, with allowed rules, that no allowed
+   * rule matches ("not_allowlisted"); multi-tab actions skip such tabs.
+   * Covers the case where the server does not know the tab's URL.
+   */
+  blockedUrlRules: z.array(WireUrlRuleSchema).optional(),
+  allowedUrlRules: z.array(WireUrlRuleSchema).optional(),
+  /**
+   * Legacy form of `protectedUrlRules`, for Extension builds that do not
+   * know it: each entry is a regex tested with flag i against the raw tab
+   * URL (no percent-decoding). Still sent; the Extension also accepts it
+   * alone (older MCP Servers).
+   *
    * Attached to `screenshot` and `screenshot_all_tabs` when the guard is
    * enabled and `confirm_protected_actions` is true. For all_tabs the
    * Extension excludes protected tabs; for a single screenshot it refuses
@@ -49,8 +123,9 @@ export const BrowserCommandSchema = z.object({
   /**
    * Set only on a call the human approved (one-time approval token consumed
    * by the MCP Server): lower-case hostname the approval covers. The
-   * Extension still applies `protectedUrlPatterns`, but lets the command run
-   * on a protected tab whose hostname equals this value.
+   * Extension still applies the protected rules, but lets the command run
+   * on a protected tab whose hostname equals this value. It does not lift
+   * the blocked / allowed rules.
    */
   approvedHost: z.string().optional(),
 });
@@ -98,6 +173,7 @@ export const BrowserResponseSchema = z.object({
   /**
    * Result payload, passed through whole. Well-known keys:
    *   - `url`: page URL after the operation (feeds SafetyGuard.noteUrl)
+   *   - `closed`: id of the tab close_tab closed (SafetyGuard forgets its URL)
    *   - `imagePath`: screenshot file saved by the Native Host / headless
    *     backend (`imageData` never reaches the MCP Server on the Extension
    *     path — the Native Host swaps it for a file path)

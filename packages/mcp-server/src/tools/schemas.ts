@@ -61,6 +61,11 @@ const elementLocator = {
 const tabId = z.number().int().optional().describe('Tab ID (defaults to active tab)');
 const timeoutMs = z.number().int().positive().optional().describe('Timeout in milliseconds');
 
+/** Shared by every urlPattern argument (same on the Extension and headless). */
+const URL_PATTERN_NOTE =
+  'JavaScript regex, case-sensitive, unanchored (matches anywhere in the full URL); ' +
+  'use [Ee]xample for a case-insensitive part.';
+
 // =========================================================================
 // Observe tools (read-only)
 // =========================================================================
@@ -77,7 +82,7 @@ const foxScreenshotSchema = z.object({
   ),
   filename: z.string().optional().describe('Optional filename for saved screenshot'),
   // all_tabs options
-  urlPattern: z.string().optional().describe('Regex pattern to filter tabs (for all_tabs scope)'),
+  urlPattern: z.string().optional().describe(`all_tabs: only tabs whose URL matches this regex. ${URL_PATTERN_NOTE}`),
   includeData: z.boolean().optional().default(false).describe(
     'No effect: base64 image data is never returned; all_tabs images are saved to files like the others',
   ),
@@ -124,7 +129,7 @@ const foxGetPageInfoSchema = z.object({
 const foxGetTabsSchema = z.object({
   currentWindowOnly: z.boolean().optional().default(true).describe('Only list tabs in the current window'),
   limit: z.number().int().optional().default(50).describe('Max tabs to return'),
-  urlPattern: z.string().optional().describe('Regex to filter tabs by URL before applying limit'),
+  urlPattern: z.string().optional().describe(`Only tabs whose URL matches this regex, before applying limit. ${URL_PATTERN_NOTE}`),
   includeFavicon: z.boolean().optional().default(false).describe('Include favIconUrl per tab'),
 });
 
@@ -248,13 +253,13 @@ const foxWaitForNavigationSchema = z.object({
   timeout: timeoutMs.default(30000),
   waitUntil: z.enum(['load', 'domcontentloaded']).optional().default('load')
     .describe('When to consider navigation complete'),
-  urlPattern: z.string().optional().describe('Regex pattern the target URL must match'),
+  urlPattern: z.string().optional().describe(`Regex the URL of the navigation must match (other navigations are skipped). ${URL_PATTERN_NOTE}`),
   tabId,
 });
 
 const foxWaitForUrlSchema = z.object({
   url: z.string().optional().describe('Exact URL to wait for'),
-  urlPattern: z.string().optional().describe('Regex pattern the URL must match'),
+  urlPattern: z.string().optional().describe(`Regex the tab URL must match. ${URL_PATTERN_NOTE}`),
   timeout: timeoutMs.default(15000),
   tabId,
 });
@@ -280,7 +285,7 @@ const foxGetConsoleLogsSchema = z.object({
 });
 
 const foxGetNetworkLogsSchema = z.object({
-  urlPattern: z.string().optional().describe('Regex pattern to filter by URL'),
+  urlPattern: z.string().optional().describe(`Only requests whose URL matches this regex. ${URL_PATTERN_NOTE}`),
   method: z.string().optional().describe('Filter by HTTP method (GET, POST, etc.)'),
   status: z.number().int().optional().describe('Filter by HTTP status code'),
   errorsOnly: z.boolean().optional().default(false).describe('Only return failed requests'),

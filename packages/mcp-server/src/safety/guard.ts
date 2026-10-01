@@ -16,9 +16,10 @@ export { OBSERVE_TOOLS, SCRIPT_TOOLS };
  * Tools that do not act on the content of a tab, so the blocked/allowed
  * check of the tab's last-known URL does not apply. fox_navigate with a
  * `url` and fox_close_tab stay usable to leave a tab that ended up on a
- * blocked site.
+ * blocked site. handlers.ts attaches the blocked/allowed rules for the
+ * Extension's own check by the same rule.
  */
-const TAB_INDEPENDENT_TOOLS: ReadonlySet<string> = new Set([
+export const TAB_INDEPENDENT_TOOLS: ReadonlySet<string> = new Set([
   'fox_get_tabs',
   'fox_create_tab',
   'fox_close_tab',
@@ -218,9 +219,15 @@ export class SafetyGuard {
 
     const explicitTabId = this._tabIdArg(args);
     if (toolName === 'fox_close_tab') {
-      if (explicitTabId !== undefined) {
-        this._tabUrls.delete(explicitTabId);
-        if (this._activeTabId === explicitTabId) {
+      // The tab the backend reports it closed (`closed`; headless also
+      // `closedTabId`), else the tabId argument.
+      const closedId =
+        typeof result['closed'] === 'number' ? result['closed']
+          : typeof result['closedTabId'] === 'number' ? result['closedTabId']
+            : explicitTabId;
+      if (closedId !== undefined) {
+        this._tabUrls.delete(closedId);
+        if (this._activeTabId === closedId) {
           this._activeTabId = null;
           this._activeUrl = null;
         }

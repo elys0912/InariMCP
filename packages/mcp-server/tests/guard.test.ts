@@ -182,6 +182,14 @@ describe('per-tab URL tracking (2.B4)', () => {
     expect(g.urlFor()).toBeNull();
   });
 
+  it('close_tab forgets the tab the backend reports closed (`closed`)', () => {
+    const g = guard();
+    g.noteUrl({ url: 'https://d.test/' }, { tabId: 4 }, 'fox_get_text');
+    g.noteUrl({ success: true, closed: 4 }, { tabId: 4 }, 'fox_close_tab');
+    expect(g.urlFor(4)).toBeNull();
+    // TODO(test): `closed` differing from the tabId argument; headless closedTabId.
+  });
+
   it('a get_tabs list refreshes every tab, and the active one when unambiguous', () => {
     const g = guard();
     g.noteUrl({
