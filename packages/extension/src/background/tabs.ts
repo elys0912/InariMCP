@@ -16,9 +16,12 @@ export async function getAllTabs(
     const patternArg = urlPatternArg(options.urlPattern);
     if (!patternArg.ok) return patternArg.result;
     const urlPattern = patternArg.pattern;
-    const limit = Number.isInteger(options.limit)
-      ? (options.limit as number)
-      : 50;
+    // A positive integer, else the default (0 or a negative value would cut
+    // the list from the end).
+    const limit =
+      typeof options.limit === "number" && Number.isInteger(options.limit) && options.limit > 0
+        ? options.limit
+        : 50;
 
     const queryOpts: browser.tabs.QueryInfo = currentWindowOnly
       ? { currentWindow: true }
@@ -229,10 +232,14 @@ export async function findText(
   target: browser.tabs.Tab | undefined,
   data: Record<string, unknown> | undefined,
 ): Promise<CommandResult> {
-  const findQuery = (data as { query: string }).query;
-  const caseSensitive = (data as { caseSensitive?: boolean }).caseSensitive ?? false;
-  const entireWord = (data as { entireWord?: boolean }).entireWord ?? false;
-  const includeRectData = (data as { includeRectData?: boolean }).includeRectData ?? false;
+  const d = data ?? {};
+  const findQuery = d.query;
+  if (typeof findQuery !== "string" || findQuery === "") {
+    return { success: false, error: "query is required (a non-empty string)" };
+  }
+  const caseSensitive = d.caseSensitive === true;
+  const entireWord = d.entireWord === true;
+  const includeRectData = d.includeRectData === true;
 
   if (!target) return noTargetTab();
   const findResult = await browser.find.find(findQuery, {

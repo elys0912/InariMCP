@@ -5,6 +5,7 @@
 import { t } from '../i18n';
 import { APPROVAL_MESSAGE, type ApprovalView } from '../approval';
 import type { SetupState } from '../types/setup';
+import { setupStateOfReply, setupStateOfFailure } from './setup-status';
 
 interface StatusResponse {
   success: boolean;
@@ -142,8 +143,16 @@ function renderSetup(state: SetupState, os: string): void {
         state.relays === 1 ? t('statusConnected') : t('statusConnectedN', String(state.relays)),
       );
       break;
-    default:
+    case 'hostMissing':
+    case 'hostError':
+    case 'daemonDown':
       updateStatus('disconnected', t('statusSetupNeeded'));
+      break;
+    default: {
+      // Every kind is handled above: a new one must be added here.
+      const unhandled: never = state;
+      void unhandled;
+    }
   }
 
   if ('serverUrl' in state && state.serverUrl) {
@@ -170,10 +179,10 @@ async function queryStatus(recheck: boolean): Promise<SetupState> {
       target: 'background',
       action: 'status',
       data: { recheck },
-    }) as StatusResponse;
-    return result?.setup ?? { kind: 'connecting' };
-  } catch {
-    return { kind: 'connecting' };
+    }) as StatusResponse | undefined;
+    return setupStateOfReply(result);
+  } catch (error: unknown) {
+    return setupStateOfFailure(error);
   }
 }
 
@@ -378,7 +387,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   localizePage();
   const os = await browser.runtime.getPlatformInfo().then(info => info.os, () => '');
 
-  const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+  // A failed query only leaves the tab line empty: the buttons and the
+  // approval poll below must still be set up.
+  const tabs = await browser.tabs
+    .query({ active: true, currentWindow: true })
+    .catch((): browser.tabs.Tab[] => []);
   const currentTab = tabs[0];
 
   if (currentTab) {

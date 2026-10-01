@@ -2,6 +2,7 @@
 // The per-tab buffers themselves are in logging.ts.
 
 import type { CommandResult } from "./types";
+import { clipText } from "../text-clip";
 
 /**
  * Copy one log entry from a content script into plain data: strings (cut
@@ -13,7 +14,7 @@ export function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null 
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw).slice(0, 20)) {
     if (typeof value === "string") {
-      out[key] = value.length > 5000 ? value.slice(0, 5000) : value;
+      out[key] = clipText(value, 5000);
     } else if (typeof value === "number") {
       if (Number.isFinite(value)) out[key] = value;
     } else if (typeof value === "boolean" || value === null) {
@@ -21,7 +22,7 @@ export function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null 
     } else if (typeof value === "object" && !Array.isArray(value)) {
       const record: Record<string, string> = {};
       for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, 50)) {
-        if (typeof v === "string") record[k.slice(0, 200)] = v.slice(0, 1000);
+        if (typeof v === "string") record[clipText(k, 200)] = clipText(v, 1000);
       }
       out[key] = record;
     }

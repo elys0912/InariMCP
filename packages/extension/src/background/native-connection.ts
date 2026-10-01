@@ -5,6 +5,7 @@
 // the modules above it.
 
 import { TIMEOUTS } from "./constants";
+import { clipText } from "../text-clip";
 import type { NativeMessage } from "./types";
 
 interface PendingRequest {
@@ -209,9 +210,9 @@ export function describeNativeMessage(raw: unknown): string {
   if (typeof raw !== "object" || raw === null) return `(${typeof raw})`;
   const m = raw as Record<string, unknown>;
   const parts: string[] = [];
-  if (typeof m.action === "string") parts.push(`action=${m.action.slice(0, 64)}`);
+  if (typeof m.action === "string") parts.push(`action=${clipText(m.action, 64)}`);
   if (typeof m.requestId === "string" || typeof m.requestId === "number") {
-    parts.push(`requestId=${String(m.requestId).slice(0, 64)}`);
+    parts.push(`requestId=${clipText(String(m.requestId), 64)}`);
   }
   if (typeof m.success === "boolean") parts.push(`success=${m.success}`);
   const keys = Object.keys(m).filter((k) => k !== "action" && k !== "requestId" && k !== "success");
