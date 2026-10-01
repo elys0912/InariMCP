@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { BrowserCommandSchema } from '@kitsune-mcp/shared';
 import { handleCommand } from '../../packages/extension/src/background/dispatch.ts';
+import { resolveWireAction } from '../../packages/extension/src/background/wire.ts';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG } from '../../packages/mcp-server/src/safety/config.js';
 
@@ -126,5 +127,24 @@ describe('A-01 a host rule path with a query or fragment', () => {
       const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, [list]: ['example.test/a?x=1'] });
       expect(g.check('fox_screenshot', {})?.safetyDecision, list).toBe('config_error');
     }
+  });
+});
+
+describe('E-16 action names from the Native Host', () => {
+  it('a name outside the wire table is unknown when it comes from the host', () => {
+    expect(resolveWireAction('executeScript', true)).toEqual({ kind: 'unknown', wireName: 'executeScript' });
+    expect(resolveWireAction('status', true)).toEqual({ kind: 'unknown', wireName: 'status' });
+    expect(resolveWireAction('execute_script', true)).toEqual({ kind: 'action', action: 'executeScript' });
+    // The Extension's own pages keep using internal names.
+    expect(resolveWireAction('status')).toEqual({ kind: 'action', action: 'status' });
+  });
+
+  it('handleCommand from the host refuses an internal name without running its handler', async () => {
+    installBrowser();
+    const result = await handleCommand({ action: 'getPageInfo', requestId: 'r1' }, 'host');
+    expect(result).toEqual({ success: false, error: 'Unknown action: getPageInfo' });
+    expect(sent).toEqual([]);
+    expect(await handleCommand({ action: 'get_page_info', requestId: 'r2' }, 'host'))
+      .toMatchObject({ success: true });
   });
 });

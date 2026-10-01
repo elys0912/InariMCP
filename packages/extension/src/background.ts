@@ -28,7 +28,7 @@ import { refreshSetupState, BADGE_COLOR, SETUP_REFRESH_MS } from "./background/s
 // The hooks first: connectNativeHost (below) is what can make them fire.
 // Listeners and context menus are registered synchronously at load time.
 setConnectionHooks({
-  onCommand: (message) => { void handleCommand(message); },
+  onCommand: (message) => { void handleCommand(message, "host"); },
   onConfirmed: () => { void refreshSetupState(); },
   onDisconnected: () => {
     cancelAllApprovals();

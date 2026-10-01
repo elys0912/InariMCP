@@ -12,7 +12,14 @@ import type { NativeMessage, CommandResult, ScopeFilter } from "./types";
 import { parseUrlPolicy, hasUrlLists, checkListedTarget, checkProtectedTarget } from "./url-policy";
 import { resolveWireAction, toWireResponse } from "./wire";
 
-export async function handleCommand(message: NativeMessage): Promise<CommandResult> {
+/**
+ * Where a command came from: "host" over Native Messaging (the MCP Server,
+ * wire action names only), "page" from the Extension's own pages (the popup,
+ * which also uses internal names such as "status").
+ */
+export type CommandSource = "host" | "page";
+
+export async function handleCommand(message: NativeMessage, source: CommandSource = "page"): Promise<CommandResult> {
   const { data } = message;
   let tabId = message.tabId;
   let result: CommandResult = { success: false };
@@ -20,9 +27,14 @@ export async function handleCommand(message: NativeMessage): Promise<CommandResu
   // Normalize the wire action name (snake_case) to the internal name once,
   // before any check, so every check and the handler see the same row of
   // the action table.
-  const resolved = resolveWireAction(message.action);
+  const resolved = resolveWireAction(message.action, source === "host");
   if (resolved.kind === "notImplemented") {
     result = { success: false, error: `Not implemented in extension: ${resolved.wireName}` };
+    postWireResponse(message, result);
+    return result;
+  }
+  if (resolved.kind === "unknown") {
+    result = { success: false, error: `Unknown action: ${resolved.wireName}` };
     postWireResponse(message, result);
     return result;
   }
