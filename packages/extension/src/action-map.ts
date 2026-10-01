@@ -7,7 +7,9 @@
 // at the entry of handleCommand().
 //
 // Value semantics:
-//   string -> internal action name handled by background/dispatch.ts
+//   string -> internal action name: a row of the action table
+//             (background/action-table.ts), which holds the checks and the
+//             handler of each internal action
 //   null   -> known wire action that the extension does not implement yet
 //             (answered with "Not implemented in extension: <name>", which is
 //             distinct from "Unknown action")
@@ -16,11 +18,14 @@
 // tests that load this file as a module, the same table is also exposed on
 // globalThis.
 //
-// Every entry of BROWSER_ACTIONS must appear here, and nothing else: checked
-// by the type below (`satisfies`) and by the contract test. Only the type is
-// imported, so this file adds nothing from packages/shared to the bundle.
+// Every entry of BROWSER_ACTIONS must appear here, and nothing else, and
+// every internal name must be a row of the action table: checked by the type
+// below (`satisfies`) and by the contract test. Only types are imported, so
+// this file adds nothing from packages/shared or background/ to the bundle
+// (and stays loadable on its own by the contract tests).
 
 import type { BrowserAction } from "@kitsune-mcp/shared/action-names";
+import type { InternalAction } from "./background/action-table";
 
 const WIRE_ACTIONS = {
   // --- Page interaction ---
@@ -96,7 +101,7 @@ const WIRE_ACTIONS = {
   wait_for_navigation: "waitForNavigation",
   wait_for_url: "waitForUrl",
   remove_observer: "stopObserving",
-} as const satisfies Record<BrowserAction, string | null>;
+} as const satisfies Record<BrowserAction, InternalAction | null>;
 
 export const WIRE_ACTION_MAP: ReadonlyMap<string, string | null> = new Map<string, string | null>(
   Object.entries(WIRE_ACTIONS),
