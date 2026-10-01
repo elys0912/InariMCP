@@ -2,7 +2,7 @@
 
 import { findUrlRule, type CompiledUrlRule } from "../url-rule";
 import { isTabInScope } from "./container-scope";
-import { resolveTab } from "./tab-target";
+import { resolveTab, noTargetTab } from "./tab-target";
 import {
   waitForTabLoad,
   TAB_LOAD_OPTIONS,
@@ -27,7 +27,7 @@ export async function refreshTab(
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
-    if (!tab) return { success: false, error: "No target tab" };
+    if (!tab) return noTargetTab();
     const bypassCache = options.bypassCache || false;
     const reload = (): Promise<unknown> => browser.tabs.reload(tab.id, { bypassCache });
 

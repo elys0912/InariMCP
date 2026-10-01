@@ -1,7 +1,7 @@
 // Tab URL filters and waits for loads / navigations / URLs (L1).
 
 import { TIMEOUTS } from "./constants";
-import { resolveTab } from "./tab-target";
+import { resolveTab, noTargetTab } from "./tab-target";
 import type { CommandResult } from "./types";
 
 const EXCLUDED_URL_PREFIXES = ["about:", "moz-extension:"] as const;
@@ -155,7 +155,7 @@ export async function waitForNavigation(
   data: Record<string, unknown> = {},
 ): Promise<CommandResult> {
   const tab = await resolveTab(tabId);
-  if (!tab?.id) return { success: false, error: "No target tab" };
+  if (!tab) return noTargetTab();
   const targetId = tab.id;
   const timeoutMs = positiveOr(data.timeout, TIMEOUTS.NAVIGATION);
   const patternSrc = typeof data.urlPattern === "string" && data.urlPattern ? data.urlPattern : null;
@@ -213,7 +213,7 @@ export async function waitForUrl(
     !!u && (exact ? u === exact : pattern!.test(u));
 
   const tab = await resolveTab(tabId);
-  if (!tab?.id) return { success: false, error: "No target tab" };
+  if (!tab) return noTargetTab();
   const targetId = tab.id;
   const timeoutMs = positiveOr(data.timeout, 15_000);
 

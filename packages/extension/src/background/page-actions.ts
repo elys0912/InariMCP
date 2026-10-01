@@ -2,7 +2,7 @@
 // the tab (getPageInfo, executeScript) (L3).
 
 import { TOP_FRAME_ID } from "./constants";
-import { sendToContentScript, resolveTab } from "./tab-target";
+import { sendToContentScript, resolveTab, noTargetTab } from "./tab-target";
 import type { CommandResult } from "./types";
 
 export async function performClick(
@@ -31,6 +31,7 @@ export async function getPageInfo(
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
+    if (!tab) return noTargetTab();
     const result = (await browser.tabs.sendMessage(
       tab.id,
       { action: "getPageInfo" },
@@ -59,6 +60,7 @@ export async function executeScript(
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
+    if (!tab) return noTargetTab();
     const result = await browser.tabs.executeScript(tab.id, {
       code: data.script,
     });

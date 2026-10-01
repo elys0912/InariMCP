@@ -238,6 +238,22 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
   });
 });
 
+describe('WP38 no active tab: a failure result, not a TypeError', () => {
+  it('get_page_info and execute_script answer "No target tab" when tabs.query finds none', async () => {
+    useFakeBrowser({
+      tabs: {
+        query: async () => [],
+        sendMessage: async () => { throw new Error('nothing may be sent'); },
+        executeScript: async () => { throw new Error('nothing may run'); },
+      },
+    });
+    const { getPageInfo, executeScript } = await import('../../packages/extension/src/background/page-actions.ts');
+    expect(await getPageInfo(undefined)).toEqual({ success: false, error: 'No target tab' });
+    expect(await executeScript(undefined, { script: '1' })).toEqual({ success: false, error: 'No target tab' });
+    expect(await handleCommand({ action: 'get_page_info' })).toEqual({ success: false, error: 'No target tab' });
+  });
+});
+
 describe('WP30 go_back / go_forward wait for the load like navigate', () => {
   it('returns the URL after the history load completes, not after a fixed delay', async () => {
     vi.useFakeTimers();

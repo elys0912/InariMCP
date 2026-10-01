@@ -1,6 +1,6 @@
 // navigate / new-tab navigate / back / forward (L3).
 
-import { resolveTab } from "./tab-target";
+import { resolveTab, noTargetTab } from "./tab-target";
 import { waitForTabLoad, TAB_LOAD_OPTIONS, tabLoadError } from "./tab-wait";
 import { createNewTab } from "./tabs";
 import type { CommandResult, ScopeFilter } from "./types";
@@ -11,7 +11,7 @@ export async function navigateTo(
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
-    if (!tab) return { success: false, error: "No target tab" };
+    if (!tab) return noTargetTab();
     const navigate = (): Promise<unknown> => browser.tabs.update(tab.id, { url: data.url });
     if (data.waitForLoad === false) {
       await navigate();
@@ -73,7 +73,7 @@ export async function navigateHistory(
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
-    if (!tab) return { success: false, error: "No target tab" };
+    if (!tab) return noTargetTab();
     const go = (): Promise<unknown> =>
       direction === "back" ? browser.tabs.goBack(tab.id) : browser.tabs.goForward(tab.id);
     // Same load wait as navigate: a history entry of the same document

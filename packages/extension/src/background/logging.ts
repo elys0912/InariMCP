@@ -4,7 +4,7 @@
 import type { CompiledUrlRule } from "../url-rule";
 import { TOP_FRAME_ID } from "./constants";
 import { appendLogRecords, queryConsoleLogs, queryNetworkLogs } from "./log-records";
-import { sendToContentScript } from "./tab-target";
+import { sendToContentScript, noTargetTab } from "./tab-target";
 import { shouldSkipTab } from "./tab-wait";
 import type { CommandResult } from "./types";
 import { findProtectedMatch, checkProtectedTarget } from "./url-policy";
@@ -76,7 +76,7 @@ export async function startLoggingOnTab(
 ): Promise<CommandResult> {
   // Same rule as a single-tab screenshot: refuse on a protected page, judged
   // by the tab's real URL (fails closed without a tab).
-  if (!target) return { success: false, error: "No target tab" };
+  if (!target) return noTargetTab();
   const refusal = checkProtectedTarget(target, protectedPatterns, approvedHost);
   if (refusal) return refusal;
   const tab = target;
@@ -100,7 +100,7 @@ export async function startLoggingOnTab(
 }
 
 export async function stopLoggingOnTab(target: browser.tabs.Tab | undefined): Promise<CommandResult> {
-  if (!target) return { success: false, error: "No target tab" };
+  if (!target) return noTargetTab();
   // Ask the page first, so the entries it has not sent yet are kept.
   const reply = await sendToContentScript(target.id, { action: "stopLogging" });
   if (reply.success) acceptLogRecords(target.id, [target.url], reply as { console?: unknown; network?: unknown });
@@ -121,7 +121,7 @@ export async function getLogsOfTab(
   data: Record<string, unknown> = {},
   protectedPatterns: CompiledUrlRule[],
 ): Promise<CommandResult> {
-  if (!target) return { success: false, error: "No target tab" };
+  if (!target) return noTargetTab();
   // Collect what the current page recorded but has not sent yet. The logs
   // themselves come from the background buffer, so they are there even
   // when the current page has no content script.
@@ -155,7 +155,7 @@ export async function clearLogsOfTab(
   target: browser.tabs.Tab | undefined,
   data: Record<string, unknown> = {},
 ): Promise<CommandResult> {
-  if (!target) return { success: false, error: "No target tab" };
+  if (!target) return noTargetTab();
   const clearConsole = data.console !== false;
   const clearNetwork = data.network !== false;
   const buffer = logBuffers.get(target.id);

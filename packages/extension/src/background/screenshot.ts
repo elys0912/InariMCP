@@ -3,6 +3,7 @@
 import { findUrlRule, type CompiledUrlRule } from "../url-rule";
 import { TIMEOUTS, TOP_FRAME_ID } from "./constants";
 import { isTabInScope } from "./container-scope";
+import { noTargetTab } from "./tab-target";
 import { urlPatternArg, shouldSkipTab, urlMatches, positiveOr } from "./tab-wait";
 import type { ScreenshotOptions, CommandResult, ScopeFilter, UrlLists } from "./types";
 import { NO_URL_LISTS, violatesUrlLists } from "./url-policy";
@@ -20,7 +21,7 @@ export async function takeScreenshot(
       await browser.tabs.query({ active: true, currentWindow: true })
     )[0];
     const targetTab = tabId ? await browser.tabs.get(tabId) : currentTab;
-    if (!targetTab) return { success: false, error: "No target tab" };
+    if (!targetTab) return noTargetTab();
 
     // saveToFile false: images reach the MCP client only as files the
     // Native Host saves (never as base64), so nothing is captured.
