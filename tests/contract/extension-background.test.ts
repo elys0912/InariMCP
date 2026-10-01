@@ -24,7 +24,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
 import { checkListedTarget } from '../../packages/extension/src/background/url-policy.ts';
 import { reloadMatchingTabs } from '../../packages/extension/src/background/reload.ts';
-import { captureTabsWithin } from '../../packages/extension/src/background/screenshot.ts';
+import { captureTabsWithin, takeScreenshot } from '../../packages/extension/src/background/screenshot.ts';
 import {
   describeNativeMessage,
   nextReconnectAttempts,
@@ -152,6 +152,39 @@ describe('3.A5 capture of the target tab', () => {
     expect(background).not.toMatch(/\.captureVisibleTab\(/);
     expect(background).toMatch(/browser\.tabs\.captureTab\(targetTab\.id,/);
   });
+});
+
+describe('WP30 screenshot of a background tab keeps the active tab', () => {
+  it('captures the tabId given without tabs.update; a discarded tab fails', async () => {
+    const update = vi.fn(async () => ({}));
+    const captureTab = vi.fn(async (id: number) => `data:image/png;base64,${id}`);
+    const tabsById: Record<number, Record<string, unknown>> = {
+      1: { id: 1, url: 'https://a.test/', active: true, discarded: false },
+      2: { id: 2, url: 'https://b.test/', active: false, discarded: false },
+      3: { id: 3, url: 'https://c.test/', active: false, discarded: true },
+    };
+    (globalThis as { browser?: unknown }).browser = {
+      tabs: {
+        query: async () => [tabsById[1]],
+        get: async (id: number) => tabsById[id],
+        update,
+        captureTab,
+      },
+    };
+    try {
+      const shot = await takeScreenshot(2, {});
+      expect(shot).toMatchObject({ success: true, type: 'visible', tab: { id: 2 } });
+      expect(captureTab).toHaveBeenCalledWith(2, expect.anything());
+      const discarded = await takeScreenshot(3, {});
+      expect(discarded).toMatchObject({ success: false, error: expect.stringMatching(/discarded/) });
+      expect(captureTab).toHaveBeenCalledTimes(1);
+      expect(update).not.toHaveBeenCalled();
+    } finally {
+      delete (globalThis as { browser?: unknown }).browser;
+    }
+  });
+  // TODO(test): in a real Firefox: captureTab of a loaded background tab
+  //   (same / other window) returns that tab's image, not a blank one.
 });
 
 describe('3.A8 reload_all / reload_by_url skip protected tabs', () => {

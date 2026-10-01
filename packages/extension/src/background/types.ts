@@ -23,8 +23,6 @@ export interface ScreenshotOptions {
   format?: string;
   quality?: number;
   fullPage?: boolean;
-  allowFocus?: boolean;
-  restoreFocus?: boolean;
   /** false: capture nothing (the image would have nowhere to go). */
   saveToFile?: boolean;
   /** all_tabs: attach imageData per tab (the MCP Server always sets it). */

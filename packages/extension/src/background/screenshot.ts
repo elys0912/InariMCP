@@ -34,44 +34,40 @@ export async function takeScreenshot(
       };
     }
 
-    const needsFocus = tabId !== undefined && tabId !== currentTab?.id;
-    let originalActiveTab: browser.tabs.Tab | null = null;
-
-    if (needsFocus && options.allowFocus !== false) {
-      originalActiveTab = currentTab;
-      await browser.tabs.update(targetTab.id, { active: true });
-      await new Promise((r) => setTimeout(r, TIMEOUTS.SCREENSHOT_DELAY));
-    }
-
-    try {
-      // captureTab(tabId), not captureVisibleTab(windowId): the latter takes
-      // whatever tab is visible in that window, which is another tab when
-      // the target is in a different window or was not focused.
-      const dataUrl = await browser.tabs.captureTab(targetTab.id, {
-        format: options.format || "png",
-        quality: options.quality || 90,
-      });
-
-      if (options.fullPage) {
-        return await captureFullPageImage(targetTab, dataUrl, options);
-      }
-
+    // A discarded tab has no page to render until it is activated again;
+    // say so instead of switching tabs behind the user's back.
+    if (targetTab.discarded) {
       return {
-        success: true,
-        imageData: dataUrl,
-        type: "visible",
-        tab: {
-          id: targetTab.id,
-          url: targetTab.url,
-          title: targetTab.title,
-        },
-        wasFocused: needsFocus,
+        success: false,
+        error:
+          `Tab ${targetTab.id} is discarded (unloaded) and cannot be captured; ` +
+          "switch to it first (fox_tab with action 'switch').",
       };
-    } finally {
-      if (originalActiveTab && options.restoreFocus !== false) {
-        await browser.tabs.update(originalActiveTab.id, { active: true });
-      }
     }
+
+    // captureTab(tabId), not captureVisibleTab(windowId): the latter takes
+    // whatever tab is visible in that window. captureTab renders the given
+    // tab even when it is in the background, so the active tab is never
+    // changed (no focus is taken from the user).
+    const dataUrl = await browser.tabs.captureTab(targetTab.id, {
+      format: options.format || "png",
+      quality: options.quality || 90,
+    });
+
+    if (options.fullPage) {
+      return await captureFullPageImage(targetTab, dataUrl, options);
+    }
+
+    return {
+      success: true,
+      imageData: dataUrl,
+      type: "visible",
+      tab: {
+        id: targetTab.id,
+        url: targetTab.url,
+        title: targetTab.title,
+      },
+    };
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }

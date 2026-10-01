@@ -937,7 +937,7 @@
   },
   {
     "name": "fox_screenshot",
-    "description": "Take a screenshot. scope: viewport (visible area; a background tab given by tabId is briefly brought to the front, then switched back), full_page (entire scrollable page; falls back to the visible area when it cannot, fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls the page and returns the interactive elements visible at each position). Images are saved to files and returned as resource_link, never as base64; saveToFile=false captures nothing, includeData has no effect, and the same filename overwrites the file. Headless: viewport and full_page only.",
+    "description": "Take a screenshot. scope: viewport (visible area; a background tab given by tabId is captured without switching to it; a discarded tab fails), full_page (entire scrollable page; falls back to the visible area when it cannot, fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls the page and returns the interactive elements visible at each position). Images are saved to files and returned as resource_link, never as base64; saveToFile=false captures nothing, includeData has no effect, and the same filename overwrites the file. Headless: viewport and full_page only.",
     "inputSchema": {
       "type": "object",
       "properties": {
