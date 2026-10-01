@@ -1,7 +1,17 @@
-import { describe, expect, it } from 'vitest';
-import type { BrowserAction, BrowserCommand } from '@kitsune-mcp/shared';
-import { attachSafetyMetadata } from '../src/tools/handlers.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { BrowserAction, BrowserCommand, BrowserResponse } from '@kitsune-mcp/shared';
+import { attachSafetyMetadata, createToolHandler } from '../src/tools/handlers.js';
 import { DEFAULT_CONFIG, type SafetyConfig } from '../src/safety/config.js';
+import { SafetyGuard } from '../src/safety/guard.js';
+import { getConnectionManager } from '../src/connection/manager.js';
+
+/** The guard handlers.ts works with (there is no setter for the singleton). */
+const testGuard = vi.hoisted(() => ({ current: null as SafetyGuard | null }));
+vi.mock('../src/safety/guard.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/safety/guard.js')>();
+  return { ...actual, getSafetyGuard: () => testGuard.current ?? actual.getSafetyGuard() };
+});
 
 const PATTERNS = ['protected\\.example\\.test'];
 // What the Extension receives: the anchored regex equivalent of the pattern.
@@ -88,8 +98,58 @@ describe('attachSafetyMetadata: URL rules (WP5b)', () => {
     expect(cmd.blockedUrlRules).toBeUndefined();
     expect(cmd.allowedUrlRules).toBeUndefined();
   });
-  // TODO(test): handler path: an Extension refusal blocked_url / not_allowlisted
-  //   is SAFETY_BLOCKED layer 3 and its data.url is noted for the tab.
+});
+
+describe('handler path: a refusal the Extension made itself (WP5b)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    testGuard.current = null;
+  });
+
+  /** Answer the next sendCommand() with `response`, without any browser. */
+  function stubBrowser(response: Partial<BrowserResponse>): void {
+    vi.spyOn(getConnectionManager(), 'sendCommand').mockImplementation(
+      async (command) => ({ requestId: command.requestId, success: false, ...response }) as BrowserResponse,
+    );
+  }
+
+  const details = (r: CallToolResult): Record<string, unknown> => {
+    const block = r.content[1];
+    return block && block.type === 'text' ? JSON.parse(block.text) as Record<string, unknown> : {};
+  };
+
+  const listCases: Array<[string, Partial<SafetyConfig>, string]> = [
+    ['blocked_url', { blockedUrlPatterns: ['blocked.test'] }, 'https://blocked.test/x'],
+    ['not_allowlisted', { allowedUrlPatterns: ['example.test'] }, 'https://elsewhere.test/x'],
+  ];
+
+  it.each(listCases)('%s is SAFETY_BLOCKED layer 3, and the URL is noted for the tab', async (decision, lists, url) => {
+    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, protectedUrlPatterns: [], ...lists });
+    testGuard.current = g;
+    stubBrowser({ success: false, safetyDecision: decision, error: 'refused by the Extension', data: { url } });
+
+    const result = await createToolHandler('fox_click')({ tabId: 2, selector: '#a' });
+    expect(result.isError).toBe(true);
+    expect(details(result)).toMatchObject({ code: 'SAFETY_BLOCKED', layer: 3, decision, url });
+    // Noted, so the guard's own pre-check refuses the next call without asking the Extension.
+    expect(g.urlFor(2)).toBe(url);
+    expect(g.check('fox_click', { tabId: 2 })?.safetyDecision).toBe(decision);
+  });
+
+  it('out_of_scope is layer 0 and carries no URL', async () => {
+    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, protectedUrlPatterns: [] });
+    testGuard.current = g;
+    stubBrowser({
+      success: false, safetyDecision: 'out_of_scope', error: 'tab is outside the container',
+      data: { url: 'https://elsewhere.test/' },
+    });
+
+    const result = await createToolHandler('fox_click')({ tabId: 3, selector: '#a' });
+    expect(result.isError).toBe(true);
+    expect(details(result)).toMatchObject({ code: 'SAFETY_BLOCKED', layer: 0, decision: 'out_of_scope' });
+    expect(details(result)['url']).toBeUndefined();
+    expect(g.urlFor(3)).toBeNull();
+  });
 });
 
 describe('attachSafetyMetadata: protectedUrlPatterns', () => {

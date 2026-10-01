@@ -2,8 +2,22 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { BrowserResponse } from '@kitsune-mcp/shared';
 import { SafetyGuard } from '../src/safety/guard.js';
 import { DEFAULT_CONFIG, getAuditLogPath, loadConfig, type LoadedSafetyConfig } from '../src/safety/config.js';
+import { createToolHandler } from '../src/tools/handlers.js';
+import { getConnectionManager } from '../src/connection/manager.js';
+
+/**
+ * The guard handlers.ts works with: the process-wide one, unless a test puts
+ * its own policy in `current` (there is no setter for the singleton).
+ */
+const testGuard = vi.hoisted(() => ({ current: null as SafetyGuard | null }));
+vi.mock('../src/safety/guard.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/safety/guard.js')>();
+  return { ...actual, getSafetyGuard: () => testGuard.current ?? actual.getSafetyGuard() };
+});
 
 function guard(overrides: Partial<LoadedSafetyConfig> = {}): SafetyGuard {
   return new SafetyGuard({
@@ -187,7 +201,31 @@ describe('per-tab URL tracking (2.B4)', () => {
     g.noteUrl({ url: 'https://d.test/' }, { tabId: 4 }, 'fox_get_text');
     g.noteUrl({ success: true, closed: 4 }, { tabId: 4 }, 'fox_close_tab');
     expect(g.urlFor(4)).toBeNull();
-    // TODO(test): `closed` differing from the tabId argument; headless closedTabId.
+  });
+
+  it('`closed` wins over the tabId argument, and headless reports closedTabId', () => {
+    const g = guard();
+    g.noteUrl({ url: 'https://d.test/' }, { tabId: 4 }, 'fox_get_text');
+    g.noteUrl({ url: 'https://e.test/' }, { tabId: 5 }, 'fox_get_text');
+    // The backend closed another tab than the argument named: that one is forgotten.
+    g.noteUrl({ success: true, closed: 5 }, { tabId: 4 }, 'fox_close_tab');
+    expect(g.urlFor(5)).toBeNull();
+    expect(g.urlFor(4)).toBe('https://d.test/');
+
+    const h = guard();
+    h.noteUrl({ url: 'https://f.test/' }, { tabId: 6 }, 'fox_get_text');
+    h.noteUrl({ success: true, closedTabId: 6 }, {}, 'fox_close_tab');
+    expect(h.urlFor(6)).toBeNull();
+  });
+
+  it('closing the active tab clears the active URL, closing another leaves it', () => {
+    const g = guard();
+    g.noteUrl({ url: 'https://active.test/' }, { tabId: 1 }, 'fox_switch_tab');
+    g.noteUrl({ url: 'https://other.test/' }, { tabId: 2 }, 'fox_get_text');
+    g.noteUrl({ success: true, closed: 2 }, { tabId: 2 }, 'fox_close_tab');
+    expect(g.urlFor()).toBe('https://active.test/');
+    g.noteUrl({ success: true, closedTabId: 1 }, {}, 'fox_close_tab');
+    expect(g.urlFor()).toBeNull();
   });
 
   it('a get_tabs list refreshes every tab, and the active one when unambiguous', () => {
@@ -260,8 +298,60 @@ describe('review follow-ups', () => {
   });
 });
 
-// TODO(test): handlers.ts calls noteUrl() for data-less successes (fox_close_tab returns {success:true} only) — cover through createToolHandler with a fake browser.
-// TODO(test): checkReachedUrl through createToolHandler: result withheld and the tab URL recorded.
+describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => {
+  function handlerGuard(overrides: Partial<LoadedSafetyConfig> = {}): SafetyGuard {
+    const g = guard(overrides);
+    testGuard.current = g;
+    return g;
+  }
+
+  /** Answer the next sendCommand() with `response`, without any browser. */
+  function stubBrowser(response: Partial<BrowserResponse>): void {
+    vi.spyOn(getConnectionManager(), 'sendCommand').mockImplementation(
+      async (command) => ({ requestId: command.requestId, success: true, ...response }) as BrowserResponse,
+    );
+  }
+
+  const details = (r: CallToolResult): Record<string, unknown> => {
+    const block = r.content[1];
+    return block && block.type === 'text' ? JSON.parse(block.text) as Record<string, unknown> : {};
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    testGuard.current = null;
+  });
+
+  it('forgets a closed tab even though fox_close_tab answers without data', async () => {
+    const g = handlerGuard();
+    g.noteUrl({ url: 'https://d.test/' }, { tabId: 4 }, 'fox_get_text');
+    stubBrowser({ success: true }); // no `data` at all
+    const result = await createToolHandler('fox_close_tab')({ tabId: 4 });
+    expect(result.isError).toBeUndefined();
+    expect(g.urlFor(4)).toBeNull();
+  });
+
+  it('records the URL a successful command reports', async () => {
+    const g = handlerGuard();
+    stubBrowser({ success: true, data: { url: 'https://landing.test/x' } });
+    await createToolHandler('fox_click')({ tabId: 2, selector: '#a' });
+    expect(g.urlFor(2)).toBe('https://landing.test/x');
+  });
+
+  it('withholds a result that ended on a blocked site and remembers where the tab is', async () => {
+    const g = handlerGuard({ blockedUrlPatterns: ['blocked.test'] });
+    stubBrowser({ success: true, data: { url: 'https://www.blocked.test/landing', text: 'secret' } });
+    const result = await createToolHandler('fox_click')({ tabId: 3, selector: '#go' });
+    expect(result.isError).toBe(true);
+    expect(details(result)).toMatchObject({ code: 'SAFETY_BLOCKED', decision: 'blocked_after_navigation' });
+    // The URL is named in the message; a post-hoc denial carries no details.url.
+    expect(result.content[0]).toMatchObject({ text: expect.stringContaining('https://www.blocked.test/landing') });
+    expect(JSON.stringify(result.content)).not.toContain('secret');
+    // Noted first, so the pre-check refuses the next call on that tab.
+    expect(g.urlFor(3)).toBe('https://www.blocked.test/landing');
+    expect(decision(g, 'fox_get_text', { tabId: 3 })).toBe('blocked_url');
+  });
+});
 
 describe('rate limit counts only calls that would run (2.B7)', () => {
   it('refused calls and fox_safety_status do not use up the budget', () => {
