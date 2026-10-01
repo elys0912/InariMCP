@@ -78,8 +78,18 @@ export class HeadlessBrowser {
 
     const timeout = headlessStartupTimeoutMs();
 
-    // Loaded on demand, so the daemon and relay start without playwright installed.
-    const { firefox } = await import('playwright');
+    // Loaded on demand, so the daemon and relay start without playwright
+    // installed (it is an optionalDependency: FOX_HEADLESS only).
+    let firefox: typeof import('playwright').firefox;
+    try {
+      ({ firefox } = await import('playwright'));
+    } catch (err: unknown) {
+      throw new Error(
+        'FOX_HEADLESS needs the optional dependency playwright, which is not installed ' +
+        `(${err instanceof Error ? err.message : String(err)}). Install it in packages/mcp-server ` +
+        '(npm install playwright) and its Firefox (npx playwright install firefox).',
+      );
+    }
     this._browser = await firefox.launch({
       headless: true,
       timeout,
