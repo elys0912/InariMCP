@@ -988,6 +988,26 @@ describe('probeDaemon', () => {
 // Files
 // ---------------------------------------------------------------------------
 
+/**
+ * The `fsApi` parameter of writeFileAtomic / removeTreeSafe defaults to the
+ * whole `node:fs` module, so TypeScript infers that full type for it. The
+ * functions only call the handful of entry points below, so the stubs
+ * implement exactly those and are narrowed here, once, instead of at every
+ * call site.
+ */
+type FsApi = typeof import('node:fs');
+const asFsApi = (stub: FsStub): FsApi => stub as unknown as FsApi;
+type FsStub =
+  | Pick<FsApi, 'openSync' | 'fsyncSync' | 'closeSync' | 'chmodSync' | 'unlinkSync'> & {
+      writeFileSync: (...args: never[]) => unknown;
+      renameSync: (from: string, to: string) => void;
+    }
+  | {
+      lstatSync: (p: string) => { isSymbolicLink: () => boolean; isDirectory: () => boolean };
+      readdirSync: (p: string) => string[];
+      rmSync: (p: string, options?: unknown) => unknown;
+    };
+
 describe('writeFileAtomic', () => {
   /** Real fs, with renameSync failing `failures` times with `code` first. */
   function flakyRename(code: string, failures: number) {
@@ -1031,7 +1051,7 @@ describe('writeFileAtomic', () => {
     for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
       const target = path.join(tmp, `retry-${code}.json`);
       const fsApi = flakyRename(code, 2);
-      writeFileAtomic(target, code, {}, fsApi);
+      writeFileAtomic(target, code, {}, asFsApi(fsApi));
       expect(fs.readFileSync(target, 'utf8')).toBe(code);
       expect(fsApi.attempts).toBe(3);
       expect(fs.readdirSync(tmp).filter((n) => n.endsWith('.tmp'))).toEqual([]);
@@ -1041,7 +1061,7 @@ describe('writeFileAtomic', () => {
   it('gives up after ten attempts and removes the temporary file', () => {
     const target = path.join(tmp, 'stubborn.json');
     const fsApi = flakyRename('EBUSY', 99);
-    expect(() => writeFileAtomic(target, 'x', {}, fsApi)).toThrow(/EBUSY/);
+    expect(() => writeFileAtomic(target, 'x', {}, asFsApi(fsApi))).toThrow(/EBUSY/);
     expect(fsApi.attempts).toBe(10);
     expect(fs.existsSync(target)).toBe(false);
     expect(fs.readdirSync(tmp)).toEqual([]);
@@ -1050,7 +1070,7 @@ describe('writeFileAtomic', () => {
   it('does not retry another rename error', () => {
     const target = path.join(tmp, 'xdev.json');
     const fsApi = flakyRename('EXDEV', 99);
-    expect(() => writeFileAtomic(target, 'x', {}, fsApi)).toThrow(/EXDEV/);
+    expect(() => writeFileAtomic(target, 'x', {}, asFsApi(fsApi))).toThrow(/EXDEV/);
     expect(fsApi.attempts).toBe(1);
     expect(fs.readdirSync(tmp)).toEqual([]);
   });
@@ -1071,7 +1091,7 @@ describe('writeFileAtomic', () => {
       renameSync: fs.renameSync,
       unlinkSync: fs.unlinkSync,
     };
-    expect(() => writeFileAtomic(target, 'new', {}, fsApi)).toThrow(/ENOSPC/);
+    expect(() => writeFileAtomic(target, 'new', {}, asFsApi(fsApi))).toThrow(/ENOSPC/);
     expect(fs.readFileSync(target, 'utf8')).toBe('old');
     expect(fs.readdirSync(tmp)).toEqual(['kitsune_mcp.json']);
   });
@@ -1157,7 +1177,7 @@ describe('removeTreeSafe', () => {
       readdirSync: (p: string) => (p === root ? ['link', 'run-host.cmd'] : []),
       rmSync: (p: string) => removed.push(p),
     };
-    expect(removeTreeSafe(root, fsApi)).toEqual({ status: 'refused', links: [link] });
+    expect(removeTreeSafe(root, asFsApi(fsApi))).toEqual({ status: 'refused', links: [link] });
     expect(removed).toEqual([]);
   });
 });
@@ -1331,8 +1351,8 @@ function realRunDeps(home: string, repoRoot: string, overrides: Record<string, u
       home,
       repoRoot,
       env: { PATH: '' },
-      out: (s: string) => out.push(s),
-      err: (s: string) => out.push(s),
+      out: (s: string) => (out.push(s), true),
+      err: (s: string) => (out.push(s), true),
       isTTY: false,
       prompt: () => {
         throw new Error('must not prompt without a TTY');
