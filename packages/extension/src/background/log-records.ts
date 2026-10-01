@@ -8,7 +8,7 @@ import type { CommandResult } from "./types";
  * at 5000 characters), finite numbers, booleans, null, and one level of
  * string records (headers). Anything else is dropped; null if not an object.
  */
-function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null {
+export function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw).slice(0, 20)) {
@@ -47,7 +47,7 @@ export function appendLogRecords(target: Record<string, unknown>[], incoming: un
 }
 
 /** Positive integer `limit`, else 100 (the tool default). */
-function logLimit(value: unknown): number {
+export function logLimit(value: unknown): number {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 100;
 }
 

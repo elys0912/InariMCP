@@ -1,8 +1,9 @@
 /**
- * Extension background.ts: routing and robustness fixes of WP5
- * (review 3.A2-A9, 5.2, 5.7, 3.security). Pure functions are cut out of the
- * source (helpers/extension-source.ts); the rest is checked on the source
- * text.
+ * Extension background (background.ts and background/*.ts): routing and
+ * robustness fixes of WP5 (review 3.A2-A9, 5.2, 5.7, 3.security). Functions
+ * of the side-effect-free modules under background/ are imported directly,
+ * a few are still cut out of the source (helpers/extension-source.ts); the
+ * rest is checked on the source text.
  *
  * TODO(test): handleCommand end to end with a fake `browser` (target tab
  *   resolved once: scope check, protected check, handler and URL report on
@@ -21,33 +22,17 @@
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
+import { checkListedTarget } from '../../packages/extension/src/background/url-policy.ts';
+import { reloadMatchingTabs } from '../../packages/extension/src/background/reload.ts';
+import { captureTabsWithin } from '../../packages/extension/src/background/screenshot.ts';
 import {
   loadExtensionFunction,
-  loadExtensionFunctions,
   readExtensionSource,
   readExtensionTree,
 } from './helpers/extension-source.js';
 
 const background = readExtensionTree('background');
-
-interface UrlRuleGlobals {
-  compileUrlRules(raw: unknown): { rules: unknown[]; invalid: number };
-}
-
-const URL_RULE_FUNCTIONS = [
-  'parseUrlRule', 'compileUrlRule', 'compileUrlRules', 'normalizeRuleUrl',
-  'effectiveRulePort', 'looseRulePath', 'urlRuleMatches', 'findUrlRule', 'urlListViolation',
-];
-
-/**
- * Put url-rule.ts's functions on globalThis: background.ts imports them, and
- * a function cut out of background.ts looks them up there.
- */
-async function installUrlRuleGlobals(): Promise<UrlRuleGlobals> {
-  const fns = await loadExtensionFunctions<Record<string, unknown>>('url-rule.ts', URL_RULE_FUNCTIONS);
-  Object.assign(globalThis, fns);
-  return fns as unknown as UrlRuleGlobals;
-}
 
 const NO_LISTS = { blocked: [], allowed: [], allowlistActive: false };
 
@@ -179,11 +164,7 @@ describe('3.A8 reload_all / reload_by_url skip protected tabs', () => {
       },
     };
     try {
-      const rules = await installUrlRuleGlobals();
-      const { reloadMatchingTabs } = await loadExtensionFunctions<{
-        reloadMatchingTabs(sel: (t: unknown) => boolean, bypass: boolean, scope: null, patterns: unknown[], lists: unknown): Promise<Record<string, unknown>>;
-      }>('background.ts', ['reloadMatchingTabs', 'isTabInScope', 'violatesUrlLists']);
-      const protectedRules = rules.compileUrlRules([
+      const protectedRules = compileUrlRules([
         { kind: 'host', source: 'bank.example.test', scheme: null, hosts: 'tree', host: 'bank.example.test', path: null, pathMatch: 'loose' },
       ]).rules;
       const result = await reloadMatchingTabs(() => true, false, null, protectedRules, NO_LISTS);
@@ -198,15 +179,11 @@ describe('3.A8 reload_all / reload_by_url skip protected tabs', () => {
 
 describe('WP5b URL rules and urlPattern arguments', () => {
   it('refuses a target tab on a blocked or not allowlisted site, fails closed without a tab', async () => {
-    const rules = await installUrlRuleGlobals();
-    const { checkListedTarget } = await loadExtensionFunctions<{
-      checkListedTarget(tab: unknown, lists: unknown): Record<string, unknown> | null;
-    }>('background.ts', ['checkListedTarget', 'violatesUrlLists']);
     const host = (h: string, pathMatch: string) =>
       ({ kind: 'host', source: h, scheme: null, hosts: 'tree', host: h, path: null, pathMatch });
     const lists = {
-      blocked: rules.compileUrlRules([host('blocked.test', 'loose')]).rules,
-      allowed: rules.compileUrlRules([host('ok.test', 'strict')]).rules,
+      blocked: compileUrlRules([host('blocked.test', 'loose')]).rules,
+      allowed: compileUrlRules([host('ok.test', 'strict')]).rules,
       allowlistActive: true,
     };
     expect(checkListedTarget({ id: 1, url: 'https://www.blocked.test/x' }, lists))
@@ -276,15 +253,8 @@ describe('5.2 log buffers', () => {
 });
 
 describe('5.7 screenshot all_tabs', () => {
-  type Capture = (
-    tabs: { id: number; url?: string }[],
-    capture: (tab: { id: number }) => Promise<string>,
-    options: { perTabMs: number; budgetMs: number; keepData: boolean },
-  ) => Promise<Record<string, unknown>[]>;
-
   it('bounds each capture and skips tabs once the budget is used up', async () => {
     vi.useFakeTimers();
-    const captureTabsWithin = await loadExtensionFunction<Capture>('background.ts', 'captureTabsWithin');
     const tabs = [{ id: 1 }, { id: 2 }, { id: 3 }];
     const run = captureTabsWithin(
       tabs,
