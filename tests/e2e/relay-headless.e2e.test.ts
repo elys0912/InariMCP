@@ -243,6 +243,58 @@ describe('relay → daemon → headless Firefox', () => {
     expect(status.isError, text(status)).not.toBe(true);
     expect(text(status)).toMatch(/readOnly/);
   }, 180_000);
-  // TODO(test): screenshot file lands under the isolated SCREENSHOTS dir; audit log in the temp home; relay restarts a killed daemon
   // TODO(test): --stop-daemon CLI against this daemon (exit 0, "stopped"); shutdown while a fox_navigate is in flight (drain ≤ 10 s, then exit)
+
+  it('saves the screenshot under the isolated screenshots directory', () => {
+    // tests/setup/isolate-home.ts points HOME / USERPROFILE at a temporary
+    // directory and clears FOX_SCREENSHOTS_DIR, so the daemon's
+    // defaultScreenshotsDir() is ~/.kitsune-mcp/screenshots inside it.
+    const home = os.homedir();
+    expect(home.startsWith(os.tmpdir())).toBe(true);
+    const dir = path.join(home, '.kitsune-mcp', 'screenshots');
+    const shots = fs.readdirSync(dir).filter((f) => f.endsWith('.png'));
+    expect(shots.length).toBeGreaterThan(0);
+    expect(fs.statSync(path.join(dir, shots[0] as string)).size).toBeGreaterThan(0);
+  });
+
+  it('writes the audit log in the temporary home', () => {
+    const logPath = path.join(os.homedir(), '.kitsune-mcp', 'logs', 'audit.jsonl');
+    const lines = fs.readFileSync(logPath, 'utf-8').split('\n').filter((l) => l.trim() !== '');
+    expect(lines.length).toBeGreaterThan(0);
+    const entries = lines.map((l) => JSON.parse(l) as { tool: string; decision: string; url: string | null });
+    for (const e of entries) {
+      expect(typeof e.tool).toBe('string');
+      expect(typeof e.decision).toBe('string');
+    }
+    const nav = entries.find((e) => e.tool === 'fox_navigate');
+    expect(nav, JSON.stringify(entries.map((e) => e.tool))).toBeDefined();
+    expect(nav?.decision).toBe('allowed');
+    expect(nav?.url).toBe(pageUrl);
+  });
+
+  it('restarts a killed daemon on the next tool call', async () => {
+    expect(daemonPid).toBeDefined();
+    const killed = daemonPid as number;
+
+    await stopDaemon();
+    daemonPid = undefined;
+    expect(await portOpen(httpPort)).toBe(false);
+
+    // ConnectionRefusedError on POST /mcp/call: the relay starts a daemon and
+    // retries once (relay/daemon-client.ts callTool).
+    const nav = await client.callTool({ name: 'fox_navigate', arguments: { url: pageUrl } }, undefined, { timeout: 120_000 });
+    expect(nav.isError, text(nav)).not.toBe(true);
+
+    const token = fs.readFileSync(path.join(os.homedir(), '.kitsune-mcp', 'api_token'), 'utf-8').trim();
+    const info = await fetch(`http://127.0.0.1:${httpPort}/daemon/info`, { headers: { 'X-API-Key': token } })
+      .then((r) => r.json() as Promise<{ pid?: number; headless?: boolean }>);
+    daemonPid = info.pid;
+    expect(info.headless).toBe(true);
+    expect(daemonPid).toBeDefined();
+    expect(daemonPid).not.toBe(killed);
+
+    const got = await client.callTool({ name: 'fox_read', arguments: { mode: 'text' } });
+    expect(got.isError, text(got)).not.toBe(true);
+    expect(text(got)).toContain(MARKER);
+  }, 240_000);
 });

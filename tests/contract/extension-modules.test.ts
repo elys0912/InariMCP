@@ -12,9 +12,6 @@
  *
  * Imports are read with a regular expression over the source text (the
  * Extension's import statements are all `import ... from "<path>";`).
- *
- * TODO(test): check that every browser.* listener is registered from an
- *   entry (registerListeners / registerContextMenus called once).
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -92,6 +89,20 @@ function topLevelSideEffects(source: string): string[] {
 /** Entries split into a directory of modules. */
 const TREES = ['background', 'content'] as const;
 
+/** `browser.x.onY.addListener(` (optional chaining allowed), not `port.onMessage...`. */
+const BROWSER_LISTENER_RE = /\bbrowser[\w.?]*\.addListener\(/g;
+const REMOVE_LISTENER_RE = /\.removeListener\(/g;
+const count = (source: string, re: RegExp): number => [...source.matchAll(re)].length;
+
+/**
+ * The entries, and the two background modules they call to register
+ * listeners. Everything else must leave browser.* events alone.
+ */
+const LISTENER_FILES = ['background/context-menu.ts', 'background/listeners.ts', 'content.ts'];
+
+/** Registration functions the background entry calls at load time. */
+const REGISTRARS = ['registerListeners', 'registerContextMenus'] as const;
+
 describe('extension modules', () => {
   const graph = importGraph();
 
@@ -114,6 +125,28 @@ describe('extension modules', () => {
     expect(files.length).toBeGreaterThan(0);
     const found = files.flatMap((f) => topLevelSideEffects(read(f)).map((line) => `${rel(f)}: ${line}`));
     expect(found).toEqual([]);
+  });
+
+  it('every browser.* listener is registered from an entry', () => {
+    // A module that removes every listener it adds (tab-wait.ts, for the
+    // length of one wait) registers nothing permanent.
+    const registering = listTs(SRC)
+      .filter((f) => count(read(f), BROWSER_LISTENER_RE) > count(read(f), REMOVE_LISTENER_RE))
+      .map(rel)
+      .sort();
+    expect(registering).toEqual([...LISTENER_FILES].sort());
+  });
+
+  it('background.ts calls each registration once, and nothing else calls them', () => {
+    const entry = read(path.join(SRC, 'background.ts'));
+    for (const fn of REGISTRARS) {
+      expect(count(entry, new RegExp(`^${fn}\\(\\);$`, 'gm')), fn).toBe(1);
+    }
+    const callers = listTs(SRC)
+      .filter((f) => rel(f) !== 'background.ts')
+      .filter((f) => new RegExp(`(?<!function )\\b(${REGISTRARS.join('|')})\\(`).test(read(f)))
+      .map(rel);
+    expect(callers).toEqual([]);
   });
 
   it('the cycle check finds a cycle', () => {
