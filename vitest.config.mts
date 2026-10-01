@@ -7,18 +7,25 @@ import { defineConfig } from 'vitest/config';
  *   packages/<pkg>/tests/**\/*.test.ts  unit tests of one workspace
  *   tests/contract/**\/*.test.ts        contracts spanning several packages
  *   tests/scripts/**\/*.test.ts         scripts/*.mjs (install / uninstall)
+ *   tests/e2e/**\/*.e2e.test.ts         real processes (`npm run test:e2e`)
  *
  * Tests live outside `src/`, so each package's tsconfig (`include: ["src"]`,
  * `rootDir: "src"`) never compiles them into `dist/`. Vitest transpiles them
  * on the fly; they are not type-checked by `npm run build`, but by
  * `npm run typecheck` (tsconfig.test.json, with the same shared aliases).
  *
- * packages/extension is not a project here: its entries (background.ts /
- * content.ts) register browser listeners at load time and cannot be
- * imported by a test. Extension-side contracts are checked from
- * tests/contract instead, by importing the modules without top-level side
- * effects (background/*.ts, content/*.ts, action-map.ts, approval.ts,
- * url-rule.ts) or by reading the extension sources.
+ * packages/extension is not a project here. Its sources are ES modules that
+ * scripts/build-extension.mjs bundles with esbuild, one bundle per entry
+ * (background.ts / content.ts / popup/popup.ts); the background and content
+ * entries register browser listeners at load time and cannot be imported by
+ * a test. Extension-side contracts are
+ * checked from tests/contract instead:
+ *   - by importing the modules without top-level side effects
+ *     (background/*.ts, content/*.ts, action-map.ts, approval.ts,
+ *     url-rule.ts) directly, or
+ *   - by reading the sources through tests/contract/helpers/extension-source.ts
+ *     (readExtensionTree() reads an entry together with its directory, so a
+ *     check does not depend on which file holds the code).
  */
 
 /** Resolve the shared package to its sources, so tests do not need a build. */
