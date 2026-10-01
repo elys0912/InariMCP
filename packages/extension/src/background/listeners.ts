@@ -23,6 +23,8 @@ export function registerListeners(): void {
       sender: browser.runtime.MessageSender,
       sendResponse: (response: unknown) => void,
     ): boolean | void => {
+      // Only objects are messages of ours (null or a primitive is ignored).
+      if (typeof message !== "object" || message === null) return;
       const msg = message as { target?: string; type?: string; [key: string]: unknown };
       if (msg.type === APPROVAL_MESSAGE.LIST || msg.type === APPROVAL_MESSAGE.DECIDE) {
         // Only the toolbar popup may see or answer approval requests: never a
@@ -74,7 +76,11 @@ export function registerListeners(): void {
         handleCommand({
           ...msg,
           tabId: sender.tab?.id,
-        } as NativeMessage).then(sendResponse);
+        } as NativeMessage).then(sendResponse, (error: unknown) => {
+          // handleCommand answers its own failures; this keeps the popup
+          // from waiting forever should it ever throw.
+          sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) });
+        });
         return true;
       }
     },

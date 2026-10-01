@@ -17,6 +17,8 @@
 // Imported by the background modules and popup.ts (bundled into both). Contract tests
 // load it as a module; it also publishes its helpers on globalThis for them.
 
+import { clipText } from "./text-clip";
+
 /** runtime.sendMessage types between the popup and the background. */
 export const APPROVAL_MESSAGE = {
   /** popup → background: list pending requests → { success, approvals } */
@@ -51,7 +53,7 @@ export const APPROVAL_TEXT_LIMITS = { MESSAGE: 500, DETAIL: 500, SUMMARY: 800, U
 
 export function clipApprovalText(value: unknown, max: number): string | undefined {
   if (typeof value !== "string" || value === "") return undefined;
-  return value.length > max ? `${value.slice(0, max)}…` : value;
+  return value.length > max ? `${clipText(value, max)}…` : value;
 }
 
 /**
@@ -122,12 +124,16 @@ export function approvalCommandResult(
 
 /**
  * Whether an approved call may run on this tab: the tab's hostname equals
- * the hostname the human approved (MCP Server `approvedHost`).
+ * the hostname the human approved (MCP Server `approvedHost`). Both are
+ * compared lower-case without a trailing dot, as URL rules compare hosts
+ * (url-rule.ts), so `example.com.` is the approved `example.com`.
  */
 export function isApprovedHost(tabUrl: string | undefined, approvedHost: unknown): boolean {
   if (typeof approvedHost !== "string" || approvedHost === "" || !tabUrl) return false;
+  const bare = (host: string): string => host.toLowerCase().replace(/\.$/, "");
   try {
-    return new URL(tabUrl).hostname.toLowerCase() === approvedHost.toLowerCase();
+    const approved = bare(approvedHost);
+    return approved !== "" && bare(new URL(tabUrl).hostname) === approved;
   } catch {
     return false;
   }

@@ -59,6 +59,9 @@ export async function refreshTab(
  * Reload every tab `selects`, except tabs outside the container scope, tabs
  * on a blocked / not allowlisted site and tabs on a protected domain (only
  * their counts are reported, both always, as for screenshot all_tabs).
+ * The reloads are started together; a tab whose reload fails (e.g. closed
+ * meanwhile) is reported with `reloaded: false` and its error, and does not
+ * stop the others.
  */
 export async function reloadMatchingTabs(
   selects: (tab: browser.tabs.Tab) => boolean,
@@ -68,7 +71,7 @@ export async function reloadMatchingTabs(
   lists: UrlLists,
 ): Promise<CommandResult> {
   const tabs = await browser.tabs.query({});
-  const results: { id: number; url: string; reloaded: boolean }[] = [];
+  const targets: browser.tabs.Tab[] = [];
   let excludedProtected = 0;
   let excludedBlocked = 0;
 
@@ -82,13 +85,35 @@ export async function reloadMatchingTabs(
       excludedProtected++;
       continue;
     }
-    await browser.tabs.reload(tab.id, { bypassCache });
-    results.push({ id: tab.id, url: tab.url ?? "", reloaded: true });
+    targets.push(tab);
   }
 
+  const settled = await Promise.allSettled(
+    // async: a reload that throws at once counts as that tab's failure.
+    targets.map(async (tab) => browser.tabs.reload(tab.id, { bypassCache })),
+  );
+  const results: { id: number; url: string; reloaded: boolean; error?: string }[] = targets.map(
+    (tab, i) => {
+      const outcome = settled[i]!;
+      return outcome.status === "fulfilled"
+        ? { id: tab.id, url: tab.url ?? "", reloaded: true }
+        : {
+          id: tab.id,
+          url: tab.url ?? "",
+          reloaded: false,
+          error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+        };
+    },
+  );
+  const reloadedCount = results.filter((r) => r.reloaded).length;
+  const failedCount = results.length - reloadedCount;
+
   return {
-    success: true,
-    reloadedCount: results.length,
+    // Fails only when every reload that was tried failed.
+    success: failedCount === 0 || reloadedCount > 0,
+    ...(failedCount > 0 && reloadedCount === 0 ? { error: `No tab could be reloaded (${failedCount} failed)` } : {}),
+    reloadedCount,
+    ...(failedCount > 0 ? { failedCount } : {}),
     tabs: results,
     bypassCache,
     // Both counts always (0 included); the reasons only when a tab was excluded.

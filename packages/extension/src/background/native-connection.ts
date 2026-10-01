@@ -5,13 +5,22 @@
 // the modules above it.
 
 import { TIMEOUTS } from "./constants";
+import { clipText } from "../text-clip";
 import type { NativeMessage } from "./types";
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
   timeoutId: ReturnType<typeof setTimeout>;
+  /** The port the request was posted on (its answer can only come there). */
+  port: browser.runtime.Port;
 }
+
+/** sendToNativeHost: attempts after the first when not connected or posting fails. */
+const MAX_SEND_RETRIES = 3;
+const SEND_RETRY_DELAY_MS = 1000;
+/** sendToNativeHost: wait for connectNativeHost() before checking the port again. */
+const CONNECT_SETTLE_MS = 500;
 
 const NATIVE_HOST_NAME = "kitsune_mcp";
 let nativePort: browser.runtime.Port | null = null;
@@ -137,7 +146,36 @@ export function connectNativeHost(): void {
   }
 }
 
+/** Reject (and forget) the pending requests posted on `port`, or all of them. */
+function rejectPending(port: browser.runtime.Port | null, reason: string): void {
+  for (const [id, entry] of [...pendingRequests]) {
+    if (port !== null && entry.port !== port) continue;
+    pendingRequests.delete(id);
+    clearTimeout(entry.timeoutId);
+    entry.reject(new Error(reason));
+  }
+}
+
+/** Stop listening to a port that is no longer the current one, and close it. */
+function releasePort(port: browser.runtime.Port): void {
+  port.onMessage.removeListener(handleNativeMessage);
+  port.onDisconnect.removeListener(handleDisconnect);
+  try {
+    port.disconnect();
+  } catch {
+    // Already disconnected
+  }
+}
+
 function handleDisconnect(port: browser.runtime.Port): void {
+  if (port !== nativePort) {
+    // A port already replaced (posting on it failed): its late onDisconnect
+    // must not drop the current port. Only its own requests are failed.
+    port.onMessage.removeListener(handleNativeMessage);
+    port.onDisconnect.removeListener(handleDisconnect);
+    rejectPending(port, "Native host disconnected - reconnecting...");
+    return;
+  }
   console.log("[KitsuneMCP] Disconnected from native host");
   if (port.error) {
     console.error("[KitsuneMCP] Disconnect error:", port.error);
@@ -155,11 +193,7 @@ function handleDisconnect(port: browser.runtime.Port): void {
   hostConfirmedAt = null;
   nativePort = null;
 
-  for (const [, entry] of pendingRequests) {
-    clearTimeout(entry.timeoutId);
-    entry.reject(new Error("Native host disconnected - reconnecting..."));
-  }
-  pendingRequests.clear();
+  rejectPending(null, "Native host disconnected - reconnecting...");
   // Nobody is left to receive an answer: open approval requests are
   // withdrawn, and the badge is refreshed (hooks set by background.ts).
   hooks.onDisconnected();
@@ -176,9 +210,9 @@ export function describeNativeMessage(raw: unknown): string {
   if (typeof raw !== "object" || raw === null) return `(${typeof raw})`;
   const m = raw as Record<string, unknown>;
   const parts: string[] = [];
-  if (typeof m.action === "string") parts.push(`action=${m.action.slice(0, 64)}`);
+  if (typeof m.action === "string") parts.push(`action=${clipText(m.action, 64)}`);
   if (typeof m.requestId === "string" || typeof m.requestId === "number") {
-    parts.push(`requestId=${String(m.requestId).slice(0, 64)}`);
+    parts.push(`requestId=${clipText(String(m.requestId), 64)}`);
   }
   if (typeof m.success === "boolean") parts.push(`success=${m.success}`);
   const keys = Object.keys(m).filter((k) => k !== "action" && k !== "requestId" && k !== "success");
@@ -217,68 +251,88 @@ function handleNativeMessage(raw: unknown): void {
   }
 }
 
+/**
+ * Post a request of the Extension's own (ping, status) and wait for the
+ * answer. The request id is set on a copy, so `message` is left as given.
+ * `timeoutMs`: how long one posted request waits for its answer.
+ */
 export function sendToNativeHost(
   message: NativeMessage,
-  retryCount = 0,
+  options: { timeoutMs?: number } = {},
 ): Promise<unknown> {
-  const MAX_RETRIES = 3;
-  const RETRY_DELAY = 1000;
+  return sendAttempt(message, options.timeoutMs ?? TIMEOUTS.COMMAND, 0);
+}
 
+/**
+ * Posting failed on `port` (it is broken): stop using it, fail its requests
+ * and report the loss as handleDisconnect would, since its own onDisconnect
+ * is no longer listened to. The caller retries on a new port.
+ */
+function dropFailedPort(port: browser.runtime.Port): void {
+  const wasCurrent = port === nativePort;
+  if (wasCurrent) {
+    nativePort = null;
+    isConnected = false;
+    hostConfirmed = false;
+    hostConfirmedAt = null;
+  }
+  releasePort(port);
+  rejectPending(port, "Native host disconnected - reconnecting...");
+  if (wasCurrent) hooks.onDisconnected();
+}
+
+function sendAttempt(message: NativeMessage, timeoutMs: number, retryCount: number): Promise<unknown> {
   return new Promise((resolve, reject) => {
+    const retry = (): void => {
+      setTimeout(() => {
+        sendAttempt(message, timeoutMs, retryCount + 1).then(resolve, reject);
+      }, SEND_RETRY_DELAY_MS);
+    };
+
     if (!isConnected || !nativePort) {
       connectNativeHost();
 
       setTimeout(() => {
         if (!isConnected || !nativePort) {
-          if (retryCount < MAX_RETRIES) {
+          if (retryCount < MAX_SEND_RETRIES) {
             console.log(
-              `[KitsuneMCP] Not connected, retrying (${retryCount + 1}/${MAX_RETRIES})...`,
+              `[KitsuneMCP] Not connected, retrying (${retryCount + 1}/${MAX_SEND_RETRIES})...`,
             );
-            setTimeout(() => {
-              sendToNativeHost(message, retryCount + 1)
-                .then(resolve)
-                .catch(reject);
-            }, RETRY_DELAY);
+            retry();
           } else {
             reject(new Error("Not connected to native host after retries"));
           }
           return;
         }
-        doSend();
-      }, 500);
+        doSend(nativePort);
+      }, CONNECT_SETTLE_MS);
       return;
     }
 
-    doSend();
+    doSend(nativePort);
 
-    function doSend(): void {
+    function doSend(port: browser.runtime.Port): void {
       const requestId = ++requestCounter;
-      message.requestId = requestId;
 
       const timeoutId = setTimeout(() => {
         if (pendingRequests.has(requestId)) {
           pendingRequests.delete(requestId);
           reject(new Error("Request timeout"));
         }
-      }, TIMEOUTS.COMMAND);
+      }, timeoutMs);
 
-      pendingRequests.set(requestId, { resolve, reject, timeoutId });
+      pendingRequests.set(requestId, { resolve, reject, timeoutId, port });
 
       try {
-        nativePort!.postMessage(message);
+        port.postMessage({ ...message, requestId });
       } catch (error) {
         pendingRequests.delete(requestId);
         clearTimeout(timeoutId);
 
-        if (retryCount < MAX_RETRIES) {
+        if (retryCount < MAX_SEND_RETRIES) {
           console.log("[KitsuneMCP] Send failed, reconnecting and retrying...");
-          isConnected = false;
-          nativePort = null;
-          setTimeout(() => {
-            sendToNativeHost(message, retryCount + 1)
-              .then(resolve)
-              .catch(reject);
-          }, RETRY_DELAY);
+          dropFailedPort(port);
+          retry();
         } else {
           reject(error);
         }

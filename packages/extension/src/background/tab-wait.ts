@@ -190,8 +190,9 @@ export async function waitForNavigation(
         `finished within ${timeoutMs}ms`,
     };
   }
-  const now = await browser.tabs.get(targetId);
-  return { success: true, url, title: now.title };
+  // The navigation finished; a tab closed right after it only loses the title.
+  const now = await browser.tabs.get(targetId).catch(() => undefined);
+  return { success: true, url, title: now?.title };
 }
 
 /**
