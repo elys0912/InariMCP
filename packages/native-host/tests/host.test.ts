@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runStdinLoop } from '../src/host.js';
+import { processMessage, runStdinLoop } from '../src/host.js';
 import type { ServerLauncher } from '../src/server-launcher.js';
 import type { ServerConnection } from '../src/ws-client.js';
 import {
@@ -78,5 +78,50 @@ describe('runStdinLoop (Extension → host)', () => {
     const loop = runStdinLoop(launcher, connection, () => true);
     stdin.stream.end();
     await expect(loop).resolves.toBeUndefined();
+  });
+});
+
+describe('processMessage replies (shared/host-messages.ts)', () => {
+  let out: CapturedStdout;
+  beforeEach(() => {
+    out = captureStdout();
+  });
+  afterEach(() => {
+    out.restore();
+  });
+
+  it("a screenshot message without image data gets 'no image data', and nothing is saved", () => {
+    processMessage({ action: 'saveScreenshot', requestId: 'x1', data: {} }, launcher, connection);
+    processMessage({ action: 'screenshotTaken', requestId: 'x2', data: 42 }, launcher, connection);
+    expect(decodeFrames(out)).toEqual([
+      { success: false, error: 'no image data', requestId: 'x1' },
+      { success: false, error: 'no image data', requestId: 'x2' },
+    ]);
+  });
+
+  it('status reports a running daemon with its relays and version', async () => {
+    const up = {
+      host: '127.0.0.1',
+      httpPort: 8765,
+      checkHealth: vi.fn(async () => true),
+      fetchDaemonInfo: vi.fn(async () => ({ relays: 2, version: '9.9.9' })),
+    } as unknown as ServerLauncher;
+    const connected = { url: 'ws://127.0.0.1:8766', isConnected: true, send: vi.fn(() => true) } as unknown as ServerConnection;
+    processMessage({ action: 'status', requestId: 's2' }, up, connected);
+    await vi.waitFor(() => expect(decodeFrames(out)).toHaveLength(1));
+    expect(decodeFrames(out)[0]).toMatchObject({
+      success: true,
+      requestId: 's2',
+      mcp_server: { available: true, relays: 2, version: '9.9.9', ws: { connected: true } },
+      native_host: { pid: process.pid },
+    });
+  });
+
+  it('an action the host does not handle is refused when a reply is expected, ignored otherwise', () => {
+    processMessage({ action: 'click', requestId: 'c1' }, launcher, connection);
+    processMessage({ action: 'click' }, launcher, connection);
+    expect(decodeFrames(out)).toEqual([
+      { success: false, error: "Native Host does not handle action 'click'", requestId: 'c1' },
+    ]);
   });
 });

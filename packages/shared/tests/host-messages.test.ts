@@ -12,5 +12,5 @@ describe('parseHostMessage (4.C5)', () => {
       expect(parseHostMessage({ action })).toMatchObject({ ok: false, action: undefined });
     }
   });
-  // TODO(test): host.ts replies (pong / status / 'no image data') through processMessage
+  // host.ts replies through processMessage: packages/native-host/tests/host.test.ts
 });
