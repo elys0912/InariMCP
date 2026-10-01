@@ -39,8 +39,8 @@ beforeAll(async () => {
     escapeXPathString: dom.escapeXPathString,
     textLocatorXPath: dom.textLocatorXPath,
     generateXPath: dom.generateXPath as ContentFns['generateXPath'],
-    locatorOf: dom.locatorOf as ContentFns['locatorOf'],
-    locatorWithoutText: dom.locatorWithoutText as ContentFns['locatorWithoutText'],
+    locatorOf: dom.locatorOf as unknown as ContentFns['locatorOf'],
+    locatorWithoutText: dom.locatorWithoutText as unknown as ContentFns['locatorWithoutText'],
     typingDelay: input.typingDelay,
   };
 });

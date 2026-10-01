@@ -20,7 +20,8 @@ type ToWireResponse = (requestId: number | string, result: Record<string, unknow
 let toWireResponse: ToWireResponse;
 
 beforeAll(async () => {
-  ({ toWireResponse } = await import('../../packages/extension/src/background/wire.ts'));
+  // The test feeds plain records (not CommandResult): typed by its own alias.
+  toWireResponse = (await import('../../packages/extension/src/background/wire.ts')).toWireResponse as unknown as ToWireResponse;
 });
 
 describe('toWireResponse (extension background/wire.ts)', () => {

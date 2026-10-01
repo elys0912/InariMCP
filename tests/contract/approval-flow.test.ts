@@ -111,7 +111,8 @@ let tmpDir: string;
 beforeAll(async () => {
   await import('../../packages/extension/src/approval.ts');
   ext = (globalThis as { KITSUNE_APPROVAL?: ExtensionApproval }).KITSUNE_APPROVAL!;
-  ({ toWireResponse } = await import('../../packages/extension/src/background/wire.ts'));
+  // The test feeds plain records (not CommandResult): typed by its own alias.
+  toWireResponse = (await import('../../packages/extension/src/background/wire.ts')).toWireResponse as unknown as ToWireResponse;
 
   // The guard singleton reads this config (no audit log, no rate limit).
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-approval-'));

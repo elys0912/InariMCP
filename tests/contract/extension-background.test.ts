@@ -35,6 +35,9 @@ const background = readExtensionTree('background');
 
 const NO_LISTS = { blocked: [], allowed: [], allowlistActive: false };
 
+/** A tab with only the fields a test needs. */
+const fakeTab = (fields: { id: number; url?: string }): browser.tabs.Tab => fields as browser.tabs.Tab;
+
 // ---------------------------------------------------------------------------
 // Fake browser.tabs events for waitForTabLoad
 // ---------------------------------------------------------------------------
@@ -72,7 +75,8 @@ type WaitForTabLoad = (
 let waitForTabLoad: WaitForTabLoad;
 
 beforeAll(async () => {
-  ({ waitForTabLoad } = await import('../../packages/extension/src/background/tab-wait.ts'));
+  // Fake tabs / tab objects: typed by the test's own alias.
+  waitForTabLoad = (await import('../../packages/extension/src/background/tab-wait.ts')).waitForTabLoad as unknown as WaitForTabLoad;
 });
 
 afterEach(() => {
@@ -184,12 +188,12 @@ describe('WP5b URL rules and urlPattern arguments', () => {
       allowed: compileUrlRules([host('ok.test', 'strict')]).rules,
       allowlistActive: true,
     };
-    expect(checkListedTarget({ id: 1, url: 'https://www.blocked.test/x' }, lists))
+    expect(checkListedTarget(fakeTab({ id: 1, url: 'https://www.blocked.test/x' }), lists))
       .toMatchObject({ success: false, safetyDecision: 'blocked_url', url: 'https://www.blocked.test/x' });
-    expect(checkListedTarget({ id: 1, url: 'https://other.test/' }, lists))
+    expect(checkListedTarget(fakeTab({ id: 1, url: 'https://other.test/' }), lists))
       .toMatchObject({ success: false, safetyDecision: 'not_allowlisted' });
-    expect(checkListedTarget({ id: 1, url: 'https://ok.test/' }, lists)).toBeNull();
-    expect(checkListedTarget({ id: 1, url: 'about:blank' }, lists)).toBeNull();
+    expect(checkListedTarget(fakeTab({ id: 1, url: 'https://ok.test/' }), lists)).toBeNull();
+    expect(checkListedTarget(fakeTab({ id: 1, url: 'about:blank' }), lists)).toBeNull();
     expect(checkListedTarget(undefined, lists)).toMatchObject({ success: false });
   });
 
@@ -197,7 +201,8 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     const { urlPatternArg } = await import('../../packages/extension/src/background/tab-wait.ts');
     expect(urlPatternArg('(')).toMatchObject({ ok: false, result: { success: false, error: expect.stringMatching(/^Invalid urlPattern/) } });
     expect(urlPatternArg(undefined)).toEqual({ ok: true, pattern: null });
-    expect(urlPatternArg('a\\.test').pattern!.flags).toBe('');
+    const valid = urlPatternArg('a\\.test');
+    expect(valid.ok && valid.pattern!.flags).toBe('');
     // Every RegExp built from an argument goes through urlPatternArg (or
     // its own try/catch in queryNetworkLogs).
     expect(background.match(/new RegExp\(/g)).toHaveLength(2);
@@ -253,7 +258,7 @@ describe('5.2 log buffers', () => {
 describe('5.7 screenshot all_tabs', () => {
   it('bounds each capture and skips tabs once the budget is used up', async () => {
     vi.useFakeTimers();
-    const tabs = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    const tabs = [{ id: 1 }, { id: 2 }, { id: 3 }].map(fakeTab);
     const run = captureTabsWithin(
       tabs,
       (tab) => (tab.id === 1 ? new Promise<string>(() => {}) : Promise.resolve(`data:${tab.id}`)),

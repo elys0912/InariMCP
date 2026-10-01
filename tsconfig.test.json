@@ -28,8 +28,12 @@
       "@kitsune-mcp/shared/action-names": ["./packages/shared/src/action-names.ts"]
     }
   },
-  // Directories only (new test files are picked up without editing this).
+  // Directories only (new test files are picked up without editing this),
+  // plus one declaration file of the Extension.
   "include": [
+    // The Extension's browser.* / exportFunction declarations, for the
+    // background/*.ts and content/*.ts modules tests/contract imports.
+    "packages/extension/src/types/browser.d.ts",
     "packages/*/tests",
     "tests/contract",
     "tests/e2e",
