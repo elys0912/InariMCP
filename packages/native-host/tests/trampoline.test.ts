@@ -7,16 +7,22 @@ import { TRAMPOLINE_JS, sweepRunDir } from '../src/outside-job.js';
 
 let dir: string;
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-tramp-')); });
-afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+// A file just written may still be open (AV scan) for a moment on Windows.
+afterEach(() => { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
 
-/** Run the real trampoline script against a spec; the "daemon" writes its env and cwd to a file. */
-function runTrampoline(spec: Record<string, unknown>): { specPath: string; out: string; log: string } {
+/**
+ * Run the real trampoline script against a spec; the "daemon" writes its PID,
+ * then its env and cwd, to files.
+ */
+function runTrampoline(spec: Record<string, unknown>): { specPath: string; out: string; log: string; pidFile: string } {
   const tramp = path.join(dir, 'trampoline.js');
   const specPath = path.join(dir, 'spec.json');
   const out = path.join(dir, 'out.txt');
   const log = path.join(dir, 'daemon.log');
+  const pidFile = path.join(dir, 'daemon.pid');
   fs.writeFileSync(tramp, TRAMPOLINE_JS);
   const daemonScript =
+    `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));` +
     `require('fs').writeFileSync(${JSON.stringify(out)}, process.env.FOX_TEST + '|' + process.cwd());` +
     "process.stderr.write('daemon stderr\\n');";
   fs.writeFileSync(specPath, JSON.stringify({
@@ -28,23 +34,53 @@ function runTrampoline(spec: Record<string, unknown>): { specPath: string; out: 
     ...spec,
   }));
   execFileSync(process.execPath, [tramp, specPath], { stdio: 'ignore' });
-  return { specPath, out, log };
+  return { specPath, out, log, pidFile };
 }
 
-async function waitFor(file: string): Promise<void> {
-  for (let i = 0; i < 100 && !fs.existsSync(file); i++) await new Promise((r) => setTimeout(r, 50));
+/**
+ * Wait until the detached daemon has exited. Its cwd is `dir`, and Windows
+ * refuses to delete the cwd of a running process (EPERM in afterEach).
+ */
+async function waitForExit(pid: number, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return; // ESRCH: gone
+    }
+    if (Date.now() > deadline) throw new Error(`daemon ${pid} still running`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+/**
+ * Poll until `file` can be read and `done` accepts its content; throw at the
+ * deadline. Existence alone is not enough: the daemon may be mid-write.
+ */
+async function readWhen(file: string, done: (text: string) => boolean, timeoutMs = 10_000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  let last = '(missing)';
+  for (;;) {
+    try {
+      last = fs.readFileSync(file, 'utf-8');
+      if (done(last)) return last;
+    } catch { /* not there yet */ }
+    if (Date.now() > deadline) throw new Error(`${path.basename(file)} not as expected in time: ${JSON.stringify(last)}`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
 }
 
 describe('trampoline script', () => {
   it('starts the daemon with the spec env, cwd and log, then deletes the spec', async () => {
-    const { specPath, out, log } = runTrampoline({});
+    const { specPath, out, log, pidFile } = runTrampoline({});
     expect(fs.existsSync(specPath)).toBe(false);
-    await waitFor(out);
-    expect(fs.readFileSync(out, 'utf-8')).toBe(`from-spec|${fs.realpathSync(dir)}`);
-    for (let i = 0; i < 100 && !fs.existsSync(log); i++) await new Promise((r) => setTimeout(r, 50));
-    await new Promise((r) => setTimeout(r, 200));
-    expect(fs.readFileSync(log, 'utf-8')).toContain('daemon stderr');
-  });
+    const expected = `from-spec|${fs.realpathSync(dir)}`;
+    // the daemon writes out.txt in one call: wait for the complete line
+    expect(await readWhen(out, (text) => text.length >= expected.length)).toBe(expected);
+    expect(await readWhen(log, (text) => text.includes('daemon stderr'))).toContain('daemon stderr');
+    await waitForExit(Number(await readWhen(pidFile, (text) => /^\d+$/.test(text))));
+  }, 30_000);
 
   it('keeps the spec when the daemon cannot be spawned, so the caller can fall back', () => {
     const { specPath } = runTrampoline({ exe: path.join(dir, 'no-such-executable') });
