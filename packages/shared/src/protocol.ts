@@ -30,6 +30,10 @@ export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
  *          hostname without a trailing dot: `hosts` 'tree' = the host and
  *          every subdomain, 'sub' = subdomains only, 'exact' = the host only.
  *          `scheme` (lower-case, no ':') restricts the scheme when not null.
+ *          An IPv6 host is written in brackets, as URL.hostname has it.
+ *          `port` restricts the URL's port when not null (absent = null,
+ *          older servers); a URL without one has its scheme's default
+ *          (http / ws 80, https / wss 443, ftp 21).
  *          `path` (null = any) is a prefix of the URL path:
  *            'strict' (allowed list): as written, case-sensitive, at a
  *                     segment boundary unless it ends with '/';
@@ -53,6 +57,7 @@ export const WireUrlRuleSchema = z.discriminatedUnion('kind', [
     scheme: z.string().nullable(),
     hosts: z.enum(['tree', 'sub', 'exact']),
     host: z.string(),
+    port: z.number().int().min(1).max(65535).nullable().optional(),
     path: z.string().nullable(),
     pathMatch: z.enum(['strict', 'loose']),
   }),

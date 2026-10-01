@@ -220,4 +220,32 @@ describe('DEFAULT_CONFIG protectedUrlPatterns', () => {
 });
 
 // TODO(test): wireSource vs test() for percent-encoded paths (/%61dmin): test() decodes, the Extension regex does not.
-// TODO(test): IPv6 hosts and ports in patterns (not supported; legacy fallback / fatal paths).
+describe('IPv6 and port patterns (L6)', () => {
+  it('[::1] and host:port match by address and effective port, not as a regex', () => {
+    const { patterns, issues } = compileUrlPatterns(['[::1]', 'example.test:8443', 'example.test:443'], 'blocked');
+    expect(issues).toEqual([]);
+    const [v6, alt, std] = patterns;
+    expect(v6!.test('http://[::1]:3000/')).toBe(true);
+    expect(v6!.test('https://example.com:8443/')).toBe(false); // the old regex reading matched any ':'
+    expect(alt!.test('https://example.test:8443/x')).toBe(true);
+    expect(alt!.test('https://example.test/x')).toBe(false);
+    expect(std!.test('https://example.test/')).toBe(true); // default port
+    expect(std!.test('http://example.test/')).toBe(false);
+  });
+
+  it('an unusable IPv6 address or port is fatal in every list, not a legacy regex', () => {
+    for (const list of ['blocked', 'allowed', 'protected'] as const) {
+      for (const p of ['[::g]', 'example.test:0', 'example.test:70000', 'example.test:abc', '*.[::1]']) {
+        const { patterns, issues } = compileUrlPatterns([p], list);
+        expect(patterns, `${list} ${p}`).toEqual([]);
+        expect(issues[0]?.fatal, `${list} ${p}`).toBe(true);
+      }
+    }
+  });
+  it('a legacy regex after host: stays a legacy regex in blocked / protected', () => {
+    const { patterns, issues } = compileUrlPatterns(['localhost:\\d+'], 'blocked');
+    expect(patterns[0]?.kind).toBe('legacy');
+    expect(issues[0]?.fatal).toBe(false);
+  });
+  // TODO(test): wireSource for port / IPv6 patterns vs test(); scheme + port + path together; legacy regex with a character class still works
+});
