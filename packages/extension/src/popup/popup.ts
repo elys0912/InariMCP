@@ -56,7 +56,9 @@ interface SetupGuide {
 const LOG_DIR = '~/.kitsune-mcp/logs';
 
 function installerCommand(os: string): string {
-  return os === 'win' ? 'npm run install:windows' : 'npm run install:unix';
+  return os === 'win'
+    ? 'npm ci; npm run build; npm run setup'
+    : 'npm ci && npm run build && npm run setup';
 }
 
 function guideFor(state: SetupState, os: string): SetupGuide | null {
@@ -81,8 +83,8 @@ function guideFor(state: SetupState, os: string): SetupGuide | null {
       return {
         title: t('setupHostOutdatedTitle'),
         text: t('setupHostOutdatedText'),
-        // Re-running the installer also runs npm install / build and
-        // rewrites the Native Host. Windows PowerShell 5.1 has no &&.
+        // Pull, rebuild, and let the installer (scripts/install.mjs, which
+        // does not build) rewrite the Native Host. Windows PowerShell 5.1 has no &&.
         command: `git pull${os === 'win' ? ';' : ' &&'} ${installerCommand(os)}`,
         note: t('setupHostOutdatedNote'),
         notice: true,

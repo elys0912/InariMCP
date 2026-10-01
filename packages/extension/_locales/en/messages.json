@@ -28,9 +28,9 @@
 
   "setupHostMissingTitle": { "message": "Setup needed" },
   "setupHostMissingText": {
-    "message": "Firefox cannot find the KitsuneMCP native host. Run the installer in your KitsuneMCP folder (a clone of the repository):"
+    "message": "Firefox cannot find the KitsuneMCP native host. Build KitsuneMCP and run its installer in your KitsuneMCP folder (a clone of the repository):"
   },
-  "setupHostMissingNote": { "message": "Then press Recheck." },
+  "setupHostMissingNote": { "message": "Then press Recheck. Flatpak Firefox: see the installation guide (re-running the installer alone does not help there)." },
   "setupHostErrorTitle": { "message": "Native host failed" },
   "setupHostErrorText": {
     "message": "The native host is registered but did not work ($1). Re-running the installer fixes the usual cause, a Node.js that was upgraded or moved:",
@@ -38,7 +38,7 @@
   },
   "setupHostOutdatedTitle": { "message": "Native host is out of date" },
   "setupHostOutdatedText": {
-    "message": "Browser tools still work, but your KitsuneMCP folder is older than this extension. Pull the latest version there and re-run the installer (it also rebuilds and updates the native host):"
+    "message": "Browser tools still work, but your KitsuneMCP folder is older than this extension. Pull the latest version there, rebuild it and re-run the installer (it updates the native host):"
   },
   "setupHostOutdatedNote": { "message": "Then restart Firefox." },
   "setupDetails": {
