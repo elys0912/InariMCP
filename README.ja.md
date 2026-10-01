@@ -46,7 +46,7 @@ KitsuneMCPは意図的に用途を絞っている。以下に当てはまる場�
 
 - Node.js >= 18.0.0（KitsuneMCPの実行に必要。開発時の要件は[開発](#開発)を参照）
 - Firefox 142以降（拡張機能の`strict_min_version`）。Developer EditionとNightlyも通常版と同じNative Messagingの登録を読む
-- （ヘッドレスモードのみ）PlaywrightのFirefox: `npx playwright install firefox`
+- （ヘッドレスモードのみ）PlaywrightとそのFirefox。`playwright`は`packages/mcp-server`の任意の依存（optionalDependencies）で、任意の依存を除かない限り（`--omit=optional`）`npm ci`で入る。Firefoxは別にダウンロードする: `npx playwright install firefox`
 
 PowerShellは不要。インストーラとアンインストーラはNode.jsのスクリプト。
 
@@ -91,7 +91,7 @@ npm run setup
 署名済みでワンクリックインストールできる`.xpi`はまだ配布していない（AMO署名 + GitHub Releasesでの配布は準備中）。今のところは一時的なアドオンとして読み込む。
 
 1. Firefoxで`about:debugging#/runtime/this-firefox`を開く
-2. 「一時的なアドオンを読み込む」→ `packages/extension/manifest.json`を選択
+2. 「一時的なアドオンを読み込む」→ `packages/extension/manifest.json`を選択（`packages/extension/dist/`のバンドルを読み込むので、先に`npm run build`を実行しておく）
 3. Firefoxを再起動すると消えるので、その都度読み込み直す必要がある
 
 ツールバーにKitsuneMCPのボタンが出る。ポップアップに接続状態が表示される（[再起動と接続確認](#再起動と接続確認)を参照）。
@@ -159,7 +159,7 @@ curl --noproxy '*' -sS http://127.0.0.1:8765/health    # Windows PowerShell: cur
 | `daemon.log` | 共有daemonのstderr |
 | `audit.jsonl` | 安全ガードの監査ログ（`safety.json`の`audit_log`） |
 
-`native-host.log`と`daemon.log`の各行は`<ISO 8601の時刻> [<pid>] `で始まる。各ファイルは5 MBを超えると`<名前>.old`に退避される（1世代だけ残る）。
+`native-host.log`と`daemon.log`の各行は`<ISO 8601の時刻> [<pid>] `で始まる。各ファイルは5 MBを超えると`<名前>.old`に退避される（1世代だけ残る）。`native-host.log`と`audit.jsonl`は名前を変える。動いているdaemonが開いたままの`daemon.log`は、`daemon.log.old`に複製してから中身を空にする（copy-truncate。その間に書かれた行は失われる）。
 
 ### コマンドライン
 
@@ -189,7 +189,7 @@ node packages/mcp-server/dist/index.js [オプション]
 FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
 ```
 
-（または`claude mcp add --env FOX_HEADLESS=1 …`）。有効になるのは`1`・`true`・`yes`（大文字小文字は問わない）だけで、それ以外の値では無効のまま。「無効」として知られた値（`0`・`false`・`no`・`off`）以外、たとえば`on`なら、daemonがログに警告を出す。`FOX_HEADLESS_STARTUP_TIMEOUT`はFirefox起動のタイムアウト（ミリ秒、既定`45000`）。これらの設定が効くのは、このセッションがdaemonを起動した場合だけ（[下記](#先にdaemonを起動した側の設定が勝つ)を参照）。
+（または`claude mcp add --env FOX_HEADLESS=1 …`）。有効になるのは`1`・`true`・`yes`（大文字小文字は問わない）だけで、それ以外の値では無効のまま。「無効」として知られた値（`0`・`false`・`no`・`off`）以外、たとえば`on`なら、daemonがログに警告を出す。`FOX_HEADLESS_STARTUP_TIMEOUT`はFirefox起動のタイムアウト（ミリ秒、既定`45000`）。`playwright`が入っていないと、daemonは起動時に`daemon.log`へ`FOX_HEADLESS needs the optional dependency playwright, which is not installed (…)`と出して終了する。メッセージのとおり`playwright`（`--omit=optional`を付けずに`npm ci`、または`packages/mcp-server`で`npm install playwright`）とそのFirefox（`npx playwright install firefox`）を入れる。これらの設定が効くのは、このセッションがdaemonを起動した場合だけ（[下記](#先にdaemonを起動した側の設定が勝つ)を参照）。
 
 これにより実際のセッション/cookie/ログイン状態は失われる点に注意 — 使い捨てプロファイルになる、Playwright MCPと同じトレードオフ。使えないツール・引数が多く（無視した引数は結果の`warnings`に並ぶ）、ブラウザのポップアップで尋ねる相手もいないので、保護対象サイトでの操作はMCP elicitationでしか承認できない。ヘッドレスモードにはFirefoxのコンテナがないので、`safety.json`で`container_scope.enabled`にしているとブラウザへのコマンドはすべて拒否される。ヘッドレスのdaemonにはコンテナスコープを切った専用の`safety.json`を`FOX_SAFETY_CONFIG`で渡す。実際にログイン済みのFirefoxを使いたい場合は拡張機能経由を使うこと。
 
@@ -203,6 +203,10 @@ npm run setup
 ```
 
 その後、`about:debugging`で拡張機能を再読み込みし（またはFirefoxを再起動して読み込み直し）、Claude Codeを再起動する。古い版のdaemonは止めるまで動き続ける。新しい中継やNative Hostが、動いているdaemonについて「speaks protocol …」「is from another version」と報告したら、そのdaemonのプロセスを止める（Native Hostが起動したものならFirefoxも再起動する）。次のツール呼び出しで対応する版のdaemonが起動する。
+
+#### 更新時の注意
+
+- **`re:`のURLパターンはURL全体に一致するようになった**。すべてのリストで`^(?:<正規表現>)$`として扱う（[`safety.json`](#safetyjson)を参照）。前方一致のつもりで書いた既存の`re:`パターン、たとえば`re:^https://example\.com/`は、それより長いURLに一致しなくなる。`allowed_url_patterns`ではそのURLが拒否されるようになり、`blocked_url_patterns` / `protected_url_patterns`ではブロック・保護の対象から外れる（許可される側に変わる）。このための警告は出ない。前方一致のままにするには末尾に`.*`を付ける（`re:^https://example\.com/.*`）。たとえば開発中の版が`protected_url_patterns`に書いた既定値`re:^https?://(?:[^/?#@]+\.)?mychart\.`は、現在は`re:https?://(?:[^/?#@]+\.)?mychart\..*`になっている。`re:`の付かないパターンは影響を受けない。daemonを再起動したら`fox_safety_status`で結果を確認すること。
 
 ### アンインストール
 
@@ -262,10 +266,10 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 | パッケージ | 役割 |
 |---|---|
-| `packages/shared` | 他の3パッケージで使われる共有のzodスキーマ、アクション名、定数。 |
+| `packages/shared` | 他の3パッケージで使われる共有のzodスキーマ、アクション名、定数。サブパス`@kitsune-mcp/shared/node`には、Node.jsのプロセス用の共通処理（パス、接続先、APIトークン、`/health`、ログ、daemonの起動、版、HMAC認証）がある。拡張機能はブラウザで使える部分だけをzod抜きでバンドルする（[開発](#開発)を参照）。 |
 | `packages/mcp-server` | 1つの実行ファイルで2つの役割を持つ。既定では薄いstdio中継で、Claude Codeがセッションごとに1つ起動し、`fox_*`ツールの一覧を返して、呼び出しを共有サーバーに転送する。`--daemon`を付けるとその共有サーバーになる。HTTP/WebSocketのポートを持つ唯一のプロセスで、安全ガードを実行し、Native HostへのWebSocket（優先）かヘッドレスPlaywrightバックエンド（上級者向け）にコマンドをディスパッチする。 |
 | `packages/native-host` | 共有サーバーとFirefox拡張機能の間のネイティブメッセージングブリッジ。共有サーバーが動いていなければ起動し、プロセスがいなくなったときだけ起動し直す（応答が遅いだけのサーバーは止めない）。 |
-| `packages/extension` | 実際にクリック・入力・DOM読み取りを行い、承認の要求をツールバーのポップアップに出すFirefox WebExtension（Manifest V2）。 |
+| `packages/extension` | 実際にクリック・入力・DOM読み取りを行い、承認の要求をツールバーのポップアップに出すFirefox WebExtension（Manifest V2）。esbuildで3つのバンドル（`dist/background.js`、`dist/content.js`、`dist/popup/popup.js`）にビルドする。 |
 
 コマンドフロー: Claude Code → stdio中継 → HTTP → 共有サーバー → 安全ガード → WebSocket → Native Host → Native Messaging → 拡張機能バックグラウンドスクリプト → コンテンツスクリプト → ページDOM、結果は同じ経路を逆にたどって返ってくる。
 
@@ -409,9 +413,16 @@ daemon はセッションごとに新しく起動されるわけではない。C
 
 ```bash
 npm ci
-npm run build
-npm test
+npm run build             # 全パッケージ。拡張機能はscripts/build-extension.mjsでバンドルする
+npm run typecheck         # 拡張機能の型検査（tsc --noEmit）
+npm test                  # Vitest（e2eを除く）
+npm run lint:ext          # packages/extensionのweb-ext lint
+npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（PlaywrightのFirefoxが必要）
 ```
+
+ビルド、パッケージ、確認の詳細: [`docs/development.ja.md`](docs/development.ja.md)（[English](docs/development.md)）。
+
+`npm audit`が報告する11件は、すべて`web-ext`（devDependency）の依存ツリーにあり、容認している。監査は`npm audit --omit=dev`（0件）で行う。配布物（mcp-server、native-host、拡張機能の`.xpi`）にweb-extは含まれない。
 
 `npm test`はVitestのテスト（パッケージごとの単体テスト、`tests/contract/`の契約テスト、`tests/scripts/`のインストーラのテスト）を実行する。テストファイルごとに一時的なホームディレクトリを使うので、テストがあなたの`~/.kitsune-mcp/`に触れることはない。開発にはNode.js 22.12以上（または24）が必要（Vitestの要件）。KitsuneMCPの実行自体はNode.js 18で足りる。
 

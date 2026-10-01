@@ -46,7 +46,7 @@ KitsuneMCP is deliberately narrow. If your use case is one of these, you'll be h
 
 - Node.js >= 18.0.0 (to run KitsuneMCP; development needs more, see [Development](#development))
 - Firefox 142 or later (`strict_min_version` of the extension). Developer Edition and Nightly read the same Native Messaging registration as the release build
-- (Headless mode only) Playwright's Firefox: `npx playwright install firefox`
+- (Headless mode only) Playwright and its Firefox. `playwright` is an optional dependency of `packages/mcp-server`: `npm ci` installs it unless optional dependencies are omitted (`--omit=optional`). Its Firefox is a separate download: `npx playwright install firefox`
 
 PowerShell is not needed: the installer and uninstaller are Node.js scripts.
 
@@ -91,7 +91,7 @@ Questions are asked only when stdin is a terminal; otherwise the default answer 
 A signed, one-click-install `.xpi` isn't published yet (AMO signing + GitHub Releases distribution is still in progress). For now, load it as a temporary add-on:
 
 1. Open `about:debugging#/runtime/this-firefox` in Firefox.
-2. "Load Temporary Add-on..." → select `packages/extension/manifest.json`.
+2. "Load Temporary Add-on..." → select `packages/extension/manifest.json` (it loads the bundles in `packages/extension/dist/`, so run `npm run build` first).
 3. It's removed when Firefox restarts, so you'll need to load it again after each restart.
 
 The KitsuneMCP button appears in the toolbar. Its popup shows the connection state (see [Check the connection](#restart-and-check-the-connection)).
@@ -159,7 +159,7 @@ All under `~/.kitsune-mcp/logs/`:
 | `daemon.log` | the shared daemon's stderr |
 | `audit.jsonl` | the safety guard's audit log (`audit_log` in `safety.json`) |
 
-Each line of `native-host.log` and `daemon.log` starts with `<ISO 8601 time> [<pid>] `. Each file is moved to `<name>.old` once it grows past 5 MB (one generation kept).
+Each line of `native-host.log` and `daemon.log` starts with `<ISO 8601 time> [<pid>] `. Each file is rotated to `<name>.old` once it grows past 5 MB (one generation kept): `native-host.log` and `audit.jsonl` are renamed; `daemon.log`, which a running daemon keeps open, is copied to `daemon.log.old` and then truncated (copy-truncate; lines written in between are lost).
 
 ### Command line
 
@@ -189,7 +189,7 @@ If you don't want to install the extension, run the daemon with `FOX_HEADLESS=1`
 FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
 ```
 
-(or `claude mcp add --env FOX_HEADLESS=1 …`). `1`, `true` and `yes` (any case) turn it on; any other value leaves it off, and a value that is not a known "off" (`0`, `false`, `no`, `off`), such as `on`, makes the daemon log a warning. `FOX_HEADLESS_STARTUP_TIMEOUT` is the Firefox launch timeout in milliseconds (default `45000`). The settings only apply when this session is the one that starts the daemon (see [below](#whichever-side-starts-the-daemon-first-its-config-wins)).
+(or `claude mcp add --env FOX_HEADLESS=1 …`). `1`, `true` and `yes` (any case) turn it on; any other value leaves it off, and a value that is not a known "off" (`0`, `false`, `no`, `off`), such as `on`, makes the daemon log a warning. `FOX_HEADLESS_STARTUP_TIMEOUT` is the Firefox launch timeout in milliseconds (default `45000`). Without `playwright` installed, the daemon exits at start with `FOX_HEADLESS needs the optional dependency playwright, which is not installed (…)` in `daemon.log`; install it (`npm ci` without `--omit=optional`, or `npm install playwright` in `packages/mcp-server`, as the message says) and its Firefox (`npx playwright install firefox`). The settings only apply when this session is the one that starts the daemon (see [below](#whichever-side-starts-the-daemon-first-its-config-wins)).
 
 Note this loses your real sessions/cookies/logged-in state — it's a disposable profile, same tradeoff as Playwright MCP. Many tools and parameters are not supported there (ignored parameters are listed in the result's `warnings`), and nobody can be asked in a browser popup, so protected-site actions can only be approved through MCP elicitation. Headless mode has no Firefox containers: with `container_scope.enabled` in `safety.json`, every browser command is refused; give the headless daemon its own `safety.json` with container scope off (`FOX_SAFETY_CONFIG`). Use the extension path if you want your actual logged-in Firefox.
 
@@ -203,6 +203,10 @@ npm run setup
 ```
 
 Then reload the extension in `about:debugging` (or restart Firefox and load it again) and restart Claude Code. A daemon from the old version keeps running until it is stopped: when the new relay or Native Host reports that the running daemon "speaks protocol …" / "is from another version", stop that daemon process (and restart Firefox if the Native Host started it); a matching one starts on the next tool call.
+
+#### Notes on updating
+
+- **`re:` URL patterns now match the whole URL**, in every list (they are anchored as `^(?:<regex>)$`; see [`safety.json`](#safetyjson)). An existing `re:` pattern written as a prefix, such as `re:^https://example\.com/`, no longer matches longer URLs: in `allowed_url_patterns` those URLs are now refused, and in `blocked_url_patterns` / `protected_url_patterns` they are no longer blocked or protected. No warning is logged for this. Append `.*` to keep the prefix meaning (`re:^https://example\.com/.*`). For example, the default `re:^https?://(?:[^/?#@]+\.)?mychart\.` that earlier development builds wrote to `protected_url_patterns` is now `re:https?://(?:[^/?#@]+\.)?mychart\..*`. Patterns without `re:` are not affected. Check the result with `fox_safety_status` after a daemon restart.
 
 ### Uninstall
 
@@ -262,10 +266,10 @@ A monorepo of four TypeScript packages:
 
 | Package | Role |
 |---|---|
-| `packages/shared` | Shared zod schemas, action names, and constants used by the other three packages. |
+| `packages/shared` | Shared zod schemas, action names, and constants used by the other three packages. The subpath `@kitsune-mcp/shared/node` holds the helpers of the Node.js processes (paths, endpoint, API token, `/health`, logs, daemon start, version, HMAC authentication); the Extension bundles only the browser-safe part, without zod (see [Development](#development)). |
 | `packages/mcp-server` | Two roles in one executable. By default it is a thin stdio relay: the process Claude Code starts, one per session, which lists the `fox_*` tools and forwards each call to the shared daemon. With `--daemon` it is that shared daemon: the single process that owns the HTTP/WebSocket ports, runs the safety guard, and dispatches commands to the Native Host over WebSocket (preferred) or to the headless Playwright backend (advanced). |
 | `packages/native-host` | A Native Messaging bridge process between the daemon and the Firefox extension. Starts the daemon if none is running and restarts it only if its process is gone (a slow daemon is never killed). |
-| `packages/extension` | The Firefox WebExtension (Manifest V2) that actually clicks, types, and reads the DOM, and shows approval requests in its toolbar popup. |
+| `packages/extension` | The Firefox WebExtension (Manifest V2) that actually clicks, types, and reads the DOM, and shows approval requests in its toolbar popup. Built with esbuild into three bundles (`dist/background.js`, `dist/content.js`, `dist/popup/popup.js`). |
 
 Command flow: Claude Code → stdio relay → HTTP → shared daemon → safety guard → WebSocket → Native Host → Native Messaging → extension background script → content script → page DOM, and the result flows back the same way.
 
@@ -409,9 +413,16 @@ Current limitations are listed in [`docs/known-issues.md`](docs/known-issues.md)
 
 ```bash
 npm ci
-npm run build
-npm test
+npm run build             # every package; the Extension is bundled by scripts/build-extension.mjs
+npm run typecheck         # type check of the Extension (tsc --noEmit)
+npm test                  # Vitest, without e2e
+npm run lint:ext          # web-ext lint of packages/extension
+npm run e2e:extension     # the Extension loads into Firefox (needs Playwright's Firefox)
 ```
+
+Build, packages and checks in detail: [`docs/development.md`](docs/development.md) ([日本語](docs/development.ja.md)).
+
+`npm audit` reports 11 vulnerabilities, all in the dependency tree of `web-ext` (a devDependency); they are accepted. Audit with `npm audit --omit=dev` (0 vulnerabilities): the distributed parts (mcp-server, native-host, the extension `.xpi`) do not contain web-ext.
 
 `npm test` runs the Vitest suites (unit tests per package, contract tests in `tests/contract/`, installer tests in `tests/scripts/`). Each test file gets a temporary home directory, so the tests never touch your `~/.kitsune-mcp/`. Development needs Node.js 22.12 or later (or 24), a requirement of Vitest, although running KitsuneMCP only needs Node.js 18.
 
