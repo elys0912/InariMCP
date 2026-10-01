@@ -5,18 +5,14 @@
  * as a WireUrlRule (shared/src/protocol.ts); the Extension has its own copy
  * of the rules (url-pattern.ts is not browser code), cut out of the source
  * here (helpers/extension-source.ts).
- *
- * TODO(test): IDN hosts (punycode on both sides); IPv6 zone / IPv4-mapped
- *   addresses; a rule without `port` (older server) on the Extension side.
- * TODO(test): content.ts onProtectedPage with a fake window.location (the
- *   rules it receives from the background are the compiled wire rules).
  */
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { WireUrlRuleSchema } from '@kitsune-mcp/shared';
 import { compileUrlPatterns, type PatternListName } from '../../packages/mcp-server/src/safety/url-pattern.js';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG } from '../../packages/mcp-server/src/safety/config.js';
+import { compileUrlRules, findUrlRule } from '../../packages/extension/src/url-rule.ts';
 import { loadExtensionFunctions } from './helpers/extension-source.js';
 
 type Compiled = { rule: { source: string }; regex: RegExp | null };
@@ -63,6 +59,9 @@ const PATTERNS = [
   'http://[0:0::1]:3000/app',
   'example.test:8443',
   'secure.test:443',
+  '例え.テスト',
+  '*.例え.テスト',
+  '[::ffff:192.168.0.1]',
 ];
 
 const URLS = [
@@ -82,6 +81,9 @@ const URLS = [
   'moz-extension://abc/page.html', 'file:///C:/a/example.test', 'not a url', '',
   'http://[::1]/', 'http://[::1]:3000/app/x', 'http://[::1]:3001/app', 'http://[::2]:3000/app',
   'https://example.test:443/', 'http://secure.test:443/', 'https://secure.test:8443/',
+  'https://例え.テスト/', 'https://xn--r8jz45g.xn--zckzah/x', 'https://a.例え.テスト/',
+  'https://xn--r8jz45g.xn--zckzah.attacker.test/',
+  'http://[::ffff:192.168.0.1]/', 'http://[::ffff:c0a8:1]/a', 'http://[fe80::1%25eth0]/',
 ];
 
 const LISTS: PatternListName[] = ['blocked', 'allowed', 'protected'];
@@ -142,6 +144,143 @@ describe('blocked / allowed decision: Extension = guard', () => {
     const { rules, invalid } = ext.compileUrlRules([{ kind: 'host', source: 'x' }]);
     expect(invalid).toBe(1);
     expect(ext.urlListViolation('https://any.test/', [], rules, true)?.decision).toBe('not_allowlisted');
+  });
+});
+
+describe('hosts the URL parser rewrites, and a rule without `port`', () => {
+  /** The single pattern of `source`, which must compile without a fatal issue. */
+  const only = (source: string, list: PatternListName = 'protected') => {
+    const { patterns, issues } = compileUrlPatterns([source], list);
+    expect(issues.filter((i) => i.fatal), source).toEqual([]);
+    return patterns[0]!;
+  };
+  const compiled = (wire: unknown) => ext.compileUrlRule(ext.parseUrlRule(wire))!;
+
+  it('an IDN host is punycode on both sides', () => {
+    const p = only('例え.テスト');
+    expect(p.wire).toMatchObject({ kind: 'host', host: 'xn--r8jz45g.xn--zckzah' });
+    const c = compiled(p.wire);
+    for (const url of ['https://例え.テスト/', 'https://xn--r8jz45g.xn--zckzah/x', 'https://a.例え.テスト/']) {
+      expect(ext.urlRuleMatches(c, url), url).toBe(true);
+    }
+    // The punycode label is a label, not a prefix of the host.
+    expect(ext.urlRuleMatches(c, 'https://xn--r8jz45g.xn--zckzah.attacker.test/')).toBe(false);
+  });
+
+  it('`*.` before an IDN host is subdomains only', () => {
+    const c = compiled(only('*.例え.テスト').wire);
+    expect(ext.urlRuleMatches(c, 'https://a.例え.テスト/')).toBe(true);
+    expect(ext.urlRuleMatches(c, 'https://例え.テスト/')).toBe(false);
+  });
+
+  it('an IPv4-mapped IPv6 address compares in the compressed form the parser gives', () => {
+    const p = only('[::ffff:192.168.0.1]');
+    expect(p.wire).toMatchObject({ kind: 'host', host: '[::ffff:c0a8:1]' });
+    const c = compiled(p.wire);
+    expect(ext.urlRuleMatches(c, 'http://[::ffff:192.168.0.1]/')).toBe(true);
+    expect(ext.urlRuleMatches(c, 'http://[::ffff:c0a8:1]/a')).toBe(true);
+    expect(ext.urlRuleMatches(c, 'http://[::1]/')).toBe(false);
+  });
+
+  it('an IPv6 zone id is refused as a pattern and matches nothing as a URL', () => {
+    const { patterns, issues } = compileUrlPatterns(['[fe80::1%25eth0]'], 'protected');
+    expect(patterns).toEqual([]);
+    expect(issues.map((i) => i.fatal)).toEqual([true]);
+    // The URL parser does not accept one either, so no host rule can match
+    // it; a protected regex rule still tests the raw URL (matchRaw), which
+    // errs on the safe side.
+    const zoned = 'http://[fe80::1%25eth0]/';
+    for (const source of ['[::1]', 'example.test']) {
+      expect(ext.urlRuleMatches(compiled(only(source).wire), zoned), source).toBe(false);
+    }
+    expect(ext.urlRuleMatches(compiled(only('re:.*').wire), zoned)).toBe(true);
+  });
+
+  it('a rule without `port` (an older server) is read as any port', () => {
+    const wire = { ...only('example.test').wire } as Record<string, unknown>;
+    expect(wire.port).toBeNull();
+    delete wire.port;
+    const c = compiled(wire);
+    expect(c.rule).toMatchObject({ kind: 'host', port: null });
+    for (const url of ['https://example.test/', 'https://example.test:8443/', 'http://example.test:81/']) {
+      expect(ext.urlRuleMatches(c, url), url).toBe(true);
+    }
+  });
+
+  it('a port outside 1-65535 makes the rule unusable (it is not read as "any port")', () => {
+    const wire = { ...only('example.test:8443').wire, port: 0 };
+    expect(ext.parseUrlRule(wire)).toBeNull();
+  });
+});
+
+describe('content script: onProtectedPage (content/log-store.ts)', () => {
+  interface LogStoreFns {
+    onProtectedPage(): boolean;
+    shouldRecord(): boolean;
+  }
+
+  // The functions are cut out of the module, so their free names
+  // (findUrlRule, window, and the module state they read) come from
+  // globalThis while they run.
+  const g = globalThis as Record<string, unknown>;
+  let fns: LogStoreFns;
+
+  /** The rules the background compiles from the server's protectedUrlRules. */
+  const rulesFor = (sources: string[]) =>
+    compileUrlRules(compileUrlPatterns(sources, 'protected').patterns.map((p) => p.wire)).rules;
+
+  const at = (href: string): void => {
+    g.window = { location: { href } };
+  };
+
+  beforeAll(async () => {
+    g.findUrlRule = findUrlRule;
+    g.loggingEnabled = true;
+    g.protectedPatterns = [];
+    fns = await loadExtensionFunctions<LogStoreFns>('content/log-store.ts', [
+      'onProtectedPage', 'shouldRecord',
+    ]);
+  });
+
+  afterAll(() => {
+    for (const name of ['findUrlRule', 'loggingEnabled', 'protectedPatterns', 'window']) delete g[name];
+  });
+
+  it('no patterns: no page is protected', () => {
+    g.protectedPatterns = [];
+    at('https://example.test/admin');
+    expect(fns.onProtectedPage()).toBe(false);
+  });
+
+  it('the current document URL decides, as the wire rules match it', () => {
+    g.protectedPatterns = rulesFor(['example.test/admin', '*.bank.test']);
+    for (const href of [
+      'https://example.test/admin',
+      'https://example.test/admin/users?x=1',
+      'https://example.test/%61dmin', // protected rules decode percent-escapes
+      'https://example.test/ADMIN',
+      'https://a.bank.test/',
+    ]) {
+      at(href);
+      expect(fns.onProtectedPage(), href).toBe(true);
+    }
+    for (const href of ['https://example.test/', 'https://bank.test/', 'https://example.test.attacker.test/admin']) {
+      at(href);
+      expect(fns.onProtectedPage(), href).toBe(false);
+    }
+  });
+
+  it('a same-document move onto a protected URL pauses recording', () => {
+    g.protectedPatterns = rulesFor(['example.test/admin']);
+    g.loggingEnabled = true;
+    at('https://example.test/public');
+    expect(fns.shouldRecord()).toBe(true);
+    at('https://example.test/admin/1'); // history.pushState
+    expect(fns.shouldRecord()).toBe(false);
+    at('https://example.test/public');
+    expect(fns.shouldRecord()).toBe(true);
+    g.loggingEnabled = false;
+    expect(fns.shouldRecord()).toBe(false);
   });
 });
 
