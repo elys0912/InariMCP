@@ -9,7 +9,7 @@
  *  - callTool(): POST /mcp/call, signed with the API token (read from
  *    ~/.kitsune-mcp/api_token *after* the daemon is healthy — only the daemon
  *    creates the token; the token itself is never sent, see
- *    transport/auth.ts) and X-Kitsune-Relay (audit transport `relay:<id>`).
+ *    @kitsune-mcp/shared/node auth.ts) and X-Kitsune-Relay (audit transport `relay:<id>`).
  *    The daemon signs its answer; an unsigned or wrongly signed answer
  *    means another program holds the port, and is refused. Aborting the
  *    call (MCP cancellation) closes the request, which the daemon turns

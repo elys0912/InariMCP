@@ -49,7 +49,8 @@ export type ParsedHostMessage =
  */
 export function parseHostMessage(raw: Record<string, unknown>): ParsedHostMessage {
   const action = typeof raw['action'] === 'string' ? raw['action'] : undefined;
-  const schema = action === undefined ? undefined : SCHEMAS[action];
+  // hasOwn: 'constructor', '__proto__', … must not resolve to Object.prototype members
+  const schema = action !== undefined && Object.hasOwn(SCHEMAS, action) ? SCHEMAS[action] : undefined;
   if (action === undefined || schema === undefined) {
     return { ok: false, action: undefined, error: 'not a host message' };
   }

@@ -126,7 +126,7 @@ describe('writeFileAtomic', () => {
 });
 
 describe('daemon authentication copy', () => {
-  it('computes the same MACs as packages/mcp-server/src/transport/auth.ts', () => {
+  it('computes the same MACs as @kitsune-mcp/shared/node (auth.ts)', () => {
     const token = 'a'.repeat(64);
     expect(computeMac(token, 'health', 'b'.repeat(32))).toBe(serverAuth.computeMac(token, 'health', 'b'.repeat(32)));
   });

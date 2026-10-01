@@ -8,6 +8,9 @@ describe('parseHostMessage (4.C5)', () => {
       .toMatchObject({ ok: true, message: { filename: undefined } });
     expect(parseHostMessage({ action: 'screenshotTaken', data: 42 })).toMatchObject({ ok: false, action: 'screenshotTaken' });
     expect(parseHostMessage({ requestId: '1', success: true })).toMatchObject({ ok: false, action: undefined });
+    for (const action of ['constructor', '__proto__', 'toString']) {
+      expect(parseHostMessage({ action })).toMatchObject({ ok: false, action: undefined });
+    }
   });
   // TODO(test): host.ts replies (pong / status / 'no image data') through processMessage
 });

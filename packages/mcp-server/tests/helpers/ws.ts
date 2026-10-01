@@ -1,6 +1,6 @@
 /**
  * Helpers for tests that talk to the ws-bridge as a client, implementing
- * the challenge-response handshake by hand (transport/auth.ts).
+ * the challenge-response handshake by hand (@kitsune-mcp/shared/node auth.ts).
  */
 
 import WebSocket from 'ws';

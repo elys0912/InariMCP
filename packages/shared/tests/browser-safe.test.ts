@@ -16,5 +16,6 @@ describe('@kitsune-mcp/shared root', () => {
   it.each(rootFiles)('%s uses no Node module or global', (file) => {
     const text = fs.readFileSync(path.join(src, file), 'utf-8');
     expect(text).not.toMatch(/from ['"]node:|require\(|\bprocess\.|\bBuffer\b|from ['"]\.\/node\//);
+    expect(text).not.toMatch(/from ['"](fs|os|path|crypto|child_process|http|net|url|util|stream)['"]/);
   });
 });
