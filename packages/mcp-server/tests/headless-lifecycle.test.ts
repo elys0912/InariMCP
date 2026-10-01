@@ -21,8 +21,8 @@ describe('playwright stays optional at load time', () => {
   const src = (rel: string): string =>
     readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), 'utf-8');
 
-  it('backend.ts only imports playwright types statically', () => {
-    const staticImports = src('headless/backend.ts').match(/^import .* from 'playwright';$/gm) ?? [];
+  it.each(['headless/backend.ts', 'headless/actions.ts'])('%s only imports playwright types statically', (rel) => {
+    const staticImports = src(rel).match(/^import .* from 'playwright';$/gm) ?? [];
     expect(staticImports.every((l) => l.startsWith('import type'))).toBe(true);
   });
 
