@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
 import {
@@ -7,7 +10,8 @@ import {
   unrecognizedHeadlessValue,
 } from '../src/utils/headless-env.js';
 import { checkHeadlessContainerScope, headlessContainerScopeWarning } from '../src/safety/container.js';
-import type { SafetyConfig } from '../src/safety/config.js';
+import { SafetyGuard } from '../src/safety/guard.js';
+import { DEFAULT_CONFIG, type SafetyConfig } from '../src/safety/config.js';
 
 describe('isTruthyEnv', () => {
   it('accepts 1 / true / yes in any case, nothing else', () => {
@@ -69,10 +73,98 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
 
   afterEach(() => { vi.unstubAllEnvs(); });
 
-  // TODO(test): headless で container_scope 有効なら observe 系ツールも拒否される（fail-closed）
-  // TODO(test): fox_safety_status は拒否されない
-  // TODO(test): 旧名 CLAUDE_BROWSER_HEADLESS でも同じ判定になる
-  // TODO(test): 監査ログに out_of_scope が記録される
+  /** A guard whose policy has container scope on, without touching any file. */
+  const scopedGuard = (overrides: Partial<SafetyConfig> = {}): SafetyGuard =>
+    new SafetyGuard({
+      ...DEFAULT_CONFIG,
+      auditLog: false,
+      maxActionsPerMinute: 0,
+      containerScope: { enabled: true, containerName: 'agent' },
+      ...overrides,
+    });
+
+  it('refuses observe tools as well: without containers nothing is in scope (fail-closed)', () => {
+    vi.stubEnv('FOX_HEADLESS', '1');
+    const g = scopedGuard();
+    // observe / interact tools (Layer 4 normally lets them through) ...
+    for (const tool of ['fox_get_text', 'fox_get_tabs', 'fox_get_page_info', 'fox_screenshot']) {
+      expect(g.check(tool, {})?.safetyDecision).toBe('out_of_scope');
+    }
+    // ... and acting tools alike
+    for (const tool of ['fox_navigate', 'fox_click']) {
+      expect(g.check(tool, { url: 'https://example.test/' })?.safetyDecision).toBe('out_of_scope');
+    }
+    // the same calls pass once the backend has containers again
+    vi.stubEnv('FOX_HEADLESS', '0');
+    expect(g.check('fox_get_text', {})).toBeNull();
+    expect(g.check('fox_click', {})).toBeNull();
+  });
+
+  it('fox_safety_status still works, so the refusal can be diagnosed', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-scope-'));
+    try {
+      const file = path.join(dir, 'safety.json');
+      fs.writeFileSync(file, JSON.stringify({ container_scope: { enabled: true, container_name: 'agent' } }));
+      vi.stubEnv('HOME', dir);
+      vi.stubEnv('USERPROFILE', dir);
+      vi.stubEnv('FOX_SAFETY_CONFIG', file);
+      vi.stubEnv('FOX_HEADLESS', '1');
+      const { createToolHandler } = await import('../src/tools/handlers.js');
+
+      const status = await createToolHandler('fox_safety_status')({});
+      expect(status.isError).toBeFalsy();
+      const body = JSON.parse((status.content as Array<{ text: string }>)[0]!.text);
+      expect(body.success).toBe(true);
+
+      // same process, same policy: an ordinary tool is refused
+      const denied = await createToolHandler('fox_get_text')({});
+      expect(denied.isError).toBe(true);
+      const text = (denied.content as Array<{ text: string }>).map((c) => c.text).join('\n');
+      expect(text).toContain('headless backend');
+      expect(text).toContain('fox_safety_status still works');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('the legacy CLAUDE_BROWSER_HEADLESS is judged the same way', () => {
+    vi.stubEnv('CLAUDE_BROWSER_HEADLESS', 'yes');
+    expect(checkHeadlessContainerScope(config)?.safetyDecision).toBe('out_of_scope');
+    expect(headlessContainerScopeWarning(config)).toContain('headless');
+    expect(scopedGuard().check('fox_get_text', {})?.safetyDecision).toBe('out_of_scope');
+
+    vi.stubEnv('CLAUDE_BROWSER_HEADLESS', 'false');
+    expect(checkHeadlessContainerScope(config)).toBeNull();
+
+    // the FOX_ name wins, an empty FOX_ value falls through to the old one
+    vi.stubEnv('FOX_HEADLESS', '0');
+    vi.stubEnv('CLAUDE_BROWSER_HEADLESS', '1');
+    expect(checkHeadlessContainerScope(config)).toBeNull();
+    vi.stubEnv('FOX_HEADLESS', '');
+    expect(checkHeadlessContainerScope(config)?.safetyDecision).toBe('out_of_scope');
+  });
+
+  it('records the refusal in the audit log', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-scope-audit-'));
+    try {
+      vi.stubEnv('HOME', dir);
+      vi.stubEnv('USERPROFILE', dir);
+      vi.stubEnv('FOX_HEADLESS', '1');
+      expect(scopedGuard({ auditLog: true }).check('fox_get_text', { selector: '#a' }, 'stdio'))
+        .not.toBeNull();
+
+      const logFile = path.join(dir, '.kitsune-mcp', 'logs', 'audit.jsonl');
+      const entries = fs.readFileSync(logFile, 'utf-8').trim().split('\n').map((l) => JSON.parse(l));
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        tool: 'fox_get_text',
+        decision: 'out_of_scope',
+        transport: 'stdio',
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it('keeps refusing, and says how to get out (own safety.json via FOX_SAFETY_CONFIG)', () => {
     vi.stubEnv('FOX_HEADLESS', '1');
