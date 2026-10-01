@@ -10,6 +10,7 @@ KitsuneMCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **ブロック / 保護対象のリストの旧形式の正規表現は、URLのどこにでも一致する**: 以前の版のパターンのうち、ホストパターンとして読めないもの（READMEの「`safety.json`」を参照）は、そこでは以前の意味（URL全体に対するアンカーなしの正規表現）のまま使われ、daemonが警告をログに出す。ホストパターンか、`re:`（常にURL全体に一致）に書き直すこと。`allowed_url_patterns`ではこのようなパターンは設定エラーになる
 - **`safety.json`が壊れているとすべてのツールが拒否される**: ファイルが読めない、JSONとして正しくない、値の型が違う、使えないURLパターンがある場合、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。編集したら`fox_safety_status`で結果を確認すること
 - **共有daemonは、起動したプロセスの環境変数を使う**: `FOX_READ_ONLY`などの環境変数は、実際にdaemonを起動したプロセスのものだけが読まれる。Firefox（Native Host）が起動したdaemonはFirefoxの環境変数を引き継ぎ、`claude mcp add --env`の値は使われない。確実に効かせたい設定は`~/.kitsune-mcp/safety.json`に書くこと（READMEを参照）。セッションとdaemonで設定が食い違うと、セッション開始時と`fox_safety_status`の結果に警告が出る
+- **`blocked_url_patterns` / `allowed_url_patterns`はhttp(s)のタブにだけ効く**: ユーザーが開いた`file://`のページやブラウザ内部のページ（`about:`、`moz-extension://`）はサイトではないので、リストの対象にならない。許可リストのモードでも、そのようなタブは読み取り・操作の対象になる。`fox_navigate`ではそこへ行けない（http(s)と`about:blank`以外は`blocked_scheme`で拒否する）
 
 ## 人による承認
 

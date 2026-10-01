@@ -35,7 +35,7 @@ interface UrlRuleGlobals {
 
 const URL_RULE_FUNCTIONS = [
   'parseUrlRule', 'compileUrlRule', 'compileUrlRules', 'normalizeRuleUrl',
-  'looseRulePath', 'urlRuleMatches', 'findUrlRule', 'urlListViolation',
+  'effectiveRulePort', 'looseRulePath', 'urlRuleMatches', 'findUrlRule', 'urlListViolation',
 ];
 
 /**

@@ -63,7 +63,7 @@ describe('attachSafetyMetadata: URL rules (WP5b)', () => {
     expect(cmd.protectedUrlPatterns).toEqual(WIRE);
     expect(cmd.protectedUrlRules).toEqual([{
       kind: 'host', source: PATTERNS[0], scheme: null, hosts: 'tree',
-      host: 'protected.example.test', path: null, pathMatch: 'loose',
+      host: 'protected.example.test', port: null, path: null, pathMatch: 'loose',
     }]);
   });
 

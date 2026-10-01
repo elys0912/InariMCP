@@ -11,6 +11,10 @@
  *   host + path    `example.com/admin`   ... whose path starts with /admin
  *                                        (`example.com/*` = any path)
  *   scheme         `https://example.com` ... over that scheme only
+ *   port           `example.com:8443`    ... on that port only (a URL without
+ *                                        a port has its scheme's default:
+ *                                        `example.com:443` = https://example.com/)
+ *   IPv6           `[::1]`               the address, in brackets
  *   regex          `re:<regex>`          must match the whole (case-insensitive)
  *                                        normalised URL: scheme://host[:port]
  *                                        /path?query#hash, lower-case host, no
@@ -103,12 +107,25 @@ export function normalizeUrl(raw: string): NormalizedUrl | null {
   return { url, hostname, normalized, hasUserinfo };
 }
 
+const DEFAULT_PORTS: Readonly<Record<string, number>> = {
+  'http:': 80, 'https:': 443, 'ws:': 80, 'wss:': 443, 'ftp:': 21,
+};
+
+/** The URL's port, or its scheme's default (the parser drops a default port); null if none. */
+function effectivePort(url: URL): number | null {
+  if (url.port !== '') return Number(url.port);
+  return DEFAULT_PORTS[url.protocol] ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Compilation
 // ---------------------------------------------------------------------------
 
+// scheme, `*.`, host (a name, or an IPv6 address in brackets: a ':' inside
+// tells it from a regex character class), `:port` (validated below, so that
+// a bad one is an error rather than a legacy regex), path.
 const HOST_FORM_RE =
-  /^(?:([a-z][a-z0-9+.-]*):\/\/)?(\*\.)?([^\s/?#:@*\\^$()[\]{}|+]+)(\/[^\s]*)?$/i;
+  /^(?:([a-z][a-z0-9+.-]*):\/\/)?(\*\.)?(\[[^\s/\]]*:[^\s/\]]*\]|[^\s/?#:@*\\^$()[\]{}|+]+)(?::([^\s/?#]*))?(\/[^\s]*)?$/i;
 
 const REGEX_META_RE = /[\\^$()[\]{}|+?*]/;
 
@@ -134,6 +151,8 @@ interface HostSpec {
   /** 'tree': the host and its subdomains; 'sub': subdomains only; 'exact': the host only. */
   hosts: 'tree' | 'sub' | 'exact';
   host: string;
+  /** Required port (a URL without one has its scheme's default), or null for any. */
+  port: number | null;
   /** Path prefix, or null for any path. */
   path: string | null;
 }
@@ -144,9 +163,18 @@ type ParseResult = HostSpec | { error: string } | null;
 function parseHostForm(s: string): ParseResult {
   const m = HOST_FORM_RE.exec(s);
   if (!m) return null;
+  const ipv6 = m[3]!.startsWith('[');
   const host = canonicalHost(m[3]!);
-  if (host === null) return null;
-  let path: string | null = m[4] ?? null;
+  if (host === null) return ipv6 ? { error: `'${m[3]}' is not a valid IPv6 address` } : null;
+  if (ipv6 && m[2] !== undefined) return { error: "'*.' cannot precede an IP address" };
+  let port: number | null = null;
+  if (m[4] !== undefined) {
+    // `localhost:\d+` and the like are legacy regexes, not a port.
+    if (!/^\d+$/.test(m[4]) && REGEX_META_RE.test(s)) return null;
+    port = /^\d{1,5}$/.test(m[4]) ? Number(m[4]) : 0;
+    if (port < 1 || port > 65535) return { error: `'${m[4]}' is not a valid port (1-65535)` };
+  }
+  let path: string | null = m[5] ?? null;
   // A trailing `/*` is the usual way to write "any path below".
   if (path !== null && path.endsWith('/*')) path = path.slice(0, -1);
   if (path !== null && path.includes('*')) {
@@ -157,6 +185,7 @@ function parseHostForm(s: string): ParseResult {
     scheme: m[1] ? m[1].toLowerCase() : null,
     hosts: m[2] !== undefined ? 'sub' : 'tree',
     host,
+    port,
     path,
   };
 }
@@ -227,6 +256,7 @@ function hostPattern(source: string, spec: HostSpec, list: PatternListName): Url
         : spec.hosts === 'sub' ? isSub
           : h === spec.host || isSub;
     if (!hostOk) return false;
+    if (spec.port !== null && effectivePort(n.url) !== spec.port) return false;
     if (wantPath === null) return true;
     const actual = strictPath ? n.url.pathname : loosePath(n.url.pathname);
     if (!actual.startsWith(wantPath)) return false;
@@ -245,8 +275,15 @@ function hostPattern(source: string, spec: HostSpec, list: PatternListName): Url
     const pathRe = wantPath.split('/').map(escapeRegex).join('\\/+');
     tail = pathRe + (pathBoundary ? '(?:[/?#]|$)' : '');
   }
+  // A default port does not appear in the URL, so it is optional here (with
+  // no scheme in the pattern this also lets e.g. :443 match http://…/, which
+  // errs on the safe side for the lists this legacy form serves).
+  const port =
+    spec.port === null ? '(?::\\d+)?'
+      : Object.values(DEFAULT_PORTS).includes(spec.port) ? `(?::${spec.port})?`
+        : `:${spec.port}`;
   const wireSource =
-    `^${scheme}:\\/\\/(?:[^/?#]*@)?${sub}${escapeRegex(spec.host)}\\.?(?::\\d+)?${tail}`;
+    `^${scheme}:\\/\\/(?:[^/?#]*@)?${sub}${escapeRegex(spec.host)}\\.?${port}${tail}`;
 
   const wire: WireUrlRule = {
     kind: 'host',
@@ -254,6 +291,7 @@ function hostPattern(source: string, spec: HostSpec, list: PatternListName): Url
     scheme: spec.scheme,
     hosts: spec.hosts,
     host: spec.host,
+    port: spec.port,
     path: wantPath,
     pathMatch: strictPath ? 'strict' : 'loose',
   };
@@ -337,7 +375,10 @@ export function compileUrlPatterns(
     const spec = parsed ?? (REGEX_META_RE.test(s) ? convertLegacy(s) : null);
     if (spec !== null) {
       patterns.push(hostPattern(source, spec, list));
-      if (list !== 'allowed' && !spec.host.includes('.') && spec.hosts === 'tree' && s === spec.host) {
+      if (
+        list !== 'allowed' && !spec.host.includes('.') && !spec.host.startsWith('[') &&
+        spec.hosts === 'tree' && s === spec.host
+      ) {
         issues.push({
           pattern: source,
           message:

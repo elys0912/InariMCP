@@ -6,8 +6,8 @@
  * of the rules (url-pattern.ts is not browser code), cut out of the source
  * here (helpers/extension-source.ts).
  *
- * TODO(test): IDN hosts (punycode on both sides) and IPv6 / port patterns
- *   once url-pattern.ts supports them.
+ * TODO(test): IDN hosts (punycode on both sides); IPv6 zone / IPv4-mapped
+ *   addresses; a rule without `port` (older server) on the Extension side.
  * TODO(test): content.ts onProtectedPage with a fake window.location (the
  *   rules it receives from the background are the compiled wire rules).
  */
@@ -35,7 +35,7 @@ interface UrlRuleFns {
 
 const URL_RULE_FUNCTIONS = [
   'parseUrlRule', 'compileUrlRule', 'compileUrlRules', 'normalizeRuleUrl',
-  'looseRulePath', 'urlRuleMatches', 'findUrlRule', 'urlListViolation',
+  'effectiveRulePort', 'looseRulePath', 'urlRuleMatches', 'findUrlRule', 'urlListViolation',
 ] as const;
 
 let ext: UrlRuleFns;
@@ -59,6 +59,10 @@ const PATTERNS = [
   're:^https://re\\.test/(a|b)/.*',
   're:example\\.test',
   'bank|credit',
+  '[::1]',
+  'http://[0:0::1]:3000/app',
+  'example.test:8443',
+  'secure.test:443',
 ];
 
 const URLS = [
@@ -76,6 +80,8 @@ const URLS = [
   'https://agency.gov.test/', 'https://gov.test/', 'https://re.test/a/', 'https://RE.test/b/x',
   'https://re.test/c/', 'https://mybank.test/', 'https://x.test/?q=credit', 'about:blank',
   'moz-extension://abc/page.html', 'file:///C:/a/example.test', 'not a url', '',
+  'http://[::1]/', 'http://[::1]:3000/app/x', 'http://[::1]:3001/app', 'http://[::2]:3000/app',
+  'https://example.test:443/', 'http://secure.test:443/', 'https://secure.test:8443/',
 ];
 
 const LISTS: PatternListName[] = ['blocked', 'allowed', 'protected'];

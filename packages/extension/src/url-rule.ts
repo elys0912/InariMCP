@@ -7,7 +7,8 @@
 //   host   the URL is parsed and its hostname (lower-case, no trailing dot)
 //          compared, never the raw string: `example.com.attacker.net`,
 //          `https://example.com@attacker.net/` or a query naming the host
-//          do not match. `path` is a prefix: 'strict' as written, at a
+//          do not match. `port` (null = any) compares to the URL's port or
+//          its scheme's default. `path` is a prefix: 'strict' as written, at a
 //          segment boundary; 'loose' after percent-decoding, collapsing
 //          repeated slashes and lower-casing.
 //   regex  tested (flag i) against the normalised URL, and with matchRaw
@@ -29,6 +30,8 @@ export interface HostUrlRule {
   scheme: string | null;
   hosts: "tree" | "sub" | "exact";
   host: string;
+  /** null: any port (also when an older server sent none). */
+  port: number | null;
   path: string | null;
   pathMatch: "strict" | "loose";
 }
@@ -84,12 +87,17 @@ export function parseUrlRule(raw: unknown): UrlRule | null {
     if (r.scheme !== null && typeof r.scheme !== "string") return null;
     if (r.path !== null && typeof r.path !== "string") return null;
     if (r.pathMatch !== "strict" && r.pathMatch !== "loose") return null;
+    const port = r.port ?? null;
+    if (port !== null && !(Number.isInteger(port) && (port as number) >= 1 && (port as number) <= 65535)) {
+      return null;
+    }
     return {
       kind: "host",
       source: r.source,
       scheme: r.scheme,
       hosts: r.hosts,
       host: r.host,
+      port: port as number | null,
       path: r.path,
       pathMatch: r.pathMatch,
     };
@@ -147,6 +155,13 @@ export function normalizeRuleUrl(raw: string): RuleUrl | null {
   return { url, hostname, normalized };
 }
 
+/** The URL's port, or its scheme's default (url-pattern.ts effectivePort); null if none. */
+function effectiveRulePort(url: URL): number | null {
+  if (url.port !== "") return Number(url.port);
+  const defaults: Record<string, number> = { "http:": 80, "https:": 443, "ws:": 80, "wss:": 443, "ftp:": 21 };
+  return defaults[url.protocol] ?? null;
+}
+
 /** Path as 'loose' rules compare it: decoded, single slashes, lower case. */
 export function looseRulePath(pathname: string): string {
   let p = pathname;
@@ -177,6 +192,7 @@ export function urlRuleMatches(compiled: CompiledUrlRule, raw: string): boolean 
       : rule.hosts === "sub" ? isSub
         : h === rule.host || isSub;
   if (!hostOk) return false;
+  if (rule.port !== null && effectiveRulePort(n.url) !== rule.port) return false;
   const want = rule.path;
   if (want === null) return true;
   const strict = rule.pathMatch === "strict";

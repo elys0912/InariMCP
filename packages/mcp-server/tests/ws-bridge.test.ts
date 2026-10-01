@@ -132,6 +132,50 @@ describe('ws-bridge unauthenticated connection cap', () => {
   // TODO(test): a slot is freed after auth success / failure / close, and the 5 s auth timeout frees it too
 });
 
+/** Header of a masked client text frame announcing `length` payload bytes (mask key 0). */
+function clientFrameHeader(length: number): Buffer {
+  if (length < 126) return Buffer.from([0x81, 0x80 | length, 0, 0, 0, 0]);
+  const h = Buffer.alloc(14);
+  h[0] = 0x81;
+  h[1] = 0x80 | 127;
+  h.writeBigUInt64BE(BigInt(length), 2);
+  return h; // bytes 10..13: mask key 0
+}
+
+function socketClosed(sock: net.Socket): Promise<void> {
+  return new Promise((resolve) => sock.once('close', () => resolve()));
+}
+
+describe('ws-bridge refused connections are cut', () => {
+  it('cuts a refused peer that never answers the close frame', async () => {
+    const { port } = await startBridge();
+    const sock = await rawUpgrade(port);
+    const payload = Buffer.from('{}'); // mask key 0: payload as is
+    sock.write(Buffer.concat([clientFrameHeader(payload.length), payload]));
+    const t0 = Date.now();
+    await socketClosed(sock); // we never send a close frame back
+    expect(Date.now() - t0).toBeLessThan(3_000);
+  });
+
+  it('cuts a peer that streams more than 64 KB before auth, before its frame ends', async () => {
+    const { port } = await startBridge();
+    const sock = await rawUpgrade(port);
+    const done = socketClosed(sock);
+    sock.write(clientFrameHeader(1_048_576));
+    let sent = 0;
+    let open = true;
+    void done.then(() => { open = false; });
+    while (open && sent < 1_048_576) {
+      sock.write(Buffer.alloc(16_384));
+      sent += 16_384;
+      await sleep(5);
+    }
+    await done;
+    expect(sent).toBeLessThan(1_048_576);
+  });
+  // TODO(test): the byte count stops after auth (large frames from an authenticated host pass); auth timeout is also cut after the grace period
+});
+
 describe('ws-bridge robustness', () => {
   it('survives an invalid frame before auth and keeps serving', async () => {
     const { port } = await startBridge();
