@@ -1,7 +1,7 @@
 import * as http from 'node:http';
 import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { isAllowedHostHeader, startHttpBridge, type HttpBridgeOptions } from '../src/transport/http-bridge.js';
 import {
@@ -139,6 +139,22 @@ describe('signed requests', () => {
     const r = await request('GET', '/daemon/info', { 'X-API-Key': TOKEN });
     expect(r.status).toBe(200);
     expect(r.headers[AUTH_HEADER.signature]).toBeUndefined();
+  });
+});
+
+describe('startup log', () => {
+  it('WP38 names the port actually bound, not the configured 0', async () => {
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    let lines: string[];
+    try {
+      await start();
+      lines = write.mock.calls.map((c) => String(c[0]));
+    } finally {
+      write.mockRestore();
+    }
+    expect(lines).toContain(`[KitsuneMCP] HTTP bridge listening on http://127.0.0.1:${port}
+`);
+    expect(port).not.toBe(0);
   });
 });
 

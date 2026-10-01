@@ -788,8 +788,11 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
       server.on('error', (err) => {
         process.stderr.write(`[KitsuneMCP] HTTP server error: ${err.message}\n`);
       });
+      // The port actually bound (port 0 picks a free one).
+      const address = server.address();
+      const boundPort = typeof address === 'object' && address !== null ? address.port : port;
       process.stderr.write(
-        `[KitsuneMCP] HTTP bridge listening on http://${host}:${port}\n`,
+        `[KitsuneMCP] HTTP bridge listening on http://${host}:${boundPort}\n`,
       );
       resolve(server);
     });

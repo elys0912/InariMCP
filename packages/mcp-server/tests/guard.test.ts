@@ -266,6 +266,17 @@ describe('the reached URL and the tab URL against blocked/allowed lists (2.B3)',
     expect(decision(g, 'fox_get_tabs', {})).toBeNull();
   });
 
+  it('WP38 the pre-check refusals name the URL in url (details.url), like blocked_after_navigation', () => {
+    const g = guard({ blockedUrlPatterns: ['blocked.test'], allowedUrlPatterns: ['fine.test', 'blocked.test'] });
+    expect(g.check('fox_navigate', { url: 'https://blocked.test/x' }))
+      .toMatchObject({ safetyDecision: 'blocked_url', url: 'https://blocked.test/x' });
+    expect(g.check('fox_navigate', { url: 'https://other.test/' }))
+      .toMatchObject({ safetyDecision: 'not_allowlisted', url: 'https://other.test/' });
+    g.noteUrl({ url: 'https://blocked.test/tab' }, { tabId: 4 }, 'fox_click');
+    expect(g.check('fox_click', { tabId: 4 }))
+      .toMatchObject({ safetyDecision: 'blocked_url', url: 'https://blocked.test/tab' });
+  });
+
   it('does nothing when the guard is disabled', () => {
     const g = guard({ enabled: false, blockedUrlPatterns: ['blocked.test'] });
     expect(g.checkReachedUrl('fox_click', {}, { url: 'https://blocked.test/' })).toBeNull();
