@@ -29,6 +29,27 @@ import {
 
 const background = readExtensionSource('background.ts');
 
+interface UrlRuleGlobals {
+  compileUrlRules(raw: unknown): { rules: unknown[]; invalid: number };
+}
+
+const URL_RULE_FUNCTIONS = [
+  'parseUrlRule', 'compileUrlRule', 'compileUrlRules', 'normalizeRuleUrl',
+  'looseRulePath', 'urlRuleMatches', 'findUrlRule', 'urlListViolation',
+];
+
+/**
+ * Put url-rule.ts's functions on globalThis, as the manifest's script order
+ * makes them globals of background.js.
+ */
+async function installUrlRuleGlobals(): Promise<UrlRuleGlobals> {
+  const fns = await loadExtensionFunctions<Record<string, unknown>>('url-rule.ts', URL_RULE_FUNCTIONS);
+  Object.assign(globalThis, fns);
+  return fns as unknown as UrlRuleGlobals;
+}
+
+const NO_LISTS = { blocked: [], allowed: [], allowlistActive: false };
+
 // ---------------------------------------------------------------------------
 // Fake browser.tabs events for waitForTabLoad
 // ---------------------------------------------------------------------------
@@ -157,10 +178,14 @@ describe('3.A8 reload_all / reload_by_url skip protected tabs', () => {
       },
     };
     try {
+      const rules = await installUrlRuleGlobals();
       const { reloadMatchingTabs } = await loadExtensionFunctions<{
-        reloadMatchingTabs(sel: (t: unknown) => boolean, bypass: boolean, scope: null, patterns: RegExp[]): Promise<Record<string, unknown>>;
-      }>('background.ts', ['reloadMatchingTabs', 'isTabInScope', 'matchesAnyPattern']);
-      const result = await reloadMatchingTabs(() => true, false, null, [/bank\.example\.test/i]);
+        reloadMatchingTabs(sel: (t: unknown) => boolean, bypass: boolean, scope: null, patterns: unknown[], lists: unknown): Promise<Record<string, unknown>>;
+      }>('background.ts', ['reloadMatchingTabs', 'isTabInScope', 'violatesUrlLists']);
+      const protectedRules = rules.compileUrlRules([
+        { kind: 'host', source: 'bank.example.test', scheme: null, hosts: 'tree', host: 'bank.example.test', path: null, pathMatch: 'loose' },
+      ]).rules;
+      const result = await reloadMatchingTabs(() => true, false, null, protectedRules, NO_LISTS);
       expect(reloaded).toEqual([1]);
       expect(result).toMatchObject({ success: true, reloadedCount: 1, excludedProtected: 1 });
     } finally {
@@ -168,6 +193,61 @@ describe('3.A8 reload_all / reload_by_url skip protected tabs', () => {
     }
     expect(background).toMatch(/SELF_PROTECTED_ACTIONS[^;]*"reloadAll",\s*"reloadByUrl"/);
   });
+});
+
+describe('WP5b URL rules and urlPattern arguments', () => {
+  it('refuses a target tab on a blocked or not allowlisted site, fails closed without a tab', async () => {
+    const rules = await installUrlRuleGlobals();
+    const { checkListedTarget } = await loadExtensionFunctions<{
+      checkListedTarget(tab: unknown, lists: unknown): Record<string, unknown> | null;
+    }>('background.ts', ['checkListedTarget', 'violatesUrlLists']);
+    const host = (h: string, pathMatch: string) =>
+      ({ kind: 'host', source: h, scheme: null, hosts: 'tree', host: h, path: null, pathMatch });
+    const lists = {
+      blocked: rules.compileUrlRules([host('blocked.test', 'loose')]).rules,
+      allowed: rules.compileUrlRules([host('ok.test', 'strict')]).rules,
+      allowlistActive: true,
+    };
+    expect(checkListedTarget({ id: 1, url: 'https://www.blocked.test/x' }, lists))
+      .toMatchObject({ success: false, safetyDecision: 'blocked_url', url: 'https://www.blocked.test/x' });
+    expect(checkListedTarget({ id: 1, url: 'https://other.test/' }, lists))
+      .toMatchObject({ success: false, safetyDecision: 'not_allowlisted' });
+    expect(checkListedTarget({ id: 1, url: 'https://ok.test/' }, lists)).toBeNull();
+    expect(checkListedTarget({ id: 1, url: 'about:blank' }, lists)).toBeNull();
+    expect(checkListedTarget(undefined, lists)).toMatchObject({ success: false });
+  });
+
+  it('an invalid urlPattern is a failure result, a valid one is case-sensitive', async () => {
+    const urlPatternArg = await loadExtensionFunction<(s: unknown) => { ok: boolean; pattern?: RegExp | null; result?: unknown }>(
+      'background.ts', 'urlPatternArg',
+    );
+    expect(urlPatternArg('(')).toMatchObject({ ok: false, result: { success: false, error: expect.stringMatching(/^Invalid urlPattern/) } });
+    expect(urlPatternArg(undefined)).toEqual({ ok: true, pattern: null });
+    expect(urlPatternArg('a\\.test').pattern!.flags).toBe('');
+    // Every RegExp built from an argument goes through urlPatternArg (or
+    // its own try/catch in queryNetworkLogs).
+    expect(background.match(/new RegExp\(/g)).toHaveLength(2);
+  });
+
+  it('close_tab reports the closed tab id; rules are preferred over legacy patterns', () => {
+    expect(background).toMatch(/return \{ success: true, closed: tabId \}/);
+    expect(background).toMatch(/Array\.isArray\(message\.protectedUrlRules\)\s*\?\s*message\.protectedUrlRules\s*:\s*message\.protectedUrlPatterns/);
+  });
+  it('url-rule.js is loaded before background.js and content.js (manifest and early injection)', () => {
+    const manifest = JSON.parse(readExtensionSource('../manifest.json')) as {
+      background: { scripts: string[] };
+      content_scripts: { js: string[] }[];
+    };
+    const bg = manifest.background.scripts;
+    expect(bg.indexOf('dist/url-rule.js')).toBeGreaterThanOrEqual(0);
+    expect(bg.indexOf('dist/url-rule.js')).toBeLessThan(bg.indexOf('dist/background.js'));
+    expect(manifest.content_scripts[0]!.js).toEqual(['dist/url-rule.js', 'dist/content.js']);
+    expect(background).toMatch(/inject\("\/dist\/url-rule\.js"\)\s*\.then\(\(\) => inject\("\/dist\/content\.js"\)\)/);
+  });
+
+  // TODO(test): handleCommand with a fake browser: invalid rule entries are
+  //   refused (config_error), list check before the protected check,
+  //   screenshot all_tabs / reload skip list-violating tabs (excludedBlocked).
 });
 
 describe('5.2 log buffers', () => {
@@ -188,10 +268,11 @@ describe('5.2 log buffers', () => {
     expect(buffer).toEqual([{ message: 'a' }, { message: 'b' }]);
   });
 
-  it('get_network_logs: an invalid urlPattern is an error, not a throw', () => {
+  it('get_network_logs: an invalid urlPattern is an error, not a throw; matching is case-sensitive', () => {
     expect(fns.queryNetworkLogs([{ url: 'https://a.test/' }], { urlPattern: '(' })).toMatchObject({ success: false });
-    expect(fns.queryNetworkLogs([{ url: 'https://A.test/x' }], { urlPattern: 'a\\.test' }))
-      .toMatchObject({ success: true, returnedCount: 1 });
+    const logs = [{ url: 'https://A.test/x' }, { url: 'https://a.test/y' }];
+    expect(fns.queryNetworkLogs(logs, { urlPattern: 'a\\.test' }))
+      .toMatchObject({ success: true, returnedCount: 1, logs: [{ url: 'https://a.test/y' }] });
   });
 });
 

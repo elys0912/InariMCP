@@ -290,25 +290,17 @@
   // against the current URL on every record, so a same-document move onto a
   // protected URL (history.pushState) pauses recording too. Full navigations
   // onto protected pages are handled by the background (no resume there).
-  let protectedPatterns: RegExp[] = [];
+  // URL rules (url-rule.ts, loaded before this script), as the background
+  // script compiled them from the MCP Server's protectedUrlRules.
+  let protectedPatterns: CompiledUrlRule[] = [];
 
-  function compilePatterns(raw: unknown): RegExp[] {
-    if (!Array.isArray(raw)) return [];
-    const compiled: RegExp[] = [];
-    for (const pattern of raw) {
-      if (typeof pattern !== "string") continue;
-      try {
-        compiled.push(new RegExp(pattern, "i"));
-      } catch {
-        // invalid pattern -- the background script ignores it as well
-      }
-    }
-    return compiled;
+  function compilePatterns(raw: unknown): CompiledUrlRule[] {
+    // The background script refused the command if an entry was unusable.
+    return compileUrlRules(raw).rules;
   }
 
   function onProtectedPage(): boolean {
-    const url = window.location.href;
-    return protectedPatterns.some((p) => p.test(url));
+    return findUrlRule(window.location.href, protectedPatterns) !== undefined;
   }
 
   /** Record now? Logging on, and the page is not a protected one. */
