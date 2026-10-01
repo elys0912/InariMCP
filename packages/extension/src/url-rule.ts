@@ -86,6 +86,10 @@ export function parseUrlRule(raw: unknown): UrlRule | null {
     if (r.hosts !== "tree" && r.hosts !== "sub" && r.hosts !== "exact") return null;
     if (r.scheme !== null && typeof r.scheme !== "string") return null;
     if (r.path !== null && typeof r.path !== "string") return null;
+    // A path is compared with the URL's pathname, which never holds a query
+    // or fragment: such a rule would match nothing (the server refuses the
+    // pattern; this guards against a server that does not).
+    if (typeof r.path === "string" && /[?#]/.test(r.path)) return null;
     if (r.pathMatch !== "strict" && r.pathMatch !== "loose") return null;
     const port = r.port ?? null;
     if (port !== null && !(Number.isInteger(port) && (port as number) >= 1 && (port as number) <= 65535)) {
@@ -120,13 +124,15 @@ export function compileUrlRule(rule: UrlRule): CompiledUrlRule | null {
 }
 
 /**
- * Compile a wire list (not an array: no rules). `invalid` counts the entries
- * that could not be used; the caller decides whether that fails closed.
+ * Compile a wire list (undefined: no rules). `invalid` counts the entries
+ * that could not be used, and a list that is there but not an array counts
+ * as one; the caller decides whether that fails closed.
  */
 export function compileUrlRules(raw: unknown): CompiledUrlRules {
   const rules: CompiledUrlRule[] = [];
   let invalid = 0;
-  if (!Array.isArray(raw)) return { rules, invalid };
+  if (raw === undefined) return { rules, invalid };
+  if (!Array.isArray(raw)) return { rules, invalid: 1 };
   for (const entry of raw) {
     const parsed = parseUrlRule(entry);
     const compiled = parsed === null ? null : compileUrlRule(parsed);

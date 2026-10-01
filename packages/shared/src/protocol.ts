@@ -85,7 +85,7 @@ export const BrowserCommandSchema = z.object({
    * safety.json `container_scope.enabled` is true. The Extension enforces it
    * against the target tab's cookieStoreId (the MCP Server cannot see tabs).
    */
-  containerScope: z.object({ containerName: z.string() }).optional(),
+  containerScope: z.object({ containerName: z.string().min(1) }).optional(),
   /**
    * Protected-domain patterns (safety.json `protected_url_patterns`) as
    * URL rules. Attached to the same commands as `protectedUrlPatterns`

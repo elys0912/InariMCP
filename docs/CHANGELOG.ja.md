@@ -6,6 +6,15 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 
 ## Unreleased
 
+### セキュリティ
+
+- **`container_scope.container_name`が空文字なら設定エラーにする**: `safety.json`の`"container_name": ""`は、これまで何も言わずにコンテナスコープを無効にしていた。今後は他の壊れた設定と同じく、すべてのツールを拒否する（`fox_safety_status`に表示される）。スコープが有効かどうかは問わない。コンテナに名前を付けること（3bb171d）
+- **拡張機能は、使えない安全メタデータの付いたコマンドを拒否する**: MCP Serverが付けたコンテナスコープやURLルールの項目（protected / blocked / allowed）が不正な形（配列でない、コンテナ名が空など）のとき、その検査を飛ばして実行するのをやめ、`config_error`で拒否する。拡張機能とMCP Serverの版が合っていないときにだけ起きるので、両方を更新すること（3bb171d、f1db501）
+- **パスに`?`や`#`を含むURLパターンは設定エラーにする**: パターンはURLのパスだけと比べるので、`example.com/a?x=1`や`example.com/a#top`は何にも一致せず、`blocked_url_patterns` / `protected_url_patterns`に書いても警告なしで何も止めなかった。このようなパターン（`%3F` / `%23`を含むものも）は、どのリストでもエラーになる。クエリやフラグメントを外すか、`re:`で書くこと（f1db501）
+- **Native Hostから届くコマンドはwire上のaction名に限る**: Native Messaging経由で内部のaction名が届いたら`Unknown action`を返す（拡張機能自身のポップアップは引き続き内部名を使う）（d32eefb）
+
+## Unreleased
+
 0.1.4からの変更。更新の前に**互換性のない変更**を読み、READMEの[更新](../README.ja.md#更新)の手順に従うこと。
 
 ### セキュリティ

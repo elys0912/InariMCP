@@ -284,6 +284,43 @@ describe('content script: onProtectedPage (content/log-store.ts)', () => {
   });
 });
 
+describe('R2-C fail-closed wire input', () => {
+  const hostWire = (path: string | null, pathMatch: 'strict' | 'loose' = 'loose') =>
+    ({ kind: 'host', source: 'x', scheme: null, hosts: 'tree', host: 'example.test', port: null, path, pathMatch });
+
+  it('E-03: a list that is there but not an array is one unusable entry; undefined is no list', () => {
+    expect(ext.compileUrlRules(undefined)).toEqual({ rules: [], invalid: 0 });
+    for (const raw of [null, 'https://a.example', 42, {}, { 0: hostWire(null) }, true]) {
+      expect(ext.compileUrlRules(raw), JSON.stringify(raw)).toEqual({ rules: [], invalid: 1 });
+    }
+    expect(ext.compileUrlRules([])).toEqual({ rules: [], invalid: 0 });
+  });
+
+  it('A-01: a host rule whose path holds a query or fragment is unusable', () => {
+    for (const pathMatch of ['strict', 'loose'] as const) {
+      for (const path of ['/a?x=1', '/a#f', '/?', '/#']) {
+        expect(ext.parseUrlRule(hostWire(path, pathMatch)), `${pathMatch} ${path}`).toBeNull();
+      }
+      expect(ext.parseUrlRule(hostWire('/a', pathMatch)), pathMatch).not.toBeNull();
+    }
+    expect(ext.compileUrlRules([hostWire('/a?x=1'), hostWire('/a')]).invalid).toBe(1);
+  });
+
+  it('A-01: the server refuses such a pattern, and no rule it sends has one', () => {
+    for (const list of LISTS) {
+      for (const source of ['example.test/a?x=1', 'example.test/a#f', 'example.test/a%3Fx', 'example.test/a%23f']) {
+        const { patterns, issues } = compileUrlPatterns([source], list);
+        expect(patterns, `${list} ${source}`).toEqual([]);
+        expect(issues.map((i) => i.fatal), `${list} ${source}`).toEqual([true]);
+      }
+      // Percent-escapes of other characters still decode into a usable rule.
+      const { patterns } = compileUrlPatterns([...PATTERNS, 'example.test/%61dmin'], list);
+      const { invalid } = ext.compileUrlRules(patterns.map((p) => JSON.parse(JSON.stringify(p.wire))));
+      expect(invalid, list).toBe(0);
+    }
+  });
+});
+
 describe('legacy form (older MCP Servers: protectedUrlPatterns strings)', () => {
   it('a string is a regex over the raw URL, as before (flag i)', () => {
     const { rules, invalid } = ext.compileUrlRules(['bank\\.test', '(']);

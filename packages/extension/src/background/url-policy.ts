@@ -61,11 +61,12 @@ interface UrlPolicy {
  * The URL policy attached to a command: `protectedUrlRules` (else the
  * legacy regex strings of `protectedUrlPatterns`, older MCP Servers),
  * `blockedUrlRules`, `allowedUrlRules`. `invalid` counts entries that could
- * not be used: the command is then refused (an unusable entry must not
- * narrow the policy; the server validates them, so this means a mismatch).
+ * not be used, and a field that is there but not an array (compileUrlRules):
+ * the command is then refused (an unusable entry must not narrow the policy;
+ * the server validates them, so this means a mismatch).
  */
 export function parseUrlPolicy(message: NativeMessage): UrlPolicy {
-  const protectedSource = Array.isArray(message.protectedUrlRules)
+  const protectedSource = message.protectedUrlRules !== undefined
     ? message.protectedUrlRules
     : message.protectedUrlPatterns;
   const prot = compileUrlRules(protectedSource);

@@ -127,6 +127,11 @@ describe('loadConfig (2.B2)', () => {
     ['invalid JSON', '{ "read_only": true,'],
     ['not an object', '[]'],
     ['a schema violation', '{ "max_actions_per_minute": "many" }'],
+    // R2-C A-02: an empty container name would attach a scope the Extension
+    // cannot use; with the scope off it is still a broken setting.
+    ['an empty container name', '{ "container_scope": { "enabled": true, "container_name": "" } }'],
+    ['an empty container name (scope off)', '{ "container_scope": { "enabled": false, "container_name": "" } }'],
+    ['an empty containerName (camelCase)', '{ "container_scope": { "enabled": true, "containerName": "" } }'],
   ])('reports %s as configError', (_label, content) => {
     const cfg = load(content);
     expect(cfg.configError).toBeTruthy();
