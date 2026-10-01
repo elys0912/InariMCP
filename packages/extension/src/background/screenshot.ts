@@ -3,6 +3,7 @@
 import { findUrlRule, type CompiledUrlRule } from "../url-rule";
 import { TIMEOUTS, TOP_FRAME_ID } from "./constants";
 import { isTabInScope } from "./container-scope";
+import { noTargetTab } from "./tab-target";
 import { urlPatternArg, shouldSkipTab, urlMatches, positiveOr } from "./tab-wait";
 import type { ScreenshotOptions, CommandResult, ScopeFilter, UrlLists } from "./types";
 import { NO_URL_LISTS, violatesUrlLists } from "./url-policy";
@@ -20,7 +21,7 @@ export async function takeScreenshot(
       await browser.tabs.query({ active: true, currentWindow: true })
     )[0];
     const targetTab = tabId ? await browser.tabs.get(tabId) : currentTab;
-    if (!targetTab) return { success: false, error: "No target tab" };
+    if (!targetTab) return noTargetTab();
 
     // saveToFile false: images reach the MCP client only as files the
     // Native Host saves (never as base64), so nothing is captured.
@@ -147,7 +148,8 @@ export async function screenshotAllTabs(
 
     // Tabs on blocked / not allowlisted sites, then protected domains
     // (banking, payments, ...) are excluded. Only the counts are reported --
-    // never the URL or title of excluded tabs.
+    // never the URL or title of excluded tabs. Both counts are always
+    // reported (0 included); the reasons only when a tab was excluded.
     const beforeLists = targetTabs.length;
     targetTabs = targetTabs.filter((t) => violatesUrlLists(t.url, lists) === null);
     const excludedBlocked = beforeLists - targetTabs.length;
@@ -157,9 +159,10 @@ export async function screenshotAllTabs(
     }
     const excludedProtected = beforeProtected - targetTabs.length;
     const excluded = {
+      excludedProtected,
+      excludedBlocked,
       ...(excludedBlocked > 0
         ? {
-          excludedBlocked,
           excludedBlockedReason:
             "Tabs on sites refused by blocked_url_patterns / allowed_url_patterns in safety.json were not captured.",
         }
@@ -182,7 +185,6 @@ export async function screenshotAllTabs(
         count: 0,
         failed: 0,
         note: NO_IMAGE_NOTE,
-        excludedProtected,
         ...excluded,
       };
     }
@@ -208,7 +210,6 @@ export async function screenshotAllTabs(
       screenshots: results,
       count,
       failed,
-      excludedProtected,
       ...excluded,
     };
   } catch (error) {

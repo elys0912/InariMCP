@@ -245,7 +245,7 @@ declare namespace browser {
     const onClicked: {
       addListener(
         callback: (
-          info: { menuItemId: string; pageX?: number; pageY?: number; frameId?: number },
+          info: { menuItemId: string; frameId?: number },
           tab: tabs.Tab,
         ) => void,
       ): void;

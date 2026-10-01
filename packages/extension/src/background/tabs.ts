@@ -2,6 +2,7 @@
 
 import { TOP_FRAME_ID } from "./constants";
 import { isTabInScope, ensureScopeContainer } from "./container-scope";
+import { noTargetTab } from "./tab-target";
 import { urlPatternArg, urlMatches } from "./tab-wait";
 import type { GetAllTabsOptions, ScopeFilter, CommandResult, FindTabsOptions } from "./types";
 
@@ -233,9 +234,7 @@ export async function findText(
   const entireWord = (data as { entireWord?: boolean }).entireWord ?? false;
   const includeRectData = (data as { includeRectData?: boolean }).includeRectData ?? false;
 
-  if (!target) {
-    return { success: false, error: "No target tab" };
-  }
+  if (!target) return noTargetTab();
   const findResult = await browser.find.find(findQuery, {
     tabId: target.id,
     caseSensitive,

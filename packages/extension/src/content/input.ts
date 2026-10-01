@@ -12,6 +12,7 @@ import {
   locatorWithoutText,
   hasLocator,
   assertNotPasswordField,
+  elementIdentity,
 } from "./dom";
 import type {
   ClickOptions,
@@ -198,7 +199,13 @@ export async function performType(
       );
   }
   if (isDisabled(element)) {
-    throw new Error(`Element is disabled: ${JSON.stringify(locator)}`);
+    // Without a locator the target is the focused element: name it by its
+    // tag / id / name, since an empty locator would say nothing.
+    throw new Error(
+      located
+        ? `Element is disabled: ${JSON.stringify(locator)}`
+        : `Focused element is disabled: ${JSON.stringify(elementIdentity(element))}`,
+    );
   }
 
   assertNotPasswordField(element, options);
@@ -407,11 +414,14 @@ export async function hoverElement(
 export async function pressKey(
   options: PressKeyOptions,
 ): Promise<Record<string, unknown>> {
+  // Same locator resolution as fox_click (`key` is not a locator); without
+  // one, the focused element receives the key.
+  const locator = locatorOf(options);
   let target: Element =
     document.activeElement || document.body;
-  if (options.selector) {
-    const element = findElement(options);
-    if (!element) throw new Error("Element not found");
+  if (hasLocator(locator)) {
+    const element = findElement(locator);
+    if (!element) throw notFoundError(locator);
     (element as HTMLElement).focus();
     target = element;
   }

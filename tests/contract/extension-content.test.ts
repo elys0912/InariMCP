@@ -212,6 +212,8 @@ describe('WP30 context menu "inspect element" uses the contextmenu target, not p
     const menu = readExtensionSource('background/context-menu.ts');
     expect(menu).not.toMatch(/info\.page[XY]|page[XY]\?: number/);
     expect(menu).toMatch(/\{ action: "inspectElement" \}/);
+    // WP38: nor does the contextMenus type declare them any more.
+    expect(readExtensionSource('types/browser.d.ts')).not.toMatch(/page[XY]\?: number/);
   });
   // TODO(test): in a real Firefox: right-click an element (also in an
   //   iframe) → "inspect element" highlights that element.
@@ -340,6 +342,32 @@ describe('fox_type / fox_click targets', () => {
     expect(type).toContain('Element is disabled');
   });
 
+  real('WP38 performType into a disabled focused field names it by tag / id / name', async () => {
+    await load('<input id="i" name="n">');
+    const message = await run<string>(
+      `const el = document.getElementById('i');
+       el.focus();
+       el.setAttribute('aria-disabled', 'true');
+       return await f.input.performType({ text: 'hi' }).catch((e) => e.message);`,
+    );
+    expect(message).toBe('Focused element is disabled: {"tag":"input","id":"i","name":"n"}');
+  });
+
+  real('WP38 pressKey finds its target by xpath, id and text like fox_click', async () => {
+    await load('<input id="a"><input id="b"><button>Send</button><input id="c">');
+    const r = await run<unknown[]>(
+      `const seen = [];
+       document.addEventListener('keydown', (e) => seen.push(e.target.id || e.target.tagName));
+       document.getElementById('c').focus();
+       const byXpath = await f.input.pressKey({ key: 'a', xpath: '//input[@id="a"]' });
+       const byId = await f.input.pressKey({ key: 'a', id: 'b' });
+       const byText = await f.input.pressKey({ key: 'a', text: 'Send' });
+       const missing = await f.input.pressKey({ key: 'a', id: 'nope' }).catch((e) => e.message);
+       return [byXpath.element.id, byId.element.id, byText.element.tag, seen, missing];`,
+    );
+    expect(r).toEqual(['a', 'b', 'button', ['a', 'b', 'BUTTON'], 'Element not found: {"id":"nope"}']);
+  });
+
   real('selectOption fails for an option that is not there', async () => {
     await load('<select id="s"><option value="1">One</option></select>');
     const [unknown, ok] = await run<[string, Record<string, unknown>]>(
@@ -448,6 +476,50 @@ describe('content-side log batching', () => {
     // Each entry is handed over once, and the pending timer is cancelled
     // with it (nothing reaches the background afterwards).
     expect(r).toEqual({ a: 1, b: 0, c: 1, d: 0, sent: 0, logging: true });
+  });
+
+  real('WP38 a batch refused for a protected page drops what is still pending', async () => {
+    await load('<div>page</div>');
+    const r = await run<Record<string, number>>(
+      `let answer;
+       window.browser.runtime.sendMessage = (m) => {
+         window.__sent.push(m);
+         return new Promise((resolve) => { answer = resolve; });
+       };
+       f.log.startLogging({});
+       console.log('one');
+       await sleep(400);
+       console.log('two');
+       answer({ accepted: false, reason: 'protected_page' });
+       await sleep(0);
+       const pending = f.log.flushLogs().console.length;
+       await sleep(400);
+       return { pending, sent: records().length };`,
+    );
+    // 'one' went in the refused batch; 'two' is dropped, and its timer with it.
+    expect(r).toEqual({ pending: 0, sent: 1 });
+  });
+
+  real('WP38 clearLogs cancels the batch timer once nothing is pending', async () => {
+    await load('<div>page</div>');
+    const r = await run<boolean[]>(
+      `const set = window.setTimeout, clear = window.clearTimeout;
+       const timers = []; const cleared = [];
+       window.setTimeout = (fn, ms) => { const id = set(fn, ms); if (ms === 250) timers.push(id); return id; };
+       window.clearTimeout = (id) => { cleared.push(id); return clear(id); };
+       try {
+         f.log.startLogging({});
+         console.log('a');
+         f.log.clearLogs({ console: false });
+         const keptWhilePending = !cleared.includes(timers[0]);
+         f.log.clearLogs({});
+         return [keptWhilePending, cleared.includes(timers[0])];
+       } finally {
+         window.setTimeout = set;
+         window.clearTimeout = clear;
+       }`,
+    );
+    expect(r).toEqual([true, true]);
   });
 
   real('pagehide hands over what is pending, with the injection flags', async () => {

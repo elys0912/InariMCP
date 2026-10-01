@@ -76,6 +76,11 @@ const HEADLESS_IGNORED: Record<string, IgnoredParam[]> = {
     { key: 'pressEnter', def: false, note: 'Enter is not pressed; use fox_press_key' },
     { key: 'delay', def: 50, same: [0], note: 'text is entered at once' },
   ],
+  press_key: [
+    { key: 'xpath', note: 'use selector' },
+    { key: 'text', note: 'use selector' },
+    { key: 'id', note: 'use selector' },
+  ],
   get_elements: [{ key: 'limit', def: 50, note: `always returns at most ${GET_ELEMENTS_MAX} elements` }],
   find_text: [
     { key: 'caseSensitive', def: false, note: 'not applied' },

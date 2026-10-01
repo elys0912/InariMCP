@@ -404,7 +404,7 @@ export class SafetyGuard {
       }
       const violation = this._listViolation(targetUrl);
       if (violation !== null) {
-        return this._deny(violation.decision, `URL '${targetUrl}' ${violation.reason}.`);
+        return this._deny(violation.decision, `URL '${targetUrl}' ${violation.reason}.`, targetUrl);
       }
     } else if (currentUrl !== null && !TAB_INDEPENDENT_TOOLS.has(toolName)) {
       // No url argument: the tool acts on (or reads) the tab, whose last
@@ -415,6 +415,7 @@ export class SafetyGuard {
           violation.decision,
           `${shown} refused: the target tab is on '${currentUrl}', which ${violation.reason}. ` +
           'Navigate it elsewhere (fox_navigate with a url) or close it.',
+          currentUrl,
         );
       }
     }

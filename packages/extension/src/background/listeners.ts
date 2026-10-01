@@ -11,6 +11,7 @@ import {
   loggingStateFor,
   wantsEarlyInjection,
   forgetTab,
+  type LogRecordRefusal,
 } from "./logging";
 import type { NativeMessage } from "./types";
 
@@ -42,13 +43,17 @@ export function registerListeners(): void {
       if (msg.type === LOG_RECORD_MESSAGE) {
         // A batch from the top frame of a tab whose logging is on. The page
         // URL checked is the browser's (sender), never one from the message.
+        // `accepted` says whether the entries were kept; when not, `reason`
+        // says why (a protected page: the content script drops what it
+        // still holds, see log-store.ts sendLogBatch).
         const senderTabId = sender.tab?.id;
-        const accepted =
-          sender.frameId === TOP_FRAME_ID &&
-          senderTabId !== undefined &&
-          isLoggingTab(senderTabId);
-        if (accepted) acceptLogRecords(senderTabId, [sender.tab?.url, sender.url], msg as { console?: unknown; network?: unknown });
-        sendResponse({ accepted });
+        const refusal: LogRecordRefusal | null =
+          sender.frameId !== TOP_FRAME_ID
+            ? "not_top_frame"
+            : senderTabId === undefined || !isLoggingTab(senderTabId)
+              ? "not_logging"
+              : acceptLogRecords(senderTabId, [sender.tab?.url, sender.url], msg as { console?: unknown; network?: unknown });
+        sendResponse(refusal === null ? { accepted: true } : { accepted: false, reason: refusal });
         return;
       }
       if (msg.type === LOGGING_STATE_QUERY) {

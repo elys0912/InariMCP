@@ -156,6 +156,16 @@ export function hasLocator(locator: FindElementOptions): boolean {
   return Object.keys(locatorOf(locator)).length > 0;
 }
 
+/** Tag, id and name of an element (for messages: no text or value). */
+export function elementIdentity(element: Element): { tag: string; id?: string; name?: string } {
+  const name = element.getAttribute("name");
+  return {
+    tag: element.tagName.toLowerCase(),
+    ...(element.id ? { id: element.id } : {}),
+    ...(name ? { name } : {}),
+  };
+}
+
 export function notFoundError(locator: FindElementOptions): Error {
   return new Error(`Element not found: ${JSON.stringify(locatorOf(locator))}`);
 }

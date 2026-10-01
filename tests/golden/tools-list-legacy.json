@@ -737,7 +737,7 @@
   },
   {
     "name": "fox_press_key",
-    "description": "Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta). The key events are synthetic (isTrusted=false): page handlers see them, but the browser performs no default action (no focus move on Tab, no scrolling, no browser shortcuts). Plain Enter in a form field submits the form like a real Enter.",
+    "description": "Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta) on the element located by selector (CSS), xpath, text or id (checked in that order; it is focused first), else on the focused element. The key events are synthetic (isTrusted=false): page handlers see them, but the browser performs no default action (no focus move on Tab, no scrolling, no browser shortcuts). Plain Enter in a form field submits the form like a real Enter. Headless: selector only.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -747,7 +747,19 @@
         },
         "selector": {
           "type": "string",
-          "description": "CSS selector of element to focus first"
+          "description": "CSS selector"
+        },
+        "xpath": {
+          "type": "string",
+          "description": "XPath expression"
+        },
+        "text": {
+          "type": "string",
+          "description": "Visible text of the element: the innermost element whose whole text contains it (case-sensitive; enabled, visible matches first). Top document only: not inside iframes or shadow DOM"
+        },
+        "id": {
+          "type": "string",
+          "description": "ID of the element"
         },
         "ctrl": {
           "type": "boolean",

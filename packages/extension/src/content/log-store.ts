@@ -86,15 +86,25 @@ function takePendingLogs(): { console: ConsoleLogEntry[]; network: NetworkLogEnt
  * Hand the pending entries to the background. It keeps them only while
  * logging is on for this tab and the page is not protected, so a batch
  * from a provisional early-injection recording is dropped there if the
- * tab turns out not to be logging.
+ * tab turns out not to be logging. When it dropped the batch because the
+ * page is protected, the entries recorded here since are dropped too
+ * (they come from the same page).
  */
 export function sendLogBatch(): void {
   logFlushTimer = null;
   if (consoleLogs.length === 0 && networkLogs.length === 0) return;
   const batch = takePendingLogs();
-  browser.runtime.sendMessage({ type: LOG_RECORD_MESSAGE, ...batch }).catch(() => {
-    // Background unreachable (extension reloading): the batch is lost
-  });
+  browser.runtime
+    .sendMessage({ type: LOG_RECORD_MESSAGE, ...batch })
+    .then((reply: unknown) => {
+      const r = typeof reply === "object" && reply !== null
+        ? (reply as { accepted?: unknown; reason?: unknown })
+        : {};
+      if (r.accepted === false && r.reason === "protected_page") takePendingLogs();
+    })
+    .catch(() => {
+      // Background unreachable (extension reloading): the batch is lost
+    });
 }
 
 function pushNetworkLog(entry: NetworkLogEntry): void {
@@ -203,5 +213,10 @@ export function flushLogs(): Record<string, unknown> {
 export function clearLogs(options: ClearLogsOptions = {}): Record<string, unknown> {
   if (options.console !== false) consoleLogs = [];
   if (options.network !== false) networkLogs = [];
+  // Nothing left to send: no batch timer either.
+  if (consoleLogs.length === 0 && networkLogs.length === 0 && logFlushTimer !== null) {
+    clearTimeout(logFlushTimer);
+    logFlushTimer = null;
+  }
   return { success: true, message: "Logs cleared" };
 }

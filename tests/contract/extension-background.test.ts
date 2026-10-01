@@ -238,6 +238,22 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
   });
 });
 
+describe('WP38 no active tab: a failure result, not a TypeError', () => {
+  it('get_page_info and execute_script answer "No target tab" when tabs.query finds none', async () => {
+    useFakeBrowser({
+      tabs: {
+        query: async () => [],
+        sendMessage: async () => { throw new Error('nothing may be sent'); },
+        executeScript: async () => { throw new Error('nothing may run'); },
+      },
+    });
+    const { getPageInfo, executeScript } = await import('../../packages/extension/src/background/page-actions.ts');
+    expect(await getPageInfo(undefined)).toEqual({ success: false, error: 'No target tab' });
+    expect(await executeScript(undefined, { script: '1' })).toEqual({ success: false, error: 'No target tab' });
+    expect(await handleCommand({ action: 'get_page_info' })).toEqual({ success: false, error: 'No target tab' });
+  });
+});
+
 describe('WP30 go_back / go_forward wait for the load like navigate', () => {
   it('returns the URL after the history load completes, not after a fixed delay', async () => {
     vi.useFakeTimers();
@@ -355,7 +371,7 @@ describe('3.A8 reload_all / reload_by_url skip protected tabs', () => {
       ]).rules;
       const result = await reloadMatchingTabs(() => true, false, null, protectedRules, NO_LISTS);
       expect(reloaded).toEqual([1]);
-      expect(result).toMatchObject({ success: true, reloadedCount: 1, excludedProtected: 1 });
+      expect(result).toMatchObject({ success: true, reloadedCount: 1, excludedProtected: 1, excludedBlocked: 0 });
     } finally {
       delete (globalThis as { browser?: unknown }).browser;
     }
@@ -468,6 +484,23 @@ describe('WP5b URL rules and urlPattern arguments', () => {
       .toMatchObject({ success: true, reloadedCount: 1, excludedBlocked: 1, excludedProtected: 0 });
     expect(reloaded).toEqual([1]);
   });
+
+  it('WP38 both excluded counts are always there, 0 included', async () => {
+    const tabs = [fakeTab({ id: 1, url: 'https://ok.test/' })];
+    useFakeBrowser({
+      tabs: {
+        query: async () => tabs,
+        captureTab: async (id: number) => `data:${id}`,
+        reload: async () => {},
+      },
+    });
+    for (const action of ['screenshot_all_tabs', 'reload_all']) {
+      const result = await handleCommand({ action });
+      expect(result, action).toMatchObject({ success: true, excludedBlocked: 0, excludedProtected: 0 });
+      expect(result, action).not.toHaveProperty('excludedBlockedReason');
+      expect(result, action).not.toHaveProperty('excludedReason');
+    }
+  });
 });
 
 describe('5.2 log buffers', () => {
@@ -548,12 +581,14 @@ describe('5.2 log buffers across a navigation', () => {
       .toEqual({ accepted: true });
     // Not the top frame, and not a tab logging is on for: refused outright.
     expect(post({ ...sender(page, 1), url: 'https://ad.test/' }, { console: [{ message: 'iframe' }] }))
-      .toEqual({ accepted: false });
+      .toEqual({ accepted: false, reason: 'not_top_frame' });
     expect(post(sender(fakeTab({ id: 12, url: 'https://app.test/' }), TOP_FRAME_ID), { console: [{ message: 'other tab' }] }))
-      .toEqual({ accepted: false });
-    // Navigated to a protected page: the listener takes the batch, the
-    // buffer drops it (recording is paused there).
-    expect(post(sender(bank, TOP_FRAME_ID), { console: [{ message: 'secret' }] })).toEqual({ accepted: true });
+      .toEqual({ accepted: false, reason: 'not_logging' });
+    // Navigated to a protected page: the buffer drops the batch (recording
+    // is paused there) and the reply says so (WP38), so the page drops what
+    // it still holds.
+    expect(post(sender(bank, TOP_FRAME_ID), { console: [{ message: 'secret' }] }))
+      .toEqual({ accepted: false, reason: 'protected_page' });
     expect(await getLogsOfTab('getConsoleLogs', bank, {}, []))
       .toMatchObject({ success: true, pausedForProtectedDomain: true, totalCount: 1 });
     // Back on a normal page: the same buffer continues.
@@ -567,7 +602,7 @@ describe('5.2 log buffers across a navigation', () => {
 
     // stop_logging keeps the buffer readable but takes no further batches.
     expect(await stopLoggingOnTab(page2)).toMatchObject({ success: true, consoleLogsCount: 2, networkLogsCount: 1 });
-    expect(post(sender(page2, TOP_FRAME_ID), { console: [{ message: 'late' }] })).toEqual({ accepted: false });
+    expect(post(sender(page2, TOP_FRAME_ID), { console: [{ message: 'late' }] })).toEqual({ accepted: false, reason: 'not_logging' });
     expect(await getLogsOfTab('getConsoleLogs', page2, {}, []))
       .toMatchObject({ loggingEnabled: false, returnedCount: 2 });
 
@@ -587,7 +622,7 @@ describe('5.2 log buffers across a navigation', () => {
 
     close(13);
     expect(await getLogsOfTab('getConsoleLogs', tab, {}, [])).toMatchObject({ totalCount: 0, loggingEnabled: false });
-    expect(post(sender(tab, TOP_FRAME_ID), { console: [{ message: 'y' }] })).toEqual({ accepted: false });
+    expect(post(sender(tab, TOP_FRAME_ID), { console: [{ message: 'y' }] })).toEqual({ accepted: false, reason: 'not_logging' });
   });
 });
 

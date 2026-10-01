@@ -3,15 +3,25 @@
 import { TOP_FRAME_ID } from "./constants";
 import type { CommandResult } from "./types";
 
+/**
+ * The tab a command acts on: the given tab, else the active tab of the
+ * current window. Undefined when there is none (no window has focus, e.g.
+ * all windows minimized); callers answer with noTargetTab().
+ */
 export async function resolveTab(
   tabId: number | undefined,
-): Promise<browser.tabs.Tab> {
+): Promise<browser.tabs.Tab | undefined> {
   if (tabId) return browser.tabs.get(tabId);
   const tabs = await browser.tabs.query({
     active: true,
     currentWindow: true,
   });
   return tabs[0];
+}
+
+/** Failure result of a command that has no tab to act on. */
+export function noTargetTab(): CommandResult {
+  return { success: false, error: "No target tab" };
 }
 
 /**
@@ -28,7 +38,7 @@ export async function sendToContentScript(
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
-    if (!tab) return { success: false, error: "No target tab" };
+    if (!tab) return noTargetTab();
     const result = (await browser.tabs.sendMessage(tab.id, message, { frameId })) as Record<string, unknown>;
     return { success: true, ...result };
   } catch (error) {

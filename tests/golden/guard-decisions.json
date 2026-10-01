@@ -360,6 +360,16 @@
     "guardOff": null
   },
   {
+    "id": "press_key/locators",
+    "tool": "fox_press_key",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
     "id": "set_value/default",
     "tool": "fox_set_value",
     "default": null,

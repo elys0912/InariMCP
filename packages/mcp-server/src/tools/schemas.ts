@@ -186,7 +186,8 @@ const foxTypeSchema = z.object({
 
 const foxPressKeySchema = z.object({
   key: z.string().describe("Key to press, e.g. 'Enter', 'Escape', 'Tab', 'ArrowDown', 'a'"),
-  selector: z.string().optional().describe('CSS selector of element to focus first'),
+  ...elementLocator,
+  id: z.string().optional().describe('ID of the element'),
   ctrl: z.boolean().optional().default(false).describe('Hold Ctrl'),
   shift: z.boolean().optional().default(false).describe('Hold Shift'),
   alt: z.boolean().optional().default(false).describe('Hold Alt'),
@@ -506,7 +507,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_press_key: {
     name: 'fox_press_key',
     description:
-      'Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta). The key events are synthetic (isTrusted=false): page handlers see them, but the browser performs no default action (no focus move on Tab, no scrolling, no browser shortcuts). Plain Enter in a form field submits the form like a real Enter.',
+      'Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta) on the element located by selector (CSS), xpath, text or id (checked in that order; it is focused first), else on the focused element. The key events are synthetic (isTrusted=false): page handlers see them, but the browser performs no default action (no focus move on Tab, no scrolling, no browser shortcuts). Plain Enter in a form field submits the form like a real Enter. Headless: selector only.',
     inputSchema: foxPressKeySchema,
     classification: 'act',
   },
