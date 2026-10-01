@@ -1,7 +1,6 @@
 // Layer 0 container scope: the scope check of handleCommand, and the
 // container tools (L2).
 
-import { SCOPE_SELF_ENFORCED_ACTIONS, SCOPE_NO_TAB_ACTIONS } from "./action-policy";
 import type { ContainerScope, CommandResult, ScopeFilter, ScopeDecision } from "./types";
 
 /** Parse the `containerScope` field attached by the MCP Server. */
@@ -51,9 +50,11 @@ export function isTabInScope(tab: browser.tabs.Tab, scope: ScopeFilter | null): 
  * Layer 0 enforcement. For single-tab actions, requires the target tab
  * (resolved once by handleCommand: explicit tabId, else the active tab) to
  * be in the agent container. A tab that could not be resolved is refused.
+ * `selfScoped`: the action enforces the scope itself or touches no tab
+ * (action table scope "self" / "noTab"); then only the filter is returned.
  */
 export async function enforceContainerScope(
-  action: string | undefined,
+  selfScoped: boolean,
   tab: browser.tabs.Tab | undefined,
   containerScope: ContainerScope,
 ): Promise<ScopeDecision> {
@@ -69,10 +70,7 @@ export async function enforceContainerScope(
   }
   const scope: ScopeFilter = { containerName, cookieStoreId };
 
-  if (
-    action !== undefined &&
-    (SCOPE_SELF_ENFORCED_ACTIONS.has(action) || SCOPE_NO_TAB_ACTIONS.has(action))
-  ) {
+  if (selfScoped) {
     return { allowed: true, scope, tabId: undefined };
   }
 

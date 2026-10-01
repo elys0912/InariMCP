@@ -1,12 +1,16 @@
 /**
  * Contract: server wire action names (shared BROWSER_ACTIONS) ⇔ Extension
  * WIRE_ACTION_MAP (packages/extension/src/action-map.ts) ⇔ background
- * dispatcher (background.ts and background/*.ts).
+ * action table (packages/extension/src/background/action-table.ts).
  */
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BROWSER_ACTIONS } from '@kitsune-mcp/shared';
-import { readExtensionTree } from './helpers/extension-source.js';
+import {
+  ACTION_TABLE,
+  UNKNOWN_ACTION,
+  describeAction,
+} from '../../packages/extension/src/background/action-table.ts';
 
 type WireMap = ReadonlyMap<string, string | null>;
 
@@ -35,13 +39,28 @@ describe('BROWSER_ACTIONS ⇔ WIRE_ACTION_MAP', () => {
     expect(extra).toEqual([]);
   });
 
-  it('every mapped internal name is a case of the background.ts dispatcher', () => {
-    const source = readExtensionTree('background');
-    const cases = new Set([...source.matchAll(/^\s*case "([^"]+)":/gm)].map((m) => m[1]));
+  it('every mapped internal name is a row of the action table', () => {
     const unhandled = [...wireMap.entries()]
-      .filter(([, internal]) => internal !== null && !cases.has(internal))
+      .filter(([, internal]) => internal !== null && !ACTION_TABLE.has(internal))
       .map(([wire, internal]) => `${wire} -> ${internal}`);
     expect(unhandled).toEqual([]);
+  });
+
+  it('every row of the action table is reached by a wire name, except the internal-only ones', () => {
+    const mapped = new Set([...wireMap.values()].filter((v): v is string => v !== null));
+    const internalOnly = [...ACTION_TABLE.keys()].filter((k) => !mapped.has(k));
+    expect(internalOnly).toEqual(['status']); // popup
+  });
+
+  it('an action outside the table fails closed (strictest row, refused)', async () => {
+    for (const name of ['noSuchAction', 'constructor', '__proto__', 'eval_chain']) {
+      expect(describeAction(name)).toBe(UNKNOWN_ACTION);
+    }
+    expect(UNKNOWN_ACTION).toMatchObject({ scope: 'tab', protectedCheck: 'upfront' });
+    await expect(UNKNOWN_ACTION.handler({ action: 'noSuchAction' } as never)).resolves.toEqual({
+      success: false,
+      error: 'Unknown action: noSuchAction',
+    });
   });
 
   it('3.A17: the observer tools reach the content script observer', () => {
