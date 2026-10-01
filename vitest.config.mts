@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 /**
  * Test layout
@@ -33,6 +33,15 @@ const sharedSrc = fileURLToPath(new URL('./packages/shared/src/index.ts', import
 const sharedNodeSrc = fileURLToPath(new URL('./packages/shared/src/node/index.ts', import.meta.url));
 const sharedActionNamesSrc = fileURLToPath(new URL('./packages/shared/src/action-names.ts', import.meta.url));
 
+/**
+ * Test files that drive a real headless Firefox (Playwright). They run in
+ * projects of their own with one retry: launching and driving a browser can
+ * fail for reasons outside the code under test (a slow start on a busy
+ * machine). Every other project keeps retry 0, so a flaky test shows up.
+ */
+const FIREFOX_MCP = ['packages/mcp-server/tests/headless-actions.test.ts'];
+const FIREFOX_CONTRACT = ['tests/contract/extension-content.test.ts'];
+
 export default defineConfig({
   resolve: {
     alias: [
@@ -45,6 +54,11 @@ export default defineConfig({
     // forks, not threads: tests/setup/isolate-home.ts changes HOME/USERPROFILE
     // for os.homedir(), which worker threads would not see.
     pool: 'forks',
+    // Stated, not left to the defaults (5 s / 10 s). Tests that need longer
+    // (real Firefox, real processes) give their own timeout.
+    testTimeout: 10_000,
+    hookTimeout: 30_000,
+    retry: 0,
     setupFiles: ['./tests/setup/isolate-home.ts'],
     globalSetup: ['./tests/setup/real-home-watch.ts'],
     env: {
@@ -53,9 +67,25 @@ export default defineConfig({
     },
     projects: [
       { extends: true, test: { name: 'shared', include: ['packages/shared/tests/**/*.test.ts'] } },
-      { extends: true, test: { name: 'mcp-server', include: ['packages/mcp-server/tests/**/*.test.ts'] } },
+      {
+        extends: true,
+        test: {
+          name: 'mcp-server',
+          include: ['packages/mcp-server/tests/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, ...FIREFOX_MCP],
+        },
+      },
+      { extends: true, test: { name: 'mcp-server-firefox', include: FIREFOX_MCP, retry: 1 } },
       { extends: true, test: { name: 'native-host', include: ['packages/native-host/tests/**/*.test.ts'] } },
-      { extends: true, test: { name: 'contract', include: ['tests/contract/**/*.test.ts'] } },
+      {
+        extends: true,
+        test: {
+          name: 'contract',
+          include: ['tests/contract/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, ...FIREFOX_CONTRACT],
+        },
+      },
+      { extends: true, test: { name: 'contract-firefox', include: FIREFOX_CONTRACT, retry: 1 } },
       { extends: true, test: { name: 'scripts', include: ['tests/scripts/**/*.test.ts'] } },
       // Real processes and a real (headless) Firefox; `npm run test:e2e`.
       // Excluded from `npm test` by its --project filter.

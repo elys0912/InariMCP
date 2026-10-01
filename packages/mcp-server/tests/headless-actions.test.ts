@@ -2,7 +2,7 @@
  * Headless backend actions against a real headless Firefox (Playwright).
  * Skipped as a whole when Firefox cannot be launched.
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HeadlessBrowser } from '../src/headless/backend.js';
 
 type Result = Record<string, unknown>;
@@ -148,6 +148,22 @@ describe('select_option', () => {
 describe('dialogs', () => {
   const ALERT = '<button id="b" onclick="alert(\'hello\'); document.title = \'after\'">go</button>';
 
+  // Each test gets a tab of its own (the active one) that is closed after it:
+  // an armed handler, a pending dialog or a dialog record left by one test
+  // stays on its tab, so it cannot reach the next test.
+  let tab: number | undefined;
+  beforeEach(async () => {
+    tab = undefined;
+    if (!available) return;
+    const created = await browser.execute('create_tab', undefined, {});
+    expect(created['success']).toBe(true);
+    tab = created['tabId'] as number;
+  }, 30_000);
+  afterEach(async () => {
+    if (tab !== undefined) await browser.execute('close_tab', tab, {}); // may be closed already
+    tab = undefined;
+  }, 30_000);
+
   real('an armed handler accepts the next dialog and the action is not blocked', async () => {
     await load(ALERT);
     const armed = await browser.execute('handle_dialog', undefined, { action: 'accept', timeout: 200 });
@@ -168,16 +184,17 @@ describe('dialogs', () => {
 
   real('other actions run while a handler is waiting', async () => {
     await load('<p>x</p>');
-    const waiting = browser.execute('handle_dialog', undefined, { timeout: 1_500 });
-    const started = Date.now();
+    // Order, not wall-clock time: get_page_info must return while the handler still waits.
+    let waitingDone = false;
+    const waiting = browser.execute('handle_dialog', undefined, { timeout: 5_000 });
+    void waiting.then(() => { waitingDone = true; });
     const info = await browser.execute('get_page_info', undefined, {});
     expect(info['success']).toBe(true);
-    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(waitingDone).toBe(false);
     expect(await waiting).toMatchObject({ success: true, handled: false });
   });
 
   real('an armed handler expires: a later dialog is treated as unexpected', async () => {
-    expect((await browser.execute('create_tab', undefined, {}))['success']).toBe(true);
     await load(ALERT);
     const armed = await browser.execute('handle_dialog', undefined, { action: 'accept', timeout: 100 });
     expect(armed['armed']).toBe('accept');
@@ -193,8 +210,6 @@ describe('dialogs', () => {
   }, 40_000);
 
   real('closing the tab ends a waiting handle_dialog at once', async () => {
-    const created = await browser.execute('create_tab', undefined, {});
-    const tab = created['tabId'] as number;
     const started = Date.now();
     const waiting = browser.execute('handle_dialog', tab, { timeout: 20_000 });
     await new Promise((r) => setTimeout(r, 200));
@@ -205,8 +220,6 @@ describe('dialogs', () => {
   });
 
   real('an unexpected dialog is dismissed after a grace period and reported', async () => {
-    // fresh tab: earlier tests may have left an armed handler on the first one
-    expect((await browser.execute('create_tab', undefined, {}))['success']).toBe(true);
     await load(ALERT);
     const click = await browser.execute('click', undefined, { selector: '#b' });
     expect(click['success']).toBe(true);

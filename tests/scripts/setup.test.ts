@@ -33,7 +33,8 @@ beforeEach(() => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-setup-'));
 });
 afterEach(() => {
-  fs.rmSync(tmp, { recursive: true, force: true });
+  // Windows: a file just written may still be open (AV scan, indexer) for a moment.
+  fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 // ---------------------------------------------------------------------------
@@ -1009,9 +1010,14 @@ type FsStub =
     };
 
 describe('writeFileAtomic', () => {
-  /** Real fs, with renameSync failing `failures` times with `code` first. */
+  /**
+   * Real fs, with renameSync failing `failures` times with `code` first.
+   * `attempts` counts every call; `injected` only the failures made here, so
+   * a real rename that fails once more (Windows AV) does not change it.
+   */
   function flakyRename(code: string, failures: number) {
     let n = 0;
+    let injected = 0;
     return {
       openSync: fs.openSync,
       writeFileSync: fs.writeFileSync,
@@ -1021,6 +1027,7 @@ describe('writeFileAtomic', () => {
       unlinkSync: fs.unlinkSync,
       renameSync: (from: string, to: string) => {
         if (n++ < failures) {
+          injected++;
           const err: NodeJS.ErrnoException = new Error(`${code}: busy`);
           err.code = code;
           throw err;
@@ -1029,6 +1036,9 @@ describe('writeFileAtomic', () => {
       },
       get attempts() {
         return n;
+      },
+      get injected() {
+        return injected;
       },
     };
   }
@@ -1053,7 +1063,9 @@ describe('writeFileAtomic', () => {
       const fsApi = flakyRename(code, 2);
       writeFileAtomic(target, code, {}, asFsApi(fsApi));
       expect(fs.readFileSync(target, 'utf8')).toBe(code);
-      expect(fsApi.attempts).toBe(3);
+      // two injected failures, then the real rename (retried itself if the OS was busy)
+      expect(fsApi.injected).toBe(2);
+      expect(fsApi.attempts).toBeGreaterThanOrEqual(3);
       expect(fs.readdirSync(tmp).filter((n) => n.endsWith('.tmp'))).toEqual([]);
     }
   });

@@ -455,7 +455,3 @@ describe('public tool call schemas', () => {
     expect(rejects('fox_tab', { action: 'close' })).toBe(true);
   });
 });
-
-// TODO(test): listSchema notes (scope / required / default) per field; annotations fold per tool.
-// TODO(test): commands with an approval grant (approvedHost) and Extension-side refusals.
-// TODO(test): FOX_READ_ONLY / FOX_ALLOW_SCRIPTS env overrides through the handler path.

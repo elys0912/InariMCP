@@ -9,12 +9,19 @@ const TOKEN = 'b'.repeat(64);
 
 let servers: WebSocketServer[] = [];
 let tcpServers: net.Server[] = [];
+let tcpSockets: net.Socket[] = [];
 let connections: ServerConnection[] = [];
+let intervals: ReturnType<typeof setInterval>[] = [];
 
 afterEach(async () => {
+  for (const t of intervals) clearInterval(t);
+  intervals = [];
   for (const c of connections) c.stop();
   connections = [];
-  for (const srv of tcpServers) srv.close();
+  // Accepted sockets keep a net.Server from closing: destroy them, then wait.
+  for (const sock of tcpSockets) sock.destroy();
+  tcpSockets = [];
+  for (const srv of tcpServers) await new Promise<void>((resolve) => srv.close(() => resolve()));
   tcpServers = [];
   for (const wss of servers) {
     for (const ws of wss.clients) ws.terminate();
@@ -135,6 +142,7 @@ describe('ServerConnection upgrade timeout', () => {
     const clientClosed = new Promise<void>((resolve) => {
       const srv = net.createServer((sock) => {
         sockets.push(sock);
+        tcpSockets.push(sock);
         sock.resume(); // read (and ignore) the upgrade request, so the client's FIN is seen
         sock.on('close', () => resolve());
         sock.on('error', () => { /* reset by the client */ });
@@ -151,23 +159,28 @@ describe('ServerConnection upgrade timeout', () => {
 });
 
 describe('ServerConnection half-open detection', () => {
+  // The silence timeout and the ping interval are far apart (and the client
+  // may observe the connection for a whole silence period), so a slow event
+  // loop on a busy machine does not decide the outcome.
   it('drops the connection when the server stops pinging', async () => {
-    let serverSide: WebSocket | undefined;
-    const { port } = await scriptedServer(daemonScript(TOKEN, (ws) => { serverSide = ws; }));
-    const c = open(target(port), [], { serverSilenceMs: 100 });
-    await waitFor(() => c.isConnected);
-    const closedOnServer = new Promise<void>((resolve) => serverSide!.once('close', () => resolve()));
+    let closedOnServer: Promise<void> | undefined;
+    const { port } = await scriptedServer(daemonScript(TOKEN, (ws) => {
+      // listen at once: the close may come before the test looks
+      closedOnServer ??= new Promise<void>((resolve) => ws.once('close', () => resolve()));
+    }));
+    const c = open(target(port), [], { serverSilenceMs: 300 });
+    await waitFor(() => closedOnServer !== undefined);
     await closedOnServer;
     expect(c.isConnected).toBe(false);
   });
 
   it('stays connected while the server pings', async () => {
-    let timer: ReturnType<typeof setInterval> | undefined;
-    const { port } = await scriptedServer(daemonScript(TOKEN, (ws) => { timer = setInterval(() => ws.ping(), 30); }));
-    const c = open(target(port), [], { serverSilenceMs: 100 });
+    const { port } = await scriptedServer(daemonScript(TOKEN, (ws) => {
+      intervals.push(setInterval(() => ws.ping(), 50));
+    }));
+    const c = open(target(port), [], { serverSilenceMs: 1_000 });
     await waitFor(() => c.isConnected);
-    await sleep(300);
+    await sleep(1_500);
     expect(c.isConnected).toBe(true);
-    clearInterval(timer);
   });
 });
