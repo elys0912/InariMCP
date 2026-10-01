@@ -103,11 +103,16 @@ export function exists(fsApi, p) {
   }
 }
 
+/**
+ * File content, or null when the file does not exist. Any other error
+ * (EACCES, EISDIR …) is thrown: "unreadable" must not pass for "absent".
+ */
 export function readTextOrNull(fsApi, p) {
   try {
     return fsApi.readFileSync(p, 'utf8');
-  } catch {
-    return null;
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return null;
+    throw err;
   }
 }
 
@@ -281,17 +286,22 @@ export function listNodeProcesses(deps) {
     return parsePsOutput(r.stdout); // filtered by entry path in classifyProcesses
   }
   const script = path.join(os.tmpdir(), `kitsune-ps-${process.pid}-${crypto.randomBytes(4).toString('hex')}.js`);
+  let created = false;
   try {
-    deps.fs.writeFileSync(script, WMI_QUERY_JS);
+    // 'wx': never run a script someone else planted under the predictable name.
+    deps.fs.writeFileSync(script, WMI_QUERY_JS, { flag: 'wx' });
+    created = true;
     const r = deps.run('cscript.exe', ['//NoLogo', '//U', '//E:jscript', script], { encoding: 'buffer', timeoutMs: 30_000 });
     if (!r.error && r.status === 0) return parseTabOutput(Buffer.from(r.stdout).toString('utf16le'));
   } catch {
     // fall through to wmic
   } finally {
-    try {
-      deps.fs.unlinkSync(script);
-    } catch {
-      // ignore
+    if (created) {
+      try {
+        deps.fs.unlinkSync(script);
+      } catch {
+        // ignore
+      }
     }
   }
   const w = deps.run('wmic.exe', ['process', 'where', "name='node.exe'", 'get', 'ProcessId,CommandLine', '/format:csv'], { timeoutMs: 30_000 });

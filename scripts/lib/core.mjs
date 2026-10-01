@@ -338,7 +338,8 @@ export function claudeRemoveArgs(scope) {
 /** A command line for display (double quotes where needed). */
 export function formatCommand(file, args, platform) {
   const q = (a) => {
-    if (a !== '' && /^[A-Za-z0-9_@%+=:,./\\-]+$/.test(a)) return a;
+    // No `%` here: cmd.exe expands %NAME% in a pasted line, quoted or not.
+    if (a !== '' && /^[A-Za-z0-9_@+=:,./\\-]+$/.test(a)) return a;
     return platform === 'win32' ? `"${a}"` : shellQuote(a);
   };
   return [file, ...args].map(q).join(' ');
@@ -352,6 +353,8 @@ export function commandInvocation(file, args, platform, env) {
   if (platform === 'win32' && /\.(cmd|bat)$/i.test(file)) {
     const all = [file, ...args];
     if (all.some((a) => /["\r\n]/.test(a))) throw new Error(`cannot pass an argument with a quote to ${file}`);
+    // cmd /c expands %NAME% even inside the double quotes.
+    if (all.some((a) => a.includes('%'))) throw new Error(`cannot pass an argument with a % to ${file}`);
     const line = all.map((a) => `"${a}"`).join(' ');
     return { file: env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], verbatim: true };
   }

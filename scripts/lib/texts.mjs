@@ -6,14 +6,23 @@
  * `--help` prints the ones for the current OS with this machine's paths.
  */
 
-import { CLAUDE_NAME, HOST_NAME, WIN_REG_KEY } from './core.mjs';
+import { CLAUDE_NAME, DEFAULT_HTTP_PORT, HOST_NAME, WIN_REG_KEY, shellQuote } from './core.mjs';
 
 const WIN = {
   repo: 'C:\\path\\to\\KitsuneMCP',
   node: 'C:\\Program Files\\nodejs\\node.exe',
   data: '%USERPROFILE%\\.kitsune-mcp',
 };
-const UNIX = { repo: '/path/to/KitsuneMCP', node: '/usr/local/bin/node', data: '~/.kitsune-mcp' };
+/**
+ * macOS / Linux values are shell words, already quoted (shellQuote for real
+ * paths), so `${v.data}/native-host` stays one word even with a space or a
+ * quote in the path.
+ */
+const UNIX = {
+  repo: shellQuote('/path/to/KitsuneMCP'),
+  node: shellQuote('/usr/local/bin/node'),
+  data: '"$HOME/.kitsune-mcp"',
+};
 
 function manualInstallWindows(v) {
   return `### Windows (without PowerShell)
@@ -44,8 +53,8 @@ function manualInstallUnix(v) {
 3. Create \`${v.data}/native-host/run-host.sh\` and \`chmod 700\` it:
    \`\`\`sh
    #!/bin/sh
-   cd '${v.repo}/packages/native-host' || exit 1
-   exec '${v.node}' '${v.repo}/packages/native-host/dist/index.js' "$@"
+   cd ${v.repo}/packages/native-host || exit 1
+   exec ${v.node} ${v.repo}/packages/native-host/dist/index.js "$@"
    \`\`\`
 4. Copy \`packages/native-host/${HOST_NAME}.json\`, set \`"path"\` to the full path of \`run-host.sh\`, and save it as
    - macOS: \`~/Library/Application Support/Mozilla/NativeMessagingHosts/${HOST_NAME}.json\`
@@ -53,7 +62,7 @@ function manualInstallUnix(v) {
      (Snap Firefox also \`~/snap/firefox/common/.mozilla/native-messaging-hosts/\`;
      Flatpak Firefox also \`~/.var/app/org.mozilla.firefox/.mozilla/native-messaging-hosts/\` and
      \`widget.use-xdg-desktop-portal.native-messaging = 1\` in about:config)
-5. Optional, Claude Code: \`claude mcp add --scope user ${CLAUDE_NAME} -- '${v.node}' '${v.repo}/packages/mcp-server/dist/index.js'\`
+5. Optional, Claude Code: \`claude mcp add --scope user ${CLAUDE_NAME} -- ${v.node} ${v.repo}/packages/mcp-server/dist/index.js\`
 `;
 }
 
@@ -68,7 +77,7 @@ the Native Host starts the daemon again (and recreates the token and logs).
 3. \`claude mcp remove --scope user ${CLAUDE_NAME}\` (and \`--scope local\` / \`project\` if used)
 4. Remove the extension in Firefox (about:addons, or about:debugging for a temporary add-on), or quit Firefox.
 5. Stop the daemon: \`"${v.node}" "${v.repo}\\packages\\mcp-server\\dist\\index.js" --stop-daemon\`.
-   Without the API token: \`netstat -ano | findstr :8765\` shows the PID in the LISTENING line; \`taskkill /PID <pid> /F\`.
+   Without the API token: \`netstat -ano | findstr :${v.port ?? DEFAULT_HTTP_PORT}\` shows the PID in the LISTENING line; \`taskkill /PID <pid> /F\`.
    Close Claude Code sessions that still use KitsuneMCP (they start the daemon again on the next tool call).
 6. Optional: \`rmdir /s /q "${v.data}"\` (API token, safety.json, logs, screenshots).
 `;
@@ -84,8 +93,8 @@ the Native Host starts the daemon again (and recreates the token and logs).
 2. \`rm -rf ${v.data}/native-host\`
 3. \`claude mcp remove --scope user ${CLAUDE_NAME}\` (and \`--scope local\` / \`project\` if used)
 4. Remove the extension in Firefox (about:addons, or about:debugging for a temporary add-on), or quit Firefox.
-5. Stop the daemon: \`'${v.node}' '${v.repo}/packages/mcp-server/dist/index.js' --stop-daemon\`.
-   Without the API token: \`kill $(lsof -tiTCP:8765 -sTCP:LISTEN)\` (or find the PID with \`ss -ltnp 'sport = :8765'\`).
+5. Stop the daemon: \`${v.node} ${v.repo}/packages/mcp-server/dist/index.js --stop-daemon\`.
+   Without the API token: \`kill $(lsof -tiTCP:${v.port ?? DEFAULT_HTTP_PORT} -sTCP:LISTEN)\` (or find the PID with \`ss -ltnp 'sport = :${v.port ?? DEFAULT_HTTP_PORT}'\`).
    Close Claude Code sessions that still use KitsuneMCP (they start the daemon again on the next tool call).
 6. Optional: \`rm -rf ${v.data}\` (API token, safety.json, logs, screenshots).
 `;
@@ -100,10 +109,16 @@ export function manualMarkdown(kind) {
   return `${title}\n\n${body.join('\n')}`;
 }
 
-/** Manual steps for one platform with this machine's paths. */
+/**
+ * Manual steps for one platform with this machine's paths.
+ * @param {{repoRoot: string, nodePath: string, dataDir: string, port?: number}} v
+ */
 export function manualForPlatform(kind, platform, v) {
-  const vars = { repo: v.repoRoot, node: v.nodePath, data: v.dataDir };
-  if (platform === 'win32') return kind === 'install' ? manualInstallWindows(vars) : manualUninstallWindows(vars);
+  if (platform === 'win32') {
+    const vars = { repo: v.repoRoot, node: v.nodePath, data: v.dataDir, port: v.port };
+    return kind === 'install' ? manualInstallWindows(vars) : manualUninstallWindows(vars);
+  }
+  const vars = { repo: shellQuote(v.repoRoot), node: shellQuote(v.nodePath), data: shellQuote(v.dataDir), port: v.port };
   return kind === 'install' ? manualInstallUnix(vars) : manualUninstallUnix(vars);
 }
 

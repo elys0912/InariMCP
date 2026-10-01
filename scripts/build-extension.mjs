@@ -60,6 +60,23 @@ const FORBIDDEN_INPUTS = [
 ];
 
 const manifest = JSON.parse(readFileSync(path.join(ext, 'manifest.json'), 'utf-8'));
+
+// The keys this script reads, checked up front: a clear message instead of a
+// TypeError halfway through the build.
+const isStringArray = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string');
+const manifestProblems = [
+  [typeof manifest?.browser_specific_settings?.gecko?.strict_min_version === 'string',
+    'browser_specific_settings.gecko.strict_min_version (string)'],
+  [isStringArray(manifest?.background?.scripts), 'background.scripts (array of strings)'],
+  [Array.isArray(manifest?.content_scripts) && manifest.content_scripts.every((c) =>
+    c && typeof c === 'object' && (c.js === undefined || isStringArray(c.js)) && (c.css === undefined || isStringArray(c.css))),
+  'content_scripts (array of { js?: string[], css?: string[] })'],
+  [typeof manifest?.browser_action?.default_popup === 'string', 'browser_action.default_popup (string)'],
+].filter(([ok]) => !ok).map(([, what]) => what);
+if (manifestProblems.length > 0) {
+  console.error(`build-extension: packages/extension/manifest.json is missing or has a wrong type for: ${manifestProblems.join(', ')}`);
+  process.exit(1);
+}
 const firefoxMin = manifest.browser_specific_settings.gecko.strict_min_version.split('.')[0];
 
 // Old outputs (e.g. the former per-file scripts) would otherwise end up in

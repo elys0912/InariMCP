@@ -11,7 +11,7 @@
 import {
   CLAUDE_NAME, MIN_NODE_MAJOR, UsageError, buildManifest, buildWrapper, claudeAddArgs,
   claudeConfigPath, claudeEntryState, claudeRemoveArgs, dataPaths, detectFirefox, findClaudeEntries,
-  formatCommand, isAscii, isWsl, manifestState, nmManifestTargets, nodeMajor, nodeVersionManager,
+  formatCommand, httpEndpoint, isAscii, isWsl, manifestState, nmManifestTargets, nodeMajor, nodeVersionManager,
   parseInstallArgs, parseRegDefaultValue, pathApi, repoPaths, samePath, serializeJson,
 } from './lib/core.mjs';
 import {
@@ -41,7 +41,9 @@ export async function runInstall(argv, overrides = {}) {
       r.error(err.message);
       return 1;
     }
-    throw err;
+    // Anything else (an fs error: EACCES, ENOSPC …): one line, not a stack trace.
+    r.error(err instanceof Error ? err.message : String(err));
+    return 1;
   } finally {
     deps.closePrompt?.();
   }
@@ -58,7 +60,7 @@ async function install(argv, deps, r) {
 
   if (opts.help) {
     r.raw(installUsage());
-    r.raw(`\nManual alternative (this machine):\n\n${manualForPlatform('install', platform, { repoRoot: repo.repoRoot, nodePath, dataDir: data.dataDir })}`);
+    r.raw(`\nManual alternative (this machine):\n\n${manualForPlatform('install', platform, { repoRoot: repo.repoRoot, nodePath, dataDir: data.dataDir, port: httpEndpoint(env).port })}`);
     return 0;
   }
   if (opts.manual) {
@@ -204,7 +206,14 @@ async function install(argv, deps, r) {
 
   for (const t of targets) {
     r.info(`${t.label}:`);
-    const st = manifestState(manifest, readTextOrNull(deps.fs, t.file), platform);
+    let currentText;
+    try {
+      currentText = readTextOrNull(deps.fs, t.file);
+    } catch (err) {
+      throw new Fatal(`could not read ${t.file}: ${err.message}`);
+    }
+    const st = manifestState(manifest, currentText, platform);
+    if (st.state === 'invalid') r.warn(`${t.file} is not a valid host manifest; replacing it`);
     if (st.state === 'different' && st.path && !samePath(st.path, data.wrapperPath, platform)) {
       r.warn(`${t.file} points to another host: ${st.path}`);
       if (!(await confirm(deps, opts, 'Replace it with this installation?', true))) {
@@ -232,9 +241,11 @@ async function install(argv, deps, r) {
   await claudeStep(deps, r, opts, { nodePath, serverEntry: repo.serverEntry, repo, home, env, platform });
 
   // -------------------------------------------------------------------------
+  const endpoint = httpEndpoint(env);
+  const healthUrl = `http://${endpoint.host.includes(':') ? `[${endpoint.host}]` : endpoint.host}:${endpoint.port}/health`;
   const health = platform === 'win32'
-    ? 'curl.exe --noproxy "*" -s http://127.0.0.1:8765/health'
-    : "curl --noproxy '*' -s http://127.0.0.1:8765/health";
+    ? `curl.exe --noproxy "*" -s ${healthUrl}`
+    : `curl --noproxy '*' -s ${healthUrl}`;
   r.raw(`
 ${dry ? 'Dry run finished: nothing was changed.' : 'Installation complete.'}
 
@@ -300,20 +311,21 @@ async function claudeStep(deps, r, opts, { nodePath, serverEntry, repo, home, en
   const configFile = claudeConfigPath(platform, home, env);
   let config = null;
   let projectMcp = null;
-  const configText = readTextOrNull(deps.fs, configFile);
+  // Display only: install does not rewrite these files, so an unreadable one is a warning.
   try {
-    config = configText === null ? null : JSON.parse(configText);
-  } catch {
-    r.warn(`could not parse ${configFile}; the current registration is unknown`);
+    const t = readTextOrNull(deps.fs, configFile);
+    config = t === null ? null : JSON.parse(t);
+  } catch (err) {
+    r.warn(`could not read ${configFile} (${err.message}); the current registration is unknown`);
   }
   try {
     const t = readTextOrNull(deps.fs, repo.projectMcpJson);
     projectMcp = t === null ? null : JSON.parse(t);
-  } catch {
-    r.warn(`could not parse ${repo.projectMcpJson}`);
+  } catch (err) {
+    r.warn(`could not read ${repo.projectMcpJson} (${err.message})`);
   }
   const { found, otherLocal } = findClaudeEntries({ config, projectMcp, repoRoot: repo.repoRoot, platform });
-  const describe = (e) => formatCommand(String(e.entry.command ?? ''), (e.entry.args ?? []).map(String), platform);
+  const describe = (e) => formatCommand(String(e.entry.command ?? ''), (Array.isArray(e.entry.args) ? e.entry.args : []).map(String), platform);
   for (const e of found) {
     const st = claudeEntryState(e.entry, { nodePath, serverEntry, platform });
     const text = st === 'same' ? 'matches this installation'

@@ -16,13 +16,14 @@ import * as serverAuth from '@kitsune-mcp/shared/node';
 import {
   AUTH_HEADER, CLAUDE_NAME, HOST_NAME, UsageError, WIN_REG_KEY, buildManifest, buildPosixWrapper,
   buildWindowsWrapper, buildWrapper, claudeConfigPath, claudeEntryState, classifyProcesses,
-  commandInvocation, computeMac, dataPaths, findClaudeEntries, manifestState, nmManifestTargets,
+  commandInvocation, computeMac, dataPaths, findClaudeEntries, formatCommand, manifestState, nmManifestTargets,
   nodeVersionManager, parseArgs, parseInstallArgs, parsePsOutput, parseRegDefaultValue,
   parseTabOutput, parseUninstallArgs, serializeJson, shellQuote, signPost,
 } from '../../scripts/lib/core.mjs';
 import {
   defaultDeps, httpGet, listNodeProcesses, probeDaemon, removeTreeSafe, stopProcess, writeFileAtomic,
 } from '../../scripts/lib/system.mjs';
+import { manualForPlatform, manualMarkdown } from '../../scripts/lib/texts.mjs';
 import { runInstall } from '../../scripts/install.mjs';
 import { runUninstall } from '../../scripts/uninstall.mjs';
 
@@ -543,6 +544,44 @@ describe('commandInvocation', () => {
       .toThrow(/cannot pass an argument with a quote/);
     // without the shim the argument is passed as-is
     expect(commandInvocation('C:\\node\\node.exe', ['a"b'], 'win32', {}).args).toEqual(['a"b']);
+  });
+
+  it('refuses an argument with a % (cmd /c expands %NAME% even inside quotes)', () => {
+    expect(() => commandInvocation('C:\\npm\\claude.cmd', ['mcp', 'a%OS%b'], 'win32', {}))
+      .toThrow(/cannot pass an argument with a %/);
+    expect(() => commandInvocation('C:\\100%\\claude.cmd', [], 'win32', {}))
+      .toThrow(/cannot pass an argument with a %/);
+    expect(commandInvocation('C:\\node\\node.exe', ['a%OS%b'], 'win32', {}).args).toEqual(['a%OS%b']);
+    // and a displayed command never shows a % unquoted
+    expect(formatCommand('claude', ['a%OS%b'], 'win32')).toBe('claude "a%OS%b"');
+    expect(formatCommand('claude', ['a%b'], 'linux')).toBe("claude 'a%b'");
+  });
+});
+
+describe('manual steps (--help / --manual)', () => {
+  it("quotes this machine's paths for the shell, even with a space and a single quote", () => {
+    const dataDir = "/home/my user/it's/.kitsune-mcp";
+    const q = "'/home/my user/it'\\''s/.kitsune-mcp'";
+    const v = { repoRoot: '/src/Kitsune MCP', nodePath: '/opt/node 20/bin/node', dataDir };
+    const uninstall = manualForPlatform('uninstall', 'linux', v);
+    expect(uninstall).toContain(`rm -rf ${q}/native-host\``);
+    expect(uninstall).toContain(`rm -rf ${q}\` (API token`);
+    expect(uninstall).toContain("'/opt/node 20/bin/node' '/src/Kitsune MCP'/packages/mcp-server/dist/index.js --stop-daemon");
+    const install = manualForPlatform('install', 'darwin', v);
+    expect(install).toContain(`mkdir -p ${q}/native-host && chmod 700 ${q} ${q}/native-host`);
+    expect(install).toContain("cd '/src/Kitsune MCP'/packages/native-host || exit 1");
+    // the real path never appears unquoted
+    expect(uninstall + install).not.toContain(` ${dataDir}`);
+  });
+
+  it('uses "$HOME/.kitsune-mcp" as the placeholder and the configured port', () => {
+    const md = manualMarkdown('uninstall');
+    expect(md).toContain('rm -rf "$HOME/.kitsune-mcp"/native-host');
+    expect(md).not.toContain('~/.kitsune-mcp/native-host`');
+    expect(md).toContain('lsof -tiTCP:8765');
+    const v = { repoRoot: '/r', nodePath: '/n', dataDir: '/d', port: 9999 };
+    expect(manualForPlatform('uninstall', 'linux', v)).toContain('lsof -tiTCP:9999');
+    expect(manualForPlatform('uninstall', 'win32', v)).toContain('findstr :9999');
   });
 });
 
@@ -1311,6 +1350,19 @@ describe('dry run', () => {
 
 const GECKO_ID = 'kitsune-test@example.invalid';
 
+/** The real fs with some functions replaced (deps.fs). */
+function fsWith(overrides: Record<string, unknown>) {
+  return { ...fs, ...overrides };
+}
+
+/** A readFileSync that fails with `code` for one file and reads the rest. */
+function failFor(file: string, code: string) {
+  return (p: fs.PathOrFileDescriptor, ...rest: unknown[]) => {
+    if (p === file) throw Object.assign(new Error(`${code}: simulated, open '${file}'`), { code });
+    return (fs.readFileSync as (...a: unknown[]) => unknown)(p, ...rest);
+  };
+}
+
 /** A repository-shaped directory with the files the installer looks for. */
 function fakeRepo(root: string): string {
   const write = (rel: string[], text: string) => {
@@ -1568,6 +1620,51 @@ describe('install (real run in a temp home)', () => {
     expect(fs.existsSync(data.nativeHostDir)).toBe(false);
   });
 
+  it('does not crash on a Claude Code entry whose args is not an array', async () => {
+    fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
+      mcpServers: { [CLAUDE_NAME]: { command: 'node', args: 'x.js' } },
+    }));
+    const ctx = realRunDeps(home, repoRoot);
+    expect(await runInstall([], ctx.deps)).toBe(0);
+    expect(ctx.text()).toContain('registered (scope user): node — points elsewhere');
+  });
+
+  it('warns before replacing a manifest that is not valid JSON', async () => {
+    fs.mkdirSync(path.dirname(target.file), { recursive: true });
+    fs.writeFileSync(target.file, '{ broken');
+    const ctx = realRunDeps(home, repoRoot);
+    expect(await runInstall([], ctx.deps)).toBe(0);
+    expect(ctx.text()).toContain(`[warn] ${target.file} is not a valid host manifest; replacing it`);
+    expect(JSON.parse(fs.readFileSync(target.file, 'utf8')).path).toBe(data.wrapperPath);
+  });
+
+  it('stops with exit code 1 when an existing manifest cannot be read', async () => {
+    const ctx = realRunDeps(home, repoRoot, {
+      fs: fsWith({ readFileSync: failFor(target.file, 'EACCES') }),
+    });
+    expect(await runInstall([], ctx.deps)).toBe(1);
+    expect(ctx.text()).toContain(`[error] could not read ${target.file}`);
+  });
+
+  it('turns an unexpected file-system error into one error line and exit code 1', async () => {
+    const ctx = realRunDeps(home, repoRoot, {
+      fs: fsWith({
+        mkdirSync: () => {
+          throw Object.assign(new Error('EACCES: permission denied, mkdir'), { code: 'EACCES' });
+        },
+      }),
+    });
+    expect(await runInstall([], ctx.deps)).toBe(1);
+    expect(ctx.text()).toContain('[error] EACCES: permission denied, mkdir');
+  });
+
+  it('prints the health check for the configured port', async () => {
+    const ctx = realRunDeps(home, repoRoot, { env: { PATH: '', FOX_HTTP_PORT: '9999' } });
+    expect(await runInstall([], ctx.deps)).toBe(0);
+    expect(ctx.text()).toContain('-s http://127.0.0.1:9999/health');
+    expect(ctx.text()).not.toContain(':8765');
+  });
+
   it('reports a usage error with exit code 2 and writes nothing', async () => {
     const ctx = realRunDeps(home, repoRoot);
     expect(await runInstall(['--claude-scope=nope'], ctx.deps)).toBe(2);
@@ -1612,6 +1709,7 @@ describe('uninstall (real run in a temp home)', () => {
     expect(fs.existsSync(data.nativeHostDir)).toBe(false);
     expect(fs.existsSync(data.tokenPath)).toBe(true);
     expect(text).toContain('kept (use --purge to delete it)');
+    expect(text).not.toContain('points to another installation');
     if (isWin) {
       expect(ctx.calls.some((c) => c[0] === 'reg.exe' && c[1] === 'delete' && c[2] === WIN_REG_KEY)).toBe(true);
       expect(ctx.registry.has(WIN_REG_KEY)).toBe(false);
@@ -1705,6 +1803,66 @@ describe('uninstall (real run in a temp home)', () => {
       [claude, 'mcp', 'remove', '--scope', 'user', CLAUDE_NAME],
       [claude, 'mcp', 'remove', '--scope', 'local', CLAUDE_NAME],
     ]);
+  });
+
+  it('a broken .claude.json is "registration state unknown", not "not registered" (exit code 1)', async () => {
+    fs.writeFileSync(path.join(home, '.claude.json'), '{ broken');
+    const ctx = realRunDeps(home, repoRoot);
+    expect(await runUninstall([], ctx.deps)).toBe(1);
+    const text = ctx.text();
+    expect(text).toContain('registration state unknown');
+    expect(text).not.toContain('is not registered');
+    expect(text).toContain('Uninstall finished with 1 problem(s)');
+  });
+
+  it('an unreadable .claude.json (EACCES) is a problem too (exit code 1)', async () => {
+    const configFile = path.join(home, '.claude.json');
+    fs.writeFileSync(configFile, '{}');
+    const ctx = realRunDeps(home, repoRoot, { fs: fsWith({ readFileSync: failFor(configFile, 'EACCES') }) });
+    expect(await runUninstall([], ctx.deps)).toBe(1);
+    const text = ctx.text();
+    expect(text).toContain(`could not read ${configFile}`);
+    expect(text).toContain('registration state unknown');
+    expect(text).not.toContain('is not registered');
+    expect(text).toContain('Uninstall finished with 1 problem(s)');
+  });
+
+  it('reports a data directory it cannot remove instead of crashing', async () => {
+    fs.rmSync(data.tokenPath, { force: true });
+    fs.rmSync(data.logsDir, { recursive: true, force: true });
+    const ctx = realRunDeps(home, repoRoot, {
+      fs: fsWith({
+        rmdirSync: () => {
+          throw Object.assign(new Error('ENOTEMPTY: directory not empty, rmdir'), { code: 'ENOTEMPTY' });
+        },
+      }),
+    });
+    expect(await runUninstall([], ctx.deps)).toBe(1);
+    expect(ctx.text()).toContain(`[warn] could not check or remove ${data.dataDir}: ENOTEMPTY`);
+    expect(ctx.text()).toContain('Uninstall finished with 1 problem(s)');
+  });
+
+  it('--no-stop does not count an unverified daemon without a PID as a problem', async () => {
+    const health = { status: 200, headers: {}, body: Buffer.from(JSON.stringify({ service: 'kitsune-mcp', version: '1' })) };
+    const ctx = realRunDeps(home, repoRoot, { httpGet: async () => health });
+    expect(await runUninstall(['--no-stop'], ctx.deps)).toBe(0);
+    expect(ctx.text()).not.toContain('PID is unknown');
+    // without --no-stop it is one
+    const again = realRunDeps(home, repoRoot, { httpGet: async () => health });
+    expect(await runUninstall(['--yes'], again.deps)).toBe(1);
+    expect(again.text()).toContain('PID is unknown');
+  });
+
+  it('warns, but still removes, a registration of another installation', async () => {
+    const ctx = realRunDeps(home, repoRoot);
+    const target = nmManifestTargets({ platform: process.platform, home, env: {}, exists: () => false })[0];
+    const other = isWin ? 'D:\\other\\kitsune_mcp.json' : '/other/run-host.sh';
+    if (isWin) ctx.registry.set(WIN_REG_KEY, other);
+    else fs.writeFileSync(target.file, serializeJson(buildManifest({ wrapperPath: other, geckoId: GECKO_ID })));
+    expect(await runUninstall([], ctx.deps)).toBe(0);
+    expect(ctx.text()).toContain(`points to another installation: ${other}`);
+    if (isWin) expect(ctx.registry.has(WIN_REG_KEY)).toBe(false);
+    else expect(fs.existsSync(target.file)).toBe(false);
   });
 
   it('reports a usage error with exit code 2', async () => {
