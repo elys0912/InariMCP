@@ -32,7 +32,7 @@ import { getConnectionManager } from '../../packages/mcp-server/src/connection/m
 import { getApprovalStore } from '../../packages/mcp-server/src/safety/approval.js';
 import { callWithApproval, findApprovalRequest } from '../../packages/mcp-server/src/relay/approval.js';
 import { startHttpBridge } from '../../packages/mcp-server/src/transport/http-bridge.js';
-import { loadExtensionFunction, readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
+import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 // ---------------------------------------------------------------------------
 // Extension-side helpers (approval.ts publishes them on globalThis)
@@ -111,7 +111,7 @@ let tmpDir: string;
 beforeAll(async () => {
   await import('../../packages/extension/src/approval.ts');
   ext = (globalThis as { KITSUNE_APPROVAL?: ExtensionApproval }).KITSUNE_APPROVAL!;
-  toWireResponse = await loadExtensionFunction<ToWireResponse>('background.ts', 'toWireResponse');
+  ({ toWireResponse } = await import('../../packages/extension/src/background/wire.ts'));
 
   // The guard singleton reads this config (no audit log, no rate limit).
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-approval-'));

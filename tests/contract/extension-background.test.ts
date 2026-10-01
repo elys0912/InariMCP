@@ -88,7 +88,7 @@ type WaitForTabLoad = (
 let waitForTabLoad: WaitForTabLoad;
 
 beforeAll(async () => {
-  waitForTabLoad = await loadExtensionFunction<WaitForTabLoad>('background.ts', 'waitForTabLoad');
+  ({ waitForTabLoad } = await import('../../packages/extension/src/background/tab-wait.ts'));
 });
 
 afterEach(() => {
@@ -219,9 +219,7 @@ describe('WP5b URL rules and urlPattern arguments', () => {
   });
 
   it('an invalid urlPattern is a failure result, a valid one is case-sensitive', async () => {
-    const urlPatternArg = await loadExtensionFunction<(s: unknown) => { ok: boolean; pattern?: RegExp | null; result?: unknown }>(
-      'background.ts', 'urlPatternArg',
-    );
+    const { urlPatternArg } = await import('../../packages/extension/src/background/tab-wait.ts');
     expect(urlPatternArg('(')).toMatchObject({ ok: false, result: { success: false, error: expect.stringMatching(/^Invalid urlPattern/) } });
     expect(urlPatternArg(undefined)).toEqual({ ok: true, pattern: null });
     expect(urlPatternArg('a\\.test').pattern!.flags).toBe('');
@@ -260,9 +258,7 @@ describe('5.2 log buffers', () => {
   }
   let fns: LogFns;
   beforeAll(async () => {
-    fns = await loadExtensionFunctions<LogFns>('background.ts', [
-      'sanitizeLogRecord', 'appendLogRecords', 'logLimit', 'queryNetworkLogs',
-    ]);
+    fns = await import('../../packages/extension/src/background/log-records.ts') as unknown as LogFns;
   });
 
   it('keeps the newest entries up to the limit, as plain data only', () => {

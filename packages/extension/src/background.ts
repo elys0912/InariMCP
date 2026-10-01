@@ -7,38 +7,66 @@
 // Bundled with its imports into dist/background.js (scripts/build-extension.mjs).
 
 import { t } from "./i18n";
-import { WIRE_ACTION_MAP } from "./action-map";
 import {
-  APPROVAL_MESSAGE,
-  approvalCommandResult,
   isApprovedHost,
   parseApprovalPrompt,
-  type ApprovalDecision,
+  approvalCommandResult,
+  APPROVAL_MESSAGE,
   type ApprovalView,
+  type ApprovalDecision,
 } from "./approval";
 import {
-  compileUrlRules,
   findUrlRule,
+  compileUrlRules,
   urlListViolation,
   type CompiledUrlRule,
   type UrlListViolation,
 } from "./url-rule";
 import type { SetupState } from "./types/setup";
+import {
+  isSingleTabAction,
+  SELF_PROTECTED_ACTIONS,
+  SCOPE_SELF_ENFORCED_ACTIONS,
+  SCOPE_NO_TAB_ACTIONS,
+} from "./background/action-policy";
+import {
+  TIMEOUTS,
+  TOP_FRAME_ID,
+  LOG_RECORD_MESSAGE,
+  LOGGING_STATE_QUERY,
+} from "./background/constants";
+import { appendLogRecords, queryConsoleLogs, queryNetworkLogs } from "./background/log-records";
+import { resolveTab, sendToContentScript } from "./background/tab-target";
+import {
+  waitForNavigation,
+  waitForUrl,
+  urlPatternArg,
+  shouldSkipTab,
+  urlMatches,
+  positiveOr,
+  waitForTabLoad,
+  TAB_LOAD_OPTIONS,
+  tabLoadError,
+} from "./background/tab-wait";
+import type {
+  NativeMessage,
+  CommandResult,
+  ScopeFilter,
+  ScreenshotOptions,
+  GetAllTabsOptions,
+  FindTabsOptions,
+  RefreshOptions,
+  ReloadAllOptions,
+  ReloadByUrlOptions,
+  UrlLists,
+  ContainerScope,
+  ScopeDecision,
+} from "./background/types";
+import { resolveWireAction, toWireResponse } from "./background/wire";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface NativeMessage {
-  // Numeric for extension-initiated requests (sendToNativeHost), string for
-  // MCP Server commands (BrowserCommand.requestId).
-  requestId?: number | string;
-  action?: string;
-  tabId?: number;
-  data?: Record<string, unknown>;
-  error?: string;
-  [key: string]: unknown;
-}
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
@@ -46,355 +74,9 @@ interface PendingRequest {
   timeoutId: ReturnType<typeof setTimeout>;
 }
 
-interface CommandResult {
-  success: boolean;
-  error?: string;
-  [key: string]: unknown;
-}
-
-interface ScreenshotOptions {
-  format?: string;
-  quality?: number;
-  fullPage?: boolean;
-  allowFocus?: boolean;
-  restoreFocus?: boolean;
-  /** false: capture nothing (the image would have nowhere to go). */
-  saveToFile?: boolean;
-  /** all_tabs: attach imageData per tab (the MCP Server always sets it). */
-  includeData?: boolean;
-  urlPattern?: string;
-  /** all_tabs: time budget of the whole run (ms). */
-  timeout?: number;
-}
-
 const NO_IMAGE_NOTE =
   "saveToFile is false: no image was captured. KitsuneMCP returns screenshots only " +
   "as saved files (resource_link), never inline.";
-
-interface GetAllTabsOptions {
-  currentWindowOnly?: boolean;
-  includeFavicon?: boolean;
-  urlPattern?: string;
-  limit?: number;
-}
-
-interface FindTabsOptions {
-  url?: string;
-  urlPattern?: string;
-  title?: string;
-  active?: boolean;
-  audible?: boolean;
-}
-
-interface RefreshOptions {
-  bypassCache?: boolean;
-  waitForLoad?: boolean;
-}
-
-interface ReloadAllOptions {
-  urlPattern?: string;
-  bypassCache?: boolean;
-}
-
-interface ReloadByUrlOptions {
-  url?: string;
-  urlPattern?: string;
-  bypassCache?: boolean;
-}
-
-/** Layer 0 container scope as sent by the MCP Server. */
-interface ContainerScope {
-  containerName: string;
-}
-
-/**
- * Resolved container scope. cookieStoreId is null when the agent container
- * does not exist yet (then no existing tab is in scope).
- */
-interface ScopeFilter {
-  containerName: string;
-  cookieStoreId: string | null;
-}
-
-type ScopeDecision =
-  | { allowed: true; scope: ScopeFilter; tabId: number | undefined }
-  | { allowed: false; error: string };
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const TIMEOUTS = {
-  COMMAND: 30_000,
-  RECONNECT_MAX: 30_000,
-  RECONNECT_INITIAL: 1_000,
-  SCREENSHOT_DELAY: 150,
-  /** fox_wait_for_navigation without a timeout argument. */
-  NAVIGATION: 30_000,
-  /**
-   * Load wait of navigate / refresh / new tab. Shorter than the daemon's 30 s
-   * default for these commands, so the Extension reports the timeout itself.
-   */
-  PAGE_LOAD: 25_000,
-  /** No "loading" status this long after tabs.update / reload: nothing to load. */
-  TAB_LOAD_SETTLE: 1_000,
-  /** One tabs.captureTab call of screenshot all_tabs. */
-  CAPTURE_TAB: 5_000,
-  /** Whole screenshot all_tabs run without a timeout argument (< daemon 30 s). */
-  ALL_TABS_BUDGET: 20_000,
-  /** request_approval without a timeout argument (popup wait). */
-  APPROVAL: 60_000,
-} as const;
-
-const EXCLUDED_URL_PREFIXES = ["about:", "moz-extension:"] as const;
-
-function shouldSkipTab(url: string | undefined): boolean {
-  if (!url) return true;
-  return EXCLUDED_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
-}
-
-type UrlPatternArg = { ok: true; pattern: RegExp | null } | { ok: false; result: CommandResult };
-
-/**
- * Compile a `urlPattern` argument: a regex without flags (case-sensitive),
- * as on every urlPattern tool of both backends. null pattern when absent;
- * a failure result when it does not compile.
- */
-function urlPatternArg(source: unknown): UrlPatternArg {
-  if (typeof source !== "string" || source === "") return { ok: true, pattern: null };
-  try {
-    return { ok: true, pattern: new RegExp(source) };
-  } catch (error) {
-    return { ok: false, result: { success: false, error: `Invalid urlPattern: ${(error as Error).message}` } };
-  }
-}
-
-function urlMatches(url: string | undefined, pattern: RegExp): boolean {
-  return !!url && pattern.test(url);
-}
-
-type TabLoadOutcome = "complete" | "timeout" | "removed";
-
-/** The part of browser.tabs that waitForTabLoad uses (a fake in tests). */
-interface TabLoadApi {
-  onUpdated: {
-    addListener(fn: (tabId: number, changeInfo: browser.tabs.TabChangeInfo, tab: browser.tabs.Tab) => void): void;
-    removeListener(fn: (tabId: number, changeInfo: browser.tabs.TabChangeInfo, tab: browser.tabs.Tab) => void): void;
-  };
-  onRemoved: {
-    addListener(fn: (tabId: number) => void): void;
-    removeListener(fn: (tabId: number) => void): void;
-  };
-  get(tabId: number): Promise<browser.tabs.Tab>;
-}
-
-/**
- * Run `trigger` (tabs.update / tabs.reload, or nothing for a tab that was
- * just created) and wait until the tab has loaded. The listeners go in
- * before the trigger, so a fast load is not missed.
- *
- *   requireLoading true   (navigate / reload) the tab must go through
- *                         "loading" after the trigger; a "complete" status
- *                         left over from the previous document does not
- *                         count. If no load starts within `settleMs` (same-
- *                         document navigation, nothing to load), the tab's
- *                         current state decides.
- *   requireLoading false  (new tab) the current state counts at once.
- *
- * Outcomes: "complete", "timeout" after `timeoutMs`, or "removed" when the
- * tab is closed meanwhile. A trigger that throws rejects (listeners removed).
- */
-function waitForTabLoad(
-  tabs: TabLoadApi,
-  tabId: number,
-  trigger: () => Promise<unknown>,
-  isLoaded: (tab: browser.tabs.Tab) => boolean,
-  options: { timeoutMs: number; settleMs: number; requireLoading: boolean },
-): Promise<TabLoadOutcome> {
-  return new Promise<TabLoadOutcome>((resolve, reject) => {
-    let done = false;
-    let sawLoading = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let settleTimer: ReturnType<typeof setTimeout> | undefined;
-    const cleanup = (): void => {
-      done = true;
-      tabs.onUpdated.removeListener(onUpdated);
-      tabs.onRemoved.removeListener(onRemoved);
-      if (timer !== undefined) clearTimeout(timer);
-      if (settleTimer !== undefined) clearTimeout(settleTimer);
-    };
-    const finish = (outcome: TabLoadOutcome): void => {
-      if (done) return;
-      cleanup();
-      resolve(outcome);
-    };
-    const checkCurrent = (): void => {
-      if (done) return;
-      tabs.get(tabId).then(
-        (tab) => { if (isLoaded(tab)) finish("complete"); },
-        () => finish("removed"),
-      );
-    };
-    const onUpdated = (
-      updatedTabId: number,
-      changeInfo: browser.tabs.TabChangeInfo,
-      tab: browser.tabs.Tab,
-    ): void => {
-      if (updatedTabId !== tabId || done) return;
-      if (changeInfo.status === "loading") sawLoading = true;
-      if ((sawLoading || !options.requireLoading) && isLoaded(tab)) finish("complete");
-    };
-    const onRemoved = (removedTabId: number): void => {
-      if (removedTabId === tabId) finish("removed");
-    };
-    tabs.onUpdated.addListener(onUpdated);
-    tabs.onRemoved.addListener(onRemoved);
-    timer = setTimeout(() => finish("timeout"), options.timeoutMs);
-
-    trigger().then(
-      () => {
-        if (done) return;
-        if (!options.requireLoading) {
-          checkCurrent();
-          return;
-        }
-        settleTimer = setTimeout(() => {
-          if (!sawLoading) checkCurrent();
-        }, options.settleMs);
-      },
-      (error: unknown) => {
-        if (done) return;
-        cleanup();
-        reject(error);
-      },
-    );
-  });
-}
-
-/** Error text for a load wait that did not complete. */
-function tabLoadError(outcome: TabLoadOutcome, timeoutMs: number, currentUrl: string | undefined): string {
-  return outcome === "removed"
-    ? "The tab was closed before the page finished loading"
-    : `The page did not finish loading within ${timeoutMs}ms` +
-        ` (current URL: ${currentUrl ?? "unknown"}). The navigation may still complete;` +
-        " check with fox_get_tabs or fox_wait_for_url.";
-}
-
-/** A positive number from the command data, or the fallback. */
-function positiveOr(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-/**
- * fox_wait_for_navigation: wait for the tab's next top-level navigation to
- * finish ("load" = webNavigation.onCompleted, "domcontentloaded" =
- * onDOMContentLoaded). With urlPattern, navigations to other URLs are
- * skipped. As on the headless backend (Playwright waitForNavigation), a
- * navigation that finished before the command arrived does not count.
- */
-async function waitForNavigation(
-  tabId: number | undefined,
-  data: Record<string, unknown> = {},
-): Promise<CommandResult> {
-  const tab = await resolveTab(tabId);
-  if (!tab?.id) return { success: false, error: "No target tab" };
-  const targetId = tab.id;
-  const timeoutMs = positiveOr(data.timeout, TIMEOUTS.NAVIGATION);
-  const patternSrc = typeof data.urlPattern === "string" && data.urlPattern ? data.urlPattern : null;
-  const patternArg = urlPatternArg(patternSrc);
-  if (!patternArg.ok) return patternArg.result;
-  const pattern = patternArg.pattern;
-  const event =
-    data.waitUntil === "domcontentloaded"
-      ? browser.webNavigation.onDOMContentLoaded
-      : browser.webNavigation.onCompleted;
-
-  const url = await new Promise<string | null>((resolve) => {
-    const listener = (details: browser.webNavigation.NavigationDetails): void => {
-      if (details.tabId !== targetId || details.frameId !== 0) return;
-      if (pattern && !pattern.test(details.url)) return;
-      finish(details.url);
-    };
-    const timer = setTimeout(() => finish(null), timeoutMs);
-    function finish(value: string | null): void {
-      clearTimeout(timer);
-      event.removeListener(listener);
-      resolve(value);
-    }
-    event.addListener(listener);
-  });
-
-  if (url === null) {
-    return {
-      success: false,
-      error:
-        `No navigation${patternSrc ? ` to a URL matching /${patternSrc}/` : ""} ` +
-        `finished within ${timeoutMs}ms`,
-    };
-  }
-  const now = await browser.tabs.get(targetId);
-  return { success: true, url, title: now.title };
-}
-
-/**
- * fox_wait_for_url: wait until the tab's URL equals `url` (exact) or matches
- * `urlPattern` (regex) and the page has finished loading. Returns at once if
- * that is already the case. URL changes through the History API count too.
- */
-async function waitForUrl(
-  tabId: number | undefined,
-  data: Record<string, unknown> = {},
-): Promise<CommandResult> {
-  const exact = typeof data.url === "string" && data.url ? data.url : null;
-  const patternSrc = typeof data.urlPattern === "string" && data.urlPattern ? data.urlPattern : null;
-  if (!exact && !patternSrc) return { success: false, error: "Must provide url or urlPattern" };
-  const patternArg = urlPatternArg(exact ? null : patternSrc);
-  if (!patternArg.ok) return patternArg.result;
-  const pattern = patternArg.pattern;
-  const matches = (u: string | undefined): boolean =>
-    !!u && (exact ? u === exact : pattern!.test(u));
-
-  const tab = await resolveTab(tabId);
-  if (!tab?.id) return { success: false, error: "No target tab" };
-  const targetId = tab.id;
-  const timeoutMs = positiveOr(data.timeout, 15_000);
-
-  const reached = await new Promise<browser.tabs.Tab | null>((resolve) => {
-    let done = false;
-    const finish = (value: browser.tabs.Tab | null): void => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      browser.tabs.onUpdated.removeListener(listener);
-      resolve(value);
-    };
-    const check = (t: browser.tabs.Tab): void => {
-      if (matches(t.url) && t.status === "complete") finish(t);
-    };
-    const listener = (
-      updatedTabId: number,
-      _changeInfo: browser.tabs.TabChangeInfo,
-      t: browser.tabs.Tab,
-    ): void => {
-      if (updatedTabId === targetId) check(t);
-    };
-    // Listener first, then the current state, so a change in between is not missed.
-    browser.tabs.onUpdated.addListener(listener);
-    const timer = setTimeout(() => finish(null), timeoutMs);
-    browser.tabs.get(targetId).then(check, () => finish(null));
-  });
-
-  if (!reached) {
-    const current = await browser.tabs.get(targetId).catch(() => undefined);
-    return {
-      success: false,
-      error:
-        `URL did not ${exact ? `become ${exact}` : `match /${patternSrc}/`} within ` +
-        `${timeoutMs}ms (current: ${current?.url ?? "unknown"})`,
-    };
-  }
-  return { success: true, url: reached.url };
-}
 
 // ---------------------------------------------------------------------------
 // State
@@ -424,9 +106,6 @@ interface LoggingTabState {
   patterns: CompiledUrlRule[];
 }
 const loggingTabs = new Map<number, LoggingTabState>();
-const TOP_FRAME_ID = 0;
-/** Message type of the content script's "is logging on for my tab?" query. */
-const LOGGING_STATE_QUERY = "kitsune:loggingState";
 
 // Reconnection settings
 let reconnectAttempts = 0;
@@ -781,59 +460,6 @@ async function refreshSetupState(): Promise<SetupState> {
 }
 
 // ---------------------------------------------------------------------------
-// Tab resolution helper
-// ---------------------------------------------------------------------------
-
-async function resolveTab(
-  tabId: number | undefined,
-): Promise<browser.tabs.Tab> {
-  if (tabId) return browser.tabs.get(tabId);
-  const tabs = await browser.tabs.query({
-    active: true,
-    currentWindow: true,
-  });
-  return tabs[0];
-}
-
-// ---------------------------------------------------------------------------
-// Content script messaging
-// ---------------------------------------------------------------------------
-
-/**
- * Send a command to the tab's content script in one frame -- the top frame
- * (0) unless a caller names another. The content script runs in every frame
- * (all_frames), and tabs.sendMessage without a frameId goes to all of them
- * and takes the first answer, so any iframe (including a hostile one) could
- * answer or be the one that acts.
- */
-async function sendToContentScript(
-  tabId: number | undefined,
-  message: Record<string, unknown>,
-  frameId: number = TOP_FRAME_ID,
-): Promise<CommandResult> {
-  try {
-    const tab = await resolveTab(tabId);
-    if (!tab) return { success: false, error: "No target tab" };
-    const result = (await browser.tabs.sendMessage(tab.id, message, { frameId })) as Record<string, unknown>;
-    return { success: true, ...result };
-  } catch (error) {
-    const msg = (error as Error).message;
-    return {
-      success: false,
-      error: NO_CONTENT_SCRIPT.test(msg) ? NO_CONTENT_SCRIPT_MESSAGE : msg,
-    };
-  }
-}
-
-/** tabs.sendMessage error when the tab has no content script to answer. */
-const NO_CONTENT_SCRIPT = /Receiving end does not exist/i;
-const NO_CONTENT_SCRIPT_MESSAGE =
-  "KitsuneMCP cannot reach this page: Firefox does not let extensions into it " +
-  "(JSON viewer, about: pages, addons.mozilla.org, other extensions' pages), " +
-  "or it was opened before KitsuneMCP was installed or updated (reload the tab). " +
-  "Tab-level tools such as fox_screenshot and fox_get_tabs still work.";
-
-// ---------------------------------------------------------------------------
 // Command dispatcher
 // ---------------------------------------------------------------------------
 
@@ -1146,45 +772,6 @@ async function handleCommand(message: NativeMessage): Promise<CommandResult> {
 // Wire protocol helpers
 // ---------------------------------------------------------------------------
 
-type ResolvedAction =
-  | { kind: "action"; action: string | undefined }
-  | { kind: "notImplemented"; wireName: string };
-
-/**
- * Convert a wire action name (snake_case, see action-map.ts) to the internal
- * name. Names not in the table pass through unchanged: internal callers
- * (popup, content script) already use internal names such as "status", and
- * anything unknown still ends in the dispatcher's "Unknown action" branch.
- */
-function resolveWireAction(raw: string | undefined): ResolvedAction {
-  if (raw === undefined) return { kind: "action", action: undefined };
-  const mapped = WIRE_ACTION_MAP.get(raw);
-  if (mapped === null) return { kind: "notImplemented", wireName: raw };
-  return { kind: "action", action: mapped ?? raw };
-}
-
-/** Response envelope sent back over Native Messaging (BrowserResponse). */
-interface WireResponse {
-  requestId: number | string;
-  success: boolean;
-  error?: string;
-  safetyDecision?: string;
-  data?: Record<string, unknown>;
-}
-
-/**
- * Wrap a handler result in the wire contract: success / error /
- * safetyDecision stay top-level, every other field goes into `data`.
- */
-function toWireResponse(requestId: number | string, result: CommandResult): WireResponse {
-  const { success, error, safetyDecision, ...rest } = result;
-  const response: WireResponse = { requestId, success };
-  if (typeof error === "string") response.error = error;
-  if (typeof safetyDecision === "string") response.safetyDecision = safetyDecision;
-  if (Object.keys(rest).length > 0) response.data = rest;
-  return response;
-}
-
 /**
  * Send the result of a native command back to the native host. Messages from
  * the popup / content script carry no requestId and get the raw result via
@@ -1204,21 +791,6 @@ function postWireResponse(message: NativeMessage, result: CommandResult): void {
     }
   }
 }
-
-/**
- * Actions that apply `protectedUrlPatterns` in their own handler instead of
- * being refused up front: all_tabs, reload_all and reload_by_url skip
- * protected tabs, start_logging refuses on its own tab, get_*_logs report a
- * pause.
- */
-const SELF_PROTECTED_ACTIONS: ReadonlySet<string> = new Set([
-  "screenshotAllTabs",
-  "reloadAll",
-  "reloadByUrl",
-  "startLogging",
-  "getConsoleLogs",
-  "getNetworkLogs",
-]);
 
 /**
  * Refuse a command when its target tab (resolved once in handleCommand, the
@@ -1688,11 +1260,6 @@ async function solveCaptcha(
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
-
-const TAB_LOAD_OPTIONS = {
-  timeoutMs: TIMEOUTS.PAGE_LOAD,
-  settleMs: TIMEOUTS.TAB_LOAD_SETTLE,
-} as const;
 
 async function navigateTo(
   tabId: number | undefined,
@@ -2236,104 +1803,6 @@ interface LogBuffer {
 }
 const logBuffers = new Map<number, LogBuffer>();
 const LOG_BUFFER_LIMIT = 500;
-/** content → background: `{ type, console?: entry[], network?: entry[] }`. */
-const LOG_RECORD_MESSAGE = "kitsune:logRecords";
-
-/**
- * Copy one log entry from a content script into plain data: strings (cut
- * at 5000 characters), finite numbers, booleans, null, and one level of
- * string records (headers). Anything else is dropped; null if not an object.
- */
-function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(raw).slice(0, 20)) {
-    if (typeof value === "string") {
-      out[key] = value.length > 5000 ? value.slice(0, 5000) : value;
-    } else if (typeof value === "number") {
-      if (Number.isFinite(value)) out[key] = value;
-    } else if (typeof value === "boolean" || value === null) {
-      out[key] = value;
-    } else if (typeof value === "object" && !Array.isArray(value)) {
-      const record: Record<string, string> = {};
-      for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, 50)) {
-        if (typeof v === "string") record[k.slice(0, 200)] = v.slice(0, 1000);
-      }
-      out[key] = record;
-    }
-  }
-  return out;
-}
-
-/**
- * Append the valid entries of `incoming` (an array, else nothing) to
- * `target`, keeping only the newest `limit`. Returns how many were added.
- */
-function appendLogRecords(target: Record<string, unknown>[], incoming: unknown, limit: number): number {
-  if (!Array.isArray(incoming)) return 0;
-  let added = 0;
-  for (const raw of incoming) {
-    const entry = sanitizeLogRecord(raw);
-    if (entry === null) continue;
-    target.push(entry);
-    added++;
-  }
-  if (target.length > limit) target.splice(0, target.length - limit);
-  return added;
-}
-
-/** Positive integer `limit`, else 100 (the tool default). */
-function logLimit(value: unknown): number {
-  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 100;
-}
-
-/** fox_get_console_logs filters over a buffer (newest `limit` entries). */
-function queryConsoleLogs(
-  entries: Record<string, unknown>[],
-  options: Record<string, unknown> = {},
-): CommandResult {
-  let logs = entries;
-  if (typeof options.level === "string" && options.level !== "") {
-    logs = logs.filter((l) => l.level === options.level);
-  }
-  if (typeof options.search === "string" && options.search !== "") {
-    const needle = options.search.toLowerCase();
-    logs = logs.filter((l) => typeof l.message === "string" && l.message.toLowerCase().includes(needle));
-  }
-  const limit = logLimit(options.limit);
-  if (logs.length > limit) logs = logs.slice(-limit);
-  return { success: true, logs, totalCount: entries.length, returnedCount: logs.length };
-}
-
-/** fox_get_network_logs filters over a buffer (urlPattern: case-sensitive regex, as every urlPattern). */
-function queryNetworkLogs(
-  entries: Record<string, unknown>[],
-  options: Record<string, unknown> = {},
-): CommandResult {
-  let logs = entries;
-  if (typeof options.urlPattern === "string" && options.urlPattern !== "") {
-    let pattern: RegExp;
-    try {
-      pattern = new RegExp(options.urlPattern);
-    } catch (error) {
-      return { success: false, error: `Invalid urlPattern: ${(error as Error).message}` };
-    }
-    logs = logs.filter((l) => typeof l.url === "string" && pattern.test(l.url));
-  }
-  if (typeof options.method === "string" && options.method !== "") {
-    const method = options.method.toUpperCase();
-    logs = logs.filter((l) => typeof l.method === "string" && l.method.toUpperCase() === method);
-  }
-  if (typeof options.status === "number") {
-    logs = logs.filter((l) => l.status === options.status);
-  }
-  if (options.errorsOnly === true) {
-    logs = logs.filter((l) => !!l.error || (typeof l.status === "number" && l.status >= 400));
-  }
-  const limit = logLimit(options.limit);
-  if (logs.length > limit) logs = logs.slice(-limit);
-  return { success: true, logs, totalCount: entries.length, returnedCount: logs.length };
-}
 
 /**
  * Store entries a tab's top-frame content script sent (batch, flush or stop
@@ -2472,14 +1941,6 @@ function parseContainerScope(raw: unknown): ContainerScope | null {
   return typeof name === "string" && name !== "" ? { containerName: name } : null;
 }
 
-/** blocked / allowed rules of one command (url-rule.ts). */
-interface UrlLists {
-  blocked: CompiledUrlRule[];
-  allowed: CompiledUrlRule[];
-  /** The server sent an allowed list: URLs outside it are refused. */
-  allowlistActive: boolean;
-}
-
 const NO_URL_LISTS: UrlLists = { blocked: [], allowed: [], allowlistActive: false };
 
 /** parseUrlPolicy. */
@@ -2605,42 +2066,6 @@ async function ensureScopeContainer(scope: ScopeFilter): Promise<string> {
 function isTabInScope(tab: browser.tabs.Tab, scope: ScopeFilter | null): boolean {
   if (scope === null) return true;
   return scope.cookieStoreId !== null && tab.cookieStoreId === scope.cookieStoreId;
-}
-
-/**
- * Actions that do not target a single tab and enforce the scope themselves
- * (by filtering tabs / containers, or by choosing the container of a new
- * tab). Every other action is treated as single-tab and checked up front,
- * so unknown actions fall into the strict branch (default deny).
- */
-const SCOPE_SELF_ENFORCED_ACTIONS: ReadonlySet<string> = new Set([
-  // multi-tab: targets / results filtered to the agent container
-  "getTabs",
-  "findTabs",
-  "screenshotAllTabs",
-  "reloadAll",
-  "reloadByUrl",
-  // new tab: created inside the agent container
-  "createTab",
-  // container management: restricted to the agent container
-  "list_containers",
-  "open_in_container",
-]);
-
-/**
- * Actions that touch no tab and no container at all. Approval requests are
- * shown in the toolbar popup, and cancel_human_wait only withdraws a wait
- * the command it cancels already passed the scope check for.
- */
-const SCOPE_NO_TAB_ACTIONS: ReadonlySet<string> = new Set([
-  "status",
-  "requestApproval",
-  "cancelHumanWait",
-]);
-
-/** Internal action that targets one tab (the strict branch of the scope check). */
-function isSingleTabAction(action: string): boolean {
-  return !SCOPE_SELF_ENFORCED_ACTIONS.has(action) && !SCOPE_NO_TAB_ACTIONS.has(action);
 }
 
 /**

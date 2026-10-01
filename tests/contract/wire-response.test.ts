@@ -1,5 +1,5 @@
 /**
- * Contract: the Extension's response envelope (background.ts toWireResponse)
+ * Contract: the Extension's response envelope (background/wire.ts toWireResponse)
  * puts `requestId` first.
  *
  * Why it matters: when a response frame exceeds the Native Host's incoming
@@ -13,7 +13,6 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
 import { readMessage } from '../../packages/native-host/src/protocol.js';
 import { fakeStdin, frame, type FakeStdin } from '../../packages/native-host/tests/helpers/stdio.js';
-import { loadExtensionFunction } from './helpers/extension-source.js';
 
 type WireResponse = Record<string, unknown>;
 type ToWireResponse = (requestId: number | string, result: Record<string, unknown>) => WireResponse;
@@ -21,10 +20,10 @@ type ToWireResponse = (requestId: number | string, result: Record<string, unknow
 let toWireResponse: ToWireResponse;
 
 beforeAll(async () => {
-  toWireResponse = await loadExtensionFunction<ToWireResponse>('background.ts', 'toWireResponse');
+  ({ toWireResponse } = await import('../../packages/extension/src/background/wire.ts'));
 });
 
-describe('toWireResponse (extension background.ts)', () => {
+describe('toWireResponse (extension background/wire.ts)', () => {
   it.each([
     ['success with data', { success: true, url: 'https://example.test/', title: 't' }],
     ['failure', { success: false, error: 'boom' }],
