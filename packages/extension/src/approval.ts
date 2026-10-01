@@ -14,24 +14,23 @@
 //                     Claude. The answer goes back to Claude and unlocks
 //                     nothing.
 //
-// Loading: classic script without imports, loaded before background.js
-// (manifest.json) and before popup.js (popup.html). Contract tests load it
-// as a module; it also publishes its helpers on globalThis for them.
+// Imported by background.ts and popup.ts (bundled into both). Contract tests
+// load it as a module; it also publishes its helpers on globalThis for them.
 
 /** runtime.sendMessage types between the popup and the background. */
-const APPROVAL_MESSAGE = {
+export const APPROVAL_MESSAGE = {
   /** popup → background: list pending requests → { success, approvals } */
   LIST: "kitsune:approvals:list",
   /** popup → background: { id, approved } → { success, error? } */
   DECIDE: "kitsune:approvals:decide",
 } as const;
 
-type ApprovalKind = "protected_action" | "message";
+export type ApprovalKind = "protected_action" | "message";
 
-type ApprovalDecision = "approved" | "denied" | "timeout" | "cancelled";
+export type ApprovalDecision = "approved" | "denied" | "timeout" | "cancelled";
 
 /** What the popup shows for one pending request (serializable). */
-interface ApprovalView {
+export interface ApprovalView {
   id: string;
   kind: ApprovalKind;
   createdAt: number;
@@ -48,9 +47,9 @@ interface ApprovalView {
   detail?: string;
 }
 
-const APPROVAL_TEXT_LIMITS = { MESSAGE: 500, DETAIL: 500, SUMMARY: 800, URL: 300 } as const;
+export const APPROVAL_TEXT_LIMITS = { MESSAGE: 500, DETAIL: 500, SUMMARY: 800, URL: 300 } as const;
 
-function clipApprovalText(value: unknown, max: number): string | undefined {
+export function clipApprovalText(value: unknown, max: number): string | undefined {
   if (typeof value !== "string" || value === "") return undefined;
   return value.length > max ? `${value.slice(0, max)}…` : value;
 }
@@ -59,7 +58,7 @@ function clipApprovalText(value: unknown, max: number): string | undefined {
  * Build the popup view of a `request_approval` command. Null when a
  * protected_action request is malformed (it is refused, not shown).
  */
-function parseApprovalPrompt(
+export function parseApprovalPrompt(
   data: unknown,
   requestId: string,
   now: number,
@@ -105,7 +104,7 @@ function parseApprovalPrompt(
 }
 
 /** Command result for a decided request (goes back to the MCP Server). */
-function approvalCommandResult(
+export function approvalCommandResult(
   view: ApprovalView,
   decision: ApprovalDecision,
   now: number,
@@ -125,7 +124,7 @@ function approvalCommandResult(
  * Whether an approved call may run on this tab: the tab's hostname equals
  * the hostname the human approved (MCP Server `approvedHost`).
  */
-function isApprovedHost(tabUrl: string | undefined, approvedHost: unknown): boolean {
+export function isApprovedHost(tabUrl: string | undefined, approvedHost: unknown): boolean {
   if (typeof approvedHost !== "string" || approvedHost === "" || !tabUrl) return false;
   try {
     return new URL(tabUrl).hostname.toLowerCase() === approvedHost.toLowerCase();

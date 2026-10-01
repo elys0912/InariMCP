@@ -13,8 +13,8 @@ type WireMap = ReadonlyMap<string, string | null>;
 let wireMap: WireMap;
 
 beforeAll(async () => {
-  // action-map.ts is a classic script without imports; loading it as a module
-  // runs it once and it publishes the table on globalThis.
+  // action-map.ts imports only a type; loading it as a module runs it once
+  // and it publishes the table on globalThis (it also exports it).
   await import('../../packages/extension/src/action-map.ts');
   wireMap = (globalThis as { KITSUNE_WIRE_ACTION_MAP?: WireMap }).KITSUNE_WIRE_ACTION_MAP!;
 });

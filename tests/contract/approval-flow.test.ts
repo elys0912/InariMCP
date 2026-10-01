@@ -482,13 +482,12 @@ describe('extension: approval UI is outside the page', () => {
     expect(popup).not.toContain('kitsune:approvals:');
   });
 
-  it('approval.ts is loaded before background.js and popup.js', () => {
+  it('approval.ts is bundled into background.js and popup.js (imported, not loaded separately)', () => {
+    expect(readExtensionSource('background.ts')).toMatch(/^import \{[^}]*\bAPPROVAL_MESSAGE\b[^}]*\} from "\.\/approval";$/m);
+    expect(readExtensionSource('popup/popup.ts')).toMatch(/^import \{[^}]*\bAPPROVAL_MESSAGE\b[^}]*\} from '\.\.\/approval';$/m);
     const manifest = JSON.parse(readExtensionSource('../manifest.json')) as { background: { scripts: string[] } };
-    const scripts = manifest.background.scripts;
-    expect(scripts.indexOf('dist/approval.js')).toBeGreaterThanOrEqual(0);
-    expect(scripts.indexOf('dist/approval.js')).toBeLessThan(scripts.indexOf('dist/background.js'));
+    expect(manifest.background.scripts).toEqual(['dist/background.js']);
     const html = readExtensionSource('popup/popup.html');
-    expect(html.indexOf('../approval.js')).toBeGreaterThan(0);
-    expect(html.indexOf('../approval.js')).toBeLessThan(html.indexOf('popup.js"'));
+    expect([...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1])).toEqual(['popup.js']);
   });
 });

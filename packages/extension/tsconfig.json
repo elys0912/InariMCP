@@ -1,14 +1,31 @@
 {
+  // Type check only (`npm run typecheck`): the bundles in dist/ are built by
+  // scripts/build-extension.mjs (esbuild), which does not look at types.
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src",
-    "lib": ["DOM", "ES2020"],
-    "module": "ES2020",
+    "noEmit": true,
+    "lib": ["DOM", "ES2022"],
+    "module": "ESNext",
     "moduleResolution": "bundler",
+    // Every source file is a module (imports are resolved by the bundler).
+    "moduleDetection": "force",
+    // esbuild compiles one file at a time.
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    // No @types/node: the Extension runs in Firefox only.
+    "types": [],
     "composite": false,
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    "sourceMap": false,
+    // The shared sources, as scripts/build-extension.mjs resolves them. Only
+    // the browser-safe entry points (the build refuses @kitsune-mcp/shared/node).
+    "paths": {
+      "@kitsune-mcp/shared": ["../shared/src/index.ts"],
+      "@kitsune-mcp/shared/action-names": ["../shared/src/action-names.ts"]
+    }
   },
   "include": ["src"]
 }

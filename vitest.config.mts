@@ -22,11 +22,13 @@ import { defineConfig } from 'vitest/config';
 /** Resolve the shared package to its sources, so tests do not need a build. */
 const sharedSrc = fileURLToPath(new URL('./packages/shared/src/index.ts', import.meta.url));
 const sharedNodeSrc = fileURLToPath(new URL('./packages/shared/src/node/index.ts', import.meta.url));
+const sharedActionNamesSrc = fileURLToPath(new URL('./packages/shared/src/action-names.ts', import.meta.url));
 
 export default defineConfig({
   resolve: {
     alias: [
       { find: /^@kitsune-mcp\/shared\/node$/, replacement: sharedNodeSrc },
+      { find: /^@kitsune-mcp\/shared\/action-names$/, replacement: sharedActionNamesSrc },
       { find: /^@kitsune-mcp\/shared$/, replacement: sharedSrc },
     ],
   },

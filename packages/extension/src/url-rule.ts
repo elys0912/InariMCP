@@ -12,17 +12,18 @@
 //          repeated slashes and lower-casing.
 //   regex  tested (flag i) against the normalised URL, and with matchRaw
 //          also against the URL as given.
-// The Extension cannot import url-pattern.ts (classic scripts, no bundler),
-// so this is a separate implementation of the same rules;
+// This is a separate implementation of the same rules (url-pattern.ts is
+// not browser code; moving the rules to packages/shared is left for later);
 // tests/contract/url-rule.test.ts checks that both give the same result.
 //
 // A plain string is the legacy form (`protectedUrlPatterns` of older MCP
 // Servers): a regex over the raw URL, read as a regex rule with matchRaw.
 //
-// Loading: classic script without imports, loaded before background.js and
-// before content.js (manifest.json). Keep it dependency-free.
+// Imported by background.ts and content.ts (bundled into both). Keep it
+// dependency-free and without top-level side effects: content.js runs it on
+// every injection, before its __fox_injected guard.
 
-interface HostUrlRule {
+export interface HostUrlRule {
   kind: "host";
   source: string;
   scheme: string | null;
@@ -32,17 +33,17 @@ interface HostUrlRule {
   pathMatch: "strict" | "loose";
 }
 
-interface RegexUrlRule {
+export interface RegexUrlRule {
   kind: "regex";
   source: string;
   re: string;
   matchRaw: boolean;
 }
 
-type UrlRule = HostUrlRule | RegexUrlRule;
+export type UrlRule = HostUrlRule | RegexUrlRule;
 
 /** A rule ready to test (its regex compiled once). */
-interface CompiledUrlRule {
+export interface CompiledUrlRule {
   rule: UrlRule;
   regex: RegExp | null;
 }
@@ -51,26 +52,26 @@ interface CompiledUrlRule {
 // needs the body to be the first `{` after the parameter list.
 
 /** compileUrlRules: usable rules, and how many entries were not. */
-interface CompiledUrlRules {
+export interface CompiledUrlRules {
   rules: CompiledUrlRule[];
   invalid: number;
 }
 
 /** normalizeRuleUrl. */
-interface RuleUrl {
+export interface RuleUrl {
   url: URL;
   hostname: string;
   normalized: string;
 }
 
 /** urlListViolation. */
-interface UrlListViolation {
+export interface UrlListViolation {
   decision: "blocked_url" | "not_allowlisted";
   reason: string;
 }
 
 /** Validate one wire entry; a string is a legacy regex. null if unusable. */
-function parseUrlRule(raw: unknown): UrlRule | null {
+export function parseUrlRule(raw: unknown): UrlRule | null {
   if (typeof raw === "string") {
     return raw === "" ? null : { kind: "regex", source: raw, re: raw, matchRaw: true };
   }
@@ -101,7 +102,7 @@ function parseUrlRule(raw: unknown): UrlRule | null {
 }
 
 /** Compile a parsed rule; null when its regex does not compile. */
-function compileUrlRule(rule: UrlRule): CompiledUrlRule | null {
+export function compileUrlRule(rule: UrlRule): CompiledUrlRule | null {
   if (rule.kind === "host") return { rule, regex: null };
   try {
     return { rule, regex: new RegExp(rule.re, "i") };
@@ -114,7 +115,7 @@ function compileUrlRule(rule: UrlRule): CompiledUrlRule | null {
  * Compile a wire list (not an array: no rules). `invalid` counts the entries
  * that could not be used; the caller decides whether that fails closed.
  */
-function compileUrlRules(raw: unknown): CompiledUrlRules {
+export function compileUrlRules(raw: unknown): CompiledUrlRules {
   const rules: CompiledUrlRule[] = [];
   let invalid = 0;
   if (!Array.isArray(raw)) return { rules, invalid };
@@ -132,7 +133,7 @@ function compileUrlRules(raw: unknown): CompiledUrlRules {
  * lower-case without a trailing dot, '' when the URL has no host;
  * `normalized` is scheme://host[:port]/path?query#hash without userinfo.
  */
-function normalizeRuleUrl(raw: string): RuleUrl | null {
+export function normalizeRuleUrl(raw: string): RuleUrl | null {
   let url: URL;
   try {
     url = new URL(raw);
@@ -147,7 +148,7 @@ function normalizeRuleUrl(raw: string): RuleUrl | null {
 }
 
 /** Path as 'loose' rules compare it: decoded, single slashes, lower case. */
-function looseRulePath(pathname: string): string {
+export function looseRulePath(pathname: string): string {
   let p = pathname;
   try {
     p = decodeURIComponent(p);
@@ -158,7 +159,7 @@ function looseRulePath(pathname: string): string {
 }
 
 /** Whether the URL matches the rule (url-pattern.ts UrlPattern.test). */
-function urlRuleMatches(compiled: CompiledUrlRule, raw: string): boolean {
+export function urlRuleMatches(compiled: CompiledUrlRule, raw: string): boolean {
   const rule = compiled.rule;
   const n = normalizeRuleUrl(raw);
   if (rule.kind === "regex") {
@@ -186,7 +187,7 @@ function urlRuleMatches(compiled: CompiledUrlRule, raw: string): boolean {
 }
 
 /** The first rule the URL matches, if any. */
-function findUrlRule(url: string | undefined, rules: CompiledUrlRule[]): CompiledUrlRule | undefined {
+export function findUrlRule(url: string | undefined, rules: CompiledUrlRule[]): CompiledUrlRule | undefined {
   if (!url) return undefined;
   return rules.find((r) => urlRuleMatches(r, url));
 }
@@ -197,7 +198,7 @@ function findUrlRule(url: string | undefined, rules: CompiledUrlRule[]): Compile
  * the server sent an allowed list (even if none of its entries was usable,
  * so that a broken list cannot open everything).
  */
-function urlListViolation(
+export function urlListViolation(
   url: string | undefined,
   blocked: CompiledUrlRule[],
   allowed: CompiledUrlRule[],
