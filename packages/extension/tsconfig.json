@@ -12,6 +12,8 @@
     // esbuild compiles one file at a time.
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     // No @types/node: the Extension runs in Firefox only.
     "types": [],
     "composite": false,

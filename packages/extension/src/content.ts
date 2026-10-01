@@ -1806,14 +1806,11 @@ import { compileUrlRules, findUrlRule, type CompiledUrlRule } from "./url-rule";
   async function performScroll(
     options: ScrollOptions,
   ): Promise<Record<string, unknown>> {
-    let target: Element | Window = window;
+    // Scroll this element when one is given and found, else the window.
     let element: Element | null = null;
 
     if (options.selector || options.xpath || options.id) {
       element = findElement(options);
-      if (element) {
-        target = element;
-      }
     }
 
     if (options.toElement) {

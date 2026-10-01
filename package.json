@@ -18,10 +18,12 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces --if-present",
     "clean": "npm run clean --workspaces",
     "test": "vitest run --project=!e2e",
     "test:e2e": "vitest run --project=e2e",
     "e2e:extension": "node scripts/e2e/extension-load.mjs",
+    "lint:ext": "web-ext lint",
     "setup": "node scripts/install.mjs",
     "teardown": "node scripts/uninstall.mjs",
     "install:windows": "node scripts/install.mjs --build",
