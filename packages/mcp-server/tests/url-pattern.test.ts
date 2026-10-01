@@ -219,7 +219,31 @@ describe('DEFAULT_CONFIG protectedUrlPatterns', () => {
   });
 });
 
-// TODO(test): wireSource vs test() for percent-encoded paths (/%61dmin): test() decodes, the Extension regex does not.
+describe('wireSource vs test() for percent-encoded paths', () => {
+  it('test() decodes the path, the legacy regex matches it as written', () => {
+    const [p] = compileUrlPatterns(['example.test/admin'], 'blocked').patterns;
+    const re = new RegExp(p!.wireSource, 'i');
+    // Both agree on the spellings a regex can express.
+    for (const path of ['/admin', '/ADMIN', '//admin', '/admin/x', '/administrator']) {
+      expect(re.test(`https://example.test${path}`), path).toBe(true);
+      expect(p!.test(`https://example.test${path}`), path).toBe(true);
+    }
+    // Percent escapes: only test() decodes them, so the Extension build that
+    // still uses wireSource lets /%61dmin through. The rule sent next to it
+    // (`wire`, matched like test() — tests/contract/url-rule.test.ts) does not.
+    expect(p!.test('https://example.test/%61dmin')).toBe(true);
+    expect(re.test('https://example.test/%61dmin')).toBe(false);
+    expect(p!.wire).toMatchObject({ kind: 'host', path: '/admin', pathMatch: 'loose' });
+  });
+
+  it('an allowlist entry refuses the encoded spelling on both sides', () => {
+    const [p] = compileUrlPatterns(['example.test/admin'], 'allowed').patterns;
+    const re = new RegExp(p!.wireSource, 'i');
+    expect(p!.test('https://example.test/%61dmin')).toBe(false);
+    expect(re.test('https://example.test/%61dmin')).toBe(false);
+  });
+});
+
 describe('IPv6 and port patterns (L6)', () => {
   it('[::1] and host:port match by address and effective port, not as a regex', () => {
     const { patterns, issues } = compileUrlPatterns(['[::1]', 'example.test:8443', 'example.test:443'], 'blocked');
@@ -247,5 +271,59 @@ describe('IPv6 and port patterns (L6)', () => {
     expect(patterns[0]?.kind).toBe('legacy');
     expect(issues[0]?.fatal).toBe(false);
   });
-  // TODO(test): wireSource for port / IPv6 patterns vs test(); scheme + port + path together; legacy regex with a character class still works
+  it('wireSource matches the same URLs as test() for IPv6 and non-default ports', () => {
+    const { patterns } = compileUrlPatterns(['[::1]', 'example.test:8443'], 'blocked');
+    const urls = [
+      'http://[::1]:3000/', 'https://[::1]/', 'http://[::2]/', 'https://example.com:8443/',
+      'https://example.test:8443/x', 'https://example.test/x', 'https://a.example.test:8443/',
+      'https://attacker.test/?u=https://example.test:8443/',
+      'https://example.test:8443@attacker.test/',
+    ];
+    for (const p of patterns) {
+      const re = new RegExp(p.wireSource, 'i');
+      for (const url of urls) {
+        expect(re.test(url), `${p.source} vs ${url}`).toBe(p.test(url));
+      }
+    }
+  });
+
+  it('a default port is optional in wireSource, so it also matches the other scheme', () => {
+    const [p] = compileUrlPatterns(['example.test:443'], 'blocked').patterns;
+    const re = new RegExp(p!.wireSource, 'i');
+    expect(p!.test('https://example.test/')).toBe(true);
+    expect(re.test('https://example.test/')).toBe(true);
+    // The legacy regex cannot tell the scheme's default port apart: it
+    // over-matches here, which errs on the safe side for a blocked entry.
+    expect(p!.test('http://example.test/')).toBe(false);
+    expect(re.test('http://example.test/')).toBe(true);
+  });
+
+  it('scheme, port and path together all have to match', () => {
+    const [p] = compileUrlPatterns(['https://example.test:8443/admin'], 'blocked').patterns;
+    expect(p!.wire).toMatchObject({
+      kind: 'host', scheme: 'https', host: 'example.test', port: 8443, path: '/admin',
+    });
+    const re = new RegExp(p!.wireSource, 'i');
+    const urls = [
+      'https://example.test:8443/admin', 'https://example.test:8443/admin/users',
+      'http://example.test:8443/admin', 'https://example.test/admin',
+      'https://example.test:8443/other', 'https://a.example.test:8443/admin',
+    ];
+    for (const url of urls) expect(re.test(url), url).toBe(p!.test(url));
+    expect(p!.test('https://example.test:8443/admin/users')).toBe(true);
+    expect(p!.test('http://example.test:8443/admin')).toBe(false);
+    expect(p!.test('https://example.test/admin')).toBe(false);
+    expect(p!.test('https://example.test:8443/other')).toBe(false);
+  });
+
+  it('a legacy regex with a character class keeps its old meaning', () => {
+    const { patterns, issues } = compileUrlPatterns(['[Bb]ank\\.test'], 'protected');
+    expect(patterns[0]!.kind).toBe('legacy');
+    expect(issues[0]!.fatal).toBe(false);
+    expect(patterns[0]!.test('https://bank.test/')).toBe(true);
+    expect(patterns[0]!.test('https://Bank.test.attacker.test/')).toBe(true); // unanchored, as before
+    expect(patterns[0]!.wireSource).toBe('[Bb]ank\\.test');
+    // The same source is fatal in the allowlist.
+    expect(compileUrlPatterns(['[Bb]ank\\.test'], 'allowed').issues[0]!.fatal).toBe(true);
+  });
 });

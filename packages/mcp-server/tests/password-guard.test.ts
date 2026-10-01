@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { HeadlessBrowser } from '../src/headless/backend.js';
 import {
   applyPasswordPolicy,
   isPasswordElement,
@@ -88,4 +89,124 @@ describe('invalidRegexArgument (5.10)', () => {
   });
 });
 
-// TODO(test): headless _guardedFill with Playwright: element appearing late, <label for> retargeting, focused element inside an iframe / shadow root (not detected).
+/**
+ * The same guard on the headless backend (Playwright Firefox), where the
+ * element is resolved by the server rather than by content.ts.
+ * Skipped as a whole when Firefox cannot be launched.
+ */
+describe('headless _guardedFill (Playwright)', () => {
+  const browser = new HeadlessBrowser();
+  let available = false;
+
+  beforeAll(async () => {
+    try {
+      await browser.start();
+      available = true;
+    } catch {
+      available = false;
+    }
+  }, 60_000);
+
+  afterAll(async () => {
+    if (available) await browser.stop();
+  }, 30_000);
+
+  type Result = Record<string, unknown>;
+
+  const PAGE = (body: string): string =>
+    `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><html><body>${body}</body></html>`)}`;
+
+  async function load(body: string): Promise<void> {
+    const r = await browser.execute('navigate', undefined, { url: PAGE(body) });
+    expect(r['success']).toBe(true);
+  }
+
+  const script = async (src: string): Promise<unknown> =>
+    (await browser.execute('execute_script', undefined, { script: src }))['result'];
+
+  function real(name: string, fn: () => Promise<void>, timeout = 30_000): void {
+    it(name, async (ctx) => {
+      if (!available) ctx.skip();
+      await fn();
+    }, timeout);
+  }
+
+  real('refuses a password field that only appears while the fill waits for it', async () => {
+    await load(
+      '<div id="host"></div>' +
+      '<script>setTimeout(() => { document.getElementById("host").innerHTML = ' +
+      '\'<input id="pw" type="password">\'; }, 300)</script>',
+    );
+    const r: Result = await browser.execute('type', undefined, { selector: '#pw', text: 'secret' });
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain(PASSWORD_REFUSAL);
+    expect(await script('document.getElementById("pw").value')).toBe('');
+  });
+
+  real('fills a late non-password field', async () => {
+    await load(
+      '<div id="host"></div>' +
+      '<script>setTimeout(() => { document.getElementById("host").innerHTML = ' +
+      '\'<input id="user" type="text">\'; }, 300)</script>',
+    );
+    expect((await browser.execute('type', undefined, { selector: '#user', text: 'alice' }))['success']).toBe(true);
+    expect(await script('document.getElementById("user").value')).toBe('alice');
+  });
+
+  real('refuses a <label for> that points at a password field', async () => {
+    await load('<label for="pw">Password</label><input id="pw" type="password">');
+    const r: Result = await browser.execute('type', undefined, { selector: 'label[for=pw]', text: 'secret' });
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain(PASSWORD_REFUSAL);
+    expect(await script('document.getElementById("pw").value')).toBe('');
+  });
+
+  real('allows a password field when the command carries allowPassword', async () => {
+    await load('<input id="pw" type="password">');
+    const r: Result = await browser.execute('type', undefined, {
+      selector: '#pw', text: 'secret', allowPassword: true,
+    });
+    expect(r['success']).toBe(true);
+    expect(await script('document.getElementById("pw").value')).toBe('secret');
+  });
+
+  real('refuses the focused password field when no selector is given', async () => {
+    await load('<input id="pw" type="password">');
+    await script('document.getElementById("pw").focus()');
+    const r: Result = await browser.execute('type', undefined, { text: 'secret' });
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain(PASSWORD_REFUSAL);
+  });
+
+  // Known hole, not a regression: without a selector the guard looks at the
+  // top document's activeElement, which is the <iframe> or the shadow host —
+  // never the password field inside it. The Extension path has the same
+  // limit. Fixed here so a change to either is deliberate.
+  real('does not see a focused password field inside an iframe', async () => {
+    await load('<iframe id="f"></iframe>');
+    await script(
+      'const d = document.getElementById("f").contentDocument;' +
+      'd.body.innerHTML = \'<input id="pw" type="password">\';' +
+      'd.getElementById("pw").focus();',
+    );
+    expect(await script('document.activeElement.tagName')).toBe('IFRAME');
+    const r: Result = await browser.execute('type', undefined, { text: 'secret' });
+    expect(r['success']).toBe(true);
+    expect(await script('document.getElementById("f").contentDocument.getElementById("pw").value'))
+      .toBe('secret');
+  });
+
+  real('does not see a focused password field inside a shadow root', async () => {
+    await load('<div id="host"></div>');
+    await script(
+      'const root = document.getElementById("host").attachShadow({ mode: "open" });' +
+      'root.innerHTML = \'<input id="pw" type="password">\';' +
+      'root.getElementById("pw").focus();',
+    );
+    expect(await script('document.activeElement.id')).toBe('host');
+    const r: Result = await browser.execute('type', undefined, { text: 'secret' });
+    expect(r['success']).toBe(true);
+    expect(await script('document.getElementById("host").shadowRoot.getElementById("pw").value'))
+      .toBe('secret');
+  });
+});
