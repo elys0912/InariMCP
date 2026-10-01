@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { firefox, type Browser, type BrowserContext, type Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { readExtensionSource } from './helpers/extension-source.js';
+import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 interface ContentFns {
   escapeXPathString(s: string): string;
@@ -71,7 +71,10 @@ import * as dom from "./packages/extension/src/content/dom";
 import * as input from "./packages/extension/src/content/input";
 import * as wait from "./packages/extension/src/content/wait";
 import * as log from "./packages/extension/src/content/log-store";
-(globalThis as Record<string, unknown>).__fox = { dom, input, wait, log };
+import * as inspect from "./packages/extension/src/content/inspect";
+import * as overlay from "./packages/extension/src/content/overlay";
+import * as captcha from "./packages/extension/src/content/captcha";
+(globalThis as Record<string, unknown>).__fox = { dom, input, wait, log, inspect, overlay, captcha };
 `;
 
 const CONTENT_ENTRY = `import "./packages/extension/src/content";`;
@@ -84,6 +87,7 @@ window.browser = {
     sendMessage: (m) => { window.__sent.push(m); return Promise.resolve({ enabled: false }); },
     onMessage: { addListener: (fn) => { window.__listener = fn; } },
   },
+  i18n: { getMessage: (key) => key },
 };
 window.wrappedJSObject = window;
 window.exportFunction = (fn, target, opts) => {
@@ -543,5 +547,93 @@ describe('content-side log batching', () => {
       interception: { fetch: true, xhr: true, console: true },
       injection: { readyStateAtInit: 'complete', readyStateAtHookInstall: 'complete' },
     });
+  });
+});
+
+describe('WP44 highlight and overlay banner timers (E-05, E-06, A-07)', () => {
+  real('E-05 the timer of an earlier highlight does not remove the next one', async () => {
+    await load('<div id="a">A</div><div id="b">B</div>');
+    const r = await run<Record<string, number>>(
+      `const count = () => document.querySelectorAll('.kitsune-highlight-overlay').length;
+       f.inspect.highlightElement({ selector: '#a', duration: 400 });
+       await sleep(100);
+       f.inspect.highlightElement({ selector: '#b', duration: 10000 });
+       await sleep(500); // past the first highlight's 400 ms
+       const second = count();
+       f.inspect.highlightElement({ selector: '#a', duration: 150 });
+       f.inspect.highlightElement({ selector: '#b', duration: 0 }); // stays
+       await sleep(300);
+       return { second, persistent: count() };`,
+    );
+    expect(r).toEqual({ second: 1, persistent: 1 });
+  });
+
+  real('E-06 a banner replaced by one with the same id settles at once; cancel reaches the new one', async () => {
+    await load('<div>page</div>');
+    const r = await run<Record<string, unknown>>(
+      `const cfg = (title) => ({ id: 'b1', title, buttons: [{ label: 'x', value: 'done', color: '#fff' }],
+                                 timeoutMs: 5000, borderColor: '#fff', background: '#000' });
+       const state = { first: 'pending', second: 'pending' };
+       f.overlay.createOverlayBanner(cfg('first')).then((v) => { state.first = v; });
+       f.overlay.createOverlayBanner(cfg('second')).then((v) => { state.second = v; });
+       await sleep(0);
+       const afterReplace = { ...state, inDom: document.querySelectorAll('#b1').length };
+       const closed = f.overlay.closeOverlayBanner('b1', 'timeout');
+       await sleep(0);
+       return { afterReplace, afterClose: { ...state, inDom: document.querySelectorAll('#b1').length },
+                closed, again: f.overlay.closeOverlayBanner('b1', 'timeout') };`,
+    );
+    expect(r).toEqual({
+      afterReplace: { first: 'superseded', second: 'pending', inDom: 1 },
+      afterClose: { first: 'superseded', second: 'timeout', inDom: 0 },
+      closed: true,
+      again: false,
+    });
+  });
+
+  real('E-06 a captcha solved by its token leaves no banner for cancelHumanWait', async () => {
+    await load('<div class="g-recaptcha"></div>');
+    const r = await run<Record<string, unknown>>(
+      `const p = f.captcha.solveCaptcha({ timeout: 5000 });
+       await sleep(50);
+       const shown = !!document.getElementById('__fox_captcha_banner');
+       const ta = document.createElement('textarea');
+       ta.name = 'g-recaptcha-response'; ta.value = 'tok';
+       document.body.appendChild(ta);
+       const res = await p;
+       return { shown, resolvedBy: res.resolvedBy,
+                inDom: !!document.getElementById('__fox_captcha_banner'),
+                cancel: f.overlay.cancelHumanWait() };`,
+    );
+    expect(r).toEqual({
+      shown: true,
+      resolvedBy: 'token',
+      inDom: false,
+      cancel: { success: true, cancelled: false },
+    });
+  });
+
+  real('E-06 a second captcha wait in the tab ends the first one as superseded', async () => {
+    await load('<div class="g-recaptcha"></div>');
+    const r = await run<Record<string, unknown>[]>(
+      `const first = f.captcha.solveCaptcha({ timeout: 5000 });
+       await sleep(50);
+       const second = f.captcha.solveCaptcha({ timeout: 5000 });
+       const firstResult = await first;
+       const cancel = f.overlay.cancelHumanWait();
+       return [firstResult, await second, cancel];`,
+    );
+    expect(r[0]).toMatchObject({ solved: false, superseded: true });
+    expect(r[0]).not.toHaveProperty('timedOut');
+    // cancel_human_wait closes the newer wait (reported as a timeout).
+    expect(r[1]).toMatchObject({ solved: false, timedOut: true });
+    expect(r[2]).toEqual({ success: true, cancelled: true });
+  });
+
+  it('A-07 the captcha banner id is defined once (content/constants.ts)', () => {
+    const tree = readExtensionTree('content');
+    expect(tree.split('"__fox_captcha_banner"')).toHaveLength(2);
+    expect(readExtensionSource('content/constants.ts'))
+      .toContain('export const CAPTCHA_BANNER_ID = "__fox_captcha_banner";');
   });
 });

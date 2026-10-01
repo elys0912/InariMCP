@@ -1,7 +1,7 @@
 // Captcha detection and the wait for the human to solve it.
 
-import { TIMEOUTS } from "./constants";
-import { createOverlayBanner } from "./overlay";
+import { CAPTCHA_BANNER_ID, TIMEOUTS } from "./constants";
+import { BANNER_SUPERSEDED, closeOverlayBanner, createOverlayBanner } from "./overlay";
 import type { CaptchaWidget, CaptchaOptions } from "./types";
 
 /**
@@ -95,7 +95,7 @@ export async function solveCaptcha(
 
   // Start the banner (resolves on button click or timeout)
   const bannerPromise = createOverlayBanner({
-    id: "__fox_captcha_banner",
+    id: CAPTCHA_BANNER_ID,
     title: msg("bannerCaptchaTitle", types),
     detail: msg("bannerCaptchaDetail"),
     buttons: [
@@ -122,9 +122,10 @@ export async function solveCaptcha(
   });
 
   const result = await Promise.race([bannerPromise, pollPromise]);
-  // Remove banner if poll won the race
-  const leftover = document.getElementById("__fox_captcha_banner");
-  if (leftover) leftover.remove();
+  // Poll won the race: close the banner through its finish(), so that it is
+  // no longer registered (a later cancelHumanWait must not report a banner
+  // that is gone). No-op when the banner settled the race itself.
+  if (result === "token") closeOverlayBanner(CAPTCHA_BANNER_ID, "token");
 
   const base = { success: true, present: true, elapsedMs: Date.now() - start };
 
@@ -134,6 +135,13 @@ export async function solveCaptcha(
     return { ...base, solved: true, resolvedBy: "human", widgets: detectCaptcha().widgets };
   } else if (result === "cancel") {
     return { ...base, solved: false, cancelled: true };
+  } else if (result === BANNER_SUPERSEDED) {
+    return {
+      ...base,
+      solved: false,
+      superseded: true,
+      message: "Another captcha wait started in this tab and replaced this one.",
+    };
   } else {
     // timeout
     return { ...base, solved: false, timedOut: true, widgets: detectCaptcha().widgets };

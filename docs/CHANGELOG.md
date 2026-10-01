@@ -6,15 +6,6 @@ User-facing changes of KitsuneMCP, newest first. Commit hashes are given in pare
 
 ## Unreleased
 
-### Security
-
-- **An empty `container_scope.container_name` is a configuration error**: `"container_name": ""` in `safety.json` used to switch the container scope off without a word; it now refuses every tool like any other broken setting (shown by `fox_safety_status`), whether the scope is enabled or not. Give the container a name (3bb171d)
-- **The Extension refuses a command whose safety metadata it cannot use**: a container scope or a URL rule field (protected / blocked / allowed) that the MCP Server attached but that is malformed — not a list, an empty container name — now refuses the command with `config_error` instead of running it without that check. This only happens when the Extension and the MCP Server do not match; update both (3bb171d, f1db501)
-- **A URL pattern whose path holds `?` or `#` is a configuration error**: patterns compare the path of the URL only, so `example.com/a?x=1` or `example.com/a#top` matched nothing and, in `blocked_url_patterns` / `protected_url_patterns`, protected nothing without a warning. Such a pattern (also with `%3F` / `%23`) is now an error in every list. Drop the query or fragment, or write the pattern as `re:` (f1db501)
-- **Commands from the Native Host must use the wire action names**: an internal action name sent over Native Messaging is answered with `Unknown action` (the Extension's own popup still uses them) (d32eefb)
-
-## Unreleased
-
 Changes since 0.1.4. Read **Breaking** before updating, and follow [Update](../README.md#update) in the README.
 
 ### Security
@@ -28,6 +19,10 @@ Changes since 0.1.4. Read **Breaking** before updating, and follow [Update](../R
 - **Limits on unauthenticated connections and slow request bodies**: at most 8 WebSocket connections may wait for authentication (5 s each, 64 KB before the authentication frame), refused connections are terminated, and an HTTP request body must arrive within 30 s (146fc2d, 2fe3e69)
 - **Results cannot be spoofed by an iframe**: commands to a page go to the top frame only, so a frame in the page cannot answer in its place (47d43c6)
 - **More secrets are masked in results and the audit log**: credential headers and keys (`x-api-key`, `proxy-authorization`, `accessToken`, …), Basic credentials, `token=` / `password=` in query strings, forms and JSON, and URL fragments are masked; invisible and bidirectional control characters are removed from results (0f0ad33, b1ebced)
+- **An empty `container_scope.container_name` is a configuration error**: `"container_name": ""` in `safety.json` used to switch the container scope off without a word; it now refuses every tool like any other broken setting (shown by `fox_safety_status`), whether the scope is enabled or not. Give the container a name (3bb171d)
+- **The Extension refuses a command whose safety metadata it cannot use**: a container scope or a URL rule field (protected / blocked / allowed) that the MCP Server attached but that is malformed — not a list, an empty container name — now refuses the command with `config_error` instead of running it without that check. This only happens when the Extension and the MCP Server do not match; update both (3bb171d, f1db501)
+- **A URL pattern whose path holds `?` or `#` is a configuration error**: patterns compare the path of the URL only, so `example.com/a?x=1` or `example.com/a#top` matched nothing and, in `blocked_url_patterns` / `protected_url_patterns`, protected nothing without a warning. Such a pattern (also with `%3F` / `%23`) is now an error in every list. Drop the query or fragment, or write the pattern as `re:` (f1db501)
+- **Commands from the Native Host must use the wire action names**: an internal action name sent over Native Messaging is answered with `Unknown action` (the Extension's own popup still uses them) (d32eefb)
 
 ### Breaking
 
@@ -97,6 +92,7 @@ Unchanged: `fox_screenshot`, `fox_snapshot`, `fox_navigate`, `fox_click`, `fox_t
 - **Cancelled calls stop the browser command**: request IDs are unique per daemon start, and cancelling a tool call fails the pending browser command (4f2fb52)
 - **Extension: tab commands and the Native Host connection are steadier**: reloading several tabs at once (the Extension's `reload_all` / `reload_by_url` commands) reloads every tab even when one fails, and reports the failed tabs with `reloaded: false`, `error` and `failedCount`; it fails only when no tab could be reloaded. `fox_wait` `for: "navigation"` succeeds when the tab closes right after the page loaded. `fox_tabs` with a `limit` of 0 or less uses the default (50), and `fox_find` `by: "text"` with an empty `text` fails with a clear error. After a failed send, a late disconnect report of the old connection no longer drops the new one, and an older setup check no longer puts a stale "!" on the toolbar badge (eddccfd, bd09818)
 - **Extension popup and approvals**: when the background does not answer, the popup shows an error with the reason instead of staying at "Connecting...", and its buttons and approval list still work when the current tab cannot be read. An approved action is accepted on its host written with a trailing dot (`example.com.`). Long texts in approval requests, notifications and logs are cut without splitting an emoji (bd09818)
+- **`fox_interact` `highlight` keeps the newest highlight**: the removal timer of an earlier highlight no longer removes a later one early (the context menu's "inspect element" too). In the Extension, a captcha wait banner replaced by a newer one in the same tab ends at once (`superseded: true`), and a banner closed because the captcha token arrived is no longer reported as cancelled by `cancel_human_wait`
 
 ### Developer
 

@@ -22,6 +22,9 @@ export const INTERACTIVE_SELECTORS = [
   '[tabindex]:not([tabindex="-1"])',
 ] as const;
 
+/** DOM id of the captcha wait banner (solveCaptcha, cancelHumanWait). */
+export const CAPTCHA_BANNER_ID = "__fox_captcha_banner";
+
 /** Same string as LOG_RECORD_MESSAGE in background/constants.ts. */
 export const LOG_RECORD_MESSAGE = "kitsune:logRecords";
 

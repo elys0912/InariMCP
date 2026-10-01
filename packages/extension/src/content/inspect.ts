@@ -22,6 +22,8 @@ import type {
 } from "./types";
 
 let highlightOverlay: HTMLDivElement | null = null;
+/** Auto-removal timer of highlightOverlay (cleared with it). */
+let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function getPageInfo(): Record<string, unknown> {
   const interactiveElements: Record<string, unknown>[] = [];
@@ -118,6 +120,12 @@ export function getElements(options: {
 }
 
 function removeHighlight(): void {
+  // The timer belongs to the overlay being removed; left running, it would
+  // remove the next highlight early.
+  if (highlightTimer !== null) {
+    clearTimeout(highlightTimer);
+    highlightTimer = null;
+  }
   if (highlightOverlay) {
     highlightOverlay.remove();
     highlightOverlay = null;
@@ -171,7 +179,7 @@ export function highlightElement(
   document.body.appendChild(highlightOverlay);
 
   if (options.duration !== 0) {
-    setTimeout(removeHighlight, options.duration || 3000);
+    highlightTimer = setTimeout(removeHighlight, options.duration || 3000);
   }
 
   return { highlighted: true, element: getElementInfo(element) };
