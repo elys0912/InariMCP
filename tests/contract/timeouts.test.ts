@@ -22,9 +22,12 @@
  *   4. the only timeout argument keys in the tool schemas are `timeout` and
  *      `timeoutMs` (the keys both relay and daemon read).
  *   5. daemon > extension for content.ts fallbacks (no argument).
- *   6. native-host bookkeeping TTL > daemon's longest base timeout.
+ *   6. native-host bookkeeping TTL > daemon's longest base timeout, and >
+ *      the daemon's wait for the largest timeout argument the schemas
+ *      accept (MAX_TIMEOUT_ARG_MS, tools/schemas.ts).
  *
- * Also (5b): the Extension's own budgets for navigate / refresh / new-tab
+ * Also (5b): the Extension's own budgets for navigate / refresh / new-tab /
+ * back / forward
  * load waits (TIMEOUTS.PAGE_LOAD), screenshot all_tabs and fox_type typing
  * are shorter than the daemon's default. TIMEOUTS.NAVIGATION is only the
  * fallback of fox_wait_for_navigation, whose schema always sends a timeout.
@@ -41,7 +44,8 @@ import {
   type BrowserKind,
 } from '../../packages/mcp-server/src/connection/manager.js';
 import { RELAY_TIMEOUT_MARGIN_MS } from '../../packages/mcp-server/src/relay/daemon-client.js';
-import { TOOL_SCHEMAS } from '../../packages/mcp-server/src/tools/schemas.js';
+import { MAX_TIMEOUT_ARG_MS, TOOL_SCHEMAS } from '../../packages/mcp-server/src/tools/schemas.js';
+import { PUBLIC_TOOLS } from '../../packages/mcp-server/src/tools/public-tools.js';
 import { readExtensionTree, readNumericObjectConstant } from './helpers/extension-source.js';
 
 const KINDS: readonly BrowserKind[] = ['native-host', 'headless'];
@@ -169,6 +173,8 @@ describe('5b. extension-side waits without a timeout argument end before the dae
     ['navigate', background, 'PAGE_LOAD'],
     ['refresh', background, 'PAGE_LOAD'],
     ['hard_refresh', background, 'PAGE_LOAD'],
+    ['go_back', background, 'PAGE_LOAD'],
+    ['go_forward', background, 'PAGE_LOAD'],
     ['screenshot_all_tabs', background, 'ALL_TABS_BUDGET'],
     ['type', content, 'TYPING_BUDGET'],
   ] as const)('%s: daemon base > %s', (action, table, key) => {
@@ -196,5 +202,25 @@ describe('6. native-host in-flight bookkeeping outlives the daemon timeout', () 
       .reduce((a, b) => a * b, 1);
     expect(ttl).toBe(600_000);
     expect(ttl).toBeGreaterThan(maxCommandTimeoutMs({}));
+    // ... and the daemon's wait for the largest timeout argument (WP30).
+    expect(ttl).toBeGreaterThan(maxCommandTimeoutMs({ timeout: MAX_TIMEOUT_ARG_MS }));
+  });
+
+  it('every timeout argument (operations and public tools) is capped at MAX_TIMEOUT_ARG_MS', () => {
+    const fields: [string, ZodTypeAny][] = [];
+    const collect = (name: string, shape: Record<string, ZodTypeAny>): void => {
+      for (const [key, field] of Object.entries(shape)) if (/timeout/i.test(key)) fields.push([`${name}.${key}`, field]);
+    };
+    for (const [tool, def] of Object.entries(TOOL_SCHEMAS)) {
+      collect(tool, (def.inputSchema as unknown as { shape: Record<string, ZodTypeAny> }).shape);
+    }
+    for (const [tool, def] of Object.entries(PUBLIC_TOOLS)) {
+      collect(tool, def.listSchema.shape as Record<string, ZodTypeAny>);
+    }
+    expect(fields.length).toBeGreaterThan(0);
+    for (const [name, field] of fields) {
+      expect(field.safeParse(MAX_TIMEOUT_ARG_MS).success, name).toBe(true);
+      expect(field.safeParse(MAX_TIMEOUT_ARG_MS + 1).success, name).toBe(false);
+    }
   });
 });

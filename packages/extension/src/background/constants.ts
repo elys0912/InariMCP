@@ -4,7 +4,6 @@ export const TIMEOUTS = {
   COMMAND: 30_000,
   RECONNECT_MAX: 30_000,
   RECONNECT_INITIAL: 1_000,
-  SCREENSHOT_DELAY: 150,
   /** fox_wait_for_navigation without a timeout argument. */
   NAVIGATION: 30_000,
   /**

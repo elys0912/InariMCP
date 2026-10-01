@@ -86,7 +86,7 @@ export async function handleMessage(
     case "captureFullPage":
       return captureFullPage();
     case "inspectElement":
-      return inspectElement(message as unknown as { x: number; y: number });
+      return inspectElement();
     case "getValue":
       return getValue(message as unknown as FindElementOptions);
     case "setValue":

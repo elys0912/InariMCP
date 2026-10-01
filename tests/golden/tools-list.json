@@ -57,7 +57,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 180000
         },
         "tabId": {
@@ -142,7 +143,8 @@
         },
         "timeout": {
           "type": "integer",
-          "description": "(mode=wait_and_act; default 15000) Max wait time in ms before giving up"
+          "maximum": 580000,
+          "description": "(mode=wait_and_act; default 15000) Max wait time in ms before giving up (at most 580000)"
         }
       },
       "required": [
@@ -296,7 +298,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 5000
         },
         "tabId": {
@@ -423,7 +426,7 @@
   },
   {
     "name": "fox_navigate",
-    "description": "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R). With waitForLoad, goto / refresh fail when the page does not finish loading within 25 s or the tab is closed (the navigation itself may still complete).",
+    "description": "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R). goto / refresh with waitForLoad, and back / forward always, fail when the page does not finish loading within 25 s or the tab is closed (the navigation itself may still complete).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -626,7 +629,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "Timeout in milliseconds",
+          "maximum": 580000,
+          "description": "Timeout in milliseconds (at most 580000)",
           "default": 60000
         },
         "tabId": {
@@ -661,7 +665,7 @@
   },
   {
     "name": "fox_screenshot",
-    "description": "Take a screenshot. Images are saved to files and returned as resource_link, never as base64 (saveToFile=false captures nothing, includeData has no effect, the same filename overwrites the file). scope: viewport (visible area; a background tab given by tabId is briefly brought to the front), full_page (entire page; falls back to the visible area with fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls and returns the interactive elements visible at each position). Headless: viewport and full_page only.",
+    "description": "Take a screenshot. Images are saved to files and returned as resource_link, never as base64 (saveToFile=false captures nothing, includeData has no effect, the same filename overwrites the file). scope: viewport (visible area; a background tab given by tabId is captured without switching to it; a discarded tab fails), full_page (entire page; falls back to the visible area with fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls and returns the interactive elements visible at each position). Headless: viewport and full_page only.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -701,6 +705,7 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
+          "maximum": 580000,
           "description": "all_tabs: time budget for capturing all tabs in ms (default 20000); tabs left when it runs out are reported as skipped"
         },
         "scrollStep": {
@@ -1002,7 +1007,8 @@
         "timeout": {
           "type": "integer",
           "exclusiveMinimum": 0,
-          "description": "(default 10000 (element), 10000 (network_idle), 30000 (navigation), 15000 (url)) Timeout in milliseconds"
+          "maximum": 580000,
+          "description": "(default 10000 (element), 10000 (network_idle), 30000 (navigation), 15000 (url)) Timeout in milliseconds (at most 580000)"
         },
         "visible": {
           "type": "boolean",

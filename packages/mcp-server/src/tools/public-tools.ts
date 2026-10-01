@@ -21,7 +21,7 @@
 
 import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
-import { TOOL_SCHEMAS } from './schemas.js';
+import { MAX_TIMEOUT_ARG_MS, TOOL_SCHEMAS } from './schemas.js';
 import { toolAnnotations } from './classification.js';
 import type { ToolAnnotations } from './classification.js';
 
@@ -456,7 +456,8 @@ const foxEvaluate = grouped({
     wait_and_act: {
       fields: {
         ...fieldsOf('fox_wait_and_act', ['condition', 'actionScript', 'pollIntervalMs']),
-        timeout: z.number().int().optional().default(15000).describe('Max wait time in ms before giving up'),
+        timeout: z.number().int().max(MAX_TIMEOUT_ARG_MS).optional().default(15000)
+          .describe(`Max wait time in ms before giving up (at most ${MAX_TIMEOUT_ARG_MS})`),
         tabId,
       },
       run: { ...same('fox_wait_and_act'), toOp: renamed({ timeout: 'timeoutMs' }) },
@@ -486,7 +487,7 @@ const foxObserver = grouped({
  */
 const AS_IS_DESCRIPTIONS: Record<string, string> = {
   fox_screenshot:
-    "Take a screenshot. Images are saved to files and returned as resource_link, never as base64 (saveToFile=false captures nothing, includeData has no effect, the same filename overwrites the file). scope: viewport (visible area; a background tab given by tabId is briefly brought to the front), full_page (entire page; falls back to the visible area with fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls and returns the interactive elements visible at each position). Headless: viewport and full_page only.",
+    "Take a screenshot. Images are saved to files and returned as resource_link, never as base64 (saveToFile=false captures nothing, includeData has no effect, the same filename overwrites the file). scope: viewport (visible area; a background tab given by tabId is captured without switching to it; a discarded tab fails), full_page (entire page; falls back to the visible area with fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls and returns the interactive elements visible at each position). Headless: viewport and full_page only.",
   fox_snapshot:
     "Extension path: not implemented (returns an error); use fox_read or fox_find there. Headless: the accessibility tree of the page (or of the first element matching selector) as indented YAML text (Playwright ariaSnapshot), filtered by maxDepth, includeText and roles, cut at 50000 characters.",
   fox_click:

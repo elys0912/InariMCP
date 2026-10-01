@@ -9,6 +9,7 @@ import type { BrowserContext, ConsoleMessage, Page } from 'playwright';
 import type { BrowserAction } from '@kitsune-mcp/shared';
 import { argTimeout, filterAriaSnapshot } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
+import { focusedIsPassword } from './focus.js';
 import { getScreenshotsDir } from '../utils/screenshot.js';
 import {
   AVAILABLE_OPTIONS_MAX,
@@ -218,8 +219,7 @@ const type: ActionHandler = async ({ page, args }) => {
     await guardedFill(page, selector, text, args);
   } else {
     // Keyboard input goes to the focused element.
-    const focused = await page.evaluateHandle(() => document.activeElement);
-    refusePassword(await focused.evaluate(isPasswordElement), args);
+    refusePassword(await focusedIsPassword(page.mainFrame()), args);
     await page.keyboard.type(text);
   }
   return { success: true };

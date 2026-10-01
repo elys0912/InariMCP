@@ -59,7 +59,16 @@ const elementLocator = {
 };
 
 const tabId = z.number().int().optional().describe('Tab ID (defaults to active tab)');
-const timeoutMs = z.number().int().positive().optional().describe('Timeout in milliseconds');
+/**
+ * Upper bound of every timeout argument. The Native Host keeps a command's
+ * bookkeeping (the requested screenshot filename) for 10 minutes
+ * (native-host/src/host.ts IN_FLIGHT_TTL_MS); the daemon waits up to
+ * argument + 5 s, so 580 s keeps that inside the 10 minutes.
+ */
+export const MAX_TIMEOUT_ARG_MS = 580_000;
+
+const timeoutMs = z.number().int().positive().max(MAX_TIMEOUT_ARG_MS).optional()
+  .describe(`Timeout in milliseconds (at most ${MAX_TIMEOUT_ARG_MS})`);
 
 /** Shared by every urlPattern argument (same on the Extension and headless). */
 const URL_PATTERN_NOTE =
@@ -369,7 +378,8 @@ const foxWaitAndActSchema = z.object({
   condition: z.string().describe('JS expression that returns truthy when ready'),
   actionScript: z.string().describe('JS to run once condition is met'),
   pollIntervalMs: z.number().int().optional().default(200).describe('How often to check condition'),
-  timeoutMs: z.number().int().optional().default(15000).describe('Max wait time before giving up'),
+  timeoutMs: z.number().int().max(MAX_TIMEOUT_ARG_MS).optional().default(15000)
+    .describe(`Max wait time in ms before giving up (at most ${MAX_TIMEOUT_ARG_MS})`),
   tabId,
 });
 
@@ -424,7 +434,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_screenshot: {
     name: 'fox_screenshot',
     description:
-      'Take a screenshot. scope: viewport (visible area; a background tab given by tabId is briefly brought to the front, then switched back), full_page (entire scrollable page; falls back to the visible area when it cannot, fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls the page and returns the interactive elements visible at each position). Images are saved to files and returned as resource_link, never as base64; saveToFile=false captures nothing, includeData has no effect, and the same filename overwrites the file. Headless: viewport and full_page only.',
+      'Take a screenshot. scope: viewport (visible area; a background tab given by tabId is captured without switching to it; a discarded tab fails), full_page (entire scrollable page; falls back to the visible area when it cannot, fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls the page and returns the interactive elements visible at each position). Images are saved to files and returned as resource_link, never as base64; saveToFile=false captures nothing, includeData has no effect, and the same filename overwrites the file. Headless: viewport and full_page only.',
     inputSchema: foxScreenshotSchema,
     classification: 'observe',
   },
@@ -475,7 +485,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
   fox_navigate: {
     name: 'fox_navigate',
     description:
-      "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R). With waitForLoad, goto / refresh fail when the page does not finish loading within 25 s or the tab is closed (the navigation itself may still complete).",
+      "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R). goto / refresh with waitForLoad, and back / forward always, fail when the page does not finish loading within 25 s or the tab is closed (the navigation itself may still complete).",
     inputSchema: foxNavigateSchema,
     classification: 'act',
   },

@@ -24,7 +24,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
 import { checkListedTarget } from '../../packages/extension/src/background/url-policy.ts';
 import { reloadMatchingTabs } from '../../packages/extension/src/background/reload.ts';
-import { captureTabsWithin } from '../../packages/extension/src/background/screenshot.ts';
+import { navigateHistory } from '../../packages/extension/src/background/navigation.ts';
+import { captureTabsWithin, takeScreenshot } from '../../packages/extension/src/background/screenshot.ts';
 import {
   describeNativeMessage,
   nextReconnectAttempts,
@@ -116,6 +117,34 @@ describe('3.A6 / 5.11 waitForTabLoad', () => {
   });
 });
 
+describe('WP30 go_back / go_forward wait for the load like navigate', () => {
+  it('returns the URL after the history load completes, not after a fixed delay', async () => {
+    vi.useFakeTimers();
+    const tabs = fakeTabs({ status: 'complete', url: 'https://b.test/' });
+    const goBack = vi.fn(async () => {
+      tabs.tab.status = 'loading';
+      tabs.tab.url = 'https://a.test/';
+      tabs.onUpdated.fire(7, { status: 'loading' }, { ...tabs.tab });
+    });
+    (globalThis as { browser?: unknown }).browser = {
+      tabs: { ...tabs, query: async () => [{ ...tabs.tab, active: true }], goBack },
+    };
+    try {
+      let settled = false;
+      const run = navigateHistory(7, 'back').finally(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(5_000); // slow page: still loading
+      expect(settled).toBe(false);
+      tabs.tab.status = 'complete';
+      tabs.onUpdated.fire(7, { status: 'complete' }, { ...tabs.tab });
+      await expect(run).resolves.toMatchObject({ success: true, url: 'https://a.test/' });
+      expect(goBack).toHaveBeenCalledWith(7);
+      expect(tabs.onUpdated.size()).toBe(0);
+    } finally {
+      delete (globalThis as { browser?: unknown }).browser;
+    }
+  });
+});
+
 describe('3.A2 reconnect backoff', () => {
   it('starts over only after a confirmed connection stayed up for the stable period', async () => {
     const next = nextReconnectAttempts;
@@ -152,6 +181,39 @@ describe('3.A5 capture of the target tab', () => {
     expect(background).not.toMatch(/\.captureVisibleTab\(/);
     expect(background).toMatch(/browser\.tabs\.captureTab\(targetTab\.id,/);
   });
+});
+
+describe('WP30 screenshot of a background tab keeps the active tab', () => {
+  it('captures the tabId given without tabs.update; a discarded tab fails', async () => {
+    const update = vi.fn(async () => ({}));
+    const captureTab = vi.fn(async (id: number) => `data:image/png;base64,${id}`);
+    const tabsById: Record<number, Record<string, unknown>> = {
+      1: { id: 1, url: 'https://a.test/', active: true, discarded: false },
+      2: { id: 2, url: 'https://b.test/', active: false, discarded: false },
+      3: { id: 3, url: 'https://c.test/', active: false, discarded: true },
+    };
+    (globalThis as { browser?: unknown }).browser = {
+      tabs: {
+        query: async () => [tabsById[1]],
+        get: async (id: number) => tabsById[id],
+        update,
+        captureTab,
+      },
+    };
+    try {
+      const shot = await takeScreenshot(2, {});
+      expect(shot).toMatchObject({ success: true, type: 'visible', tab: { id: 2 } });
+      expect(captureTab).toHaveBeenCalledWith(2, expect.anything());
+      const discarded = await takeScreenshot(3, {});
+      expect(discarded).toMatchObject({ success: false, error: expect.stringMatching(/discarded/) });
+      expect(captureTab).toHaveBeenCalledTimes(1);
+      expect(update).not.toHaveBeenCalled();
+    } finally {
+      delete (globalThis as { browser?: unknown }).browser;
+    }
+  });
+  // TODO(test): in a real Firefox: captureTab of a loaded background tab
+  //   (same / other window) returns that tab's image, not a blank one.
 });
 
 describe('3.A8 reload_all / reload_by_url skip protected tabs', () => {

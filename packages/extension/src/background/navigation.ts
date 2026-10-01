@@ -73,14 +73,21 @@ export async function navigateHistory(
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
-    if (direction === "back") {
-      await browser.tabs.goBack(tab.id);
-    } else {
-      await browser.tabs.goForward(tab.id);
+    if (!tab) return { success: false, error: "No target tab" };
+    const go = (): Promise<unknown> =>
+      direction === "back" ? browser.tabs.goBack(tab.id) : browser.tabs.goForward(tab.id);
+    // Same load wait as navigate: a history entry of the same document
+    // (pushState / hash) or a page restored without loading settles after
+    // TAB_LOAD_SETTLE with the tab's current state.
+    const outcome = await waitForTabLoad(
+      browser.tabs, tab.id, go, (t) => t.status === "complete",
+      { ...TAB_LOAD_OPTIONS, requireLoading: true },
+    );
+    const updated = await browser.tabs.get(tab.id).catch(() => undefined);
+    if (outcome !== "complete") {
+      return { success: false, error: tabLoadError(outcome, TAB_LOAD_OPTIONS.timeoutMs, updated?.url) };
     }
-    await new Promise((r) => setTimeout(r, 300));
-    const updated = await browser.tabs.get(tab.id);
-    return { success: true, url: updated.url, title: updated.title };
+    return { success: true, url: updated?.url, title: updated?.title };
   } catch (error) {
     return { success: false, error: (error as Error).message };
   }

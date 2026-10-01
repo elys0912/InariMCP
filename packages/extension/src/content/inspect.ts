@@ -268,11 +268,28 @@ export function captureFullPage(): Record<string, unknown> {
   };
 }
 
-export function inspectElement(options: {
-  x: number;
-  y: number;
-}): Record<string, unknown> {
-  const element = document.elementFromPoint(options.x, options.y);
+/** Target of the last contextmenu event in this frame (see rememberContextTarget). */
+let lastContextTarget: Element | null = null;
+
+/**
+ * contextmenu listener (registered by content.ts): remember the element the
+ * menu was opened on. Firefox's contextMenus OnClickData has no pageX /
+ * pageY, so the "inspect element" entry uses this element instead of a
+ * point. event.target is retargeted to the shadow host, which a selector
+ * can reach.
+ */
+export function rememberContextTarget(event: { target: EventTarget | null }): void {
+  const target = event.target as Element | null;
+  lastContextTarget = target && target.nodeType === 1 ? target : null;
+}
+
+/** The remembered element while it is still in the document. */
+export function contextTarget(): Element | null {
+  return lastContextTarget && lastContextTarget.isConnected ? lastContextTarget : null;
+}
+
+export function inspectElement(): Record<string, unknown> {
+  const element = contextTarget();
   if (!element) {
     return { found: false };
   }
