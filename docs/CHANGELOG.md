@@ -32,10 +32,39 @@ Changes since 0.1.4. Read **Breaking** before updating, and follow [Update](../R
 - **Headless `fox_snapshot` and `fox_scroll` changed**: `fox_snapshot` returns the accessibility tree as YAML text (with `maxDepth`, `includeText`, `roles`) instead of a base64 screenshot; use `fox_screenshot` for an image. `fox_scroll` follows `direction`, `amount`, `selector` and `toElement` instead of always scrolling 300 px down (208cb30)
 - **Tool classes are derived from the tool schemas**: `fox_remove_observer` is a script tool and is refused when script execution is off. `fox_hover`, `fox_scroll`, `fox_highlight` and `fox_switch_tab` are class `interact`: they work in read-only mode and on protected sites without approval, and their `readOnlyHint` is `false` (7febaa5)
 - **Every package reports version 0.1.4**: the daemon, relay and Native Host used to report 0.1.0 while the extension was 0.1.4; all `package.json` files and the manifest now have the same version, which `--doctor` checks. Update all parts together (c9cbd41)
+- **The 41 tools are now 21, and a session lists the new names**: prompts or settings that name an earlier tool need the new name, or `FOX_CAPS=legacy`. The earlier names still work when called. See [Tool names (41 → 21)](#tool-names-41--21) (59dee5c, 00bca2b)
+
+### Tool names (41 → 21)
+
+Related operations became one tool with a mode argument (a discriminator key such as `mode`, `action` or `kind`). The browser side did not change: each call of a new tool runs what the earlier tool ran. Details in [Tool name migration](../README.md#tool-name-migration) in the README (93054cc, 00bca2b, 59dee5c, 7713270, c4bd216).
+
+- **`tools/list` lists the 21 new tools by default**: with `FOX_CAPS` unset, `all` or any profile, a session lists the new names. `FOX_CAPS=legacy` (alone, or with profiles: `legacy,core`) lists the 41 earlier tools and their earlier profiles instead; the 28 replaced tools and the 2 to be removed start their description with `[Deprecated: …]`. `fox_safety_status` is always listed (59dee5c, 93054cc)
+- **Earlier names keep working**: the daemon accepts both names whatever `FOX_CAPS` says, also over HTTP (`POST /mcp/call`). The first call of each earlier name in a process ends its result with a `Note:` naming the replacement (`fox_get_text is deprecated; use fox_read with mode='text'.`) and writes the same to stderr (`daemon.log`); later calls of that name get no note (00bca2b)
+- **The audit log records the new name**: a call of an earlier name is logged with `tool` = the new name and `legacyTool` = the earlier name (93054cc)
+- **Approval is bound to the name as called**: the approval request and the token check hash the called name and the call arguments, so retry with the same name and arguments as the approved call (93054cc)
+- **Tool results are compact JSON**: successful results, the metadata of `fox_snapshot` and the result of `fox_safety_status` are JSON without indentation (7713270)
+- **Messages use the new names**: tool descriptions are shorter, and the approval guidance, the headless warnings and the Extension's errors name the new tools (c4bd216)
+
+| Earlier tool | New call | Argument changes |
+|---|---|---|
+| `fox_get_page_info`, `fox_get_text` | `fox_read` `mode: "info"` / `"text"` | |
+| `fox_get_elements`, `fox_find_text` | `fox_find` `by: "selector"` / `"text"` | `fox_find_text`: `query` → `text` |
+| `fox_get_tabs`, `fox_list_containers` | `fox_tabs` `what: "tabs"` / `"containers"` | |
+| `fox_create_tab`, `fox_open_in_container`, `fox_close_tab`, `fox_switch_tab` | `fox_tab` `action: "create"` / `"create"` with `container` / `"close"` / `"switch"` | `fox_open_in_container`: `containerName` → `container.name`, `cookieStoreId` → `container.cookieStoreId`; `url` required |
+| `fox_select_option` | `fox_set_value` `kind: "select"` (`fox_set_value` itself keeps its name, `kind: "input"` by default) | `value` / `text` / `index` → `option: { value }` / `{ text }` / `{ index }` (exactly one) |
+| `fox_hover`, `fox_scroll`, `fox_highlight` | `fox_interact` `action: "hover"` / `"scroll"` / `"highlight"` | |
+| `fox_wait_for_element`, `fox_wait_for_network_idle`, `fox_wait_for_navigation`, `fox_wait_for_url` | `fox_wait` `for: "element"` / `"network_idle"` / `"navigation"` / `"url"` | `for: "url"` needs `url` or `urlPattern` |
+| `fox_start_logging`, `fox_stop_logging`, `fox_clear_logs` | `fox_logging` `action: "start"` / `"stop"` / `"clear"` | |
+| `fox_get_console_logs`, `fox_get_network_logs` | `fox_get_logs` `kind: "console"` / `"network"` | |
+| `fox_execute_script`, `fox_eval_chain`, `fox_wait_and_act` | `fox_evaluate` `mode: "script"` / `"chain"` / `"wait_and_act"` | `wait_and_act`: `timeoutMs` → `timeout` |
+| `fox_inject_observer`, `fox_remove_observer` | `fox_observer` `action: "inject"` / `"remove"` | |
+| `fox_run_workflow`, `fox_audit_page` (to be removed) | none | were not implemented on any backend; still callable by name, with the same error |
+
+Unchanged: `fox_screenshot`, `fox_snapshot`, `fox_navigate`, `fox_click`, `fox_type`, `fox_press_key`, `fox_set_value`, `fox_handle_dialog`, `fox_request_approval`, `fox_detect_captcha`, `fox_safety_status`.
 
 ### Added
 
-- **`--help`, `--version` and `--doctor`**: `node packages/mcp-server/dist/index.js --doctor` checks 14 items (build, Firefox and Claude Code registration, daemon, token, logs, …) read-only and prints a fix for each problem. `--help` / `--version` exit before a daemon, token or log is created. An unknown argument now exits with code 2 instead of starting a relay (5afc516, 0e06a30)
+- **`--help`, `--version` and `--doctor`**: `node packages/mcp-server/dist/index.js --doctor` checks 14 items (build, Firefox and Claude Code registration, daemon, token, logs, …) read-only and prints a fix for each problem; it exits with code 1 when an item FAILs. A missing `native-messaging` registration is a WARN (exit code 0: the extension route needs it, headless alone does not), a broken one (invalid JSON, wrong name, type, allowed extension or path) is a FAIL, and the fixes point to `npm run setup`. `--help` / `--version` exit before a daemon, token or log is created. An unknown argument now exits with code 2 instead of starting a relay (5afc516, 0e06a30, 7a4e61f)
 - **`FOX_APPROVAL_ELICITATION`**: set `0` / `false` / `off` / `no` to approve protected-site actions in the Firefox popup only (headless mode then cannot approve). It is on by default (4a785bb)
 - **`FOX_SCREENSHOT_RETENTION_DAYS`** (default `30`): at each Native Host start, screenshots saved under a generated name and older than this many days are deleted. Set `0` to keep everything; files saved under your own `filename` are never deleted (69b1af9)
 - **Logs survive reloads and navigations**: console and network logs are kept per tab in the Extension's background (latest 500 of each), so `fox_get_console_logs` / `fox_get_network_logs` return entries from before a navigation (47d43c6)
@@ -61,15 +90,7 @@ Changes since 0.1.4. Read **Breaking** before updating, and follow [Update](../R
 
 - **The Extension is bundled with esbuild**: sources are ES modules, `npm run build` writes `dist/background.js`, `dist/content.js` and `dist/popup/popup.js`, and the build fails if zod or `@kitsune-mcp/shared/node` ends up in a bundle. Load `packages/extension/manifest.json` after `npm run build` (0e3376e, 156600f)
 - **Vitest**: `npm test` runs the unit, contract and installer tests, each test file with a temporary home directory; development needs Node.js 22.12 or later (or 24) (1925170, 146fc2d)
-- **`npm run typecheck` checks the tests too**: it runs every workspace's typecheck and `tsconfig.test.json` over the test directories; `npm run lint:ext` runs `web-ext lint` (f93909a, 156e11d)
+- **`npm run typecheck` checks the tests too**: it runs the Extension's type check (the only workspace with a `typecheck` script) and then `npm run typecheck:tests` (`tsc -p tsconfig.test.json`, over `packages/*/tests` and `tests/`); `npm run lint:ext` runs `web-ext lint` (f93909a, 156e11d)
 - **`background.ts` / `content.ts` split into modules**: under `packages/extension/src/background/` and `src/content/`, which tests import directly (d71c331, cacfcda, c7d6512, 9f51441, 176937b)
 - **`docs/development.md`**: build, workflow, `@kitsune-mcp/shared` entries and test layout ([development.md](./development.md)) (9f342ae)
-
-## Unreleased: planned
-
-### Tool name consolidation (WP13, in progress)
-
-<!-- Fill in the body after the final report of WP13. -->
-
-| Old name | New name | Notes |
-|---|---|---|
+- **Golden files for the tool consolidation**: `tests/golden/` records the BrowserCommand and the safety-guard decision of each tool call and the `tools/list` of a session (default and `FOX_CAPS=legacy`); regenerate an intended change with `UPDATE_GOLDEN=1 npx vitest run <test file>`. `node scripts/tools-list-size.mjs` prints the size of both tool lists (e2d711b, 93054cc, 59dee5c)

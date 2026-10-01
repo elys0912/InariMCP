@@ -32,10 +32,39 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **ヘッドレスの`fox_snapshot`と`fox_scroll`が変わった**: `fox_snapshot`はbase64のスクリーンショットではなく、アクセシビリティツリーをYAMLテキストで返す（`maxDepth`、`includeText`、`roles`が効く）。画像が要るなら`fox_screenshot`を使う。`fox_scroll`は常に300 px下へスクロールするのをやめ、`direction`、`amount`、`selector`、`toElement`に従う（208cb30）
 - **ツールの分類をツールのスキーマから導くようにした**: `fox_remove_observer`はスクリプト系のツールになり、スクリプト実行が無効なら拒否される。`fox_hover`、`fox_scroll`、`fox_highlight`、`fox_switch_tab`は分類`interact`になり、読み取り専用モードでも、保護対象サイトでも承認なしで動き、`readOnlyHint`は`false`になる（7febaa5）
 - **全パッケージが版0.1.4を名乗る**: 以前は拡張機能が0.1.4で、daemon・中継・Native Hostは0.1.0を名乗っていた。すべての`package.json`とマニフェストが同じ版になり、`--doctor`がそれを確かめる。すべての部分を一緒に更新すること（c9cbd41）
+- **41個のツールを21個にまとめ、セッションは新しい名前を一覧にする**: 以前のツール名を書いたプロンプトや設定は、新しい名前にするか`FOX_CAPS=legacy`にする必要がある。以前の名前は呼び出せば引き続き動く。[ツール名の統合（41 → 21）](#ツール名の統合41--21)を参照（59dee5c、00bca2b）
+
+### ツール名の統合（41 → 21）
+
+関連する操作を、モード引数（`mode`、`action`、`kind`などの判別キー）を持つ1つのツールにした。ブラウザ側は変わっておらず、新しいツールの呼び出しは以前のツールが実行していたものを実行する。詳細はREADMEの[ツール名の移行](../README.ja.md#ツール名の移行)（93054cc、00bca2b、59dee5c、7713270、c4bd216）。
+
+- **既定の`tools/list`は新しい21個のツールを一覧にする**: `FOX_CAPS`が未設定でも、`all`やプロファイルを指定しても、セッションは新しい名前を一覧にする。`FOX_CAPS=legacy`（単独、または他のプロファイルと一緒に: `legacy,core`）は、代わりに以前の41個のツールとその以前のプロファイルを一覧にする。置き換わった28個と削除予定の2個は、説明が`[Deprecated: …]`で始まる。`fox_safety_status`は常に一覧に入る（59dee5c、93054cc）
+- **以前の名前は引き続き使える**: daemonは`FOX_CAPS`の設定に関係なく両方の名前を受け付け、HTTP（`POST /mcp/call`）でも使える。プロセスの中で以前の名前ごとに最初の呼び出しだけ、結果の末尾に置き換え先を示す`Note:`（`fox_get_text is deprecated; use fox_read with mode='text'.`）が付き、同じ内容をstderr（`daemon.log`）に書く。同じ名前の2回目以降には付かない（00bca2b）
+- **監査ログは新しい名前で記録する**: 以前の名前での呼び出しは、`tool`に新しい名前、`legacyTool`に以前の名前を入れて記録する（93054cc）
+- **承認は呼び出した名前に結び付く**: 承認の要求とトークンの照合は、呼び出した名前と呼び出しの引数のハッシュを使う。承認された呼び出しと同じ名前と引数で再試行すること（93054cc）
+- **ツールの結果をcompactなJSONにした**: 成功時の結果、`fox_snapshot`のメタ情報、`fox_safety_status`の結果を、インデント無しのJSONで返す（7713270）
+- **メッセージは新しい名前を使う**: ツールの説明を短くし、承認の案内、ヘッドレスの警告、拡張機能のエラーは新しいツール名を示す（c4bd216）
+
+| 以前のツール | 新しい呼び出し | 引数の変更 |
+|---|---|---|
+| `fox_get_page_info`、`fox_get_text` | `fox_read` `mode: "info"` / `"text"` | |
+| `fox_get_elements`、`fox_find_text` | `fox_find` `by: "selector"` / `"text"` | `fox_find_text`: `query` → `text` |
+| `fox_get_tabs`、`fox_list_containers` | `fox_tabs` `what: "tabs"` / `"containers"` | |
+| `fox_create_tab`、`fox_open_in_container`、`fox_close_tab`、`fox_switch_tab` | `fox_tab` `action: "create"` / `"create"`（`container`付き） / `"close"` / `"switch"` | `fox_open_in_container`: `containerName` → `container.name`、`cookieStoreId` → `container.cookieStoreId`。`url`は必須 |
+| `fox_select_option` | `fox_set_value` `kind: "select"`（`fox_set_value`自体は名前が変わらず、既定は`kind: "input"`） | `value` / `text` / `index` → `option: { value }` / `{ text }` / `{ index }`（どれか1つだけ） |
+| `fox_hover`、`fox_scroll`、`fox_highlight` | `fox_interact` `action: "hover"` / `"scroll"` / `"highlight"` | |
+| `fox_wait_for_element`、`fox_wait_for_network_idle`、`fox_wait_for_navigation`、`fox_wait_for_url` | `fox_wait` `for: "element"` / `"network_idle"` / `"navigation"` / `"url"` | `for: "url"`には`url`か`urlPattern`が要る |
+| `fox_start_logging`、`fox_stop_logging`、`fox_clear_logs` | `fox_logging` `action: "start"` / `"stop"` / `"clear"` | |
+| `fox_get_console_logs`、`fox_get_network_logs` | `fox_get_logs` `kind: "console"` / `"network"` | |
+| `fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act` | `fox_evaluate` `mode: "script"` / `"chain"` / `"wait_and_act"` | `wait_and_act`: `timeoutMs` → `timeout` |
+| `fox_inject_observer`、`fox_remove_observer` | `fox_observer` `action: "inject"` / `"remove"` | |
+| `fox_run_workflow`、`fox_audit_page`（削除予定） | なし | どのバックエンドでも未実装だった。名前での呼び出しは今もでき、同じエラーになる |
+
+変更なし: `fox_screenshot`、`fox_snapshot`、`fox_navigate`、`fox_click`、`fox_type`、`fox_press_key`、`fox_set_value`、`fox_handle_dialog`、`fox_request_approval`、`fox_detect_captcha`、`fox_safety_status`。
 
 ### 追加
 
-- **`--help`、`--version`、`--doctor`**: `node packages/mcp-server/dist/index.js --doctor`は14項目（ビルド、FirefoxとClaude Codeへの登録、daemon、トークン、ログなど）を読み取りだけで確認し、問題ごとに対処を表示する。`--help` / `--version`はdaemon・トークン・ログを作る前に終わる。知らない引数は、中継として起動せずに終了コード2で終わるようになった（5afc516、0e06a30）
+- **`--help`、`--version`、`--doctor`**: `node packages/mcp-server/dist/index.js --doctor`は14項目（ビルド、FirefoxとClaude Codeへの登録、daemon、トークン、ログなど）を読み取りだけで確認し、問題ごとに対処を表示する。FAILの項目があれば終了コード1で終わる。`native-messaging`が未登録ならWARN（終了コード0。拡張機能経路では必要だが、ヘッドレスだけなら不要）、壊れた登録（JSONとして不正、name・type・allowed extension・pathの不備）はFAILで、対処文は`npm run setup`を案内する。`--help` / `--version`はdaemon・トークン・ログを作る前に終わる。知らない引数は、中継として起動せずに終了コード2で終わるようになった（5afc516、0e06a30、7a4e61f）
 - **`FOX_APPROVAL_ELICITATION`**: `0` / `false` / `off` / `no`にすると、保護対象サイトでの操作はFirefoxのポップアップでしか承認できなくなる（ヘッドレスモードでは承認できなくなる）。既定は有効（4a785bb）
 - **`FOX_SCREENSHOT_RETENTION_DAYS`**（既定`30`）: Native Hostの起動のたびに、自動生成の名前で保存した、この日数より古いスクリーンショットを削除する。`0`ですべて残す。自分で指定した`filename`で保存したファイルは削除しない（69b1af9）
 - **ログがリロードと遷移を跨いで残る**: コンソールとネットワークのログは拡張機能のbackgroundにタブごとに保持する（それぞれ最新500件）ので、`fox_get_console_logs` / `fox_get_network_logs`は遷移前の記録も返す（47d43c6）
@@ -61,15 +90,7 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 
 - **拡張機能をesbuildでbundleする**: ソースはES moduleになり、`npm run build`が`dist/background.js`、`dist/content.js`、`dist/popup/popup.js`を書き出す。bundleにzodや`@kitsune-mcp/shared/node`が入るとビルドが失敗する。`npm run build`の後に`packages/extension/manifest.json`を読み込む（0e3376e、156600f）
 - **Vitest**: `npm test`は単体・契約・インストーラのテストを、テストファイルごとに一時的なホームディレクトリで実行する。開発にはNode.js 22.12以降（または24）が必要（1925170、146fc2d）
-- **`npm run typecheck`はテストも型検査する**: 各workspaceのtypecheckと、テストのディレクトリに対する`tsconfig.test.json`を実行する。`npm run lint:ext`は`web-ext lint`を実行する（f93909a、156e11d）
+- **`npm run typecheck`はテストも型検査する**: 拡張機能の型検査（`typecheck`スクリプトを持つworkspaceは拡張機能だけ）のあと、`npm run typecheck:tests`（`tsc -p tsconfig.test.json`。対象は`packages/*/tests`と`tests/`）を実行する。`npm run lint:ext`は`web-ext lint`を実行する（f93909a、156e11d）
 - **`background.ts` / `content.ts`をモジュールに分割した**: `packages/extension/src/background/`と`src/content/`の下にあり、テストから直接importできる（d71c331、cacfcda、c7d6512、9f51441、176937b）
 - **`docs/development.ja.md`**: ビルド、作業の流れ、`@kitsune-mcp/shared`の入口、テストの構成（[development.ja.md](./development.ja.md)）（9f342ae）
-
-## Unreleased: planned
-
-### ツール名の統合（WP13、進行中）
-
-<!-- 本文はWP13の最終報告後に埋める。 -->
-
-| 旧名 | 新名 | 備考 |
-|---|---|---|
+- **ツール統合のためのgoldenファイル**: `tests/golden/`に、各ツール呼び出しのBrowserCommandと安全ガードの判定、セッションの`tools/list`（既定と`FOX_CAPS=legacy`）を記録する。意図した変更なら`UPDATE_GOLDEN=1 npx vitest run <テストファイル>`で作り直す。`node scripts/tools-list-size.mjs`は両方のツール一覧の大きさを表示する（e2d711b、93054cc、59dee5c）

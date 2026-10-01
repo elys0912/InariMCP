@@ -448,7 +448,7 @@ Current limitations are listed in [`docs/known-issues.md`](docs/known-issues.md)
 ```bash
 npm ci
 npm run build             # every package; the Extension is bundled by scripts/build-extension.mjs
-npm run typecheck         # type check of the Extension (tsc --noEmit)
+npm run typecheck         # type check of the Extension (tsc --noEmit), then of the tests (typecheck:tests)
 npm test                  # Vitest, without e2e
 npm run lint:ext          # web-ext lint of packages/extension
 npm run e2e:extension     # the Extension loads into Firefox (needs Playwright's Firefox)

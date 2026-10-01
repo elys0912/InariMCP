@@ -448,7 +448,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 ```bash
 npm ci
 npm run build             # 全パッケージ。拡張機能はscripts/build-extension.mjsでバンドルする
-npm run typecheck         # 拡張機能の型検査（tsc --noEmit）
+npm run typecheck         # 拡張機能の型検査（tsc --noEmit）のあと、テストの型検査（typecheck:tests）
 npm test                  # Vitest（e2eを除く）
 npm run lint:ext          # packages/extensionのweb-ext lint
 npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（PlaywrightのFirefoxが必要）

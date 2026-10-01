@@ -16,7 +16,7 @@ Run from the repository root:
 ```bash
 npm ci
 npm run build           # every workspace (see Build)
-npm run typecheck       # every workspace with a typecheck script (now: the Extension)
+npm run typecheck       # every workspace with a typecheck script (now: the Extension), then typecheck:tests
 npm test                # Vitest, all projects except e2e
 npm run lint:ext        # web-ext lint of packages/extension
 npm run e2e:extension   # the Extension loads into Firefox as a temporary add-on
@@ -51,7 +51,7 @@ npm run e2e:extension   # the Extension loads into Firefox as a temporary add-on
 - `dist/` is deleted first, so no old file ends up in the package.
 - The target is `firefox<major of strict_min_version>`; the output is not minified (readable for AMO review).
 - `npm run build:dev -w @kitsune-mcp/extension` also writes linked source maps (`dist/**/*.js.map`; `web-ext-config.mjs` keeps them out of the package).
-- esbuild does not type-check. `npm run typecheck` (`tsc --noEmit`, also run by the Extension's `build`) does. The sources are ES modules (`moduleResolution: bundler`, `isolatedModules`, `verbatimModuleSyntax`, `noUnusedLocals`, `noUnusedParameters`, no `@types/node`).
+- esbuild does not type-check. The Extension's `typecheck` script (`tsc -p tsconfig.json --noEmit`, run by its `build` and by the root `npm run typecheck`) does. The sources are ES modules (`moduleResolution: bundler`, `isolatedModules`, `verbatimModuleSyntax`, `noUnusedLocals`, `noUnusedParameters`, no `@types/node`).
 - The build fails when a bundle contains zod or `packages/shared/src/node`, when a bundle does not start with `"use strict";`, or when a file that `manifest.json` loads is missing.
 - The script lives outside `packages/extension` because web-ext packs every file there that `web-ext-config.mjs` does not ignore.
 
@@ -85,6 +85,8 @@ Modules of `@kitsune-mcp/shared/node` (`packages/shared/src/node/`):
 ## Tests
 
 `vitest.config.mts` defines the projects `shared`, `mcp-server`, `native-host` (`packages/<pkg>/tests/`), `contract` (`tests/contract/`), `scripts` (`tests/scripts/`) and `e2e` (`tests/e2e/`, only with `npm run test:e2e`). The Extension is not a project: `background.ts` and `content.ts` register browser listeners at their top level, so contract tests read their sources or import the modules without side effects (`action-map.ts`, `approval.ts`, `url-rule.ts`). Every test file runs with a temporary home directory.
+
+`npm run typecheck:tests` (the second half of `npm run typecheck`) type-checks the tests with `tsconfig.test.json`: `packages/*/tests`, `tests/contract`, `tests/e2e`, `tests/scripts` and `tests/setup`. It uses `bundler` resolution and the same `@kitsune-mcp/shared` paths as `vitest.config.mts`, so no build is needed.
 
 Golden files (`tests/golden/`) record behaviour that must not change by accident: the BrowserCommand and safety-guard decision of each tool call (`tests/contract/tool-golden.test.ts`) and the `tools/list` of a session (`tests/contract/tools-list.test.ts`). When a change is intended, regenerate them with `UPDATE_GOLDEN=1 npx vitest run <test file>` and review the diff. `node scripts/tools-list-size.mjs` prints the size of both tool lists.
 
