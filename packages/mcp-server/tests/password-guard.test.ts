@@ -1,4 +1,3 @@
-import * as fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   applyPasswordPolicy,
@@ -7,6 +6,7 @@ import {
   PASSWORD_REFUSAL,
 } from '../src/safety/password-guard.js';
 import { invalidRegexArgument } from '../src/tools/handlers.js';
+import { readExtensionTree } from '../../../tests/contract/helpers/extension-source.js';
 
 function fakeElement(tagName: string, type: string, autocomplete: string | null = null): Element {
   return { tagName, type, getAttribute: () => autocomplete } as unknown as Element;
@@ -63,10 +63,7 @@ describe('applyPasswordPolicy', () => {
 });
 
 describe('Extension contract: content.ts reads the same allowPassword key and field test', () => {
-  const content = fs.readFileSync(
-    new URL('../../extension/src/content.ts', import.meta.url),
-    'utf-8',
-  );
+  const content = readExtensionTree('content');
 
   it('refuses unless options.allowPassword === true', () => {
     expect(content).toContain('options.allowPassword !== true');

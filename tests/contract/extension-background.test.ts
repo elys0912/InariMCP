@@ -25,9 +25,10 @@ import {
   loadExtensionFunction,
   loadExtensionFunctions,
   readExtensionSource,
+  readExtensionTree,
 } from './helpers/extension-source.js';
 
-const background = readExtensionSource('background.ts');
+const background = readExtensionTree('background');
 
 interface UrlRuleGlobals {
   compileUrlRules(raw: unknown): { rules: unknown[]; invalid: number };
@@ -240,8 +241,8 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     };
     expect(manifest.background.scripts).toEqual(['dist/background.js']);
     expect(manifest.content_scripts[0]!.js).toEqual(['dist/content.js']);
-    expect(background).toMatch(/^import \{[^}]*\bfindUrlRule\b[^}]*\} from "\.\/url-rule";$/m);
-    expect(readExtensionSource('content.ts')).toMatch(/^import \{[^}]*\bfindUrlRule\b[^}]*\} from "\.\/url-rule";$/m);
+    expect(background).toMatch(/^import \{[^}]*\bfindUrlRule\b[^}]*\} from "\.\.?\/url-rule";$/m);
+    expect(readExtensionTree('content')).toMatch(/^import \{[^}]*\bfindUrlRule\b[^}]*\} from "\.\.?\/url-rule";$/m);
     // The early injection runs content.js alone, once.
     const files = [...background.matchAll(/executeScript\([^)]*\bfile: "([^"]+)"/g)].map((m) => m[1]);
     expect(files).toEqual(['/dist/content.js']);

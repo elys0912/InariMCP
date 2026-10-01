@@ -12,9 +12,11 @@
  * test puts them on globalThis.
  * Modules without top-level side effects (action-map.ts, approval.ts,
  * url-rule.ts) can also be imported directly.
+ * Source checks over a whole bundle's code read readExtensionTree(), so they
+ * do not depend on which file of background/ or content/ holds the code.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { transformWithOxc } from 'vite';
 
@@ -23,6 +25,21 @@ const EXTENSION_SRC = new URL('../../../packages/extension/src/', import.meta.ur
 export function readExtensionSource(file: string): string {
   // Line endings normalized: a Windows checkout (core.autocrlf) has CRLF.
   return readFileSync(fileURLToPath(new URL(file, EXTENSION_SRC)), 'utf-8').split('\r\n').join('\n');
+}
+
+/**
+ * Source text of one bundle's own code: the entry (`background.ts` /
+ * `content.ts`) followed by the modules of its directory (`background/*.ts`
+ * / `content/*.ts`, sorted by name), joined by a newline. Source checks that
+ * must hold wherever the code lives read this instead of a single file.
+ * Shared modules (url-rule.ts, approval.ts, ...) are not part of it.
+ */
+export function readExtensionTree(tree: 'background' | 'content'): string {
+  const dir = fileURLToPath(new URL(`${tree}/`, EXTENSION_SRC));
+  const modules = existsSync(dir)
+    ? readdirSync(dir).filter((f) => f.endsWith('.ts')).sort().map((f) => `${tree}/${f}`)
+    : [];
+  return [`${tree}.ts`, ...modules].map(readExtensionSource).join('\n');
 }
 
 /**
