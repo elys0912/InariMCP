@@ -448,9 +448,16 @@ function registeredWrapper(ctx: DoctorContext): string | undefined {
 export function checkNativeMessaging(ctx: DoctorContext): CheckResult {
   const id = 'native-messaging';
   const { used, others, note } = ctx.nm;
-  const fixInstall = `re-run the installer (npm run install:${ctx.deps.platform === 'win32' ? 'windows' : 'unix'})`;
+  const fixInstall = 'run the installer: npm run setup (Windows / Unix; options: node scripts/install.mjs --help)';
   if (used === undefined) {
-    return { id, status: 'FAIL', detail: `${NM_HOST_NAME} is not registered${note !== undefined ? ` (${note})` : ''}`, fix: fixInstall };
+    // Only the extension route (Firefox) needs the registration: a WARN, so
+    // a headless-only setup does not fail. A broken registration still FAILs.
+    return {
+      id,
+      status: 'WARN',
+      detail: `${NM_HOST_NAME} is not registered${note !== undefined ? ` (${note})` : ''}`,
+      fix: `needed for the extension route (Firefox), not for headless only: ${fixInstall}`,
+    };
   }
   const { value, error } = readJsonFile(used.manifestPath);
   if (error !== undefined || !isRecord(value)) {
@@ -577,8 +584,8 @@ export function checkPowerShell(ctx: DoctorContext): CheckResult {
   return {
     id,
     status: 'WARN',
-    detail: `PowerShell ${why}: install.ps1 / uninstall.ps1 cannot run; the Native Host falls back to WMI / Task Scheduler`,
-    fix: 'if closing Firefox stops the daemon, check native-host.log for the breakaway route; install manually (see README)',
+    detail: `PowerShell ${why}: the Native Host falls back to WMI / Task Scheduler to start the daemon (the installer does not need PowerShell)`,
+    fix: 'if closing Firefox stops the daemon, check native-host.log for the breakaway route',
   };
 }
 

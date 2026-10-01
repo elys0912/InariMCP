@@ -292,16 +292,17 @@ describe('doctor: native-messaging', () => {
     expect(nm.detail).toContain(manifestPath);
   });
 
-  it('no registration at all → FAIL with the reg query error', async () => {
+  it('no registration at all → WARN (headless needs none) with the reg query error', async () => {
     const results = await runChecks(deps(undefined, {
       platform: 'win32',
       run: fakeRun({}, { error: 'spawn reg ENOENT' }),
     }));
     const nm = byId(results, 'native-messaging');
-    expect(nm.status).toBe('FAIL');
+    expect(nm.status).toBe('WARN');
     expect(nm.detail).toContain('kitsune_mcp is not registered');
     expect(nm.detail).toContain('reg query failed: spawn reg ENOENT');
-    expect(nm.fix).toContain('install:windows');
+    expect(nm.fix).toContain('npm run setup');
+    expect(nm.fix).toContain('headless');
     // Without a usable manifest the wrapper cannot be judged.
     expect(byId(results, 'nm-wrapper')).toMatchObject({ status: 'SKIP' });
   });
@@ -740,6 +741,18 @@ describe('doctor: runDoctor', () => {
     expect(out).not.toContain('FAIL  ');
     expect(code).toBe(0);
   });
+
+  it('exits 0 when the only problem is a missing registration (headless-only setups)', async () => {
+    const code = await runDoctor(deps(undefined, {
+      platform: 'win32',
+      run: fakeRun({}, { powershell: { status: 0, stdout: 'FullLanguage' } }),
+    }));
+    const out = written.join('');
+    expect(out).toMatch(/^WARN {2}native-messaging {2}kitsune_mcp is not registered/m);
+    expect(out).not.toContain('FAIL  ');
+    expect(code).toBe(0);
+  });
+  // TODO(test): Linux / macOS with no manifest in any directory → WARN; a registered manifest whose file is missing stays FAIL
 
   it('formatResults aligns the ids and prints fix lines only for non-OK items', () => {
     const out = formatResults([
