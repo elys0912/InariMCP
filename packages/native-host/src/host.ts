@@ -4,6 +4,7 @@
  * starting the daemon or the WebSocket connection).
  */
 
+import { parseHostMessage } from '@kitsune-mcp/shared';
 import { readMessage, sendMessage } from './protocol.js';
 import { serverEntryPath, type DaemonInfo, type ServerLauncher } from './server-launcher.js';
 import type { ServerConnection } from './ws-client.js';
@@ -115,8 +116,17 @@ export function processMessage(
     return;
   }
 
-  // Local commands initiated by the Extension itself
-  if (action === 'ping') {
+  // Local commands initiated by the Extension itself (shared/host-messages.ts)
+  const parsed = parseHostMessage(message);
+  if (!parsed.ok && parsed.action !== undefined) {
+    log(parsed.error);
+    const screenshot = parsed.action === 'saveScreenshot' || parsed.action === 'screenshotTaken';
+    replyToExtension(message, { success: false, error: screenshot ? 'no image data' : parsed.error });
+    return;
+  }
+  const local = parsed.ok ? parsed.message : undefined;
+
+  if (local?.action === 'ping') {
     replyToExtension(message, {
       action: 'pong',
       pong: true,
@@ -126,7 +136,7 @@ export function processMessage(
     return;
   }
 
-  if (action === 'status') {
+  if (local?.action === 'status') {
     const reply = (available: boolean, daemon: DaemonInfo | null): void => {
       replyToExtension(message, {
         success: true,
@@ -154,21 +164,9 @@ export function processMessage(
 
   // Screenshots the Extension took on its own (popup / context menu): these
   // are not MCP tool calls, so they are only saved locally.
-  if (action === 'saveScreenshot' || action === 'screenshotTaken') {
-    const data = message['data'];
-    const imageData =
-      typeof data === 'string'
-        ? data
-        : typeof data === 'object' && data !== null && !Array.isArray(data) &&
-          typeof (data as Record<string, unknown>)['imageData'] === 'string'
-          ? (data as Record<string, string>)['imageData']
-          : undefined;
-    const filename = typeof message['filename'] === 'string' ? message['filename'] : undefined;
-
-    if (imageData === undefined) {
-      replyToExtension(message, { success: false, error: 'no image data' });
-      return;
-    }
+  if (local?.action === 'saveScreenshot' || local?.action === 'screenshotTaken') {
+    const imageData = typeof local.data === 'string' ? local.data : local.data.imageData;
+    const filename = local.filename;
     try {
       const imagePath = saveScreenshot(imageData, filename);
       log(`${action}: saved ${imagePath}`);
