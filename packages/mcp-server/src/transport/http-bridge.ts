@@ -34,6 +34,13 @@
  *    and wait for the answer.
  *  Both answer { success, approved, reason, approvalToken?, expiresAt? }.
  *
+ * Graceful stop: POST /daemon/shutdown { force?: boolean } — signed requests
+ * only (never X-API-Key). Waits for running calls (10 s cap; none with
+ * force), closes the headless browser and the WS connections (1001),
+ * answers { status: 'stopping', pid, … } and exits 0 once the answer is
+ * out. New tool calls get 503 meanwhile. Clients: relay `--stop-daemon`
+ * (relay/daemon-client.ts stopDaemon), scripts/uninstall.mjs, tests/e2e.
+ *
  * Fork-source: server.py L885-1460 MCPHTTPHandler
  *
  * Security:
@@ -320,6 +327,19 @@ export interface HttpBridgeOptions {
   info?: () => Record<string, unknown>;
   /** How long a client has to send its body (tests shorten it). */
   bodyTimeoutMs?: number;
+  /** POST /daemon/shutdown (daemon/main.ts). Without it the route answers 501. */
+  shutdown?: ShutdownHooks;
+}
+
+/**
+ * What POST /daemon/shutdown drives. `prepare` runs the whole shutdown but
+ * the exit (wait for running calls unless `force`, close the browser and the
+ * WS connections) and returns the fields of the answer; `exit` is called
+ * once the answer has left the socket, and ends the process.
+ */
+export interface ShutdownHooks {
+  prepare: (opts: { force: boolean }) => Promise<Record<string, unknown>>;
+  exit: () => void;
 }
 
 /**
@@ -344,6 +364,8 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
   let isReady = options.ready === undefined;
   ready.then(() => { isReady = true; }, () => { /* the daemon exits on failure */ });
   const startTime = Date.now();
+  /** Set by POST /daemon/shutdown: new tool calls are refused (503) from then on. */
+  let stopping: Promise<Record<string, unknown>> | undefined;
 
   // Every tool, deprecated names included (see header comment: FOX_CAPS
   // is applied by each relay).
@@ -544,6 +566,11 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
           return;
         }
 
+        if (pathname === '/daemon/shutdown') {
+          handleShutdown(signed, data, res, reply);
+          return;
+        }
+
         reply.error(404, 'Not found');
       })
       .catch((err: unknown) => {
@@ -570,6 +597,10 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
   ): void {
     const caller = callerOf(req);
     if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
+    if (stopping !== undefined) {
+      reply.error(503, 'KitsuneMCP daemon is shutting down');
+      return;
+    }
 
     const toolName = data['name'];
     if (typeof toolName !== 'string' || !toolName) {
@@ -646,6 +677,10 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
   ): void {
     const caller = callerOf(req);
     if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
+    if (stopping !== undefined) {
+      reply.error(503, 'KitsuneMCP daemon is shutting down');
+      return;
+    }
 
     const requestId = data['requestId'];
     if (typeof requestId !== 'string' || requestId === '') {
@@ -676,6 +711,59 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
       .finally(() => {
         activity?.endCall();
         if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
+      });
+  }
+
+  // -----------------------------------------------------------------------
+  // Graceful stop (POST /daemon/shutdown)
+  // Body: { force?: boolean }. Signed requests only: stopping the daemon
+  // cuts off every session, so the X-API-Key debugging path is not enough.
+  // The answer is sent first; the process exits once it has left the socket.
+  // -----------------------------------------------------------------------
+  function handleShutdown(
+    signed: boolean,
+    data: Record<string, unknown>,
+    res: http.ServerResponse,
+    reply: Responder,
+  ): void {
+    if (!signed) {
+      reply.error(403, 'POST /daemon/shutdown requires a signed request (X-API-Key is not accepted here)');
+      return;
+    }
+    const hooks = options.shutdown;
+    if (hooks === undefined) {
+      reply.error(501, 'This daemon cannot be stopped over HTTP');
+      return;
+    }
+    if (data['force'] !== undefined && typeof data['force'] !== 'boolean') {
+      reply.error(400, '"force" must be a boolean');
+      return;
+    }
+    const force = data['force'] === true;
+    const first = stopping === undefined;
+    stopping ??= hooks.prepare({ force });
+
+    stopping
+      .then((summary) => {
+        // Exit only after the answer is out ('close' also covers a client that hung up).
+        let exited = false;
+        const exit = (): void => {
+          if (exited) return;
+          exited = true;
+          hooks.exit();
+        };
+        if (res.destroyed) {
+          // The client gave up while running calls were drained: nobody to answer.
+          setImmediate(exit);
+          return;
+        }
+        res.once('finish', () => setImmediate(exit));
+        res.once('close', () => setImmediate(exit));
+        reply.json(200, { status: 'stopping', pid: process.pid, force, repeated: !first, ...summary });
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        reply.error(500, `Shutdown failed: ${msg}`);
       });
   }
 
