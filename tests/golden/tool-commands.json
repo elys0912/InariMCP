@@ -1,0 +1,4631 @@
+[
+  {
+    "id": "screenshot/default",
+    "tool": "fox_screenshot",
+    "args": {},
+    "command": {
+      "action": "screenshot",
+      "data": {
+        "scope": "viewport",
+        "saveToFile": true,
+        "includeData": false,
+        "delay": 500,
+        "maxScrolls": 20,
+        "restore": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:screenshot"
+  },
+  {
+    "id": "screenshot/full_page",
+    "tool": "fox_screenshot",
+    "args": {
+      "scope": "full_page",
+      "tabId": 3,
+      "filename": "shot.png"
+    },
+    "command": {
+      "action": "screenshot",
+      "tabId": 3,
+      "data": {
+        "scope": "full_page",
+        "saveToFile": true,
+        "filename": "shot.png",
+        "includeData": false,
+        "delay": 500,
+        "maxScrolls": 20,
+        "restore": true,
+        "fullPage": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:screenshot"
+  },
+  {
+    "id": "screenshot/all_tabs",
+    "tool": "fox_screenshot",
+    "args": {
+      "scope": "all_tabs",
+      "urlPattern": "example",
+      "timeout": 40000
+    },
+    "command": {
+      "action": "screenshot_all_tabs",
+      "data": {
+        "scope": "all_tabs",
+        "saveToFile": true,
+        "urlPattern": "example",
+        "includeData": true,
+        "timeout": 40000,
+        "delay": 500,
+        "maxScrolls": 20,
+        "restore": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 45000,
+      "headless": 45000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "screenshot/scroll_capture",
+    "tool": "fox_screenshot",
+    "args": {
+      "scope": "scroll_capture",
+      "scrollStep": 400,
+      "maxScrolls": 5,
+      "restore": false
+    },
+    "command": {
+      "action": "scroll_and_capture",
+      "data": {
+        "scope": "scroll_capture",
+        "saveToFile": true,
+        "includeData": false,
+        "scrollStep": 400,
+        "delay": 500,
+        "maxScrolls": 5,
+        "restore": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "snapshot/default",
+    "tool": "fox_snapshot",
+    "args": {},
+    "command": {
+      "action": "snapshot",
+      "data": {
+        "includeText": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:snapshot"
+  },
+  {
+    "id": "snapshot/options",
+    "tool": "fox_snapshot",
+    "args": {
+      "selector": "main",
+      "maxDepth": 3,
+      "includeText": false,
+      "roles": [
+        "button"
+      ],
+      "tabId": 2
+    },
+    "command": {
+      "action": "snapshot",
+      "tabId": 2,
+      "data": {
+        "selector": "main",
+        "maxDepth": 3,
+        "includeText": false,
+        "roles": [
+          "button"
+        ]
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:snapshot"
+  },
+  {
+    "id": "get_elements/default",
+    "tool": "fox_get_elements",
+    "args": {
+      "selector": "a"
+    },
+    "command": {
+      "action": "get_elements",
+      "data": {
+        "selector": "a",
+        "limit": 50
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:get_elements"
+  },
+  {
+    "id": "get_elements/options",
+    "tool": "fox_get_elements",
+    "args": {
+      "selector": "li",
+      "limit": 5,
+      "tabId": 2
+    },
+    "command": {
+      "action": "get_elements",
+      "tabId": 2,
+      "data": {
+        "selector": "li",
+        "limit": 5
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:get_elements"
+  },
+  {
+    "id": "get_text/default",
+    "tool": "fox_get_text",
+    "args": {},
+    "command": {
+      "action": "get_text",
+      "data": {
+        "maxLength": 20000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:get_text"
+  },
+  {
+    "id": "get_text/options",
+    "tool": "fox_get_text",
+    "args": {
+      "selector": "#x",
+      "maxLength": 100,
+      "tabId": 2
+    },
+    "command": {
+      "action": "get_text",
+      "tabId": 2,
+      "data": {
+        "selector": "#x",
+        "maxLength": 100
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:get_text"
+  },
+  {
+    "id": "find_text/default",
+    "tool": "fox_find_text",
+    "args": {
+      "query": "hello"
+    },
+    "command": {
+      "action": "find_text",
+      "data": {
+        "query": "hello",
+        "caseSensitive": false,
+        "entireWord": false,
+        "includeRectData": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:find_text"
+  },
+  {
+    "id": "find_text/options",
+    "tool": "fox_find_text",
+    "args": {
+      "query": "Hi",
+      "caseSensitive": true,
+      "entireWord": true,
+      "includeRectData": true,
+      "tabId": 4
+    },
+    "command": {
+      "action": "find_text",
+      "tabId": 4,
+      "data": {
+        "query": "Hi",
+        "caseSensitive": true,
+        "entireWord": true,
+        "includeRectData": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:find_text"
+  },
+  {
+    "id": "get_page_info/default",
+    "tool": "fox_get_page_info",
+    "args": {},
+    "command": {
+      "action": "get_page_info",
+      "data": {},
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:get_page_info"
+  },
+  {
+    "id": "get_page_info/tab",
+    "tool": "fox_get_page_info",
+    "args": {
+      "tabId": 5
+    },
+    "command": {
+      "action": "get_page_info",
+      "tabId": 5,
+      "data": {},
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:get_page_info"
+  },
+  {
+    "id": "get_tabs/default",
+    "tool": "fox_get_tabs",
+    "args": {},
+    "command": {
+      "action": "get_tabs",
+      "data": {
+        "currentWindowOnly": true,
+        "limit": 50,
+        "includeFavicon": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:get_tabs"
+  },
+  {
+    "id": "get_tabs/options",
+    "tool": "fox_get_tabs",
+    "args": {
+      "currentWindowOnly": false,
+      "limit": 10,
+      "urlPattern": "^https://",
+      "includeFavicon": true
+    },
+    "command": {
+      "action": "get_tabs",
+      "data": {
+        "currentWindowOnly": false,
+        "limit": 10,
+        "urlPattern": "^https://",
+        "includeFavicon": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:get_tabs"
+  },
+  {
+    "id": "get_tabs/invalid_regex",
+    "tool": "fox_get_tabs",
+    "args": {
+      "urlPattern": "("
+    },
+    "command": null,
+    "refusal": "Invalid urlPattern '(': Invalid regular expression: /(/: Unterminated group [INVALID_ARGUMENTS]"
+  },
+  {
+    "id": "navigate/default",
+    "tool": "fox_navigate",
+    "args": {
+      "url": "https://plain.example.test/"
+    },
+    "command": {
+      "action": "navigate",
+      "data": {
+        "action": "goto",
+        "url": "https://plain.example.test/",
+        "newTab": false,
+        "waitForLoad": true,
+        "bypassCache": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:navigate"
+  },
+  {
+    "id": "navigate/goto_new_tab",
+    "tool": "fox_navigate",
+    "args": {
+      "action": "goto",
+      "url": "https://plain.example.test/next",
+      "newTab": true,
+      "waitForLoad": false
+    },
+    "command": {
+      "action": "navigate",
+      "data": {
+        "action": "goto",
+        "url": "https://plain.example.test/next",
+        "newTab": true,
+        "waitForLoad": false,
+        "bypassCache": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:navigate"
+  },
+  {
+    "id": "navigate/back",
+    "tool": "fox_navigate",
+    "args": {
+      "action": "back"
+    },
+    "command": {
+      "action": "go_back",
+      "data": {
+        "action": "back",
+        "newTab": false,
+        "waitForLoad": true,
+        "bypassCache": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:go_back"
+  },
+  {
+    "id": "navigate/forward",
+    "tool": "fox_navigate",
+    "args": {
+      "action": "forward",
+      "tabId": 2
+    },
+    "command": {
+      "action": "go_forward",
+      "tabId": 2,
+      "data": {
+        "action": "forward",
+        "newTab": false,
+        "waitForLoad": true,
+        "bypassCache": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:go_forward"
+  },
+  {
+    "id": "navigate/refresh",
+    "tool": "fox_navigate",
+    "args": {
+      "action": "refresh",
+      "bypassCache": true
+    },
+    "command": {
+      "action": "refresh",
+      "data": {
+        "action": "refresh",
+        "newTab": false,
+        "waitForLoad": true,
+        "bypassCache": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:refresh"
+  },
+  {
+    "id": "navigate/hard_refresh",
+    "tool": "fox_navigate",
+    "args": {
+      "action": "hard_refresh"
+    },
+    "command": {
+      "action": "hard_refresh",
+      "data": {
+        "action": "hard_refresh",
+        "newTab": false,
+        "waitForLoad": true,
+        "bypassCache": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "navigate/protected",
+    "tool": "fox_navigate",
+    "args": {
+      "url": "https://bank.example.test/transfer"
+    },
+    "command": null,
+    "refusal": "fox_navigate targets a protected site ('https://bank.example.test/transfer' matches pattern 'bank.example.test' in safety.json). This is a guard against unintended actions on sensitive sites (banking, payments, health, government). Human confirmation is required via MCP elicitation."
+  },
+  {
+    "id": "navigate/blocked",
+    "tool": "fox_navigate",
+    "args": {
+      "url": "https://blocked.example.test/"
+    },
+    "command": null,
+    "refusal": "URL 'https://blocked.example.test/' matches blocked_url_patterns entry 'blocked.example.test' in safety.json."
+  },
+  {
+    "id": "click/selector",
+    "tool": "fox_click",
+    "args": {
+      "selector": "#b"
+    },
+    "command": {
+      "action": "click",
+      "data": {
+        "selector": "#b",
+        "doubleClick": false,
+        "rightClick": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:click"
+  },
+  {
+    "id": "click/text",
+    "tool": "fox_click",
+    "args": {
+      "text": "OK",
+      "doubleClick": true
+    },
+    "command": {
+      "action": "click",
+      "data": {
+        "text": "OK",
+        "doubleClick": true,
+        "rightClick": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:click"
+  },
+  {
+    "id": "click/xy",
+    "tool": "fox_click",
+    "args": {
+      "x": 10,
+      "y": 20,
+      "rightClick": true,
+      "tabId": 2
+    },
+    "command": {
+      "action": "click",
+      "tabId": 2,
+      "data": {
+        "x": 10,
+        "y": 20,
+        "doubleClick": false,
+        "rightClick": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:click"
+  },
+  {
+    "id": "click/xpath",
+    "tool": "fox_click",
+    "args": {
+      "xpath": "//a"
+    },
+    "command": {
+      "action": "click",
+      "data": {
+        "xpath": "//a",
+        "doubleClick": false,
+        "rightClick": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:click"
+  },
+  {
+    "id": "type/selector",
+    "tool": "fox_type",
+    "args": {
+      "text": "abc",
+      "selector": "#q"
+    },
+    "command": {
+      "action": "type",
+      "data": {
+        "text": "abc",
+        "selector": "#q",
+        "clear": false,
+        "pressEnter": false,
+        "delay": 50,
+        "allowPassword": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:type"
+  },
+  {
+    "id": "type/placeholder",
+    "tool": "fox_type",
+    "args": {
+      "text": "x",
+      "placeholder": "Search",
+      "clear": true,
+      "pressEnter": true,
+      "delay": 0
+    },
+    "command": {
+      "action": "type",
+      "data": {
+        "text": "x",
+        "placeholder": "Search",
+        "clear": true,
+        "pressEnter": true,
+        "delay": 0,
+        "allowPassword": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:type"
+  },
+  {
+    "id": "type/name",
+    "tool": "fox_type",
+    "args": {
+      "text": "y",
+      "name": "n"
+    },
+    "command": {
+      "action": "type",
+      "data": {
+        "text": "y",
+        "name": "n",
+        "clear": false,
+        "pressEnter": false,
+        "delay": 50,
+        "allowPassword": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:type"
+  },
+  {
+    "id": "type/id",
+    "tool": "fox_type",
+    "args": {
+      "text": "z",
+      "id": "i",
+      "tabId": 3
+    },
+    "command": {
+      "action": "type",
+      "tabId": 3,
+      "data": {
+        "text": "z",
+        "id": "i",
+        "clear": false,
+        "pressEnter": false,
+        "delay": 50,
+        "allowPassword": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:type"
+  },
+  {
+    "id": "type/password_selector",
+    "tool": "fox_type",
+    "args": {
+      "text": "secret",
+      "selector": "input[type=password]"
+    },
+    "command": null,
+    "refusal": "Refused: target is a password field. Use the browser’s own password manager (autofill) for credentials, or set \"allow_password_typing\": true in the safety config if you really want automated password entry."
+  },
+  {
+    "id": "press_key/default",
+    "tool": "fox_press_key",
+    "args": {
+      "key": "Enter"
+    },
+    "command": {
+      "action": "press_key",
+      "data": {
+        "key": "Enter",
+        "ctrl": false,
+        "shift": false,
+        "alt": false,
+        "meta": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:press_key"
+  },
+  {
+    "id": "press_key/options",
+    "tool": "fox_press_key",
+    "args": {
+      "key": "a",
+      "selector": "#q",
+      "ctrl": true,
+      "shift": true,
+      "alt": true,
+      "meta": true,
+      "tabId": 2
+    },
+    "command": {
+      "action": "press_key",
+      "tabId": 2,
+      "data": {
+        "key": "a",
+        "selector": "#q",
+        "ctrl": true,
+        "shift": true,
+        "alt": true,
+        "meta": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:press_key"
+  },
+  {
+    "id": "set_value/default",
+    "tool": "fox_set_value",
+    "args": {
+      "selector": "#v",
+      "value": "1"
+    },
+    "command": {
+      "action": "set_value",
+      "data": {
+        "selector": "#v",
+        "value": "1",
+        "allowPassword": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:set_value"
+  },
+  {
+    "id": "set_value/tab",
+    "tool": "fox_set_value",
+    "args": {
+      "selector": "#v",
+      "value": "2",
+      "tabId": 2
+    },
+    "command": {
+      "action": "set_value",
+      "tabId": 2,
+      "data": {
+        "selector": "#v",
+        "value": "2",
+        "allowPassword": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:set_value"
+  },
+  {
+    "id": "select_option/value",
+    "tool": "fox_select_option",
+    "args": {
+      "selector": "select",
+      "value": "a"
+    },
+    "command": {
+      "action": "select_option",
+      "data": {
+        "selector": "select",
+        "value": "a"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:select_option"
+  },
+  {
+    "id": "select_option/text",
+    "tool": "fox_select_option",
+    "args": {
+      "selector": "select",
+      "text": "A"
+    },
+    "command": {
+      "action": "select_option",
+      "data": {
+        "selector": "select",
+        "text": "A"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:select_option"
+  },
+  {
+    "id": "select_option/index",
+    "tool": "fox_select_option",
+    "args": {
+      "selector": "select",
+      "index": 2,
+      "tabId": 2
+    },
+    "command": {
+      "action": "select_option",
+      "tabId": 2,
+      "data": {
+        "selector": "select",
+        "index": 2
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:select_option"
+  },
+  {
+    "id": "hover/default",
+    "tool": "fox_hover",
+    "args": {
+      "selector": "#h"
+    },
+    "command": {
+      "action": "hover",
+      "data": {
+        "selector": "#h"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:hover"
+  },
+  {
+    "id": "scroll/default",
+    "tool": "fox_scroll",
+    "args": {},
+    "command": {
+      "action": "scroll",
+      "data": {
+        "amount": 300
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:scroll"
+  },
+  {
+    "id": "scroll/direction",
+    "tool": "fox_scroll",
+    "args": {
+      "direction": "down",
+      "amount": 500
+    },
+    "command": {
+      "action": "scroll",
+      "data": {
+        "direction": "down",
+        "amount": 500
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:scroll"
+  },
+  {
+    "id": "scroll/to_element",
+    "tool": "fox_scroll",
+    "args": {
+      "toElement": "#f",
+      "tabId": 2
+    },
+    "command": {
+      "action": "scroll",
+      "tabId": 2,
+      "data": {
+        "amount": 300,
+        "toElement": "#f"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:scroll"
+  },
+  {
+    "id": "scroll/container",
+    "tool": "fox_scroll",
+    "args": {
+      "selector": "#pane",
+      "direction": "top"
+    },
+    "command": {
+      "action": "scroll",
+      "data": {
+        "direction": "top",
+        "amount": 300,
+        "selector": "#pane"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:scroll"
+  },
+  {
+    "id": "highlight/default",
+    "tool": "fox_highlight",
+    "args": {
+      "selector": "#h"
+    },
+    "command": {
+      "action": "highlight",
+      "data": {
+        "selector": "#h",
+        "duration": 3000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:highlight"
+  },
+  {
+    "id": "highlight/options",
+    "tool": "fox_highlight",
+    "args": {
+      "selector": "#h",
+      "duration": 1000,
+      "label": "L",
+      "tabId": 2
+    },
+    "command": {
+      "action": "highlight",
+      "tabId": 2,
+      "data": {
+        "selector": "#h",
+        "duration": 1000,
+        "label": "L"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:highlight"
+  },
+  {
+    "id": "create_tab/default",
+    "tool": "fox_create_tab",
+    "args": {},
+    "command": {
+      "action": "create_tab",
+      "data": {
+        "url": "about:blank",
+        "active": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:create_tab"
+  },
+  {
+    "id": "create_tab/url",
+    "tool": "fox_create_tab",
+    "args": {
+      "url": "https://plain.example.test/",
+      "active": false
+    },
+    "command": {
+      "action": "create_tab",
+      "data": {
+        "url": "https://plain.example.test/",
+        "active": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:create_tab"
+  },
+  {
+    "id": "create_tab/protected",
+    "tool": "fox_create_tab",
+    "args": {
+      "url": "https://bank.example.test/transfer"
+    },
+    "command": null,
+    "refusal": "fox_create_tab targets a protected site ('https://bank.example.test/transfer' matches pattern 'bank.example.test' in safety.json). This is a guard against unintended actions on sensitive sites (banking, payments, health, government). Human confirmation is required via MCP elicitation."
+  },
+  {
+    "id": "close_tab/default",
+    "tool": "fox_close_tab",
+    "args": {
+      "tabId": 7
+    },
+    "command": {
+      "action": "close_tab",
+      "tabId": 7,
+      "data": {},
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:close_tab"
+  },
+  {
+    "id": "switch_tab/default",
+    "tool": "fox_switch_tab",
+    "args": {
+      "tabId": 7
+    },
+    "command": {
+      "action": "focus_tab",
+      "tabId": 7,
+      "data": {},
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:focus_tab"
+  },
+  {
+    "id": "wait_for_element/default",
+    "tool": "fox_wait_for_element",
+    "args": {
+      "selector": "#w"
+    },
+    "command": {
+      "action": "wait_for_element",
+      "data": {
+        "selector": "#w",
+        "timeout": 10000,
+        "visible": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:wait_for_element"
+  },
+  {
+    "id": "wait_for_element/options",
+    "tool": "fox_wait_for_element",
+    "args": {
+      "selector": "#w",
+      "timeout": 40000,
+      "visible": false,
+      "tabId": 2
+    },
+    "command": {
+      "action": "wait_for_element",
+      "tabId": 2,
+      "data": {
+        "selector": "#w",
+        "timeout": 40000,
+        "visible": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 45000,
+      "headless": 45000
+    },
+    "headless": "dispatch:wait_for_element"
+  },
+  {
+    "id": "wait_for_network_idle/default",
+    "tool": "fox_wait_for_network_idle",
+    "args": {},
+    "command": {
+      "action": "wait_for_network_idle",
+      "data": {
+        "timeout": 10000,
+        "idleTime": 500
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:wait_for_network_idle"
+  },
+  {
+    "id": "wait_for_network_idle/options",
+    "tool": "fox_wait_for_network_idle",
+    "args": {
+      "timeout": 2000,
+      "idleTime": 100,
+      "tabId": 2
+    },
+    "command": {
+      "action": "wait_for_network_idle",
+      "tabId": 2,
+      "data": {
+        "timeout": 2000,
+        "idleTime": 100
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:wait_for_network_idle"
+  },
+  {
+    "id": "wait_for_navigation/default",
+    "tool": "fox_wait_for_navigation",
+    "args": {},
+    "command": {
+      "action": "wait_for_navigation",
+      "data": {
+        "timeout": 30000,
+        "waitUntil": "load"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 35000,
+      "headless": 35000
+    },
+    "headless": "dispatch:wait_for_navigation"
+  },
+  {
+    "id": "wait_for_navigation/options",
+    "tool": "fox_wait_for_navigation",
+    "args": {
+      "waitUntil": "domcontentloaded",
+      "urlPattern": "/done",
+      "timeout": 60000
+    },
+    "command": {
+      "action": "wait_for_navigation",
+      "data": {
+        "timeout": 60000,
+        "waitUntil": "domcontentloaded",
+        "urlPattern": "/done"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 65000,
+      "headless": 65000
+    },
+    "headless": "dispatch:wait_for_navigation"
+  },
+  {
+    "id": "wait_for_url/url",
+    "tool": "fox_wait_for_url",
+    "args": {
+      "url": "https://plain.example.test/done"
+    },
+    "command": {
+      "action": "wait_for_url",
+      "data": {
+        "url": "https://plain.example.test/done",
+        "timeout": 15000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:wait_for_url"
+  },
+  {
+    "id": "wait_for_url/pattern",
+    "tool": "fox_wait_for_url",
+    "args": {
+      "urlPattern": "done$",
+      "timeout": 1000,
+      "tabId": 2
+    },
+    "command": {
+      "action": "wait_for_url",
+      "tabId": 2,
+      "data": {
+        "urlPattern": "done$",
+        "timeout": 1000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:wait_for_url"
+  },
+  {
+    "id": "wait_for_url/protected",
+    "tool": "fox_wait_for_url",
+    "args": {
+      "url": "https://bank.example.test/transfer"
+    },
+    "command": {
+      "action": "wait_for_url",
+      "data": {
+        "url": "https://bank.example.test/transfer",
+        "timeout": 15000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:wait_for_url"
+  },
+  {
+    "id": "start_logging/default",
+    "tool": "fox_start_logging",
+    "args": {},
+    "command": {
+      "action": "start_logging",
+      "data": {
+        "clearExisting": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "start_logging/options",
+    "tool": "fox_start_logging",
+    "args": {
+      "clearExisting": true,
+      "tabId": 2
+    },
+    "command": {
+      "action": "start_logging",
+      "tabId": 2,
+      "data": {
+        "clearExisting": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "stop_logging/default",
+    "tool": "fox_stop_logging",
+    "args": {},
+    "command": {
+      "action": "stop_logging",
+      "data": {},
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "get_console_logs/default",
+    "tool": "fox_get_console_logs",
+    "args": {},
+    "command": {
+      "action": "get_console_logs",
+      "data": {
+        "limit": 100
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "get_console_logs/options",
+    "tool": "fox_get_console_logs",
+    "args": {
+      "level": "error",
+      "search": "x",
+      "limit": 5,
+      "tabId": 2
+    },
+    "command": {
+      "action": "get_console_logs",
+      "tabId": 2,
+      "data": {
+        "level": "error",
+        "search": "x",
+        "limit": 5
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "get_network_logs/default",
+    "tool": "fox_get_network_logs",
+    "args": {},
+    "command": {
+      "action": "get_network_logs",
+      "data": {
+        "errorsOnly": false,
+        "limit": 100
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "get_network_logs/options",
+    "tool": "fox_get_network_logs",
+    "args": {
+      "urlPattern": "api",
+      "method": "POST",
+      "status": 500,
+      "errorsOnly": true,
+      "limit": 3
+    },
+    "command": {
+      "action": "get_network_logs",
+      "data": {
+        "urlPattern": "api",
+        "method": "POST",
+        "status": 500,
+        "errorsOnly": true,
+        "limit": 3
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "clear_logs/default",
+    "tool": "fox_clear_logs",
+    "args": {},
+    "command": {
+      "action": "clear_logs",
+      "data": {
+        "console": true,
+        "network": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "clear_logs/options",
+    "tool": "fox_clear_logs",
+    "args": {
+      "console": false,
+      "tabId": 2
+    },
+    "command": {
+      "action": "clear_logs",
+      "tabId": 2,
+      "data": {
+        "console": false,
+        "network": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "execute_script/default",
+    "tool": "fox_execute_script",
+    "args": {
+      "script": "1+1"
+    },
+    "command": {
+      "action": "execute_script",
+      "data": {
+        "script": "1+1"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:execute_script"
+  },
+  {
+    "id": "execute_script/tab",
+    "tool": "fox_execute_script",
+    "args": {
+      "script": "document.title",
+      "tabId": 2
+    },
+    "command": {
+      "action": "execute_script",
+      "tabId": 2,
+      "data": {
+        "script": "document.title"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:execute_script"
+  },
+  {
+    "id": "eval_chain/default",
+    "tool": "fox_eval_chain",
+    "args": {
+      "steps": [
+        {
+          "script": "1"
+        },
+        {
+          "script": "$prev+1",
+          "label": "inc",
+          "captureConsole": false,
+          "stopOnError": false
+        }
+      ]
+    },
+    "command": {
+      "action": "eval_chain",
+      "data": {
+        "steps": [
+          {
+            "script": "1",
+            "captureConsole": true,
+            "stopOnError": true
+          },
+          {
+            "script": "$prev+1",
+            "label": "inc",
+            "captureConsole": false,
+            "stopOnError": false
+          }
+        ]
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:eval_chain"
+  },
+  {
+    "id": "inject_observer/default",
+    "tool": "fox_inject_observer",
+    "args": {},
+    "command": {
+      "action": "inject_observer",
+      "data": {
+        "selector": "body",
+        "observeAttributes": true,
+        "observeChildList": true,
+        "observeSubtree": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:inject_observer"
+  },
+  {
+    "id": "inject_observer/options",
+    "tool": "fox_inject_observer",
+    "args": {
+      "selector": "#root",
+      "observerId": "o1",
+      "observeAttributes": false,
+      "tabId": 2
+    },
+    "command": {
+      "action": "inject_observer",
+      "tabId": 2,
+      "data": {
+        "selector": "#root",
+        "observerId": "o1",
+        "observeAttributes": false,
+        "observeChildList": true,
+        "observeSubtree": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:inject_observer"
+  },
+  {
+    "id": "remove_observer/default",
+    "tool": "fox_remove_observer",
+    "args": {
+      "observerId": "o1"
+    },
+    "command": {
+      "action": "remove_observer",
+      "data": {
+        "observerId": "o1"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:remove_observer"
+  },
+  {
+    "id": "run_workflow/default",
+    "tool": "fox_run_workflow",
+    "args": {
+      "steps": [
+        {
+          "tool": "fox_click",
+          "arguments": {
+            "selector": "#a"
+          }
+        }
+      ]
+    },
+    "command": {
+      "action": "run_workflow",
+      "data": {
+        "steps": [
+          {
+            "tool": "fox_click",
+            "arguments": {
+              "selector": "#a"
+            }
+          }
+        ],
+        "stopOnFailure": true,
+        "screenshotOnFailure": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "audit_page/default",
+    "tool": "fox_audit_page",
+    "args": {},
+    "command": {
+      "action": "audit_page",
+      "data": {
+        "screenshot": true,
+        "fullPage": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "audit_page/options",
+    "tool": "fox_audit_page",
+    "args": {
+      "screenshot": false,
+      "fullPage": true,
+      "tabId": 2
+    },
+    "command": {
+      "action": "audit_page",
+      "tabId": 2,
+      "data": {
+        "screenshot": false,
+        "fullPage": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "wait_and_act/default",
+    "tool": "fox_wait_and_act",
+    "args": {
+      "condition": "true",
+      "actionScript": "1"
+    },
+    "command": {
+      "action": "wait_and_act",
+      "data": {
+        "condition": "true",
+        "actionScript": "1",
+        "pollIntervalMs": 200,
+        "timeoutMs": 15000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:wait_and_act"
+  },
+  {
+    "id": "wait_and_act/options",
+    "tool": "fox_wait_and_act",
+    "args": {
+      "condition": "true",
+      "actionScript": "1",
+      "pollIntervalMs": 50,
+      "timeoutMs": 60000,
+      "tabId": 2
+    },
+    "command": {
+      "action": "wait_and_act",
+      "tabId": 2,
+      "data": {
+        "condition": "true",
+        "actionScript": "1",
+        "pollIntervalMs": 50,
+        "timeoutMs": 60000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 65000,
+      "headless": 65000
+    },
+    "headless": "dispatch:wait_and_act"
+  },
+  {
+    "id": "handle_dialog/accept",
+    "tool": "fox_handle_dialog",
+    "args": {
+      "action": "accept"
+    },
+    "command": {
+      "action": "handle_dialog",
+      "data": {
+        "action": "accept",
+        "timeout": 5000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "execute:handle_dialog"
+  },
+  {
+    "id": "handle_dialog/dismiss",
+    "tool": "fox_handle_dialog",
+    "args": {
+      "action": "dismiss",
+      "tabId": 2
+    },
+    "command": {
+      "action": "handle_dialog",
+      "tabId": 2,
+      "data": {
+        "action": "dismiss",
+        "timeout": 5000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "execute:handle_dialog"
+  },
+  {
+    "id": "handle_dialog/prompt",
+    "tool": "fox_handle_dialog",
+    "args": {
+      "action": "accept",
+      "promptText": "p",
+      "timeout": 1000
+    },
+    "command": {
+      "action": "handle_dialog",
+      "data": {
+        "action": "accept",
+        "promptText": "p",
+        "timeout": 1000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "protectedUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "protectedUrlPatterns": [
+        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
+      ],
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "execute:handle_dialog"
+  },
+  {
+    "id": "request_approval/default",
+    "tool": "fox_request_approval",
+    "args": {
+      "message": "m"
+    },
+    "command": {
+      "action": "request_approval",
+      "data": {
+        "message": "m",
+        "timeout": 60000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 90000,
+      "headless": 90000
+    },
+    "headless": "dispatch:request_approval"
+  },
+  {
+    "id": "request_approval/options",
+    "tool": "fox_request_approval",
+    "args": {
+      "message": "m",
+      "detail": "d",
+      "timeout": 120000,
+      "tabId": 2
+    },
+    "command": {
+      "action": "request_approval",
+      "tabId": 2,
+      "data": {
+        "message": "m",
+        "detail": "d",
+        "timeout": 120000
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 125000,
+      "headless": 125000
+    },
+    "headless": "dispatch:request_approval"
+  },
+  {
+    "id": "detect_captcha/default",
+    "tool": "fox_detect_captcha",
+    "args": {},
+    "command": {
+      "action": "solve_captcha",
+      "data": {
+        "timeout": 180000,
+        "detectOnly": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 200000,
+      "headless": 200000
+    },
+    "headless": "dispatch:solve_captcha"
+  },
+  {
+    "id": "detect_captcha/options",
+    "tool": "fox_detect_captcha",
+    "args": {
+      "timeout": 1000,
+      "tabId": 2
+    },
+    "command": {
+      "action": "solve_captcha",
+      "tabId": 2,
+      "data": {
+        "timeout": 1000,
+        "detectOnly": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ]
+    },
+    "timeoutMs": {
+      "extension": 200000,
+      "headless": 200000
+    },
+    "headless": "dispatch:solve_captcha"
+  },
+  {
+    "id": "list_containers/default",
+    "tool": "fox_list_containers",
+    "args": {},
+    "command": {
+      "action": "list_containers",
+      "data": {},
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:list_containers"
+  },
+  {
+    "id": "open_in_container/name",
+    "tool": "fox_open_in_container",
+    "args": {
+      "url": "https://plain.example.test/",
+      "containerName": "Work"
+    },
+    "command": {
+      "action": "open_in_container",
+      "data": {
+        "url": "https://plain.example.test/",
+        "containerName": "Work",
+        "active": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:open_in_container"
+  },
+  {
+    "id": "open_in_container/cookie_store",
+    "tool": "fox_open_in_container",
+    "args": {
+      "url": "https://plain.example.test/",
+      "cookieStoreId": "firefox-container-1",
+      "active": false
+    },
+    "command": {
+      "action": "open_in_container",
+      "data": {
+        "url": "https://plain.example.test/",
+        "cookieStoreId": "firefox-container-1",
+        "active": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:open_in_container"
+  },
+  {
+    "id": "open_in_container/blocked",
+    "tool": "fox_open_in_container",
+    "args": {
+      "url": "https://blocked.example.test/",
+      "containerName": "Work"
+    },
+    "command": null,
+    "refusal": "URL 'https://blocked.example.test/' matches blocked_url_patterns entry 'blocked.example.test' in safety.json."
+  },
+  {
+    "id": "safety_status/default",
+    "tool": "fox_safety_status",
+    "args": {},
+    "command": null
+  }
+]

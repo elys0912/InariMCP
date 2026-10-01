@@ -1,0 +1,1462 @@
+[
+  {
+    "name": "fox_audit_page",
+    "description": "[Deprecated: fox_audit_page is deprecated and will be removed: it is not implemented on any backend.] Not implemented yet on any backend: always returns an error. Use fox_get_page_info, fox_get_elements and fox_screenshot instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "screenshot": {
+          "type": "boolean",
+          "default": true,
+          "description": "Also capture a screenshot"
+        },
+        "fullPage": {
+          "type": "boolean",
+          "default": false,
+          "description": "Make the screenshot full-page"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_clear_logs",
+    "description": "[Deprecated: fox_clear_logs is deprecated; use fox_logging with action='clear'.] Clear captured console and/or network logs of this tab. Not supported in headless mode.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "console": {
+          "type": "boolean",
+          "default": true,
+          "description": "Clear console logs"
+        },
+        "network": {
+          "type": "boolean",
+          "default": true,
+          "description": "Clear network logs"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_click",
+    "description": "Click an element, located by selector (CSS), xpath, text or x+y viewport coordinates, checked in that order. Works in the top document only (not inside iframes or shadow DOM); fails on a disabled element. The element is scrolled into view and receives synthetic mousedown/mouseup/click events (isTrusted=false, not a real OS click; pages that require real user input may ignore it). doubleClick/rightClick send dblclick/contextmenu instead. Returns the clicked element's info. Headless: selector or x+y only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "description": "CSS selector"
+        },
+        "xpath": {
+          "type": "string",
+          "description": "XPath expression"
+        },
+        "text": {
+          "type": "string",
+          "description": "Visible text of the element: the innermost element whose whole text contains it (case-sensitive; enabled, visible matches first). Top document only: not inside iframes or shadow DOM"
+        },
+        "x": {
+          "type": "number",
+          "description": "X coordinate to click"
+        },
+        "y": {
+          "type": "number",
+          "description": "Y coordinate to click"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        },
+        "doubleClick": {
+          "type": "boolean",
+          "default": false,
+          "description": "Perform double-click"
+        },
+        "rightClick": {
+          "type": "boolean",
+          "default": false,
+          "description": "Perform right-click"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_close_tab",
+    "description": "[Deprecated: fox_close_tab is deprecated; use fox_tab with action='close'.] Close a browser tab by its tab ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "description": "ID of the tab to close"
+        }
+      },
+      "required": [
+        "tabId"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_create_tab",
+    "description": "[Deprecated: fox_create_tab is deprecated; use fox_tab with action='create'.] Create a new browser tab, optionally with a URL.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "default": "about:blank",
+          "description": "URL to open in the new tab"
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "Make the new tab active"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_detect_captcha",
+    "description": "Detect captchas on the page (reCAPTCHA, hCaptcha, Cloudflare Turnstile, generic image captchas). Reports what was found so the human can be asked to solve it. Does NOT auto-solve.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Timeout in milliseconds",
+          "default": 180000
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_eval_chain",
+    "description": "[Deprecated: fox_eval_chain is deprecated; use fox_evaluate with mode='chain'.] Extension path: not implemented (returns an error). Headless only: evaluate a sequence of JavaScript expressions in the page; each step receives the prior result as `$prev`, and console output is captured per step.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "script": {
+                "type": "string",
+                "description": "JavaScript expression to evaluate"
+              },
+              "label": {
+                "type": "string",
+                "description": "Human-readable label for this step"
+              },
+              "captureConsole": {
+                "type": "boolean",
+                "default": true,
+                "description": "Capture console output for this step"
+              },
+              "stopOnError": {
+                "type": "boolean",
+                "default": true,
+                "description": "Abort chain if this step throws"
+              }
+            },
+            "required": [
+              "script"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "description": "Ordered list of JS expressions to evaluate. Each step receives the prior result as `$prev`."
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_execute_script",
+    "description": "[Deprecated: fox_execute_script is deprecated; use fox_evaluate with mode='script'.] Run JavaScript in the tab's top frame and return the value of the last expression (use a JSON-compatible value; a top-level `return` is not allowed, wrap code in an IIFE). Extension path: runs in the content script's isolated world; it sees the page DOM, but not variables or functions defined by the page's own scripts, and its console.log and fetch/XHR are not captured by the logging tools. Headless: runs in the page's own world (Playwright page.evaluate). Refused when script execution is disabled (allow_script_execution in safety.json or FOX_ALLOW_SCRIPTS=0).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "script": {
+          "type": "string",
+          "description": "JavaScript code to execute"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "script"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_find_text",
+    "description": "[Deprecated: fox_find_text is deprecated; use fox_find with by='text'.] Search for text in the page using the native browser.find API (Firefox-only). Works across frames and finds text outside the viewport without DOM traversal. Returns match count and optionally bounding rects.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Text to search for in the page"
+        },
+        "caseSensitive": {
+          "type": "boolean",
+          "default": false,
+          "description": "Case-sensitive search"
+        },
+        "entireWord": {
+          "type": "boolean",
+          "default": false,
+          "description": "Match entire words only"
+        },
+        "includeRectData": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include bounding rect data for matches"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_get_console_logs",
+    "description": "[Deprecated: fox_get_console_logs is deprecated; use fox_get_logs with kind='console'.] Return console messages captured since fox_start_logging on this tab (the most recent `limit`, filtered by level and/or a case-insensitive search text). Captured: page calls to console.log/warn/error/info/debug in the top frame only; not uncaught exceptions, browser errors, iframes, or console.log inside fox_execute_script. Kept per tab across reloads and navigations (the newest 500) until fox_clear_logs or the tab is closed. currentPageReached=false means the current page could not be asked for its latest entries. Paused while the tab is on a protected site. Not supported in headless mode.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "log",
+            "warn",
+            "error",
+            "info",
+            "debug"
+          ],
+          "description": "Filter by log level"
+        },
+        "search": {
+          "type": "string",
+          "description": "Filter logs containing this text"
+        },
+        "limit": {
+          "type": "integer",
+          "default": 100,
+          "description": "Maximum number of logs to return"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_get_elements",
+    "description": "[Deprecated: fox_get_elements is deprecated; use fox_find with by='selector'.] List elements matching a CSS selector (querySelectorAll: the first `limit` matches, plus the total count). Per element: tag, id, classes, name, type, text (first 200 chars), value (password fields masked), href, src, placeholder, ariaLabel, role, disabled, checked, visible, position (viewport coordinates incl. centerX/centerY) and a generated CSS selector. Headless: tag, text and bounding box only, at most 50.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "description": "CSS selector to find elements"
+        },
+        "limit": {
+          "type": "integer",
+          "default": 50,
+          "description": "Maximum elements to return"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "selector"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_get_network_logs",
+    "description": "[Deprecated: fox_get_network_logs is deprecated; use fox_get_logs with kind='network'.] Return fetch/XHR requests captured since fox_start_logging on this tab (the most recent `limit`), filtered by URL regex, HTTP method, status code, or errors only (network error or status >= 400). Images, scripts, CSS and WebSocket traffic are not captured. Authorization, cookie, API-key and token headers and secret fields in URLs and bodies are masked; other headers and bodies (truncated) are returned as recorded. Kept per tab across navigations like the console logs. Not supported in headless mode.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "urlPattern": {
+          "type": "string",
+          "description": "Only requests whose URL matches this regex. JavaScript regex, case-sensitive, unanchored (matches anywhere in the full URL); use [Ee]xample for a case-insensitive part."
+        },
+        "method": {
+          "type": "string",
+          "description": "Filter by HTTP method (GET, POST, etc.)"
+        },
+        "status": {
+          "type": "integer",
+          "description": "Filter by HTTP status code"
+        },
+        "errorsOnly": {
+          "type": "boolean",
+          "default": false,
+          "description": "Only return failed requests"
+        },
+        "limit": {
+          "type": "integer",
+          "default": 100,
+          "description": "Maximum number of logs to return"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_get_page_info",
+    "description": "[Deprecated: fox_get_page_info is deprecated; use fox_read with mode='info'.] Get an overview of the current page: URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, and h1-h3 headings. Password values are masked. Not in any FOX_CAPS profile. Headless: URL and title only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_get_tabs",
+    "description": "[Deprecated: fox_get_tabs is deprecated; use fox_tabs with what='tabs'.] List open browser tabs: id, url, title, active, windowId, pinned, status (loading/complete), audible; plus totals and a summary. Defaults to the current window and at most 50 tabs. Use urlPattern (regex, applied before limit) to filter, currentWindowOnly=false for all windows, includeFavicon=true for favicon URLs. Headless: id, url, title and active only; arguments are ignored.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "currentWindowOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "Only list tabs in the current window"
+        },
+        "limit": {
+          "type": "integer",
+          "default": 50,
+          "description": "Max tabs to return"
+        },
+        "urlPattern": {
+          "type": "string",
+          "description": "Only tabs whose URL matches this regex, before applying limit. JavaScript regex, case-sensitive, unanchored (matches anywhere in the full URL); use [Ee]xample for a case-insensitive part."
+        },
+        "includeFavicon": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include favIconUrl per tab"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_get_text",
+    "description": "[Deprecated: fox_get_text is deprecated; use fox_read with mode='text'.] Extract the visible text content of the page or a specific element. Lighter-weight than a screenshot for reading page content.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "description": "CSS selector; defaults to the whole page body"
+        },
+        "maxLength": {
+          "type": "integer",
+          "default": 20000,
+          "description": "Truncate returned text to this many characters"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_handle_dialog",
+    "description": "Extension path: not implemented (returns an error; commands to a tab showing an alert/confirm/prompt time out there). Headless only: wait for the next dialog and accept or dismiss it (promptText for prompts). Call it before the action that opens the dialog: it does not block other commands, and when no dialog comes within timeout it arms itself for the next dialog on the tab (30 s). Dialogs nobody handles are dismissed automatically after 2 s and reported in the next result of that tab. Not in any FOX_CAPS profile.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "accept",
+            "dismiss"
+          ],
+          "description": "Whether to accept or dismiss the dialog"
+        },
+        "promptText": {
+          "type": "string",
+          "description": "Text to enter in a prompt dialog before accepting"
+        },
+        "timeout": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Timeout in milliseconds",
+          "default": 5000
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_highlight",
+    "description": "[Deprecated: fox_highlight is deprecated; use fox_interact with action='highlight'.] Highlight an element on the page with a colored overlay for visual debugging. Optionally show a label.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "description": "CSS selector for the element"
+        },
+        "duration": {
+          "type": "integer",
+          "default": 3000,
+          "description": "Highlight duration in ms"
+        },
+        "label": {
+          "type": "string",
+          "description": "Label to show above the element"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "selector"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_hover",
+    "description": "[Deprecated: fox_hover is deprecated; use fox_interact with action='hover'.] Hover over an element to trigger hover effects, tooltips, or dropdown menus. Dispatches synthetic mouseenter / mouseover events (isTrusted=false): JavaScript hover handlers run, CSS :hover styles do not apply.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "description": "CSS selector for the element"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "selector"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_inject_observer",
+    "description": "[Deprecated: fox_inject_observer is deprecated; use fox_observer with action='inject'.] Start a MutationObserver on an element (default body) that collects DOM changes (attributes, child list, subtree). The changes are returned by fox_remove_observer (the last 100). The observer ends when the page reloads or navigates. Requires script execution enabled. Headless: one observer per page (a new call replaces it, observerId is ignored); changes collect in window.__fox_mutations.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "default": "body",
+          "description": "Root element to observe"
+        },
+        "observerId": {
+          "type": "string",
+          "description": "ID for this observer (to remove it later)"
+        },
+        "observeAttributes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Observe attribute changes"
+        },
+        "observeChildList": {
+          "type": "boolean",
+          "default": true,
+          "description": "Observe child list changes"
+        },
+        "observeSubtree": {
+          "type": "boolean",
+          "default": true,
+          "description": "Observe subtree changes"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_list_containers",
+    "description": "[Deprecated: fox_list_containers is deprecated; use fox_tabs with what='containers'.] List Firefox container identities (contextualIdentities). Returns name, color, icon, and cookieStoreId for each container. When container scope is enabled in safety.json, only the agent container is returned.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_navigate",
+    "description": "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R). With waitForLoad, goto / refresh fail when the page does not finish loading within 25 s or the tab is closed (the navigation itself may still complete).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "goto",
+            "back",
+            "forward",
+            "refresh",
+            "hard_refresh"
+          ],
+          "default": "goto",
+          "description": "Navigation action type"
+        },
+        "url": {
+          "type": "string",
+          "description": "URL to navigate to (required for goto)"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        },
+        "newTab": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open URL in new tab (for goto)"
+        },
+        "waitForLoad": {
+          "type": "boolean",
+          "default": true,
+          "description": "Wait for page to fully load"
+        },
+        "bypassCache": {
+          "type": "boolean",
+          "default": false,
+          "description": "Bypass browser cache (for refresh)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_open_in_container",
+    "description": "[Deprecated: fox_open_in_container is deprecated; use fox_tab with action='create'.] Open a URL in a Firefox container tab. Specify the container by containerName (created if not found) or by cookieStoreId (must already exist). Provides isolated cookies/storage via the contextualIdentities API. When container scope is enabled in safety.json, only the agent container is allowed.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "URL to open in the container tab"
+        },
+        "containerName": {
+          "type": "string",
+          "description": "Container name to use (creates if not found)"
+        },
+        "cookieStoreId": {
+          "type": "string",
+          "description": "cookieStoreId of an existing container (e.g. \"firefox-container-1\", as returned by fox_list_containers). Takes precedence over containerName"
+        },
+        "active": {
+          "type": "boolean",
+          "default": true,
+          "description": "Make the new tab active"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_press_key",
+    "description": "Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta). The key events are synthetic (isTrusted=false): page handlers see them, but the browser performs no default action (no focus move on Tab, no scrolling, no browser shortcuts). Plain Enter in a form field submits the form like a real Enter.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "Key to press, e.g. 'Enter', 'Escape', 'Tab', 'ArrowDown', 'a'"
+        },
+        "selector": {
+          "type": "string",
+          "description": "CSS selector of element to focus first"
+        },
+        "ctrl": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hold Ctrl"
+        },
+        "shift": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hold Shift"
+        },
+        "alt": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hold Alt"
+        },
+        "meta": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hold Meta/Cmd"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_remove_observer",
+    "description": "[Deprecated: fox_remove_observer is deprecated; use fox_observer with action='remove'.] Remove an observer started by fox_inject_observer and get the changes it collected (the last 100). Fails when no observer with that ID exists on the current page. Headless: observerId is ignored and only the number of changes is returned.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "observerId": {
+          "type": "string",
+          "description": "ID of the observer to remove"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "observerId"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_request_approval",
+    "description": "Ask the human at the browser a yes/no question and wait for the answer. Shown in the KitsuneMCP toolbar popup in Firefox (badge + OS notification), never in the page. The answer is for you only: it does not unlock protected-site actions — those ask the human on their own when you call the tool. Unavailable in headless mode.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "What you are asking permission to do, in plain language"
+        },
+        "detail": {
+          "type": "string",
+          "description": "Optional extra context shown in smaller text"
+        },
+        "timeout": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Timeout in milliseconds",
+          "default": 60000
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_run_workflow",
+    "description": "[Deprecated: fox_run_workflow is deprecated and will be removed: it is not implemented on any backend.] Not implemented yet on any backend: always returns an error. Call the individual tools instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "description": "Human-readable step name"
+              },
+              "tool": {
+                "type": "string",
+                "description": "Browser tool to call, e.g. fox_navigate, fox_click, fox_type"
+              },
+              "arguments": {
+                "type": "object",
+                "additionalProperties": {},
+                "description": "Arguments for the tool"
+              },
+              "assert": {
+                "type": "object",
+                "properties": {
+                  "urlContains": {
+                    "type": "string",
+                    "description": "Current URL must contain this substring"
+                  },
+                  "textContains": {
+                    "type": "string",
+                    "description": "Visible page text must contain this substring"
+                  },
+                  "selectorExists": {
+                    "type": "string",
+                    "description": "This CSS selector must match at least one element"
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Checks to run after the step succeeds"
+              }
+            },
+            "required": [
+              "tool"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "description": "Ordered workflow steps"
+        },
+        "stopOnFailure": {
+          "type": "boolean",
+          "default": true,
+          "description": "Stop at the first failing step"
+        },
+        "screenshotOnFailure": {
+          "type": "boolean",
+          "default": true,
+          "description": "Capture a screenshot when a step fails"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_safety_status",
+    "description": "Show the active safety guard policy: read-only mode, script toggle, protected/blocked/allowed URL patterns, rate-limit state, and audit log location.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_screenshot",
+    "description": "Take a screenshot. scope: viewport (visible area; a background tab given by tabId is briefly brought to the front, then switched back), full_page (entire scrollable page; falls back to the visible area when it cannot, fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls the page and returns the interactive elements visible at each position). Images are saved to files and returned as resource_link, never as base64; saveToFile=false captures nothing, includeData has no effect, and the same filename overwrites the file. Headless: viewport and full_page only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "viewport",
+            "full_page",
+            "all_tabs",
+            "scroll_capture"
+          ],
+          "default": "viewport",
+          "description": "Capture scope: viewport (default), full_page, all_tabs, or scroll_capture"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        },
+        "saveToFile": {
+          "type": "boolean",
+          "default": true,
+          "description": "Save the image to a file and return it as a resource_link (default). Images are never returned inline, so false captures nothing and only returns the tab info (headless: ignored, always saved)"
+        },
+        "filename": {
+          "type": "string",
+          "description": "Optional filename for saved screenshot"
+        },
+        "urlPattern": {
+          "type": "string",
+          "description": "all_tabs: only tabs whose URL matches this regex. JavaScript regex, case-sensitive, unanchored (matches anywhere in the full URL); use [Ee]xample for a case-insensitive part."
+        },
+        "includeData": {
+          "type": "boolean",
+          "default": false,
+          "description": "No effect: base64 image data is never returned; all_tabs images are saved to files like the others"
+        },
+        "timeout": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "all_tabs: time budget for capturing all tabs in ms (default 20000); tabs left when it runs out are reported as skipped"
+        },
+        "scrollStep": {
+          "type": "integer",
+          "description": "Pixels to scroll each step (default: 80% of viewport)"
+        },
+        "delay": {
+          "type": "integer",
+          "default": 500,
+          "description": "Delay between scrolls in ms (for scroll_capture scope)"
+        },
+        "maxScrolls": {
+          "type": "integer",
+          "default": 20,
+          "description": "Maximum number of scroll steps (for scroll_capture scope)"
+        },
+        "restore": {
+          "type": "boolean",
+          "default": true,
+          "description": "Restore original scroll position after capture"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_scroll",
+    "description": "[Deprecated: fox_scroll is deprecated; use fox_interact with action='scroll'.] Scroll the page or a specific element in any direction, or scroll a target element into view.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": [
+            "up",
+            "down",
+            "left",
+            "right",
+            "top",
+            "bottom"
+          ],
+          "description": "Scroll direction"
+        },
+        "amount": {
+          "type": "integer",
+          "default": 300,
+          "description": "Scroll amount in pixels"
+        },
+        "selector": {
+          "type": "string",
+          "description": "CSS selector for scrollable element"
+        },
+        "toElement": {
+          "type": "string",
+          "description": "CSS selector of element to scroll into view"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_select_option",
+    "description": "[Deprecated: fox_select_option is deprecated; use fox_set_value with kind='select'.] Select an option in a dropdown/select element by value, visible text, or index.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "description": "CSS selector for the select element"
+        },
+        "value": {
+          "type": "string",
+          "description": "Option value to select"
+        },
+        "text": {
+          "type": "string",
+          "description": "Option text to select"
+        },
+        "index": {
+          "type": "integer",
+          "description": "Option index to select"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "selector"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_set_value",
+    "description": "Set the value of an input, textarea, select or contenteditable element directly (no key events), then dispatch input and change events. Faster than fox_type and suited to long values. Reports success even when the element is of another kind (nothing changes) or, for a select, when no option has that value. Password fields are refused. Not in any FOX_CAPS profile.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "description": "CSS selector for the input element"
+        },
+        "value": {
+          "type": "string",
+          "description": "Value to set"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "selector",
+        "value"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_snapshot",
+    "description": "Extension path: not implemented (returns an error); use fox_get_page_info, fox_get_elements or fox_get_text there. Headless: returns the accessibility tree of the page (or of the first element matching selector) as indented YAML text (Playwright ariaSnapshot), filtered by maxDepth, includeText and roles, cut at 50000 characters.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        },
+        "selector": {
+          "type": "string",
+          "description": "CSS selector to snapshot a subtree (defaults to full page)"
+        },
+        "maxDepth": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Maximum tree depth to traverse"
+        },
+        "includeText": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include text content in snapshot nodes"
+        },
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Filter to specific ARIA roles (e.g. [\"button\", \"link\"])"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_start_logging",
+    "description": "[Deprecated: fox_start_logging is deprecated; use fox_logging with action='start'.] Start capturing console logs and fetch/XHR requests of the tab (top frame). Use before performing actions you want to monitor. Logs are kept per tab across reloads and navigations (the newest 500 console and 500 network entries) until fox_clear_logs or the tab is closed. Refused on a protected site unless approved; recording pauses while the tab is on one. Not supported in headless mode.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "clearExisting": {
+          "type": "boolean",
+          "default": false,
+          "description": "Clear any existing logs before starting"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_stop_logging",
+    "description": "[Deprecated: fox_stop_logging is deprecated; use fox_logging with action='stop'.] Stop capturing console logs and network requests on this tab. Logs are preserved and can still be retrieved (until fox_clear_logs or the tab is closed). Not supported in headless mode.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_switch_tab",
+    "description": "[Deprecated: fox_switch_tab is deprecated; use fox_tab with action='switch'.] Focus/activate a browser tab by its tab ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "description": "ID of the tab to focus/activate"
+        }
+      },
+      "required": [
+        "tabId"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_type",
+    "description": "Type text into an input, textarea or contenteditable element, located by selector, id, name or placeholder (in that order); without any of them, types into the focused field. The `text` value is never used to find the element. Fails on a disabled element; password fields are refused. Types character by character with synthetic key events (isTrusted=false), waiting `delay` ms per character (0 = none; shortened so all delays stay within 10 s); fox_set_value is faster for long values. clear empties the field first. pressEnter also submits the enclosing form like a real Enter (unless a keydown handler cancels it). Headless: selector and text only (with selector the field is filled, else the focused element receives the keys).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Text to type (never used to find the element)"
+        },
+        "selector": {
+          "type": "string",
+          "description": "CSS selector for the input element"
+        },
+        "placeholder": {
+          "type": "string",
+          "description": "Placeholder text to find the input"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name attribute of the input"
+        },
+        "id": {
+          "type": "string",
+          "description": "ID of the input element"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        },
+        "clear": {
+          "type": "boolean",
+          "default": false,
+          "description": "Clear existing content first"
+        },
+        "pressEnter": {
+          "type": "boolean",
+          "default": false,
+          "description": "Press Enter after typing. In a form field this also submits the form the way a real Enter does (unless a keydown handler cancels it); the result reports it in `enter`"
+        },
+        "delay": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 50,
+          "description": "Delay between keystrokes in ms (0 = none). Reduced automatically so that all delays together stay within 10 s"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_wait_and_act",
+    "description": "[Deprecated: fox_wait_and_act is deprecated; use fox_evaluate with mode='wait_and_act'.] Extension path: not implemented (returns an error). Headless only: poll the page until a JS condition is truthy, then run actionScript and return its result. Use for waiting on async UI state.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "condition": {
+          "type": "string",
+          "description": "JS expression that returns truthy when ready"
+        },
+        "actionScript": {
+          "type": "string",
+          "description": "JS to run once condition is met"
+        },
+        "pollIntervalMs": {
+          "type": "integer",
+          "default": 200,
+          "description": "How often to check condition"
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "default": 15000,
+          "description": "Max wait time before giving up"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "condition",
+        "actionScript"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": false,
+      "destructiveHint": true
+    }
+  },
+  {
+    "name": "fox_wait_for_element",
+    "description": "[Deprecated: fox_wait_for_element is deprecated; use fox_wait with for='element'.] Wait for an element matching a CSS selector to appear (and optionally become visible) on the page.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "selector": {
+          "type": "string",
+          "description": "CSS selector for the element"
+        },
+        "timeout": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Timeout in milliseconds",
+          "default": 10000
+        },
+        "visible": {
+          "type": "boolean",
+          "default": true,
+          "description": "Wait for element to be visible"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "required": [
+        "selector"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_wait_for_navigation",
+    "description": "[Deprecated: fox_wait_for_navigation is deprecated; use fox_wait with for='navigation'.] Wait for the tab's next top-level navigation to finish (waitUntil: load or domcontentloaded), optionally only one whose URL matches the urlPattern regex. Only navigations that finish after this call count: a fast navigation already done (e.g. right after fox_click) is missed and the call times out. When the destination URL is known, prefer fox_wait_for_url, which returns at once if the URL already matches. Headless: waitUntil and urlPattern are ignored.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Timeout in milliseconds",
+          "default": 30000
+        },
+        "waitUntil": {
+          "type": "string",
+          "enum": [
+            "load",
+            "domcontentloaded"
+          ],
+          "default": "load",
+          "description": "When to consider navigation complete"
+        },
+        "urlPattern": {
+          "type": "string",
+          "description": "Regex the URL of the navigation must match (other navigations are skipped). JavaScript regex, case-sensitive, unanchored (matches anywhere in the full URL); use [Ee]xample for a case-insensitive part."
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_wait_for_network_idle",
+    "description": "[Deprecated: fox_wait_for_network_idle is deprecated; use fox_wait with for='network_idle'.] Wait until the page's own fetch/XHR requests (top frame) have been idle for idleTime ms. Use after actions that trigger API calls. Requests made by fox_execute_script, and requests already in flight before the first call on this page, are not seen. Fails when the network does not become idle within the timeout. Headless: uses Playwright's networkidle; idleTime is ignored.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "timeout": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Timeout in milliseconds",
+          "default": 10000
+        },
+        "idleTime": {
+          "type": "integer",
+          "default": 500,
+          "description": "How long network must be idle (ms)"
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  },
+  {
+    "name": "fox_wait_for_url",
+    "description": "[Deprecated: fox_wait_for_url is deprecated; use fox_wait with for='url'.] Wait until the current URL matches an exact string or regex pattern. Useful for waiting on redirects or SPA route changes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Exact URL to wait for"
+        },
+        "urlPattern": {
+          "type": "string",
+          "description": "Regex the tab URL must match. JavaScript regex, case-sensitive, unanchored (matches anywhere in the full URL); use [Ee]xample for a case-insensitive part."
+        },
+        "timeout": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Timeout in milliseconds",
+          "default": 15000
+        },
+        "tabId": {
+          "type": "integer",
+          "description": "Tab ID (defaults to active tab)"
+        }
+      },
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false
+    }
+  }
+]

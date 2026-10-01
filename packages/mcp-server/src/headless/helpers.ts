@@ -94,7 +94,7 @@ const HEADLESS_IGNORED: Record<string, IgnoredParam[]> = {
   wait_for_network_idle: [{ key: 'idleTime', def: 500, note: 'fixed by the browser engine' }],
   wait_for_navigation: [
     { key: 'waitUntil', def: 'load', note: 'not applied' },
-    { key: 'urlPattern', note: 'any navigation ends the wait; use fox_wait_for_url' },
+    { key: 'urlPattern', note: "any navigation ends the wait; use fox_wait with for='url'" },
   ],
   inject_observer: [{ key: 'observerId', note: 'one observer per page' }],
   remove_observer: [{ key: 'observerId', note: 'one observer per page' }],

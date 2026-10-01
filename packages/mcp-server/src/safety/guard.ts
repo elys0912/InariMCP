@@ -30,6 +30,23 @@ export const TAB_INDEPENDENT_TOOLS: ReadonlySet<string> = new Set([
   'fox_safety_status',
 ]);
 
+/**
+ * How a call is named in messages and in the audit log, when that differs
+ * from the operation the guard checks: a public tool such as fox_tab runs
+ * the operation fox_close_tab (tools/operations.ts).
+ */
+export interface CallLabel {
+  /** The tool name the caller used (messages, elicitation). */
+  tool: string;
+  /** The arguments as called (audit log). */
+  args: Record<string, unknown>;
+  /**
+   * Set when `tool` is a deprecated name: the tool that replaces it. The
+   * audit log records this as `tool` and the deprecated name as `legacyTool`.
+   */
+  replacedBy?: string;
+}
+
 export interface SafetyDenial {
   success: false;
   safetyDecision: string;
@@ -101,7 +118,9 @@ export class SafetyGuard {
     args: Record<string, unknown>,
     transport?: string,
     grant?: ApprovalGrant | null,
+    label?: CallLabel,
   ): SafetyDenial | null {
+    const shown = label?.tool ?? toolName;
     const targetUrl = this._targetUrl(toolName, args);
     const currentUrl = this.urlFor(this._tabIdArg(args));
 
@@ -109,11 +128,11 @@ export class SafetyGuard {
     // whatever its `enabled` flag says.
     if (this._configError !== null) {
       if (this.config.auditLog) {
-        audit(toolName, args, targetUrl ?? currentUrl, 'config_error', transport);
+        this._audit(toolName, args, targetUrl ?? currentUrl, 'config_error', transport, label);
       }
       return this._deny(
         'config_error',
-        `${toolName} refused: the safety config cannot be used (${this._configError}). ` +
+        `${shown} refused: the safety config cannot be used (${this._configError}). ` +
         'Every tool is refused until it is fixed and the KitsuneMCP daemon restarted. ' +
         'fox_safety_status shows the error.',
       );
@@ -123,7 +142,7 @@ export class SafetyGuard {
       return null;
     }
 
-    let denial = this._checkInner(toolName, targetUrl, currentUrl, args);
+    let denial = this._checkInner(toolName, targetUrl, currentUrl, args, shown);
     if (grantCoversDenial(denial, grant)) denial = null;
 
     // Layer 1: Rate limit, checked last so that only calls that would run
@@ -151,7 +170,7 @@ export class SafetyGuard {
     }
 
     if (this.config.auditLog) {
-      audit(toolName, args, targetUrl ?? currentUrl, decision, transport);
+      this._audit(toolName, args, targetUrl ?? currentUrl, decision, transport, label);
     }
 
     return denial;
@@ -170,6 +189,7 @@ export class SafetyGuard {
     args: Record<string, unknown>,
     result: Record<string, unknown>,
     transport?: string,
+    label?: CallLabel,
   ): SafetyDenial | null {
     if (this._configError !== null || !this.config.enabled) return null;
     const url = this._reportedUrl(result);
@@ -178,11 +198,11 @@ export class SafetyGuard {
     if (violation === null) return null;
 
     if (this.config.auditLog) {
-      audit(toolName, args, url, 'blocked_after_navigation', transport);
+      this._audit(toolName, args, url, 'blocked_after_navigation', transport, label);
     }
     return this._deny(
       'blocked_after_navigation',
-      `${toolName} ended on '${url}', which ${violation.reason}. The result is withheld. ` +
+      `${label?.tool ?? toolName} ended on '${url}', which ${violation.reason}. The result is withheld. ` +
       'Navigate the tab elsewhere (fox_navigate with a url) or close it.',
     );
   }
@@ -280,7 +300,9 @@ export class SafetyGuard {
     url: string | null,
     transport?: string,
     matchedPattern?: string | null,
+    label?: CallLabel,
   ): SafetyDenial {
+    const shown = label?.tool ?? toolName;
     if (url) this.noteUrl({ url }, args, toolName);
     const knownUrl = url ?? this.urlFor(this._tabIdArg(args));
     const protectedUrl = knownUrl ?? '(target tab)';
@@ -290,16 +312,16 @@ export class SafetyGuard {
       '(protected_url_patterns)';
 
     if (this.config.auditLog) {
-      audit(toolName, args, knownUrl, 'confirmation_required', transport);
+      this._audit(toolName, args, knownUrl, 'confirmation_required', transport, label);
     }
 
     return {
       success: false,
       safetyDecision: 'confirmation_required',
       confirmationRequired: true,
-      elicitation: { protectedUrl, matchedPattern: matched, toolName },
+      elicitation: { protectedUrl, matchedPattern: matched, toolName: shown },
       error:
-        `${toolName} targets a protected site ('${protectedUrl}' matches ` +
+        `${shown} targets a protected site ('${protectedUrl}' matches ` +
         `pattern '${matched}' in safety.json, as checked by the browser). ` +
         'This is a guard against unintended actions on, or captures of, sensitive ' +
         'sites (banking, payments, health, government). Human confirmation is ' +
@@ -335,6 +357,7 @@ export class SafetyGuard {
     targetUrl: string | null,
     currentUrl: string | null,
     args: Record<string, unknown>,
+    shown: string,
   ): SafetyDenial | null {
     const isObserve = OBSERVE_TOOLS.has(toolName);
     const isScript = SCRIPT_TOOLS.has(toolName);
@@ -387,7 +410,7 @@ export class SafetyGuard {
       if (violation !== null) {
         return this._deny(
           violation.decision,
-          `${toolName} refused: the target tab is on '${currentUrl}', which ${violation.reason}. ` +
+          `${shown} refused: the target tab is on '${currentUrl}', which ${violation.reason}. ` +
           'Navigate it elsewhere (fox_navigate with a url) or close it.',
         );
       }
@@ -399,7 +422,7 @@ export class SafetyGuard {
     // (scope all_tabs is handled Extension-side: protected tabs are excluded.)
     if (isObserve) {
       if (toolName === 'fox_screenshot' && args['scope'] !== 'all_tabs') {
-        return this._protectedConfirmation(toolName, targetUrl ?? currentUrl);
+        return this._protectedConfirmation(shown, targetUrl ?? currentUrl);
       }
       return null;
     }
@@ -408,7 +431,7 @@ export class SafetyGuard {
     if (this.config.readOnly) {
       return this._deny(
         'read_only',
-        `${toolName} refused: safety guard is in read-only mode ` +
+        `${shown} refused: safety guard is in read-only mode ` +
         '(readOnly in safety.json or FOX_READ_ONLY=1). ' +
         'Observation tools like fox_screenshot remain available.',
       );
@@ -418,22 +441,23 @@ export class SafetyGuard {
     if (isScript && !this.config.allowScriptExecution) {
       return this._deny(
         'scripts_disabled',
-        `${toolName} refused: script execution is disabled ` +
+        `${shown} refused: script execution is disabled ` +
         '(allowScriptExecution in safety.json or FOX_ALLOW_SCRIPTS=0).',
       );
     }
 
     // Layer 7: Protected domain confirmation (MCP elicitation)
-    return this._protectedConfirmation(toolName, targetUrl ?? currentUrl);
+    return this._protectedConfirmation(shown, targetUrl ?? currentUrl);
   }
 
   /**
    * Layer 7: require human confirmation (MCP elicitation) when `checkUrl`
    * (the target URL, or the tab's last-known URL) matches
    * protected_url_patterns. No-op when confirmProtectedActions is false.
+   * `shown`: the tool name the caller used (messages, elicitation).
    */
   private _protectedConfirmation(
-    toolName: string,
+    shown: string,
     checkUrl: string | null,
   ): SafetyDenial | null {
     if (!this.config.confirmProtectedActions) {
@@ -453,10 +477,10 @@ export class SafetyGuard {
       elicitation: {
         protectedUrl: checkUrl,
         matchedPattern: matched,
-        toolName,
+        toolName: shown,
       },
       error:
-        `${toolName} targets a protected site ('${checkUrl}' matches ` +
+        `${shown} targets a protected site ('${checkUrl}' matches ` +
         `pattern '${matched}' in safety.json). This is a guard against ` +
         'unintended actions on sensitive sites (banking, payments, health, government). ' +
         'Human confirmation is required via MCP elicitation.',
@@ -496,6 +520,24 @@ export class SafetyGuard {
     if (toolName === 'fox_wait_for_url') return null;
     const url = args['url'];
     return typeof url === 'string' && url ? url : null;
+  }
+
+  /** audit() under the caller's names (CallLabel), else the operation's. */
+  private _audit(
+    toolName: string,
+    args: Record<string, unknown>,
+    url: string | null,
+    decision: AuditDecision,
+    transport: string | undefined,
+    label: CallLabel | undefined,
+  ): void {
+    if (label === undefined) {
+      audit(toolName, args, url, decision, transport);
+    } else if (label.replacedBy !== undefined) {
+      audit(label.replacedBy, label.args, url, decision, transport, label.tool);
+    } else {
+      audit(label.tool, label.args, url, decision, transport);
+    }
   }
 
   private _tabIdArg(args: Record<string, unknown>): number | undefined {

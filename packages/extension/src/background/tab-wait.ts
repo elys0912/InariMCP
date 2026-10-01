@@ -135,7 +135,7 @@ export function tabLoadError(outcome: TabLoadOutcome, timeoutMs: number, current
     ? "The tab was closed before the page finished loading"
     : `The page did not finish loading within ${timeoutMs}ms` +
         ` (current URL: ${currentUrl ?? "unknown"}). The navigation may still complete;` +
-        " check with fox_get_tabs or fox_wait_for_url.";
+        " check with fox_tabs or fox_wait (for 'url').";
 }
 
 /** A positive number from the command data, or the fallback. */

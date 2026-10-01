@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SafetyGuard } from '../src/safety/guard.js';
-import { DEFAULT_CONFIG, loadConfig, type LoadedSafetyConfig } from '../src/safety/config.js';
+import { DEFAULT_CONFIG, getAuditLogPath, loadConfig, type LoadedSafetyConfig } from '../src/safety/config.js';
 
 function guard(overrides: Partial<LoadedSafetyConfig> = {}): SafetyGuard {
   return new SafetyGuard({
@@ -274,5 +274,20 @@ describe('rate limit counts only calls that would run (2.B7)', () => {
     expect(decision(g, 'fox_get_text', {})).toBeNull();
     expect(decision(g, 'fox_get_text', {})).toBe('rate_limited');
     expect(g.status().actionsInLastMinute).toBe(2);
+  });
+});
+
+describe('call label (WP13: the name the caller used)', () => {
+  it('names the called tool in messages and audits it with legacyTool for a deprecated name', () => {
+    const g = guard({ readOnly: true, auditLog: true });
+    const args = { tabId: 7 };
+    const denial = g.check('fox_close_tab', args, 'stdio', null, {
+      tool: 'fox_old_close', args: { id: 7 }, replacedBy: 'fox_tab',
+    });
+    expect(denial?.error).toMatch(/^fox_old_close refused/);
+    const lines = fs.readFileSync(getAuditLogPath(), 'utf-8').trim().split('\n');
+    expect(JSON.parse(lines.at(-1)!)).toMatchObject({
+      tool: 'fox_tab', legacyTool: 'fox_old_close', args: { id: 7 }, decision: 'read_only',
+    });
   });
 });

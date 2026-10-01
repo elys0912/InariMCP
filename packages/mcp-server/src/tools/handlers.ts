@@ -25,7 +25,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserAction, BrowserCommand, ToolResult } from '@kitsune-mcp/shared';
 import { ErrorCode, isRecord } from '@kitsune-mcp/shared';
 import { getSafetyGuard, OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS } from '../safety/guard.js';
-import type { SafetyDenial } from '../safety/guard.js';
+import type { CallLabel, SafetyDenial } from '../safety/guard.js';
 import {
   REQUEST_TTL_MS,
   approvalTargetFor,
@@ -42,6 +42,7 @@ import { applyPasswordPolicy, passwordSelectorRefusal } from '../safety/password
 import { audit } from '../safety/audit.js';
 import type { AuditDecision } from '../safety/audit.js';
 import { getConnectionManager } from '../connection/manager.js';
+import { deprecationNote, resolveOperation } from './operations.js';
 
 // ---------------------------------------------------------------------------
 // Action-name mapping
@@ -300,7 +301,7 @@ export function toolResultToCallResult(result: ToolResult): CallToolResult {
         : '';
       return {
         content: [
-          { type: 'text' as const, text: JSON.stringify(meta, null, 2) },
+          { type: 'text' as const, text: JSON.stringify(meta) },
           { type: 'text' as const, text: `${snapshot}${truncated}` },
         ],
       };
@@ -308,7 +309,8 @@ export function toolResultToCallResult(result: ToolResult): CallToolResult {
 
     const textContent = typeof result.data === 'string'
       ? result.data
-      : JSON.stringify(result.data ?? { success: true }, null, 2);
+      // Compact: indentation costs tokens and no reader needs it.
+      : JSON.stringify(result.data ?? { success: true });
 
     return {
       content: [{ type: 'text' as const, text: textContent }],
@@ -403,11 +405,11 @@ export interface ApprovalRequestDetails {
  * the relay.
  */
 function confirmationToCallResult(
-  toolName: string,
-  args: Record<string, unknown>,
+  label: CallLabel,
   denial: SafetyDenial,
   tokenRejected: boolean,
 ): CallToolResult {
+  const { tool: toolName, args } = label;
   const protectedUrl = denial.elicitation?.protectedUrl ?? '';
   const matchedPattern = denial.elicitation?.matchedPattern ?? '';
   const target = approvalTargetFor(toolName, args, protectedUrl);
@@ -447,7 +449,7 @@ function confirmationToCallResult(
       'Firefox, where the KitsuneMCP toolbar button shows a badge and the human approves ' +
       'or denies in its popup. An approval covers one call of this tool with exactly these ' +
       `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / 1000)} s. ` +
-      'Nothing in the page (buttons, fox_click, fox_execute_script) can approve it. ' +
+      'Nothing in the page (buttons, fox_click, fox_evaluate) can approve it. ' +
       `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
       'If the human declined, do not retry without asking them first.',
     );
@@ -512,6 +514,20 @@ function screenshotResourceLinks(paths: string[]): CallToolResult['content'] {
   }));
 }
 
+/** audit() under the names the caller used (see CallLabel). */
+function auditCall(
+  label: CallLabel,
+  url: string | null,
+  decision: AuditDecision,
+  transport: string,
+): void {
+  if (label.replacedBy !== undefined) {
+    audit(label.replacedBy, label.args, url, decision, transport, label.tool);
+  } else {
+    audit(label.tool, label.args, url, decision, transport);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // createToolHandler — factory for MCP tool callbacks
 // ---------------------------------------------------------------------------
@@ -536,14 +552,45 @@ export interface ToolCallOptions {
 }
 
 export function createToolHandler(
-  toolName: string,
+  calledName: string,
   transport: string = 'stdio',
 ): (args: Record<string, unknown>, options?: ToolCallOptions) => Promise<CallToolResult> {
+  const run = toolCall(calledName, transport);
+  return async (args, options) => withDeprecationNote(calledName, await run(args, options));
+}
+
+/** Deprecated names already reported in this process. */
+const reportedDeprecations = new Set<string>();
+
+/**
+ * A call by a deprecated name: once per name and process, a note at the end
+ * of the result and a line on stderr (daemon.log). Not on every call, to
+ * keep results short.
+ */
+function withDeprecationNote(calledName: string, result: CallToolResult): CallToolResult {
+  if (reportedDeprecations.has(calledName)) return result;
+  const note = deprecationNote(calledName);
+  if (note === null) return result;
+  reportedDeprecations.add(calledName);
+  process.stderr.write(`[KitsuneMCP] ${note}\n`);
+  result.content.push({ type: 'text' as const, text: `Note: ${note}` });
+  return result;
+}
+
+function toolCall(
+  calledName: string,
+  transport: string,
+): (args: Record<string, unknown>, options?: ToolCallOptions) => Promise<CallToolResult> {
   return async (
-    args: Record<string, unknown>,
+    calledArgs: Record<string, unknown>,
     options: ToolCallOptions = {},
   ): Promise<CallToolResult> => {
     const guard = getSafetyGuard();
+
+    // The operation the call runs (tools/operations.ts): from here on the
+    // guard, the password guard and the command are those of the operation;
+    // messages, approvals and the audit log use the name the caller used.
+    const { op: toolName, args, label } = resolveOperation(calledName, calledArgs);
 
     // -----------------------------------------------------------------------
     // fox_safety_status: server-internal, no browser command needed
@@ -551,7 +598,7 @@ export function createToolHandler(
     if (toolName === 'fox_safety_status') {
       const status = guard.status();
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify(status, null, 2) }],
+        content: [{ type: 'text' as const, text: JSON.stringify(status) }],
       };
     }
 
@@ -563,14 +610,14 @@ export function createToolHandler(
     const token = options.approvalToken;
     const presented = typeof token === 'string' && token !== '';
     const grant: ApprovalGrant | null = presented
-      ? getApprovalStore().consume(token, toolName, hashArgs(args))
+      ? getApprovalStore().consume(token, label.tool, hashArgs(label.args))
       : null;
     const tokenRejected = presented && grant === null;
 
-    const denial = guard.check(toolName, args, transport, grant);
+    const denial = guard.check(toolName, args, transport, grant, label);
     if (denial !== null) {
       if (denial.safetyDecision === 'confirmation_required') {
-        return confirmationToCallResult(toolName, args, denial, tokenRejected);
+        return confirmationToCallResult(label, denial, tokenRejected);
       }
       return safetyDenialToCallResult({ ...denial, decision: denial.safetyDecision });
     }
@@ -636,8 +683,9 @@ export function createToolHandler(
         typeof reportedUrl === 'string' && reportedUrl ? reportedUrl : null,
         transport,
         typeof reportedPattern === 'string' && reportedPattern ? reportedPattern : null,
+        label,
       );
-      return confirmationToCallResult(toolName, args, confirmation, tokenRejected);
+      return confirmationToCallResult(label, confirmation, tokenRejected);
     }
 
     // Other Extension-side safety refusals (Layer 0 out_of_scope; Layer 3
@@ -654,7 +702,7 @@ export function createToolHandler(
       const auditDecision: AuditDecision =
         decision === 'out_of_scope' ? 'out_of_scope' : listDecision ? decision : 'denied';
       if (guard.config.auditLog) {
-        audit(toolName, args, refusedUrl ?? (args['url'] as string) ?? null, auditDecision, transport);
+        auditCall(label, refusedUrl ?? (args['url'] as string) ?? null, auditDecision, transport);
       }
       return safetyDenialToCallResult({
         error: response.error ?? `Refused by browser safety check (${decision})`,
@@ -676,7 +724,7 @@ export function createToolHandler(
     if (response.success) {
       const resultData = response.data ?? {};
       guard.noteUrl(resultData, args, toolName);
-      const reached = guard.checkReachedUrl(toolName, args, resultData, transport);
+      const reached = guard.checkReachedUrl(toolName, args, resultData, transport, label);
       if (reached !== null) {
         return safetyDenialToCallResult({ ...reached, decision: reached.safetyDecision });
       }
@@ -691,9 +739,8 @@ export function createToolHandler(
     const sanitizedData = sanitizeResult(response.data);
 
     // Audit log
-    audit(
-      toolName,
-      args,
+    auditCall(
+      label,
       (args['url'] as string) ?? null,
       response.success ? 'allowed' : 'denied',
       transport,

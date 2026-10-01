@@ -254,7 +254,7 @@ export async function scrollAndCapture(
     totalScrolls: scrollCount,
     documentHeight: document.documentElement.scrollHeight,
     message:
-      "Element positions only, no images: scroll with fox_scroll and take " +
+      "Element positions only, no images: scroll with fox_interact (action scroll) and take " +
       "fox_screenshot (scope viewport) at each position for images",
   };
 }
