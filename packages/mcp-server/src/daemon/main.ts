@@ -38,25 +38,13 @@ import {
 } from '../utils/endpoint.js';
 import { DaemonActivity, resolveIdleTimeoutMs } from './activity.js';
 import { PACKAGE_VERSION } from '../version.js';
-import { kitsuneHealth, stderrLogger } from '@kitsune-mcp/shared/node';
+import { stderrLogger } from '@kitsune-mcp/shared/node';
+import { probeExistingDaemon } from './probe.js';
 
 const log = stderrLogger('daemon');
 
 function isAddrInUse(err: unknown): boolean {
   return err instanceof Error && 'code' in err && err.code === 'EADDRINUSE';
-}
-
-/** GET /health on the given port answers as a KitsuneMCP daemon. */
-function probeHealth(host: string, port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const req = http.get({ host, port, path: '/health', timeout: 2_000 }, (res) => {
-      let body = '';
-      res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-      res.on('end', () => resolve(kitsuneHealth(res.statusCode, body) !== undefined));
-    });
-    req.on('error', () => resolve(false));
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-  });
 }
 
 /** Register the headless backend with the connection manager (FOX_HEADLESS=1). */
@@ -139,9 +127,26 @@ export async function runDaemon(): Promise<void> {
     });
   } catch (err: unknown) {
     if (isAddrInUse(err)) {
-      if (await probeHealth(host, httpPort)) {
+      const occupant = await probeExistingDaemon(host, httpPort, apiToken);
+      if (occupant.kind === 'ok') {
         log(`another KitsuneMCP daemon already owns ${host}:${httpPort} — exiting`);
         process.exit(0);
+      }
+      if (occupant.kind === 'impostor') {
+        log(
+          `port ${host}:${httpPort} answers as a KitsuneMCP daemon but cannot prove it holds ` +
+          'this user\'s API token (a daemon started before the token file was replaced, ' +
+          'another user\'s daemon, or a program impersonating it). ' +
+          `Stop it, or set ${ENV.FOX_HTTP_PORT} (and ${ENV.FOX_WS_PORT}) to free ports.`,
+        );
+        process.exit(1);
+      }
+      if (occupant.kind === 'incompatible') {
+        log(
+          `port ${host}:${httpPort} is owned by a KitsuneMCP daemon of another protocol ` +
+          `(${String(occupant.protocol)}${occupant.version ? `, v${occupant.version}` : ''}): stop it and retry.`,
+        );
+        process.exit(1);
       }
       log(
         `port ${host}:${httpPort} is in use by another program. ` +
