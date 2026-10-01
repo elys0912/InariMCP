@@ -153,7 +153,7 @@ describe('attachSafetyMetadata: protectedUrlPatterns', () => {
     ['guard disabled', { enabled: false }],
     ['confirmProtectedActions false', { confirmProtectedActions: false }],
     ['no patterns', { protectedUrlPatterns: [] }],
-  ] as const)('is not attached when %s', (_label, overrides) => {
+  ] satisfies [string, Partial<SafetyConfig>][])('is not attached when %s', (_label, overrides) => {
     const cmd = command('screenshot');
     attachSafetyMetadata(cmd, config(overrides), 'fox_screenshot', {});
     expect(cmd.protectedUrlPatterns).toBeUndefined();

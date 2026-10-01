@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
 // renameSync can be made to fail on demand (a file another process keeps open on Windows).
 const state = vi.hoisted(() => ({ renameFails: false }));
@@ -21,7 +21,7 @@ import { MAX_LOG_BYTES, log, resetLoggerForTests, rotateIfLarge } from '../src/l
 describe('logger rotation', () => {
   let dir: string;
   let file: string;
-  let stderrWrite: ReturnType<typeof vi.spyOn>;
+  let stderrWrite: MockInstance<typeof process.stderr.write>;
   const savedLog = process.env['FOX_NATIVE_HOST_LOG'];
 
   const bigFile = (): void => fs.writeFileSync(file, Buffer.alloc(MAX_LOG_BYTES + 10, 0x61));
