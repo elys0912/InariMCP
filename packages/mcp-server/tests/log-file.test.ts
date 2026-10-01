@@ -25,5 +25,34 @@ describe('daemon.log timestamps', () => {
     );
   });
 
-  // TODO(test): write callbacks / non-utf8 string encodings are passed through; CRLF input
+  function capture(): { sink: NodeJS.WriteStream; written: string[] } {
+    const written: string[] = [];
+    const sink = new Writable({
+      write(chunk: Buffer, _enc, done) { written.push(chunk.toString()); done(); },
+    }) as unknown as NodeJS.WriteStream;
+    installStderrTimestamps(sink, () => 'T ');
+    return { sink, written };
+  }
+
+  it('passes the write callback through, with or without an encoding', async () => {
+    const { sink, written } = capture();
+    await new Promise<void>((resolve) => sink.write('a\n', () => resolve()));
+    await new Promise<void>((resolve) => sink.write('b\n', 'utf8', () => resolve()));
+    expect(written.join('')).toBe('T a\nT b\n');
+  });
+
+  // TODO(test): a string with a text encoding (latin1, utf16le) is decoded as if it were bytes (see WP33 report).
+  it('decodes a string written as hex / base64 bytes before stamping it', () => {
+    const { sink, written } = capture();
+    sink.write(Buffer.from('hi\n').toString('hex'), 'hex');
+    sink.write(Buffer.from('caf' + String.fromCharCode(0xe9) + '\n', 'utf-8').toString('base64'), 'base64');
+    expect(written.join('')).toBe('T hi\nT caf' + String.fromCharCode(0xe9) + '\n');
+  });
+
+  it('stamps CRLF lines once and keeps the CR; a lone CR is no line break', () => {
+    const { sink, written } = capture();
+    sink.write('one\r\ntwo\r\n');
+    sink.write('progress\rdone\n');
+    expect(written.join('')).toBe('T one\r\nT two\r\nT progress\rdone\n');
+  });
 });
