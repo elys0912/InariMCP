@@ -1,9 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import * as os from 'node:os';
 import { z } from 'zod';
 import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { isFalsyEnv, isTruthyEnv, resolveFoxEnv } from '../utils/headless-env.js';
+import { auditLogPath, defaultSafetyConfigPath } from '@kitsune-mcp/shared/node';
 
 const ContainerScopeSchema = z.object({
   enabled: z.boolean(),
@@ -99,18 +99,14 @@ function resolveEnv(foxKey: string, legacyKey?: string): string | undefined {
   return process.env[foxKey] ?? (legacyKey ? process.env[legacyKey] : undefined);
 }
 
-function getConfigDir(): string {
-  return path.join(os.homedir(), '.kitsune-mcp');
-}
-
 function getConfigPath(): string {
   const envPath = resolveEnv(ENV.FOX_SAFETY_CONFIG, LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG);
   if (envPath) return envPath;
-  return path.join(getConfigDir(), 'safety.json');
+  return defaultSafetyConfigPath();
 }
 
 export function getAuditLogPath(): string {
-  return path.join(getConfigDir(), 'logs', 'audit.jsonl');
+  return auditLogPath();
 }
 
 /**

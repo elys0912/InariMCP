@@ -92,8 +92,7 @@ function extensionAnswer(command: BrowserCommand): Record<string, unknown> {
 
 function connectFakeBrowser(): void {
   const cm = getConnectionManager();
-  cm.registerBrowser('fake-firefox', (message) => {
-    const command = JSON.parse(message) as BrowserCommand;
+  cm.registerBrowser('fake-firefox', (command) => {
     browser.received.push(command);
     const wire = toWireResponse(command.requestId, extensionAnswer(command));
     const parsed = parseBrowserResponse(wire);

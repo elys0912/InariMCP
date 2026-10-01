@@ -2,7 +2,7 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ServerLauncher, daemonEnvNote, evaluateHealth, isUsable, parsePort } from '../src/server-launcher.js';
+import { ServerLauncher, daemonEnvNote } from '../src/server-launcher.js';
 import {
   AUTH_HEADER,
   DAEMON_PROTOCOL_VERSION,
@@ -10,7 +10,10 @@ import {
   computeMac,
   newNonce,
   responseMac,
-} from '../src/auth.js';
+  evaluateHealth,
+  isUsable,
+  parsePort,
+} from '@kitsune-mcp/shared/node';
 
 function listen(): Promise<net.Server> {
   return new Promise((resolve) => {
@@ -66,16 +69,16 @@ describe('parsePort (4.A3)', () => {
     ['1', 1],
     ['65535', 65535],
   ])('accepts %s', (raw, port) => {
-    expect(parsePort(raw, 9, 'P')).toBe(port);
+    expect(parsePort(raw, 9)).toBe(port);
   });
 
   it.each(['0', '-1', '65536', '80.5', 'abc', '1e3x', ' '])('falls back on %j', (raw) => {
-    expect(parsePort(raw, 9, 'P')).toBe(9);
+    expect(parsePort(raw, 9)).toBe(9);
   });
 
   it('falls back when unset', () => {
-    expect(parsePort(undefined, 9, 'P')).toBe(9);
-    expect(parsePort('', 9, 'P')).toBe(9);
+    expect(parsePort(undefined, 9)).toBe(9);
+    expect(parsePort('', 9)).toBe(9);
   });
 });
 

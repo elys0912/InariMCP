@@ -27,7 +27,8 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { ENV, LEGACY_ENV, isRecord } from '@kitsune-mcp/shared';
+import { defaultScreenshotsDir } from '@kitsune-mcp/shared/node';
 
 const DATA_URL_RE = /^data:(image\/(?:png|jpeg|webp));base64,/i;
 
@@ -42,7 +43,7 @@ export function getScreenshotsDir(): string {
     process.env[ENV.FOX_SCREENSHOTS_DIR] ??
     process.env[LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR];
   if (envDir) return path.resolve(envDir);
-  return path.join(os.homedir(), '.kitsune-mcp', 'screenshots');
+  return defaultScreenshotsDir();
 }
 
 /** Names produced by uniqueStem() + saveScreenshot()'s suffix. */
@@ -167,10 +168,6 @@ export function saveScreenshotFile(
 
 function overwriteWarning(filePath: string): string {
   return `${path.basename(filePath)} already existed in the screenshots directory and was overwritten`;
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 /**

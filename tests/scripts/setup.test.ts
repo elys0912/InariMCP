@@ -40,7 +40,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import * as serverAuth from '../../packages/mcp-server/src/transport/auth.js';
+import * as serverAuth from '@kitsune-mcp/shared/node';
 import {
   UsageError, WIN_REG_KEY, buildManifest, claudeEntryState, computeMac, manifestState,
   nmManifestTargets, parseInstallArgs, serializeJson,
@@ -126,7 +126,7 @@ describe('writeFileAtomic', () => {
 });
 
 describe('daemon authentication copy', () => {
-  it('computes the same MACs as packages/mcp-server/src/transport/auth.ts', () => {
+  it('computes the same MACs as @kitsune-mcp/shared/node (auth.ts)', () => {
     const token = 'a'.repeat(64);
     expect(computeMac(token, 'health', 'b'.repeat(32))).toBe(serverAuth.computeMac(token, 'health', 'b'.repeat(32)));
   });

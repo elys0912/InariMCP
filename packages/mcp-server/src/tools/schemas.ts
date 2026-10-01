@@ -728,23 +728,3 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
     classification: 'observe',
   },
 };
-
-// ---------------------------------------------------------------------------
-// Convenience accessors
-// ---------------------------------------------------------------------------
-
-/** All tool names */
-export const TOOL_NAMES = Object.keys(TOOL_SCHEMAS) as (keyof typeof TOOL_SCHEMAS)[];
-
-/** Total number of registered tools */
-export const TOOL_COUNT = TOOL_NAMES.length;
-
-/** Get a ToolDefinition by name, or undefined if not found */
-export function getToolDefinition(name: string): ToolDefinition | undefined {
-  return TOOL_SCHEMAS[name];
-}
-
-/** Get all tools matching a given classification */
-export function getToolsByClassification(classification: ToolClassification): ToolDefinition[] {
-  return Object.values(TOOL_SCHEMAS).filter((t) => t.classification === classification);
-}

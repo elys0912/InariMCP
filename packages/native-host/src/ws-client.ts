@@ -34,7 +34,7 @@ import WebSocket from 'ws';
 import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
 import type { ServerLauncher } from './server-launcher.js';
 import { log } from './logger.js';
-import { AUTH_PROTOCOL, MAC_LABEL, computeMac, isNonce, macMatches, newNonce } from './auth.js';
+import { AUTH_PROTOCOL, MAC_LABEL, computeMac, isNonce, macMatches, newNonce } from '@kitsune-mcp/shared/node';
 
 const AUTH_TIMEOUT_MS = 10_000;
 /** 2.5 × the ws-bridge heartbeat interval (30 s). */

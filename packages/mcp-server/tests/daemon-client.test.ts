@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { DaemonClient } from '../src/relay/daemon-client.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { startHttpBridge } from '../src/transport/http-bridge.js';
-import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION } from '../src/transport/auth.js';
+import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION } from '@kitsune-mcp/shared/node';
 import { TOKEN } from './helpers/ws.js';
 
 // HOME / USERPROFILE point at a temporary directory: tests/setup/isolate-home.ts

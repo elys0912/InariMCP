@@ -3,7 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { runChecks, type CheckResult, type DoctorDeps, type HttpReply } from '../src/doctor/checks.js';
-import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, responseMac } from '../src/transport/auth.js';
+import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, responseMac } from '@kitsune-mcp/shared/node';
 import { PACKAGE_VERSION } from '../src/version.js';
 
 const TOKEN = 'a'.repeat(64);

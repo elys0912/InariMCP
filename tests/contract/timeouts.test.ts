@@ -42,7 +42,6 @@ import {
 } from '../../packages/mcp-server/src/connection/manager.js';
 import { RELAY_TIMEOUT_MARGIN_MS } from '../../packages/mcp-server/src/relay/daemon-client.js';
 import { TOOL_SCHEMAS } from '../../packages/mcp-server/src/tools/schemas.js';
-import { camelizeArgs } from '../../packages/mcp-server/src/utils/camelize.js';
 import { readExtensionSource, readNumericObjectConstant } from './helpers/extension-source.js';
 
 const KINDS: readonly BrowserKind[] = ['native-host', 'headless'];
@@ -56,7 +55,7 @@ const ARG_SETS: readonly Record<string, unknown>[] = [
 ];
 
 function daemonTimeout(action: BrowserAction, args: Record<string, unknown>, kind: BrowserKind): number {
-  return resolveCommandTimeout({ action, requestId: '1', data: camelizeArgs(args) }, kind);
+  return resolveCommandTimeout({ action, requestId: '1', data: { ...args } }, kind);
 }
 
 /** Tool name → default of each timeout-like argument its schema fills in. */

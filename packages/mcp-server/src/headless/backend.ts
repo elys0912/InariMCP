@@ -6,6 +6,7 @@ import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js
 import { getScreenshotsDir } from '../utils/screenshot.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { stderrLogger } from '@kitsune-mcp/shared/node';
 
 // ---------------------------------------------------------------------------
 // Captcha detection JS — mirrors the extension's content-script heuristics
@@ -33,9 +34,7 @@ const CAPTCHA_DETECT_JS = `(function() {
 // HeadlessBrowser
 // ---------------------------------------------------------------------------
 
-function log(msg: string): void {
-  process.stderr.write(`[KitsuneMCP:Headless] ${msg}\n`);
-}
+const log = stderrLogger('Headless');
 
 /** Longest a dialog nobody asked for may stay open before it is dismissed (it blocks the page). */
 const DIALOG_GRACE_MS = 2_000;
@@ -79,8 +78,18 @@ export class HeadlessBrowser {
 
     const timeout = headlessStartupTimeoutMs();
 
-    // Loaded on demand, so the daemon and relay start without playwright installed.
-    const { firefox } = await import('playwright');
+    // Loaded on demand, so the daemon and relay start without playwright
+    // installed (it is an optionalDependency: FOX_HEADLESS only).
+    let firefox: typeof import('playwright').firefox;
+    try {
+      ({ firefox } = await import('playwright'));
+    } catch (err: unknown) {
+      throw new Error(
+        'FOX_HEADLESS needs the optional dependency playwright, which is not installed ' +
+        `(${err instanceof Error ? err.message : String(err)}). Install it in packages/mcp-server ` +
+        '(npm install playwright) and its Firefox (npx playwright install firefox).',
+      );
+    }
     this._browser = await firefox.launch({
       headless: true,
       timeout,

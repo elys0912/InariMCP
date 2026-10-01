@@ -38,10 +38,9 @@ import {
 } from '../utils/endpoint.js';
 import { DaemonActivity, resolveIdleTimeoutMs } from './activity.js';
 import { PACKAGE_VERSION } from '../version.js';
+import { kitsuneHealth, stderrLogger } from '@kitsune-mcp/shared/node';
 
-function log(msg: string): void {
-  process.stderr.write(`[KitsuneMCP:daemon] ${msg}\n`);
-}
+const log = stderrLogger('daemon');
 
 function isAddrInUse(err: unknown): boolean {
   return err instanceof Error && 'code' in err && err.code === 'EADDRINUSE';
@@ -53,16 +52,7 @@ function probeHealth(host: string, port: number): Promise<boolean> {
     const req = http.get({ host, port, path: '/health', timeout: 2_000 }, (res) => {
       let body = '';
       res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-      res.on('end', () => {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(body);
-        } catch {
-          parsed = undefined;
-        }
-        const health = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {};
-        resolve(res.statusCode === 200 && health['status'] === 'ok' && health['service'] === 'kitsune-mcp');
-      });
+      res.on('end', () => resolve(kitsuneHealth(res.statusCode, body) !== undefined));
     });
     req.on('error', () => resolve(false));
     req.on('timeout', () => { req.destroy(); resolve(false); });
@@ -80,8 +70,7 @@ async function startHeadless(): Promise<void> {
   const containerWarning = headlessContainerScopeWarning(getSafetyGuard().config);
   if (containerWarning !== null) log(`WARNING: ${containerWarning}`);
 
-  connectionManager.registerBrowser('headless', (message: string) => {
-    const command = JSON.parse(message) as { action: string; tabId?: number; data?: Record<string, unknown>; requestId: string };
+  connectionManager.registerBrowser('headless', (command) => {
     headless.execute(command.action, command.tabId, command.data ?? {})
       .then((result) => {
         connectionManager.handleResponse({

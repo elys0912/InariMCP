@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { ServerConnection, type ConnectionTarget } from '../src/ws-client.js';
-import { AUTH_PROTOCOL, MAC_LABEL, computeMac, newNonce } from '../src/auth.js';
+import { AUTH_PROTOCOL, MAC_LABEL, computeMac, newNonce } from '@kitsune-mcp/shared/node';
 
 const TOKEN = 'b'.repeat(64);
 

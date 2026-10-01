@@ -49,7 +49,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import { ENV_DEFAULTS, parseBrowserResponse } from '@kitsune-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
-import { AUTH_PROTOCOL, MAC_LABEL, computeMac, isNonce, macMatches, newNonce } from './auth.js';
+import { AUTH_PROTOCOL, computeMac, isNonce, MAC_LABEL, macMatches, newNonce, stderrLogger } from '@kitsune-mcp/shared/node';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -100,9 +100,7 @@ function frameLength(raw: Buffer | ArrayBuffer | Buffer[]): number {
   return raw instanceof ArrayBuffer ? raw.byteLength : raw.length;
 }
 
-function log(msg: string): void {
-  process.stderr.write(`[KitsuneMCP] ${msg}\n`);
-}
+const log = stderrLogger();
 
 // ---------------------------------------------------------------------------
 // WebSocket server
@@ -276,11 +274,11 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
         type: 'auth_ok',
         mac: computeMac(apiToken, MAC_LABEL.wsServer, serverNonce, clientNonce),
       }));
-      connectionManager.registerBrowser(id, (message: string) => {
+      connectionManager.registerBrowser(id, (command) => {
         if (ws.readyState !== ws.OPEN) {
           throw new Error('WebSocket is not open');
         }
-        ws.send(message);
+        ws.send(JSON.stringify(command));
       }, 'native-host');
 
       const now = Date.now();

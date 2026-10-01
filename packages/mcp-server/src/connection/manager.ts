@@ -39,8 +39,11 @@ const CANCELLED_ERROR = 'Cancelled: the client abandoned the tool call';
 // Types
 // ---------------------------------------------------------------------------
 
-/** A function that sends a serialized JSON string to the browser. */
-export type SendFn = (message: string) => void | Promise<void>;
+/**
+ * Hands a command to a browser connection. The connection serializes it if
+ * its transport needs to (ws-bridge.ts); the headless backend takes it as is.
+ */
+export type SendFn = (command: BrowserCommand) => void | Promise<void>;
 
 /**
  * Kind of browser connection. Selection priority:
@@ -110,7 +113,7 @@ function cancelHumanWait(conn: BrowserConnection, requestId: string): void {
     data: { requestId },
   };
   try {
-    const maybePromise = conn.send(JSON.stringify(cancel));
+    const maybePromise = conn.send(cancel);
     if (maybePromise instanceof Promise) maybePromise.catch(() => { /* best-effort */ });
   } catch {
     // Connection gone — nothing left to withdraw from
@@ -333,7 +336,7 @@ export class BrowserConnectionManager {
       signal?.addEventListener('abort', onAbort, { once: true });
 
       try {
-        const maybePromise = conn.send(JSON.stringify(outgoing));
+        const maybePromise = conn.send(outgoing);
         if (maybePromise instanceof Promise) {
           maybePromise.catch((err: unknown) => {
             fail(`Send failed: ${err instanceof Error ? err.message : String(err)}`);

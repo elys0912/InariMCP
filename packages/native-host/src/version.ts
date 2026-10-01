@@ -7,20 +7,8 @@
  * same version (tests/contract/versions.test.ts).
  */
 
-import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { UNKNOWN_VERSION, readPackageVersion } from '@kitsune-mcp/shared/node';
 
-function readVersion(): string {
-  try {
-    const pkg: unknown = JSON.parse(
-      fs.readFileSync(path.resolve(__dirname, '..', 'package.json'), 'utf-8'),
-    );
-    const version = typeof pkg === 'object' && pkg !== null ? (pkg as Record<string, unknown>)['version'] : undefined;
-    if (typeof version === 'string') return version;
-  } catch {
-    // fall through
-  }
-  return '0.0.0-unknown';
-}
-
-export const HOST_VERSION: string = readVersion();
+export const HOST_VERSION: string =
+  readPackageVersion(path.resolve(__dirname, '..', 'package.json')) ?? UNKNOWN_VERSION;

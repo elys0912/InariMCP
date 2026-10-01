@@ -9,7 +9,7 @@
  *  - callTool(): POST /mcp/call, signed with the API token (read from
  *    ~/.kitsune-mcp/api_token *after* the daemon is healthy — only the daemon
  *    creates the token; the token itself is never sent, see
- *    transport/auth.ts) and X-Kitsune-Relay (audit transport `relay:<id>`).
+ *    @kitsune-mcp/shared/node auth.ts) and X-Kitsune-Relay (audit transport `relay:<id>`).
  *    The daemon signs its answer; an unsigned or wrongly signed answer
  *    means another program holds the port, and is refused. Aborting the
  *    call (MCP cancellation) closes the request, which the daemon turns
@@ -27,17 +27,15 @@
 
 import * as http from 'node:http';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { spawn } from 'node:child_process';
 import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 
 import { maxCommandTimeoutMs } from '../connection/manager.js';
 import type { ApprovalReply } from './approval.js';
-import { rotateLogIfLarge } from '../utils/log-file.js';
 import { RELAY_HEARTBEAT_MS } from '../daemon/activity.js';
-import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, signRequest, verifyResponse } from '../transport/auth.js';
+import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
+import { daemonLogPath, kitsuneHealth, spawnDetachedDaemon, stderrLogger } from '@kitsune-mcp/shared/node';
 import {
   RELAY_ID_HEADER,
   daemonSettingsFromInfo,
@@ -47,6 +45,7 @@ import {
   resolveHost,
   resolveHttpPort,
 } from '../utils/endpoint.js';
+import { isRecord } from '@kitsune-mcp/shared';
 
 /** How long a relay waits for a daemon it started to answer /health. */
 const DAEMON_STARTUP_WAIT_MS = 15_000;
@@ -59,16 +58,10 @@ const HEALTH_TIMEOUT_MS = 2_000;
  */
 export const RELAY_TIMEOUT_MARGIN_MS = 60_000;
 
-function log(msg: string): void {
-  process.stderr.write(`[KitsuneMCP:relay] ${msg}\n`);
-}
+const log = stderrLogger('relay');
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 export function errorResult(text: string): CallToolResult {
@@ -174,35 +167,20 @@ export class DaemonClient {
       return false;
     }
 
-    let logFd: number | 'ignore' = 'ignore';
-    try {
-      fs.mkdirSync(path.dirname(daemonLogPath()), { recursive: true, mode: 0o700 });
-      rotateLogIfLarge(daemonLogPath());
-      logFd = fs.openSync(daemonLogPath(), 'a', 0o600);
-    } catch {
-      // Logging is best-effort
-    }
-
     try {
       // env is inherited as-is: daemon settings such as FOX_HEADLESS come
       // from the relay that starts it (DAEMON_SETTINGS).
-      const child = spawn(process.execPath, [entry, '--daemon'], {
-        detached: true,
-        stdio: ['ignore', 'ignore', logFd],
-        windowsHide: true,
+      const pid = spawnDetachedDaemon({
+        entry,
+        logPath: daemonLogPath(),
         env: process.env,
+        onError: (err) => log(`daemon spawn error: ${err.message}`),
       });
-      child.on('error', (err) => log(`daemon spawn error: ${err.message}`));
-      child.unref();
-      log(`started daemon (PID ${child.pid ?? 'unknown'})`);
+      log(`started daemon (PID ${pid ?? 'unknown'})`);
       return true;
     } catch (err: unknown) {
       log(`failed to start daemon: ${err instanceof Error ? err.message : String(err)}`);
       return false;
-    } finally {
-      if (typeof logFd === 'number') {
-        try { fs.closeSync(logFd); } catch { /* ignore */ }
-      }
     }
   }
 
@@ -214,14 +192,10 @@ export class DaemonClient {
   async checkHealth(timeoutMs: number = HEALTH_TIMEOUT_MS): Promise<boolean> {
     try {
       const reply = await this.request('GET', '/health', undefined, timeoutMs);
-      const ok =
-        reply.status === 200 &&
-        isRecord(reply.body) &&
-        reply.body['status'] === 'ok' &&
-        reply.body['service'] === 'kitsune-mcp';
-      this.daemonSeen = ok;
-      if (ok && isRecord(reply.body)) this.daemonProtocol = reply.body['protocol'];
-      return ok;
+      const health = kitsuneHealth(reply.status, reply.body);
+      this.daemonSeen = health !== undefined;
+      if (health !== undefined) this.daemonProtocol = health['protocol'];
+      return health !== undefined;
     } catch {
       this.daemonSeen = false;
       return false;
@@ -526,6 +500,4 @@ export class DaemonClient {
 }
 
 /** Where a detached daemon's stderr goes (shared with the Native Host). */
-export function daemonLogPath(): string {
-  return path.join(os.homedir(), '.kitsune-mcp', 'logs', 'daemon.log');
-}
+export { daemonLogPath };
