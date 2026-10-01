@@ -2,8 +2,10 @@
  * KitsuneMCP - Popup Script
  */
 
-// SetupState is declared in background.ts: the extension's scripts are
-// classic scripts, type-checked in one shared global scope.
+import { t } from '../i18n';
+import { APPROVAL_MESSAGE, type ApprovalView } from '../approval';
+import type { SetupState } from '../types/setup';
+
 interface StatusResponse {
   success: boolean;
   connected?: boolean;
@@ -211,7 +213,7 @@ function showToast(message: string, type: ToastType = 'info'): void {
 // The background keeps approval requests (request_approval commands) until
 // they are answered here. Pages and content scripts cannot reach this popup,
 // so a decision made here is the human's. ApprovalView / APPROVAL_MESSAGE:
-// approval.ts (loaded before this script by popup.html).
+// approval.ts.
 
 interface ApprovalListResponse {
   success: boolean;

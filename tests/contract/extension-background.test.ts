@@ -1,8 +1,8 @@
 /**
  * Extension background.ts: routing and robustness fixes of WP5
  * (review 3.A2-A9, 5.2, 5.7, 3.security). Pure functions are cut out of the
- * classic script (helpers/extension-source.ts); the rest is checked on the
- * source text.
+ * source (helpers/extension-source.ts); the rest is checked on the source
+ * text.
  *
  * TODO(test): handleCommand end to end with a fake `browser` (target tab
  *   resolved once: scope check, protected check, handler and URL report on
@@ -39,8 +39,8 @@ const URL_RULE_FUNCTIONS = [
 ];
 
 /**
- * Put url-rule.ts's functions on globalThis, as the manifest's script order
- * makes them globals of background.js.
+ * Put url-rule.ts's functions on globalThis: background.ts imports them, and
+ * a function cut out of background.ts looks them up there.
  */
 async function installUrlRuleGlobals(): Promise<UrlRuleGlobals> {
   const fns = await loadExtensionFunctions<Record<string, unknown>>('url-rule.ts', URL_RULE_FUNCTIONS);
@@ -233,16 +233,18 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     expect(background).toMatch(/return \{ success: true, closed: tabId \}/);
     expect(background).toMatch(/Array\.isArray\(message\.protectedUrlRules\)\s*\?\s*message\.protectedUrlRules\s*:\s*message\.protectedUrlPatterns/);
   });
-  it('url-rule.js is loaded before background.js and content.js (manifest and early injection)', () => {
+  it('url-rule.ts is bundled into background.js and content.js (manifest and early injection load one file)', () => {
     const manifest = JSON.parse(readExtensionSource('../manifest.json')) as {
       background: { scripts: string[] };
       content_scripts: { js: string[] }[];
     };
-    const bg = manifest.background.scripts;
-    expect(bg.indexOf('dist/url-rule.js')).toBeGreaterThanOrEqual(0);
-    expect(bg.indexOf('dist/url-rule.js')).toBeLessThan(bg.indexOf('dist/background.js'));
-    expect(manifest.content_scripts[0]!.js).toEqual(['dist/url-rule.js', 'dist/content.js']);
-    expect(background).toMatch(/inject\("\/dist\/url-rule\.js"\)\s*\.then\(\(\) => inject\("\/dist\/content\.js"\)\)/);
+    expect(manifest.background.scripts).toEqual(['dist/background.js']);
+    expect(manifest.content_scripts[0]!.js).toEqual(['dist/content.js']);
+    expect(background).toMatch(/^import \{[^}]*\bfindUrlRule\b[^}]*\} from "\.\/url-rule";$/m);
+    expect(readExtensionSource('content.ts')).toMatch(/^import \{[^}]*\bfindUrlRule\b[^}]*\} from "\.\/url-rule";$/m);
+    // The early injection runs content.js alone, once.
+    const files = [...background.matchAll(/executeScript\([^)]*\bfile: "([^"]+)"/g)].map((m) => m[1]);
+    expect(files).toEqual(['/dist/content.js']);
   });
 
   // TODO(test): handleCommand with a fake browser: invalid rule entries are

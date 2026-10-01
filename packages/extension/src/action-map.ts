@@ -12,15 +12,14 @@
 //             (answered with "Not implemented in extension: <name>", which is
 //             distinct from "Unknown action")
 //
-// Loading: this file is a classic script (no import/export). manifest.json
-// loads dist/action-map.js before dist/background.js, so WIRE_ACTION_MAP is a
-// global binding visible to background.js. For contract tests that load this
-// file as a module, the same table is also exposed on globalThis.
+// Imported by background.ts (bundled into dist/background.js). For contract
+// tests that load this file as a module, the same table is also exposed on
+// globalThis.
 //
 // Keep this file dependency-free: every entry of BROWSER_ACTIONS must appear
 // here (checked by the contract test), and nothing else may be imported.
 
-const WIRE_ACTION_MAP: ReadonlyMap<string, string | null> = new Map<string, string | null>([
+export const WIRE_ACTION_MAP: ReadonlyMap<string, string | null> = new Map<string, string | null>([
   // --- Page interaction ---
   ["screenshot", "screenshot"],
   ["click", "click"],

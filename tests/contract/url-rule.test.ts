@@ -2,9 +2,9 @@
  * The Extension's URL rule matcher (packages/extension/src/url-rule.ts) and
  * the MCP Server's (packages/mcp-server/src/safety/url-pattern.ts) give the
  * same answer for the same pattern and URL. The server sends each pattern
- * as a WireUrlRule (shared/src/protocol.ts); the Extension cannot import
- * url-pattern.ts (classic scripts, no bundler), so it has its own copy of
- * the rules, cut out of the source here (helpers/extension-source.ts).
+ * as a WireUrlRule (shared/src/protocol.ts); the Extension has its own copy
+ * of the rules (url-pattern.ts is not browser code), cut out of the source
+ * here (helpers/extension-source.ts).
  *
  * TODO(test): IDN hosts (punycode on both sides) and IPv6 / port patterns
  *   once url-pattern.ts supports them.

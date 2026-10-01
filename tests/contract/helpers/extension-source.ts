@@ -1,14 +1,17 @@
 /**
  * Access to the Extension's sources from tests.
  *
- * The Extension is built from classic scripts (no import/export, browser
- * globals, loaded in order by manifest.json), so background.ts and content.ts
- * cannot be imported. Contract tests instead
+ * background.ts and content.ts register browser listeners at their top level
+ * (they are bundled with their imports by scripts/build-extension.mjs), so a
+ * test cannot import them. Contract tests instead
  *   - read constants / switch cases from the source text, or
  *   - cut one self-contained function out of the source, strip its types
  *     with Vite's transformer and evaluate it on its own.
  * Only use this for small pure functions that reference no other top-level
- * binding of the script.
+ * binding of the module. Imported names are not in scope either, unless the
+ * test puts them on globalThis.
+ * Modules without top-level side effects (action-map.ts, approval.ts,
+ * url-rule.ts) can also be imported directly.
  */
 
 import { readFileSync } from 'node:fs';
@@ -41,13 +44,16 @@ export function readNumericObjectConstant(source: string, name: string): Record<
 
 /**
  * Source text of the `function <name>(...) {...}` declaration (top level,
- * or indented inside content.ts's IIFE; `async` allowed).
+ * or indented inside content.ts's IIFE; `export` and `async` allowed, and
+ * `export` is left out of the result).
  * Braces are matched naively (no string / comment awareness), which is fine
  * for the small functions this is used on.
  */
 export function extractFunctionSource(source: string, name: string): string {
-  const start = source.search(new RegExp(`^[ \\t]*(?:async )?function ${name}\\(`, 'm'));
-  if (start < 0) throw new Error(`function ${name} not found`);
+  const match = new RegExp(`^([ \\t]*)(export )?(?:async )?function ${name}\\(`, 'm').exec(source);
+  if (match === null) throw new Error(`function ${name} not found`);
+  // Leave `export` out: the text is evaluated as a plain function declaration.
+  const start = match.index + (match[2] === undefined ? 0 : match[1]!.length + match[2].length);
 
   // Skip the parameter list, then match the body braces.
   let i = source.indexOf('(', start);

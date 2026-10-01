@@ -14,7 +14,9 @@
     "url": "https://github.com/elys0912/KitsuneMCP/issues"
   },
   "scripts": {
-    "build": "tsc -b && node -e \"const fs=require('fs'),p=require('path');[['src/popup/popup.html','dist/popup/popup.html'],['src/popup/popup.css','dist/popup/popup.css'],['src/content.css','dist/content.css']].forEach(([s,d])=>{fs.mkdirSync(p.dirname(d),{recursive:true});fs.copyFileSync(s,d)})\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run typecheck && node ../../scripts/build-extension.mjs",
+    "build:dev": "npm run typecheck && node ../../scripts/build-extension.mjs --dev",
     "clean": "rimraf --glob dist \"*.tsbuildinfo\""
   }
 }

@@ -3,6 +3,14 @@
 //
 // Based on ClaudeCodeBrowser by Andre Watson (nanogenomic), Ligandal Inc.
 // MIT License — Copyright (c) 2025
+//
+// Bundled with its imports into dist/content.js (scripts/build-extension.mjs),
+// which is both the manifest content script and the file the background
+// injects early on logging tabs. Imported modules run before the
+// __fox_injected guard below (on every injection), so they must have no
+// top-level side effects.
+
+import { compileUrlRules, findUrlRule, type CompiledUrlRule } from "./url-rule";
 
 (function () {
   "use strict";
@@ -12,15 +20,14 @@
   (window as unknown as Record<string, unknown>).__fox_injected = true;
 
   /**
-   * Localized banner text (same as t() in i18n.ts, which is not loaded when
-   * this script is injected on its own).
+   * Localized banner text (same as t() in i18n.ts).
    */
   function msg(key: string, substitutions?: string | string[]): string {
     return browser.i18n.getMessage(key, substitutions) || key;
   }
 
   // ---------------------------------------------------------------------------
-  // Types (self-contained — no imports allowed in extension content scripts)
+  // Types
   // ---------------------------------------------------------------------------
 
   interface FindElementOptions {
@@ -290,7 +297,7 @@
   // against the current URL on every record, so a same-document move onto a
   // protected URL (history.pushState) pauses recording too. Full navigations
   // onto protected pages are handled by the background (no resume there).
-  // URL rules (url-rule.ts, loaded before this script), as the background
+  // URL rules (url-rule.ts), as the background
   // script compiled them from the MCP Server's protectedUrlRules.
   let protectedPatterns: CompiledUrlRule[] = [];
 

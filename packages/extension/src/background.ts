@@ -3,6 +3,27 @@
 //
 // Based on ClaudeCodeBrowser by Andre Watson (nanogenomic), Ligandal Inc.
 // MIT License — Copyright (c) 2025
+//
+// Bundled with its imports into dist/background.js (scripts/build-extension.mjs).
+
+import { t } from "./i18n";
+import { WIRE_ACTION_MAP } from "./action-map";
+import {
+  APPROVAL_MESSAGE,
+  approvalCommandResult,
+  isApprovedHost,
+  parseApprovalPrompt,
+  type ApprovalDecision,
+  type ApprovalView,
+} from "./approval";
+import {
+  compileUrlRules,
+  findUrlRule,
+  urlListViolation,
+  type CompiledUrlRule,
+  type UrlListViolation,
+} from "./url-rule";
+import type { SetupState } from "./types/setup";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -657,25 +678,6 @@ function sendToNativeHost(
 // ---------------------------------------------------------------------------
 // Setup state (popup guidance + toolbar badge)
 // ---------------------------------------------------------------------------
-
-/**
- * What the user has to do next, as far as the Extension can tell:
- *   hostMissing  Native Host not registered with Firefox (installer not run)
- *   hostError    Native Host registered but failed (e.g. stale node path)
- *   hostOutdated Native Host from an older checkout (no session count): tools
- *                work, but the checkout needs git pull + npm run build
- *   daemonDown   Native Host runs, but the MCP daemon does not answer
- *   noSession    all set on the Firefox side, no Claude Code session connected
- *   ready        at least one Claude Code session connected
- */
-type SetupState =
-  | { kind: "connecting" }
-  | { kind: "hostMissing"; error: string }
-  | { kind: "hostError"; error: string }
-  | { kind: "hostOutdated"; serverUrl?: string }
-  | { kind: "daemonDown"; serverUrl?: string }
-  | { kind: "noSession"; serverUrl?: string; registerCommand?: string }
-  | { kind: "ready"; serverUrl?: string; relays: number };
 
 /** Native Host reply to `status` (packages/native-host/src/index.ts). */
 interface HostStatusReply {
@@ -2913,11 +2915,9 @@ browser.webNavigation.onCommitted.addListener((details) => {
   // Protected page: recording is paused there, so no early hooks either.
   if (findProtectedMatch(details.url, state.patterns)) return;
   console.log(`[KitsuneMCP] Early logging injection requested (tab ${details.tabId})`);
-  // content.js uses url-rule.js (as in manifest.json), so that goes first.
-  const inject = (file: string): Promise<unknown> =>
-    browser.tabs.executeScript(details.tabId, { file, runAt: "document_start", frameId: TOP_FRAME_ID });
-  inject("/dist/url-rule.js")
-    .then(() => inject("/dist/content.js"))
+  // dist/content.js is self-contained (url-rule.ts is bundled into it).
+  browser.tabs
+    .executeScript(details.tabId, { file: "/dist/content.js", runAt: "document_start", frameId: TOP_FRAME_ID })
     .then(() => {
       console.log(`[KitsuneMCP] Early logging injection done (tab ${details.tabId})`);
     })
