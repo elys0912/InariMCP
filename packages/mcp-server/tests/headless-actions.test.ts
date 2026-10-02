@@ -462,3 +462,67 @@ describe('element waits and create_tab (R-3, R-2)', () => {
     expect(await tabs()).toBe(before.tabs);
   });
 });
+
+describe('results name the tab and its URL (O-1)', () => {
+  real('a click that navigates reports the URL it ended on and the tab id', async () => {
+    await load('<a id="a" href="#next">next</a>');
+    const tabs = await browser.execute('get_tabs', undefined, {});
+    const active = (tabs['tabs'] as Array<{ id: number; active: boolean }>).find((t) => t.active)!.id;
+    const click = await browser.execute('click', undefined, { selector: '#a' });
+    expect(click['success']).toBe(true);
+    expect(String(click['url'])).toMatch(/#next$/);
+    expect(click['tabId']).toBe(active);
+    const script = await browser.execute('execute_script', undefined, { script: '1' });
+    expect(script).toMatchObject({ success: true, result: 1, tabId: active });
+    const nav = await browser.execute('navigate', undefined, { url: PAGE('<p>y</p>') });
+    expect(nav['tabId']).toBe(active);
+  });
+
+  real('an action on another tab names that tab; a closed tab is not reported', async () => {
+    await load('<p>first</p>');
+    const created = await browser.execute('create_tab', undefined, {});
+    const other = created['tabId'] as number;
+    const tabs = await browser.execute('get_tabs', undefined, {});
+    const first = (tabs['tabs'] as Array<{ id: number }>).find((t) => t.id !== other)!.id;
+    const info = await browser.execute('get_page_info', first, {});
+    expect(info).toMatchObject({ success: true, tabId: first });
+    expect(String(info['url'])).toContain('data:text/html');
+    const closed = await browser.execute('close_tab', other, {});
+    expect(closed).toMatchObject({ success: true, closed: other });
+    expect(closed).not.toHaveProperty('url');
+  });
+
+  real('a failed result gets no url or tabId', async () => {
+    await load('<p>x</p>');
+    const r = await browser.execute('click', undefined, {});
+    expect(r['success']).toBe(false);
+    expect(r).not.toHaveProperty('tabId');
+  });
+});
+
+describe('closing the last tab (Q-1)', () => {
+  real('tab commands still work afterwards and other actions name the way out', async () => {
+    const list = async (): Promise<number[]> =>
+      ((await browser.execute('get_tabs', undefined, {}))['tabs'] as Array<{ id: number }>).map((t) => t.id);
+    for (const id of await list()) {
+      expect((await browser.execute('close_tab', id, {}))['success']).toBe(true);
+    }
+    expect(browser.isReady()).toBe(true);
+    expect(await browser.execute('get_tabs', undefined, {})).toMatchObject({ success: true, totalTabs: 0 });
+    const click = await browser.execute('click', undefined, { selector: '#a' });
+    expect(click['success']).toBe(false);
+    expect(String(click['error'])).toContain('No headless tab is open');
+    const plain = await browser.execute('navigate', undefined, { url: PAGE('<p>x</p>') });
+    expect(String(plain['error'])).toContain('No headless tab is open');
+
+    const opened = await browser.execute('navigate', undefined, { url: PAGE('<p>new</p>'), newTab: true });
+    expect(opened['success']).toBe(true);
+    expect(typeof opened['tabId']).toBe('number');
+    expect((await browser.execute('close_tab', opened['tabId'] as number, {}))['success']).toBe(true);
+
+    const created = await browser.execute('create_tab', undefined, {});
+    expect(created['success']).toBe(true);
+    await load('<p>back</p>');
+    expect(await list()).toEqual([created['tabId']]);
+  });
+});

@@ -2,7 +2,7 @@ import type { Browser, BrowserContext, Page, Dialog } from 'playwright';
 import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { headlessStartupTimeoutMs } from '../utils/headless-env.js';
 import { argTimeout, ignoredParamWarnings } from './helpers.js';
-import { headlessRoute, type TabHost } from './actions.js';
+import { headlessRoute, NO_TAB_ERROR, type TabHost } from './actions.js';
 import {
   ARM_TTL_MS,
   DIALOG_GRACE_MS,
@@ -18,6 +18,8 @@ import { currentCommandContext, type CommandContext } from '../connection/manage
 // ---------------------------------------------------------------------------
 
 const log = stderrLogger('Headless');
+
+const NOT_STARTED_ERROR = 'Headless browser not started';
 
 const NOT_RUN_ERROR =
   'Not run: the command timed out or was cancelled while it waited for an earlier headless command';
@@ -58,7 +60,10 @@ export class HeadlessBrowser {
   private readonly _host: TabHost = (() => {
     const self = this;
     return {
-      get context() { return self._context; },
+      get context() {
+        if (!self._context) throw new Error(NOT_STARTED_ERROR);
+        return self._context;
+      },
       get activeTabId() { return self._activeTabId; },
       get tabs() { return self._tabs; },
       adoptTab(page: Page): number {
@@ -130,8 +135,9 @@ export class HeadlessBrowser {
     log('stopped');
   }
 
+  /** Started and not stopped (also while no tab is open). */
   isReady(): boolean {
-    return this._page !== null;
+    return this._context !== null;
   }
 
   // -----------------------------------------------------------------------
@@ -163,14 +169,16 @@ export class HeadlessBrowser {
     }
   }
 
-  private async _getPage(tabId?: number): Promise<Page> {
-    if (tabId !== undefined) {
-      const page = this._tabs.get(tabId);
-      if (!page) throw new Error(`No headless tab with id ${tabId}`);
-      return page;
-    }
-    if (!this._page) throw new Error('Headless browser not started');
-    return this._page;
+  /**
+   * The page of `tabId`, or of the active tab when undefined; null when no
+   * tab is open (the last one was closed).
+   */
+  private _targetPage(tabId: number | undefined): Page | null {
+    if (this._context === null) throw new Error(NOT_STARTED_ERROR);
+    if (tabId === undefined) return this._page;
+    const page = this._tabs.get(tabId);
+    if (!page) throw new Error(`No headless tab with id ${tabId}`);
+    return page;
   }
 
   // -----------------------------------------------------------------------
@@ -209,13 +217,18 @@ export class HeadlessBrowser {
       }
       // The tab this action targets, fixed before it can change the active tab.
       const target = tabId ?? this._activeTabId;
-      return this._finish(action, target, args, await this._run(action, async () => {
-        const page = await this._getPage(tabId);
+      const result = await this._run(action, async () => {
+        const page = this._targetPage(tabId);
+        const base = { tabId, args, host: this._host, deadline, signal };
+        if (route.kind === 'dispatch' && !route.needsPage) return route.run({ ...base, page });
+        if (page === null) throw new Error(NO_TAB_ERROR);
         if (route.kind === 'unsupported') {
           return { success: false, error: `Unsupported headless action: ${action}` };
         }
-        return route.run({ page, tabId, args, host: this._host, deadline, signal });
-      }));
+        return route.run({ ...base, page });
+      });
+      if (route.kind === 'dispatch' && route.needsPage) this._reportTab(result, target);
+      return this._finish(action, target, args, result);
     } finally {
       release();
     }
@@ -231,6 +244,21 @@ export class HeadlessBrowser {
       log(`${action} failed: ${e instanceof Error ? e.message : String(e)}`);
       return { success: false, error: e instanceof Error ? e.message : String(e) };
     }
+  }
+
+  /**
+   * Name the tab a successful action ran on: its id and the URL it is on
+   * now (a click or a script may have navigated it), as the Extension adds
+   * `url`. The guard (safety/guard.ts noteUrl / checkReachedUrl) records and
+   * checks them. Values the action set itself are kept; a tab the action
+   * closed is not reported.
+   */
+  private _reportTab(result: Record<string, unknown>, id: number | null): void {
+    if (result['success'] !== true || id === null) return;
+    const page = this._tabs.get(id);
+    if (!page) return;
+    if (typeof result['url'] !== 'string') result['url'] = page.url();
+    if (typeof result['tabId'] !== 'number') result['tabId'] = id;
   }
 
   /**

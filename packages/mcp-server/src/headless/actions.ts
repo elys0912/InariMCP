@@ -63,7 +63,8 @@ const CAPTCHA_DETECT_JS = `(function() {
 
 /** The tab state of HeadlessBrowser that handlers read or change. */
 export interface TabHost {
-  readonly context: BrowserContext | null;
+  /** The browser context (execute() runs no handler before start()). */
+  readonly context: BrowserContext;
   readonly activeTabId: number | null;
   readonly tabs: ReadonlyMap<number, Page>;
   /** Register `page` as a new tab and make it the active one; returns its id. */
@@ -72,9 +73,7 @@ export interface TabHost {
   activateTab(tabId: number): Page;
 }
 
-export interface ActionContext {
-  /** The page of `tabId`, or the active page when no tabId was given. */
-  page: Page;
+interface ContextBase {
   tabId: number | undefined;
   args: Record<string, unknown>;
   host: TabHost;
@@ -84,19 +83,38 @@ export interface ActionContext {
   signal: AbortSignal | undefined;
 }
 
-export type ActionHandler = (c: ActionContext) => Promise<Record<string, unknown>>;
+interface ActionContext extends ContextBase {
+  /** The page of `tabId`, or the active page when no tabId was given. */
+  page: Page;
+}
+
+interface TablessContext extends ContextBase {
+  /** As in ActionContext; null when no tabId was given and no tab is open. */
+  page: Page | null;
+}
+
+type Result = Record<string, unknown>;
+type ActionHandler = (c: ActionContext) => Promise<Result>;
+type TablessHandler = (c: TablessContext) => Promise<Result>;
 
 /**
- * - dispatch: run under execute()'s lock, on the page of the target tab
+ * - dispatch: run under execute()'s lock. With needsPage, on the page of the
+ *   target tab, and the result names that tab (url, tabId); without, also
+ *   when no tab is open (tab list, new tabs).
  * - unlocked: execute() runs it itself outside the lock (handle_dialog: it
  *   waits for a dialog that a queued action may be about to open)
  * - unsupported: answered with "Unsupported headless action" (after the
  *   target tab was resolved, like a dispatch action)
  */
-export type HeadlessRoute =
-  | { kind: 'dispatch'; run: ActionHandler }
+type HeadlessRoute =
+  | { kind: 'dispatch'; needsPage: true; run: ActionHandler }
+  | { kind: 'dispatch'; needsPage: false; run: TablessHandler }
   | { kind: 'unlocked' }
   | { kind: 'unsupported' };
+
+/** The error of an action on "the active tab" while no tab is open (the last one was closed). */
+export const NO_TAB_ERROR =
+  "No headless tab is open: open one with fox_tab action 'create' or fox_navigate with newTab: true";
 
 // ---------------------------------------------------------------------------
 // Bounded page scripts
@@ -180,20 +198,25 @@ async function guardedFill(
 // ---------------------------------------------------------------------------
 
 // --- navigation ---
-const navigate: ActionHandler = async ({ page, args, host }) => {
+const navigate: TablessHandler = async ({ page, tabId, args, host }) => {
   const url = (args['url'] as string) ?? '';
-  let target = page;
+  let target: Page;
+  let targetId: number | null;
   if (args['newTab'] === true) {
-    if (!host.context) return { success: false, error: 'No browser context' };
     target = await host.context.newPage();
-    host.adoptTab(target);
+    targetId = host.adoptTab(target);
+  } else if (page !== null) {
+    target = page;
+    targetId = tabId ?? host.activeTabId;
+  } else {
+    return { success: false, error: NO_TAB_ERROR };
   }
   await target.goto(url, { waitUntil: 'domcontentloaded', timeout: NAVIGATE_TIMEOUT_MS });
   return {
     success: true,
     url: target.url(),
     title: await target.title(),
-    ...(target !== page ? { tabId: host.activeTabId } : {}),
+    ...(targetId !== null ? { tabId: targetId } : {}),
   };
 };
 
@@ -412,7 +435,7 @@ const waitForNetworkIdle: ActionHandler = async ({ page, args }) => {
 };
 
 // --- get_tabs ---
-const getTabs: ActionHandler = async ({ host }) => {
+const getTabs: TablessHandler = async ({ host }) => {
   const tabs: Record<string, unknown>[] = [];
   for (const [tid, p] of host.tabs) {
     try {
@@ -430,8 +453,7 @@ const getTabs: ActionHandler = async ({ host }) => {
 };
 
 // --- create_tab ---
-const createTab: ActionHandler = async ({ args, host }) => {
-  if (!host.context) return { success: false, error: 'No browser context' };
+const createTab: TablessHandler = async ({ args, host }) => {
   const url = (args['url'] as string) ?? 'about:blank';
   const newPage = await host.context.newPage();
   if (url !== 'about:blank') {
@@ -708,7 +730,7 @@ const removeObserver: ActionHandler = async ({ page }) => {
 };
 
 // --- request_approval ---
-const requestApproval: ActionHandler = async () => {
+const requestApproval: TablessHandler = async () => {
   return {
     success: false,
     approved: false,
@@ -773,7 +795,7 @@ const waitForUrl: ActionHandler = async ({ page, args }) => {
 };
 
 // --- container actions (unsupported) ---
-const containersUnsupported: ActionHandler = async () => {
+const containersUnsupported: TablessHandler = async () => {
   return {
     success: false,
     error: 'Container actions are not supported in headless mode. Use the Firefox extension.',
@@ -784,17 +806,18 @@ const containersUnsupported: ActionHandler = async () => {
 // Table
 // ---------------------------------------------------------------------------
 
-const dispatch = (run: ActionHandler): HeadlessRoute => ({ kind: 'dispatch', run });
+const dispatch = (run: ActionHandler): HeadlessRoute => ({ kind: 'dispatch', needsPage: true, run });
+const tabless = (run: TablessHandler): HeadlessRoute => ({ kind: 'dispatch', needsPage: false, run });
 const UNSUPPORTED: HeadlessRoute = { kind: 'unsupported' };
 
 /** Every BrowserCommand action and what the headless backend does with it. */
-export const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
+const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   // --- page interaction ---
   screenshot: dispatch(screenshot),
   click: dispatch(click),
   type: dispatch(type),
   scroll: dispatch(scroll),
-  navigate: dispatch(navigate),
+  navigate: tabless(navigate),
   get_page_info: dispatch(getPageInfo),
   get_elements: dispatch(getElements),
   wait_for_element: dispatch(waitForElement),
@@ -802,11 +825,11 @@ export const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   execute_script: dispatch(executeScript),
 
   // --- tab management ---
-  get_tabs: dispatch(getTabs),
+  get_tabs: tabless(getTabs),
   get_tab_info: UNSUPPORTED,
   find_tabs: UNSUPPORTED,
   screenshot_all_tabs: UNSUPPORTED,
-  create_tab: dispatch(createTab),
+  create_tab: tabless(createTab),
   close_tab: dispatch(closeTab),
   focus_tab: dispatch(focusTab),
 
@@ -846,7 +869,7 @@ export const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   get_text: dispatch(getText),
 
   // --- approval / workflow ---
-  request_approval: dispatch(requestApproval),
+  request_approval: tabless(requestApproval),
   run_workflow: UNSUPPORTED,
   solve_captcha: dispatch(solveCaptcha),
   cancel_human_wait: UNSUPPORTED,
@@ -857,8 +880,8 @@ export const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   snapshot: dispatch(snapshot),
   find_text: dispatch(findText),
   handle_dialog: { kind: 'unlocked' },
-  list_containers: dispatch(containersUnsupported),
-  open_in_container: dispatch(containersUnsupported),
+  list_containers: tabless(containersUnsupported),
+  open_in_container: tabless(containersUnsupported),
   wait_for_navigation: dispatch(waitForNavigation),
   wait_for_url: dispatch(waitForUrl),
   remove_observer: dispatch(removeObserver),
