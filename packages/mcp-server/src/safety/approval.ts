@@ -27,6 +27,8 @@
 
 import * as crypto from 'node:crypto';
 import { ENV, ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { isFalsyEnv } from '../utils/headless-env.js';
+import { truncateCodePoints } from '../utils/text.js';
 import type { SafetyDenial } from './guard.js';
 
 /**
@@ -41,9 +43,9 @@ import type { SafetyDenial } from './guard.js';
 export function isElicitationApprovalEnabled(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
-  const raw = (env[ENV.FOX_APPROVAL_ELICITATION] ?? '').trim().toLowerCase();
-  if (raw === '') return ENV_DEFAULTS.FOX_APPROVAL_ELICITATION;
-  return !['0', 'false', 'off', 'no'].includes(raw);
+  const raw = env[ENV.FOX_APPROVAL_ELICITATION];
+  if (raw === undefined || raw.trim() === '') return ENV_DEFAULTS.FOX_APPROVAL_ELICITATION;
+  return !isFalsyEnv(raw);
 }
 
 /** How long a human has to answer an approval request. */
@@ -54,6 +56,8 @@ export const TOKEN_TTL_MS = 60_000;
 export const MAX_PENDING_REQUESTS = 32;
 
 const TOKEN_PREFIX = 'kat_';
+/** Random bytes in a token (before base64url). */
+const TOKEN_BYTES = 32;
 
 export type ApprovalChannel = 'elicitation' | 'browser';
 
@@ -118,6 +122,7 @@ export function hashArgs(args: Record<string, unknown>): string {
   return crypto.createHash('sha256').update(canonicalJson(args)).digest('hex');
 }
 
+/** Code points of one argument value in the summary, and of the whole summary. */
 const SUMMARY_VALUE_MAX = 160;
 const SUMMARY_MAX = 800;
 const SUMMARY_MASKED_KEYS: ReadonlySet<string> = new Set(['password']);
@@ -131,14 +136,12 @@ export function summarizeArgs(args: Record<string, unknown>): string {
   for (const key of Object.keys(args).sort()) {
     const raw = args[key];
     if (raw === undefined) continue;
-    let text = SUMMARY_MASKED_KEYS.has(key)
+    const text = SUMMARY_MASKED_KEYS.has(key)
       ? '***'
       : typeof raw === 'string' ? JSON.stringify(raw) : canonicalJson(raw);
-    if (text.length > SUMMARY_VALUE_MAX) text = `${text.slice(0, SUMMARY_VALUE_MAX)}…`;
-    lines.push(`${key}: ${text}`);
+    lines.push(`${key}: ${truncateCodePoints(text, SUMMARY_VALUE_MAX)}`);
   }
-  const summary = lines.join('\n');
-  return summary.length > SUMMARY_MAX ? `${summary.slice(0, SUMMARY_MAX)}…` : (summary || '(no arguments)');
+  return lines.length === 0 ? '(no arguments)' : truncateCodePoints(lines.join('\n'), SUMMARY_MAX);
 }
 
 /** Target of a confirmation_required answer, or null when its URL has no host. */
@@ -241,7 +244,7 @@ export class ApprovalStore {
     const request = this.getRequest(id);
     if (!request) return null;
     this.requests.delete(id);
-    const token = TOKEN_PREFIX + crypto.randomBytes(32).toString('base64url');
+    const token = TOKEN_PREFIX + crypto.randomBytes(TOKEN_BYTES).toString('base64url');
     const expiresAt = this.now() + this.tokenTtlMs;
     this.tokens.set(digest(token), { target: { ...request.target }, via, requestId: id, expiresAt });
     return { token, expiresAt };
@@ -255,6 +258,7 @@ export class ApprovalStore {
    */
   consume(token: string, toolName: string, argsHash: string): ApprovalGrant | null {
     this.prune();
+    // The type says string; the check stays for callers that pass parsed JSON.
     if (typeof token !== 'string' || !token.startsWith(TOKEN_PREFIX)) return null;
     const key = digest(token);
     const stored = this.tokens.get(key);
