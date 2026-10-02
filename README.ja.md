@@ -284,7 +284,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 ### 環境変数
 
-下表はコードが読む名前。注記のあるものは、フォーク元から引き継いだ古い`CLAUDE_BROWSER_*`の名前も、`FOX_*`版が未設定の場合のフォールバックとして使える。
+下表はコードが読む名前。注記のあるものは、フォーク元から引き継いだ古い`CLAUDE_BROWSER_*`の名前も、`FOX_*`版が未設定の場合のフォールバックとして使える。daemonは、空または空白だけの`FOX_HEADLESS`・`FOX_SAFETY_CONFIG`・`FOX_SCREENSHOTS_DIR`・`FOX_READ_ONLY`・`FOX_ALLOW_SCRIPTS`・`FOX_APPROVAL_ELICITATION`を未設定として扱う。
 
 | 変数 | 既定値 | 読むプロセス | 説明 |
 |---|---|---|---|
@@ -295,7 +295,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `FOX_HEADLESS` | 未設定 | daemon | `1` / `true` / `yes`でヘッドレスPlaywrightバックエンドを使う。それ以外は無効（`on`など認識できない値は警告をログに出す）。旧名: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない）。旧名: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | PlaywrightのFirefox | daemon（ヘッドレスのみ） | Playwrightが起動するFirefoxバイナリのパス。旧名: `CLAUDE_BROWSER_EXECUTABLE` |
-| `FOX_SCREENSHOTS_DIR` | `~/.kitsune-mcp/screenshots` | Native Host（拡張機能経路）、daemon（ヘッドレス経路、`GET /screenshots`） | スクリーンショットの保存先。旧名: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
+| `FOX_SCREENSHOTS_DIR` | `~/.kitsune-mcp/screenshots` | Native Host（拡張機能経路）、daemon（ヘッドレス経路、`GET /screenshots`） | スクリーンショットの保存先。相対パスはそのプロセスの作業ディレクトリから解決する。旧名: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
 | `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | Native Hostが起動するたびに、自動で付けた名前で保存したスクリーンショットのうち、この日数より古いものを削除する（`0`ですべて残す）。`filename`を指定して保存したものと、ヘッドレスのスクリーンショットは削除しない |
 | `FOX_READ_ONLY` | 未設定 | daemon | `1` / `true` / `yes`で読み取り専用モードを強制する。旧名: `CLAUDE_BROWSER_READ_ONLY` |
 | `FOX_ALLOW_SCRIPTS` | 未設定 | daemon | `0` / `false` / `no` / `off`でスクリプト系ツール（`fox_evaluate`、`fox_observer`。以前の名前は`fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act`、`fox_inject_observer`、`fox_remove_observer`）を無効化する。旧名: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
@@ -356,7 +356,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 ### `safety.json`
 
-初回実行時に`~/.kitsune-mcp/safety.json`（または`FOX_SAFETY_CONFIG`）に自動生成される。
+初回実行時に`~/.kitsune-mcp/safety.json`（または`FOX_SAFETY_CONFIG`）に自動生成される。ファイル（または`container_scope`の中）に書かなかったキーは既定値になる。この表にないキー（`readonly`のような綴りの誤り）があるとファイルは使えなくなる（下記）。
 
 | キー | 既定値 | 意味 |
 |---|---|---|
@@ -386,7 +386,7 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 
 ホストとスキームは大文字小文字を区別しない。`allowed_url_patterns`ではパスは書いたとおりに一致する（区切りの位置で: `/admin`は`/administrator`を含まない）。ブロックと保護対象のリストでは、`%xx`のエスケープを戻し、連続するスラッシュをまとめ、大文字小文字をそろえたうえで、後ろに何が続いても一致する。以前の版の正規表現もできるだけそのまま使える。単純なもの（`paypal\.com`、`\.gov(/|$)`、`^https://a\.example/`）は同じ意味のホストパターンとして読む。それ以外は、ブロックと保護対象のリストでは以前の意味（URLのどこかに一致）のまま警告付きで使い、許可リストではエラーにする。
 
-`safety.json`を使えない場合（読めない、JSONとして不正、型の誤り、使えないURLパターン）、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。遷移先も確認する: 許可するのは`http://`・`https://`・`about:blank`だけで、ホストの前にユーザー名やパスワードが付いたURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。
+`safety.json`を使えない場合（読めない、JSONとして不正、未知のキー、型の誤り、使えないURLパターン）、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。遷移先も確認する: 許可するのは`http://`・`https://`・`about:blank`だけで、ホストの前にユーザー名やパスワードが付いたURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。
 
 ### 保護対象サイトでの人による承認
 

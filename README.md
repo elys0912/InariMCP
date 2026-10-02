@@ -284,7 +284,7 @@ The relay and the Native Host authenticate the daemon, and the daemon them, with
 
 ### Environment variables
 
-The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSER_*` name (inherited from the fork) still works as a fallback when the `FOX_*` one isn't set.
+The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSER_*` name (inherited from the fork) still works as a fallback when the `FOX_*` one isn't set. The daemon takes an empty or blank `FOX_HEADLESS`, `FOX_SAFETY_CONFIG`, `FOX_SCREENSHOTS_DIR`, `FOX_READ_ONLY`, `FOX_ALLOW_SCRIPTS` or `FOX_APPROVAL_ELICITATION` as not set.
 
 | Variable | Default | Read by | Description |
 |---|---|---|---|
@@ -295,7 +295,7 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 | `FOX_HEADLESS` | unset | daemon | `1` / `true` / `yes` uses the headless Playwright backend; anything else leaves it off (an unrecognised value such as `on` is logged as a warning). Legacy: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | Launch timeout of the headless Firefox in **milliseconds** (not seconds). Legacy: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | Playwright's Firefox | daemon (headless only) | Path to the Firefox binary Playwright launches. Legacy: `CLAUDE_BROWSER_EXECUTABLE` |
-| `FOX_SCREENSHOTS_DIR` | `~/.kitsune-mcp/screenshots` | Native Host (extension path), daemon (headless path, `GET /screenshots`) | Where screenshots are saved. Legacy: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
+| `FOX_SCREENSHOTS_DIR` | `~/.kitsune-mcp/screenshots` | Native Host (extension path), daemon (headless path, `GET /screenshots`) | Where screenshots are saved; a relative path is taken from the working directory of the process. Legacy: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
 | `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | At each Native Host start, screenshots it saved under a generated name and older than this many days are deleted (`0` keeps everything). Files saved under a `filename` you chose, and headless screenshots, are never deleted |
 | `FOX_READ_ONLY` | unset | daemon | `1` / `true` / `yes` forces read-only mode. Legacy: `CLAUDE_BROWSER_READ_ONLY` |
 | `FOX_ALLOW_SCRIPTS` | unset | daemon | `0` / `false` / `no` / `off` disables the script tools (`fox_evaluate`, `fox_observer`; earlier names `fox_execute_script`, `fox_eval_chain`, `fox_wait_and_act`, `fox_inject_observer`, `fox_remove_observer`). Legacy: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
@@ -356,7 +356,7 @@ Unchanged: `fox_screenshot`, `fox_snapshot`, `fox_navigate`, `fox_click`, `fox_t
 
 ### `safety.json`
 
-Auto-generated on first run at `~/.kitsune-mcp/safety.json` (or `FOX_SAFETY_CONFIG`):
+Auto-generated on first run at `~/.kitsune-mcp/safety.json` (or `FOX_SAFETY_CONFIG`). A key left out of the file, or out of `container_scope`, takes its default; a key not in this table (a typo such as `readonly`) makes the file unusable (see below):
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -386,7 +386,7 @@ URL patterns are matched against the parsed URL, not the raw string, so `example
 
 Host and scheme compare case-insensitively. In `allowed_url_patterns` a path matches as written (at a segment boundary: `/admin` does not cover `/administrator`); in the blocked and protected lists it matches any continuation after decoding `%xx` escapes, collapsing repeated slashes and folding case. Regular expressions from earlier versions keep working where possible: simple ones (`paypal\.com`, `\.gov(/|$)`, `^https://a\.example/`) are read as the equivalent host pattern; any other one keeps its old meaning (anywhere in the URL) in the blocked and protected lists, with a warning, and is an error in the allowed list.
 
-If `safety.json` cannot be used (unreadable, invalid JSON, a wrong type, an unusable URL pattern), the daemon logs the error to stderr (`daemon.log`) and refuses every tool except `fox_safety_status`, which shows the error, until the file is fixed and the daemon restarted. Navigation targets are checked as well: only `http://`, `https://` and `about:blank` are allowed, URLs with a user name or password before the host are refused, and a result whose final URL (after a redirect or a click) is blocked is withheld.
+If `safety.json` cannot be used (unreadable, invalid JSON, an unknown key, a wrong type, an unusable URL pattern), the daemon logs the error to stderr (`daemon.log`) and refuses every tool except `fox_safety_status`, which shows the error, until the file is fixed and the daemon restarted. Navigation targets are checked as well: only `http://`, `https://` and `about:blank` are allowed, URLs with a user name or password before the host are refused, and a result whose final URL (after a redirect or a click) is blocked is withheld.
 
 ### Human approval for protected sites
 

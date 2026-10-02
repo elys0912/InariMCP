@@ -10,6 +10,7 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 
 ### セキュリティ
 
+- **`safety.json`の未知のキーは設定エラーにする**: 綴りの誤りや存在しないキー（`readonly`、`allow_scripts`、`container_scope`の中の未知のキー）は、これまで何も言わずに捨てられ、ポリシーを締めるつもりの設定が効いていなかった。今後は他の壊れた設定と同じくすべてのツールを拒否し、エラー（`daemon.log`、`fox_safety_status`、`--doctor`）にそのキーを示す。互換性のない変更を参照（4fcbc9f）
 - **URLパターンは解析したURLで照合し、拡張機能も同じ方法で判定する**: `safety.json`のパターンは、解析したURLのホスト（とサブドメイン）・パス・スキームと比べる。`example.com.attacker.net`や、ホスト名を含むクエリ文字列には一致しなくなった。ユーザー名やパスワードを含むURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。更新したら`fox_safety_status`でリストを確認すること（db0e662、b1ebced、9f5a61d、f8d6496）
 - **壊れた`safety.json`ではすべてのツールを拒否する（fail-closed）**: ファイルが読めない、JSONとして正しくない、値の型が違う、使えないURLパターンがある場合、`enabled: false`でも`fox_safety_status`以外のすべてのツールを拒否する。ファイルを直してdaemonを再起動し、`fox_safety_status`で確認すること（db0e662）
 - **人による承認をページの外へ移し、1回限りの承認トークンにした**: 保護対象サイトでの操作は、Claude Codeの確認ダイアログ（MCP elicitation）かツールバーのポップアップで承認する。ページ内のボタン、`fox_click`、`fox_execute_script`では承認できない。1回の承認が許すのは、そのホストでのそのツールの、引数が完全に一致する1回の呼び出しだけで、トークンは中継だけが見る（282ec53、bb005ba）
@@ -26,6 +27,7 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 
 ### 互換性のない変更
 
+- **未知のキーがある`safety.json`ではすべてのツールを拒否する**: 更新したら`--doctor`（`safety-config`）か`fox_safety_status`でファイルを確認し、示されたキーを直すか消すこと。既知のキーのcamelCase表記（`readOnly`）は引き続き使える（4fcbc9f）
 - **ページ内の承認バナーを廃止した**: 承認待ちはKitsuneMCPのツールバーボタンに琥珀色の件数として出る（OSの通知も出る）。ポップアップを開いて承認または拒否する。クライアントがMCP elicitationに対応していれば、Claude Codeの確認ダイアログが先に使われる。ポップアップを使えるように、更新後は拡張機能を再読み込みすること（bb005ba、282ec53）
 - **`re:`のパターンは前方一致しなくなった**: `re:^https://example\.com/`のようなパターンは、それより長いURLに一致しなくなり、警告も出ない。`allowed_url_patterns`ではそのURLが拒否され、ブロック・保護対象のリストではブロック・保護の対象から外れる。前方一致のままにするには末尾に`.*`を付け（`re:^https://example\.com/.*`）、daemonを再起動してから`fox_safety_status`で確認すること（a015fa5）
 - **`allowed_url_patterns`の旧形式の正規表現は設定エラーになる**: 単純なもの（`paypal\.com`、`^https://a\.example/`）はホストパターンとして読む。それ以外があると`safety.json`が使えなくなる（すべてのツールを拒否する）。ホストパターンか`re:`に書き直すこと。ブロック・保護対象のリストでは、そのようなパターンは警告付きで以前の意味のまま使われる（db0e662、b1ebced）
@@ -81,6 +83,7 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 
 ### 修正
 
+- **設定と承認要求の文面**: `safety.json`の`container_scope`を一部だけ書いた場合（`container_name`だけ、`enabled`だけ）、残りは既定値になり、すべてのツールを拒否しなくなった。空白だけの`FOX_SAFETY_CONFIG` / `FOX_SCREENSHOTS_DIR`はdaemonと`--doctor`で未設定として扱い（旧名を読む）、相対パスの`FOX_SCREENSHOTS_DIR`はNative Hostと同じく絶対パスにする。承認要求の要約は絵文字を途中で切らない。単一ラベルのホストパターン（`intranet`）への警告を、`LOCALHOST`・`intranet/`・`intranet:8080`・`http://intranet`にも出す（4fcbc9f、c54bfe2、176858f、71aafd0）
 - **Native Hostの起動**: daemonの起動中でも`ping`に応答する。Windowsでは必要ならPowerShellを使わずに（WMI、次に`schtasks`）Firefoxのジョブオブジェクトの外でdaemonを起動するので、Firefoxを閉じてもdaemonは止まらない。動いているdaemonが開いたままの`daemon.log`はcopy-truncateで回転する（82172be、c1521e9、6856992、099da45、69b1af9）
 - **ヘッドレスのバックエンド**: `fox_select_option`は一致するoptionが無ければ`availableOptions`を付けて失敗する。`fox_handle_dialog`はほかのコマンドを止めなくなった（誰も待っていないダイアログは2秒後に閉じて報告する）。`FOX_HEADLESS_STARTUP_TIMEOUT`をFirefoxの起動に適用する（208cb30、36cb870、2e9ab03）
 - **中継はdaemonを待たずに接続する**: Claude CodeのMCP接続はすぐに返り、最初のツール呼び出しがdaemonの起動を待つ（81294f6）
