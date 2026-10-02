@@ -361,8 +361,72 @@ describe('POST /daemon/shutdown', () => {
     expect((await request('POST', '/daemon/shutdown', { ...s.headers, 'Content-Type': 'application/json' }, '{}')).status).toBe(501);
   });
 
-  // TODO(test): a second shutdown request while the first is preparing shares it (repeated: true); non-boolean force → 400;
-  //             daemon/main.ts prepareShutdown waits for in-flight calls (activity.waitForIdle) and closes WS clients with 1001
+  it('X-2: a failing prepare is answered 500 and the daemon still exits (no lasting 503)', async () => {
+    let exits = 0;
+    server = await startHttpBridge({
+      host: '127.0.0.1',
+      port: 0,
+      apiToken: TOKEN,
+      connectionManager: getConnectionManager(),
+      shutdown: {
+        prepare: () => Promise.reject(new Error('ws close failed')),
+        exit: () => { exits++; },
+      },
+    });
+    port = (server.address() as AddressInfo).port;
+    const s = signRequest(TOKEN, 'POST', '/daemon/shutdown', '{}');
+    const r = await request('POST', '/daemon/shutdown', { ...s.headers, 'Content-Type': 'application/json' }, '{}');
+    expect(r.status).toBe(500);
+    expect(String(r.json['error'])).toContain('ws close failed');
+    expect(verifyResponse(TOKEN, s.nonce, 500, r.raw, r.headers[AUTH_HEADER.signature])).toBe(true);
+    await waitFor(() => exits > 0);
+    expect(exits).toBe(1);
+  });
+
+  it('every request reaches prepare (it shares a running shutdown); later answers say repeated', async () => {
+    const { prepared } = await startWithShutdown();
+    for (const force of [false, true]) {
+      const body = JSON.stringify({ force });
+      const s = signRequest(TOKEN, 'POST', '/daemon/shutdown', body);
+      const r = await request('POST', '/daemon/shutdown', { ...s.headers, 'Content-Type': 'application/json' }, body);
+      expect(r.json['repeated']).toBe(force);
+    }
+    expect(prepared).toEqual([{ force: false }, { force: true }]);
+  });
+
+  // TODO(test): non-boolean force → 400
+});
+
+describe('daemon state seen by tool calls', () => {
+  const callBody = JSON.stringify({ name: 'fox_safety_status', arguments: {} });
+  const approvalBody = JSON.stringify({ requestId: 'r1' });
+  const headers = { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' };
+
+  it('Q-5: refuses tool calls and approvals (503) once the daemon stops on its own (signal, idle)', async () => {
+    let stopping = false;
+    await start({ isShuttingDown: () => stopping });
+    expect((await request('POST', '/mcp/call', headers, callBody)).status).toBe(200);
+    stopping = true;
+    expect((await request('POST', '/mcp/call', headers, callBody)).status).toBe(503);
+    expect((await request('POST', '/approval/browser', headers, approvalBody)).status).toBe(503);
+  });
+
+  it('Q-4: a daemon that cannot start answers waiting calls with the reason (500)', async () => {
+    let fail: (err: Error) => void = () => undefined;
+    const ready = new Promise<void>((_resolve, reject) => { fail = reject; });
+    await start({ ready });
+    const call = request('POST', '/mcp/call', headers, callBody);
+    const approval = request('POST', '/approval/browser', headers, approvalBody);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    fail(new Error('Firefox did not launch'));
+    for (const r of [await call, await approval]) {
+      expect(r.status).toBe(500);
+      expect(r.json['error']).toBe('KitsuneMCP daemon could not start: Firefox did not launch');
+    }
+    // Later calls too, and /health keeps saying not ready.
+    expect((await request('POST', '/mcp/call', headers, callBody)).json['error']).toContain('could not start');
+    expect((await request('GET', '/health')).json['ready']).toBe(false);
+  });
 });
 
 describe('isAllowedHostHeader', () => {

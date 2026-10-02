@@ -38,7 +38,9 @@
  * only (never X-API-Key). Waits for running calls (10 s cap; none with
  * force), closes the headless browser and the WS connections (1001),
  * answers { status: 'stopping', pid, … } and exits 0 once the answer is
- * out. New tool calls get 503 meanwhile. Clients: relay `--stop-daemon`
+ * out (also after a failed shutdown, answered 500). New tool calls get 503
+ * meanwhile, as they do while the daemon stops on a signal or when idle
+ * (isShuttingDown). Clients: relay `--stop-daemon`
  * (relay/daemon-client.ts stopDaemon), scripts/uninstall.mjs, tests/e2e.
  *
  * Fork-source: server.py L885-1460 MCPHTTPHandler
@@ -334,8 +336,17 @@ export interface HttpBridgeOptions {
   port?: number;
   apiToken: string;
   connectionManager: BrowserConnectionManager;
-  /** Resolves once the daemon can run tools (headless backend booted). */
+  /**
+   * Resolves once the daemon can run tools (headless backend booted).
+   * Rejects when it cannot start: waiting and later calls get a 500 with
+   * the reason.
+   */
   ready?: Promise<void>;
+  /**
+   * True once the daemon has begun to stop for any reason (signal, idle,
+   * POST /daemon/shutdown): new tool calls and approvals get 503.
+   */
+  isShuttingDown?: () => boolean;
   /** Idle tracking: relay heartbeats and in-flight calls. */
   activity?: DaemonActivity;
   /** Extra fields for GET /daemon/info (authenticated). */
@@ -350,7 +361,12 @@ export interface HttpBridgeOptions {
  * What POST /daemon/shutdown drives. `prepare` runs the whole shutdown but
  * the exit (wait for running calls unless `force`, close the browser and the
  * WS connections) and returns the fields of the answer; `exit` is called
- * once the answer has left the socket, and ends the process.
+ * once the answer has left the socket, and ends the process — also when
+ * `prepare` failed (the answer is then a 500): a daemon half shut down must
+ * not stay behind refusing every call.
+ *
+ * `prepare` is called for every request: it must share a shutdown already
+ * running (a forced request may cut its wait for running calls short).
  */
 export interface ShutdownHooks {
   prepare: (opts: { force: boolean }) => Promise<Record<string, unknown>>;
@@ -381,6 +397,10 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
   const startTime = Date.now();
   /** Set by POST /daemon/shutdown: new tool calls are refused (503) from then on. */
   let stopping: Promise<Record<string, unknown>> | undefined;
+  const shuttingDown = (): boolean => stopping !== undefined || options.isShuttingDown?.() === true;
+  const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+  /** The tool did not run: the daemon could not start (ready rejected). */
+  const notStarted = (err: unknown): string => `KitsuneMCP daemon could not start: ${errorText(err)}`;
 
   // Every tool, deprecated names included (see header comment: FOX_CAPS
   // is applied by each relay).
@@ -612,7 +632,7 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
   ): void {
     const caller = callerOf(req);
     if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
-    if (stopping !== undefined) {
+    if (shuttingDown()) {
       reply.error(503, 'KitsuneMCP daemon is shutting down');
       return;
     }
@@ -666,14 +686,14 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
     const handler = createToolHandler(toolName, caller.transport);
     activity?.beginCall();
     ready
-      .then(() => runWithCallSignal(abort.signal, () => handler(args as Record<string, unknown>, { approvalToken })))
-      .then((result) => {
-        reply.json(200, { success: result.isError !== true, result });
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        reply.error(500, `Tool execution failed: ${msg}`);
-      })
+      .then(
+        () => runWithCallSignal(abort.signal, () => handler(args as Record<string, unknown>, { approvalToken }))
+          .then(
+            (result) => reply.json(200, { success: result.isError !== true, result }),
+            (err: unknown) => reply.error(500, `Tool execution failed: ${errorText(err)}`),
+          ),
+        (err: unknown) => reply.error(500, notStarted(err)),
+      )
       .finally(() => {
         activity?.endCall();
         if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
@@ -692,7 +712,7 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
   ): void {
     const caller = callerOf(req);
     if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
-    if (stopping !== undefined) {
+    if (shuttingDown()) {
       reply.error(503, 'KitsuneMCP daemon is shutting down');
       return;
     }
@@ -717,12 +737,14 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
     const abort = abortOnHangUp(res);
     activity?.beginCall();
     ready
-      .then(() => runWithCallSignal(abort.signal, () => askBrowser(requestId, connectionManager, caller.transport)))
-      .then((answer) => reply.json(200, { ...answer }))
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        reply.error(500, `Approval request failed: ${msg}`);
-      })
+      .then(
+        () => runWithCallSignal(abort.signal, () => askBrowser(requestId, connectionManager, caller.transport))
+          .then(
+            (answer) => reply.json(200, { ...answer }),
+            (err: unknown) => reply.error(500, `Approval request failed: ${errorText(err)}`),
+          ),
+        (err: unknown) => reply.error(500, notStarted(err)),
+      )
       .finally(() => {
         activity?.endCall();
         if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
@@ -756,30 +778,37 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
     }
     const force = data['force'] === true;
     const first = stopping === undefined;
-    stopping ??= hooks.prepare({ force });
+    // Every request reaches prepare(), which shares a running shutdown (see ShutdownHooks).
+    const pending = Promise.resolve().then(() => hooks.prepare({ force }));
+    stopping ??= pending;
 
-    stopping
-      .then((summary) => {
-        // Exit only after the answer is out ('close' also covers a client that hung up).
-        let exited = false;
-        const exit = (): void => {
-          if (exited) return;
-          exited = true;
-          hooks.exit();
-        };
-        if (res.destroyed) {
-          // The client gave up while running calls were drained: nobody to answer.
-          setImmediate(exit);
-          return;
-        }
-        res.once('finish', () => setImmediate(exit));
-        res.once('close', () => setImmediate(exit));
+    // Exit only after the answer is out ('close' also covers a client that hung up).
+    let exited = false;
+    const exit = (): void => {
+      if (exited) return;
+      exited = true;
+      hooks.exit();
+    };
+    const answerThenExit = (answer: () => void): void => {
+      if (res.destroyed) {
+        // The client gave up while running calls were drained: nobody to answer.
+        setImmediate(exit);
+        return;
+      }
+      res.once('finish', () => setImmediate(exit));
+      res.once('close', () => setImmediate(exit));
+      answer();
+    };
+    pending.then(
+      (summary) => answerThenExit(() => {
         reply.json(200, { status: 'stopping', pid: process.pid, force, repeated: !first, ...summary });
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        reply.error(500, `Shutdown failed: ${msg}`);
-      });
+      }),
+      // Exit anyway: the shutdown may have stopped halfway (browsers closed,
+      // calls refused), and a daemon left like that would refuse every call.
+      (err: unknown) => answerThenExit(() => {
+        reply.error(500, `Shutdown failed: ${errorText(err)} (the daemon exits anyway)`);
+      }),
+    );
   }
 
   // -----------------------------------------------------------------------
