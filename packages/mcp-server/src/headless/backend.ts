@@ -1,13 +1,13 @@
 import type { Browser, BrowserContext, Page, Dialog } from 'playwright';
+import { z } from 'zod';
 import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { headlessStartupTimeoutMs } from '../utils/headless-env.js';
-import { argTimeout, ignoredParamWarnings } from './helpers.js';
+import { ignoredParamWarnings, parseArgs } from './helpers.js';
 import { headlessRoute, NO_TAB_ERROR, type TabHost } from './actions.js';
 import {
   ARM_TTL_MS,
   DIALOG_GRACE_MS,
   DIALOG_MESSAGE_PREVIEW_CHARS,
-  HANDLE_DIALOG_DEFAULT_MS,
   VIEWPORT,
 } from './limits.js';
 import { stderrLogger } from '@kitsune-mcp/shared/node';
@@ -23,6 +23,13 @@ const NOT_STARTED_ERROR = 'Headless browser not started';
 
 const NOT_RUN_ERROR =
   'Not run: the command timed out or was cancelled while it waited for an earlier headless command';
+
+/** fox_handle_dialog's arguments as the tool schema delivers them (helpers.ts parseArgs). */
+const handleDialogArgs = z.object({
+  action: z.enum(['accept', 'dismiss']),
+  promptText: z.string().optional(),
+  timeout: z.number(),
+});
 
 interface DialogEvent {
   type: string;
@@ -56,27 +63,23 @@ export class HeadlessBrowser {
   private _activeTabId: number | null = null;
   private _lockChain: Promise<void> = Promise.resolve();
 
-  /** The tab state the action handlers of actions.ts see. */
-  private readonly _host: TabHost = (() => {
-    const self = this;
-    return {
-      get context() {
-        if (!self._context) throw new Error(NOT_STARTED_ERROR);
-        return self._context;
-      },
-      get activeTabId() { return self._activeTabId; },
-      get tabs() { return self._tabs; },
-      adoptTab(page: Page): number {
-        self._page = page;
-        return self._registerTab(page);
-      },
-      activateTab(tabId: number): Page {
-        self._activeTabId = tabId;
-        self._page = self._tabs.get(tabId)!;
-        return self._page;
-      },
-    };
-  })();
+  /** The tab state the action handlers of actions.ts see (arrow functions: `this` is this browser). */
+  private readonly _host: TabHost = {
+    context: () => {
+      if (!this._context) throw new Error(NOT_STARTED_ERROR);
+      return this._context;
+    },
+    activeTabId: () => this._activeTabId,
+    tabs: () => this._tabs,
+    adoptTab: (page) => {
+      this._page = page;
+      return this._registerTab(page);
+    },
+    activateTab: (tabId, page) => {
+      this._activeTabId = tabId;
+      this._page = page;
+    },
+  };
 
   // -----------------------------------------------------------------------
   // Lifecycle
@@ -85,8 +88,7 @@ export class HeadlessBrowser {
   async start(): Promise<void> {
     const executablePath =
       process.env[ENV.FOX_EXECUTABLE] ??
-      process.env[LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE] ??
-      undefined;
+      process.env[LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE];
 
     const timeout = headlessStartupTimeoutMs();
 
@@ -273,7 +275,9 @@ export class HeadlessBrowser {
     result: Record<string, unknown>,
   ): Record<string, unknown> {
     const warnings = [
-      ...(Array.isArray(result['warnings']) ? (result['warnings'] as string[]) : []),
+      ...(Array.isArray(result['warnings'])
+        ? result['warnings'].filter((w): w is string => typeof w === 'string')
+        : []),
       ...ignoredParamWarnings(action, args),
     ];
     const drain = id !== null && action !== 'handle_dialog';
@@ -364,9 +368,7 @@ export class HeadlessBrowser {
     if (id === null || !this._tabs.has(id)) {
       return { success: false, error: `No headless tab with id ${tabId ?? 'active'}` };
     }
-    const action = args['action'] === 'accept' ? 'accept' : 'dismiss';
-    const promptText = args['promptText'] as string | undefined;
-    const timeout = argTimeout(args, HANDLE_DIALOG_DEFAULT_MS);
+    const { action, promptText, timeout } = parseArgs(handleDialogArgs, args, 'handle_dialog');
 
     const settle = async (d: Dialog): Promise<Record<string, unknown>> => {
       const info = await this._settle(d, action, promptText);

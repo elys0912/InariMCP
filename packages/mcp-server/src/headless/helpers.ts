@@ -3,36 +3,48 @@
  * tested and loaded without it).
  */
 
+import type { z } from 'zod';
+import { BrowserActionSchema, formatZodIssues, type BrowserAction } from '@kitsune-mcp/shared';
 import { GET_ELEMENTS_MAX, HIGHLIGHT_MS } from './limits.js';
 
 /**
- * Timeout argument in ms. The schemas use both `timeout` and `timeoutMs`;
- * `timeoutMs` wins (same order as connection/manager.ts resolveCommandTimeout).
- * Zero, negative or non-numeric values fall back.
+ * The arguments of `action`, checked against `schema`. Calls through the MCP
+ * tools arrive parsed by the tool schemas (tools/schemas.ts), defaults
+ * filled in, so the headless schemas require what those guarantee and add
+ * no defaults of their own. Anything else (a direct execute() call) fails
+ * with the zod issues.
  */
-export function argTimeout(args: Record<string, unknown>, fallback: number): number {
-  for (const key of ['timeoutMs', 'timeout']) {
-    const v = args[key];
-    if (typeof v === 'number' && Number.isFinite(v) && v > 0) return v;
+export function parseArgs<S extends z.ZodTypeAny>(
+  schema: S,
+  args: Record<string, unknown>,
+  action: string,
+): z.output<S> {
+  const parsed = schema.safeParse(args);
+  if (!parsed.success) {
+    throw new Error(`Invalid arguments for ${action}: ${formatZodIssues(parsed.error.issues)}`);
   }
-  return fallback;
+  return parsed.data;
 }
 
-export interface AriaFilter {
+interface AriaFilter {
   maxDepth?: number;
   includeText?: boolean;
   roles?: string[];
 }
 
+/** Spaces of indent per level in Playwright's ariaSnapshot() YAML. */
+const ARIA_INDENT = 2;
+
 /**
  * Apply fox_snapshot's maxDepth / includeText / roles to Playwright's
- * ariaSnapshot() YAML. One line is one node, two spaces of indent per level.
- * With `roles` the result is a flat list of the matching lines.
+ * ariaSnapshot() YAML. One line is one node, ARIA_INDENT spaces of indent
+ * per level. With `roles` the result is a flat list of the matching lines.
  */
 export function filterAriaSnapshot(yaml: string, o: AriaFilter): string {
   let lines = yaml.split('\n').filter((l) => l.trim() !== '');
-  const depth = (l: string): number => Math.floor((l.length - l.trimStart().length) / 2);
-  if (o.maxDepth !== undefined) lines = lines.filter((l) => depth(l) < o.maxDepth!);
+  const depth = (l: string): number => Math.floor((l.length - l.trimStart().length) / ARIA_INDENT);
+  const { maxDepth } = o;
+  if (maxDepth !== undefined) lines = lines.filter((l) => depth(l) < maxDepth);
   if (o.includeText === false) lines = lines.filter((l) => !/^\s*- text:/.test(l));
   if (o.roles !== undefined && o.roles.length > 0) {
     const wanted = new Set(o.roles.map((r) => r.toLowerCase()));
@@ -53,7 +65,7 @@ interface IgnoredParam {
 }
 
 /** Parameters the headless backend does not honour, per action. */
-const HEADLESS_IGNORED: Record<string, IgnoredParam[]> = {
+const HEADLESS_IGNORED: Readonly<Partial<Record<BrowserAction, readonly IgnoredParam[]>>> = {
   navigate: [{ key: 'waitForLoad', def: true, note: 'always waits for domcontentloaded' }],
   refresh: [{ key: 'bypassCache', def: false, note: 'cache is not bypassed' }],
   screenshot: [
@@ -109,8 +121,10 @@ const HEADLESS_IGNORED: Record<string, IgnoredParam[]> = {
 
 /** One warning per parameter that was set to something other than its default and is ignored. */
 export function ignoredParamWarnings(action: string, args: Record<string, unknown>): string[] {
+  const known = BrowserActionSchema.safeParse(action);
+  const params = known.success ? HEADLESS_IGNORED[known.data] ?? [] : [];
   const out: string[] = [];
-  for (const p of HEADLESS_IGNORED[action] ?? []) {
+  for (const p of params) {
     const v = args[p.key];
     if (v === undefined || v === null || v === p.def || p.same?.includes(v)) continue;
     out.push(`${p.key}: ignored in headless mode (${p.note})`);

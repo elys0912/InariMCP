@@ -7,6 +7,9 @@ import { HeadlessBrowser } from '../src/headless/backend.js';
 
 type Result = Record<string, unknown>;
 
+// Arguments are passed as the tool schemas deliver them (defaults filled in).
+const NEW_BLANK_TAB = { url: 'about:blank' };
+
 const browser = new HeadlessBrowser();
 let available = false;
 
@@ -14,7 +17,7 @@ const PAGE = (body: string): string =>
   `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><html><body style="margin:0">${body}</body></html>`)}`;
 
 async function load(body: string): Promise<void> {
-  const r = await browser.execute('navigate', undefined, { url: PAGE(body) });
+  const r = await browser.execute('navigate', undefined, { url: PAGE(body), newTab: false });
   expect(r['success']).toBe(true);
 }
 
@@ -41,7 +44,7 @@ function real(name: string, fn: () => Promise<void>, timeout = 30_000): void {
 describe('snapshot', () => {
   real('returns the accessibility tree as text, never base64', async () => {
     await load('<h1>Shop</h1><a href="/x">Home</a><button>Buy</button><p>Hello</p>');
-    const r = await browser.execute('snapshot', undefined, {});
+    const r = await browser.execute('snapshot', undefined, { includeText: true });
     expect(r['success']).toBe(true);
     expect(r['format']).toBe('aria-yaml');
     expect(r).not.toHaveProperty('base64');
@@ -53,15 +56,15 @@ describe('snapshot', () => {
 
   real('filters by role and text, and fails for an unknown selector', async () => {
     await load('<h1>Shop</h1><a href="/x">Home</a><button>Buy</button>');
-    const flat = await browser.execute('snapshot', undefined, { roles: ['button'] });
+    const flat = await browser.execute('snapshot', undefined, { roles: ['button'], includeText: true });
     expect(flat['snapshot']).toBe('- button "Buy"');
-    const missing = await browser.execute('snapshot', undefined, { selector: '#nope' });
+    const missing = await browser.execute('snapshot', undefined, { selector: '#nope', includeText: true });
     expect(missing['success']).toBe(false);
   });
 
   real('warns when the selector matches several elements', async () => {
     await load('<button>A</button><button>B</button>');
-    const r = await browser.execute('snapshot', undefined, { selector: 'button' });
+    const r = await browser.execute('snapshot', undefined, { selector: 'button', includeText: true });
     expect(r['success']).toBe(true);
     expect(String((r['warnings'] as string[])[0])).toContain('matched 2');
   });
@@ -70,21 +73,30 @@ describe('snapshot', () => {
 describe('scroll', () => {
   const TALL = '<div style="height:3000px">tall</div><div id="t" style="height:10px">target</div><div style="height:3000px"></div>';
 
-  real('moves the window by direction and amount (default: down 300)', async () => {
+  real('moves the window by direction and amount (no direction: down)', async () => {
     await load(TALL);
     const down = await browser.execute('scroll', undefined, { direction: 'down', amount: 300 });
     expect(down).toMatchObject({ success: true, scrolled: true, target: 'window', position: { y: 300 } });
-    const dflt = await browser.execute('scroll', undefined, {});
-    expect(dflt['position']).toMatchObject({ y: 600 });
+    const dflt = await browser.execute('scroll', undefined, { amount: 300 });
+    expect(dflt).toMatchObject({ direction: 'down', position: { y: 600 } });
     const up = await browser.execute('scroll', undefined, { direction: 'up', amount: -100 });
     expect(up['position']).toMatchObject({ y: 500 });
-    const top = await browser.execute('scroll', undefined, { direction: 'top' });
+    const top = await browser.execute('scroll', undefined, { direction: 'top', amount: 300 });
     expect(top['position']).toMatchObject({ y: 0 });
+  });
+
+  real('an unknown direction fails and does not scroll', async () => {
+    await load(TALL);
+    const r = await browser.execute('scroll', undefined, { direction: 'sideways', amount: 300 });
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain('direction');
+    const windowY = await browser.execute('execute_script', undefined, { script: 'window.scrollY' });
+    expect(windowY['result']).toBe(0);
   });
 
   real('bottom reaches the end and a further down reports scrolled:false', async () => {
     await load(TALL);
-    await browser.execute('scroll', undefined, { direction: 'bottom' });
+    await browser.execute('scroll', undefined, { direction: 'bottom', amount: 300 });
     const again = await browser.execute('scroll', undefined, { direction: 'down', amount: 300 });
     expect(again['success']).toBe(true);
     expect(again['scrolled']).toBe(false);
@@ -102,7 +114,7 @@ describe('scroll', () => {
 
   real('toElement brings the element into view and wins over direction', async () => {
     await load(TALL);
-    const r = await browser.execute('scroll', undefined, { toElement: '#t', direction: 'top' });
+    const r = await browser.execute('scroll', undefined, { toElement: '#t', direction: 'top', amount: 300 });
     expect(r['success']).toBe(true);
     expect((r['element'] as { tag: string }).tag).toBe('div');
     expect((r['position'] as { y: number }).y).toBeGreaterThan(2000);
@@ -110,8 +122,8 @@ describe('scroll', () => {
 
   real('an unknown selector or toElement fails', async () => {
     await load(TALL);
-    expect((await browser.execute('scroll', undefined, { selector: '#none', direction: 'down' }))['success']).toBe(false);
-    expect((await browser.execute('scroll', undefined, { toElement: '#none' }))['success']).toBe(false);
+    expect((await browser.execute('scroll', undefined, { selector: '#none', direction: 'down', amount: 300 }))['success']).toBe(false);
+    expect((await browser.execute('scroll', undefined, { toElement: '#none', amount: 300 }))['success']).toBe(false);
   });
 });
 
@@ -155,7 +167,7 @@ describe('dialogs', () => {
   beforeEach(async () => {
     tab = undefined;
     if (!available) return;
-    const created = await browser.execute('create_tab', undefined, {});
+    const created = await browser.execute('create_tab', undefined, NEW_BLANK_TAB);
     expect(created['success']).toBe(true);
     tab = created['tabId'] as number;
   }, 30_000);
@@ -186,7 +198,7 @@ describe('dialogs', () => {
     await load('<p>x</p>');
     // Order, not wall-clock time: get_page_info must return while the handler still waits.
     let waitingDone = false;
-    const waiting = browser.execute('handle_dialog', undefined, { timeout: 5_000 });
+    const waiting = browser.execute('handle_dialog', undefined, { action: 'dismiss', timeout: 5_000 });
     void waiting.then(() => { waitingDone = true; });
     const info = await browser.execute('get_page_info', undefined, {});
     expect(info['success']).toBe(true);
@@ -211,7 +223,7 @@ describe('dialogs', () => {
 
   real('closing the tab ends a waiting handle_dialog at once', async () => {
     const started = Date.now();
-    const waiting = browser.execute('handle_dialog', tab, { timeout: 20_000 });
+    const waiting = browser.execute('handle_dialog', tab, { action: 'dismiss', timeout: 20_000 });
     await new Promise((r) => setTimeout(r, 200));
     expect((await browser.execute('close_tab', tab, {}))['success']).toBe(true);
     const r = await waiting;
@@ -272,14 +284,19 @@ describe('warnings and timeouts', () => {
     expect(String(r['error'])).toContain('rightClick');
   });
 
-  real('timeoutMs and timeout both shorten a wait', async () => {
+  real('timeout shortens a wait', async () => {
     await load('<p>x</p>');
-    for (const key of ['timeoutMs', 'timeout']) {
-      const started = Date.now();
-      const r = await browser.execute('wait_for_element', undefined, { selector: '#never', [key]: 300 });
-      expect(r['success']).toBe(false);
-      expect(Date.now() - started).toBeLessThan(5_000);
-    }
+    const started = Date.now();
+    const r = await browser.execute('wait_for_element', undefined, { selector: '#never', timeout: 300 });
+    expect(r['success']).toBe(false);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  real('an argument the tool schema guarantees is required', async () => {
+    await load('<p>x</p>');
+    const r = await browser.execute('wait_for_element', undefined, { selector: '#never' });
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain('Invalid arguments for wait_for_element: timeout');
   });
 });
 
@@ -402,7 +419,7 @@ describe('waits and page scripts end on their own (R-1, L-1, R-8)', () => {
     await load('<p>x</p>');
     const started = Date.now();
     const r = await browser.execute('wait_and_act', undefined,
-      { condition: 'new Promise(() => {})', actionScript: '1', timeoutMs: 500 });
+      { condition: 'new Promise(() => {})', actionScript: '1', pollIntervalMs: 200, timeoutMs: 500 });
     expect(r['success']).toBe(false);
     expect(Date.now() - started).toBeLessThan(5_000);
   });
@@ -432,7 +449,12 @@ describe('waits and page scripts end on their own (R-1, L-1, R-8)', () => {
   real('an eval_chain step that never settles fails at the deadline', async () => {
     await load('<p>x</p>');
     const r = await browser.execute('eval_chain', undefined,
-      { steps: [{ script: '1' }, { label: 'hang', script: 'new Promise(() => {})' }] }, ctx(500));
+      {
+        steps: [
+          { script: '1', captureConsole: true, stopOnError: true },
+          { label: 'hang', script: 'new Promise(() => {})', captureConsole: true, stopOnError: true },
+        ],
+      }, ctx(500));
     expect(r['success']).toBe(true);
     const steps = r['steps'] as Array<{ label: string; error: string | null }>;
     expect(steps[0]!.error).toBeNull();
@@ -474,13 +496,13 @@ describe('results name the tab and its URL (O-1)', () => {
     expect(click['tabId']).toBe(active);
     const script = await browser.execute('execute_script', undefined, { script: '1' });
     expect(script).toMatchObject({ success: true, result: 1, tabId: active });
-    const nav = await browser.execute('navigate', undefined, { url: PAGE('<p>y</p>') });
+    const nav = await browser.execute('navigate', undefined, { url: PAGE('<p>y</p>'), newTab: false });
     expect(nav['tabId']).toBe(active);
   });
 
   real('an action on another tab names that tab; a closed tab is not reported', async () => {
     await load('<p>first</p>');
-    const created = await browser.execute('create_tab', undefined, {});
+    const created = await browser.execute('create_tab', undefined, NEW_BLANK_TAB);
     const other = created['tabId'] as number;
     const tabs = await browser.execute('get_tabs', undefined, {});
     const first = (tabs['tabs'] as Array<{ id: number }>).find((t) => t.id !== other)!.id;
@@ -512,7 +534,7 @@ describe('closing the last tab (Q-1)', () => {
     const click = await browser.execute('click', undefined, { selector: '#a' });
     expect(click['success']).toBe(false);
     expect(String(click['error'])).toContain('No headless tab is open');
-    const plain = await browser.execute('navigate', undefined, { url: PAGE('<p>x</p>') });
+    const plain = await browser.execute('navigate', undefined, { url: PAGE('<p>x</p>'), newTab: false });
     expect(String(plain['error'])).toContain('No headless tab is open');
 
     const opened = await browser.execute('navigate', undefined, { url: PAGE('<p>new</p>'), newTab: true });
@@ -520,7 +542,7 @@ describe('closing the last tab (Q-1)', () => {
     expect(typeof opened['tabId']).toBe('number');
     expect((await browser.execute('close_tab', opened['tabId'] as number, {}))['success']).toBe(true);
 
-    const created = await browser.execute('create_tab', undefined, {});
+    const created = await browser.execute('create_tab', undefined, NEW_BLANK_TAB);
     expect(created['success']).toBe(true);
     await load('<p>back</p>');
     expect(await list()).toEqual([created['tabId']]);

@@ -214,8 +214,11 @@ const foxHoverSchema = z.object({
   tabId,
 });
 
+/** The directions fox_scroll accepts (the headless backend checks the same list). */
+export const SCROLL_DIRECTIONS = ['up', 'down', 'left', 'right', 'top', 'bottom'] as const;
+
 const foxScrollSchema = z.object({
-  direction: z.enum(['up', 'down', 'left', 'right', 'top', 'bottom']).optional().describe('Scroll direction'),
+  direction: z.enum(SCROLL_DIRECTIONS).optional().describe('Scroll direction'),
   amount: z.number().int().optional().default(300).describe('Scroll amount in pixels'),
   selector: z.string().optional().describe('CSS selector for scrollable element'),
   toElement: z.string().optional().describe('CSS selector of element to scroll into view'),

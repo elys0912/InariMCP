@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { AnyZodObject, ZodTypeAny } from 'zod';
-import { argTimeout, filterAriaSnapshot, ignoredParamWarnings } from '../src/headless/helpers.js';
+import { filterAriaSnapshot, ignoredParamWarnings, parseArgs } from '../src/headless/helpers.js';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
 import { HEADLESS_COMMAND_TIMEOUT_MS } from '../src/connection/manager.js';
 import {
@@ -11,19 +11,21 @@ import {
   NAVIGATE_TIMEOUT_MS,
   SCRIPT_TIMEOUT_MS,
   SELECT_OPTION_TIMEOUT_MS,
+  WAIT_AND_ACT_DEFAULT_MS,
+  WAIT_AND_ACT_POLL_MS,
 } from '../src/headless/limits.js';
 
-describe('argTimeout', () => {
-  it('accepts timeoutMs and timeout, timeoutMs first', () => {
-    expect(argTimeout({ timeoutMs: 500 }, 10_000)).toBe(500);
-    expect(argTimeout({ timeout: 700 }, 10_000)).toBe(700);
-    expect(argTimeout({ timeoutMs: 500, timeout: 700 }, 10_000)).toBe(500);
+describe('parseArgs', () => {
+  const schema = z.object({ selector: z.string(), timeout: z.number() });
+
+  it('returns the arguments the schema describes', () => {
+    expect(parseArgs(schema, { selector: '#a', timeout: 5, extra: true }, 'wait_for_element'))
+      .toEqual({ selector: '#a', timeout: 5 });
   });
 
-  it('falls back for missing, zero, negative and non-numeric values', () => {
-    for (const args of [{}, { timeout: 0 }, { timeoutMs: -1 }, { timeout: '5' }, { timeout: NaN }]) {
-      expect(argTimeout(args, 1234)).toBe(1234);
-    }
+  it('names the action and every issue when they do not fit', () => {
+    expect(() => parseArgs(schema, { timeout: '5' }, 'wait_for_element'))
+      .toThrow('Invalid arguments for wait_for_element: selector: Required; timeout: Expected number, received string');
   });
 });
 
@@ -146,6 +148,14 @@ describe('HEADLESS_IGNORED against the tool schemas', () => {
       }
     }
     expect(checked).toBeGreaterThan(10);
+  });
+});
+
+describe('wait_and_act values for zero or negative arguments', () => {
+  it('equal the tool schema defaults', () => {
+    const shape = (TOOL_SCHEMAS['fox_wait_and_act']!.inputSchema as AnyZodObject).shape;
+    expect(shape['timeoutMs'].parse(undefined)).toBe(WAIT_AND_ACT_DEFAULT_MS);
+    expect(shape['pollIntervalMs'].parse(undefined)).toBe(WAIT_AND_ACT_POLL_MS);
   });
 });
 

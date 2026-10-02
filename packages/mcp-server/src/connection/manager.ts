@@ -69,7 +69,7 @@ export function currentCommandContext(): CommandContext | undefined {
  * Hands a command to a browser connection. The connection serializes it if
  * its transport needs to (ws-bridge.ts); the headless backend takes it as is.
  */
-export type SendFn = (command: BrowserCommand) => void | Promise<void>;
+type SendFn = (command: BrowserCommand) => void | Promise<void>;
 
 /**
  * Kind of browser connection. Selection priority:
