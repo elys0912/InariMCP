@@ -17,7 +17,8 @@ vi.mock('node:fs', async (importOriginal) => {
   return { ...actual, statSync, default: { ...actual, statSync } };
 });
 
-const { listScreenshots } = await import('../src/utils/screenshot.js');
+const { getScreenshotsDir, listScreenshots } = await import('../src/utils/screenshot.js');
+const { defaultScreenshotsDir } = await import('@kitsune-mcp/shared/node');
 
 let dir: string;
 const saved = process.env['FOX_SCREENSHOTS_DIR'];
@@ -62,5 +63,20 @@ describe('listScreenshots (2.A3)', () => {
     touch('file.png', 1_000);
     process.env['FOX_SCREENSHOTS_DIR'] = path.join(dir, 'file.png');
     expect(listScreenshots()).toEqual([]);
+  });
+});
+
+// R2-B C-3: a blank value was taken as a directory named ' ', and a relative
+// one was left relative (unlike the Native Host's screenshot-store.ts).
+describe('getScreenshotsDir', () => {
+  it('a blank FOX_SCREENSHOTS_DIR is unset: the legacy name, then the default', () => {
+    expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: '  ' })).toBe(defaultScreenshotsDir());
+    expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: '', CLAUDE_BROWSER_SCREENSHOTS_DIR: dir })).toBe(dir);
+    expect(getScreenshotsDir({})).toBe(defaultScreenshotsDir());
+  });
+
+  it('a relative directory is made absolute against the working directory', () => {
+    expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: 'shots' })).toBe(path.resolve('shots'));
+    expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: dir })).toBe(dir);
   });
 });
