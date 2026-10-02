@@ -4,6 +4,14 @@ import { z } from 'zod';
 import type { AnyZodObject, ZodTypeAny } from 'zod';
 import { argTimeout, filterAriaSnapshot, ignoredParamWarnings } from '../src/headless/helpers.js';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
+import { HEADLESS_COMMAND_TIMEOUT_MS } from '../src/connection/manager.js';
+import {
+  ELEMENT_TIMEOUT_MS,
+  HISTORY_TIMEOUT_MS,
+  NAVIGATE_TIMEOUT_MS,
+  SCRIPT_TIMEOUT_MS,
+  SELECT_OPTION_TIMEOUT_MS,
+} from '../src/headless/limits.js';
 
 describe('argTimeout', () => {
   it('accepts timeoutMs and timeout, timeoutMs first', () => {
@@ -138,5 +146,15 @@ describe('HEADLESS_IGNORED against the tool schemas', () => {
       }
     }
     expect(checked).toBeGreaterThan(10);
+  });
+});
+
+describe('step timeouts stay below the headless command timeout (R-3)', () => {
+  it('every single-step timeout, and the two waits of type / set_value together, end first', () => {
+    for (const ms of [NAVIGATE_TIMEOUT_MS, HISTORY_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, SELECT_OPTION_TIMEOUT_MS, SCRIPT_TIMEOUT_MS]) {
+      expect(ms).toBeLessThan(HEADLESS_COMMAND_TIMEOUT_MS);
+    }
+    expect(2 * ELEMENT_TIMEOUT_MS).toBeLessThan(HEADLESS_COMMAND_TIMEOUT_MS);
+    expect(2 * SELECT_OPTION_TIMEOUT_MS).toBeLessThan(HEADLESS_COMMAND_TIMEOUT_MS);
   });
 });

@@ -20,10 +20,12 @@ import {
   HIGHLIGHT_MS,
   HISTORY_TIMEOUT_MS,
   NAVIGATE_TIMEOUT_MS,
+  SCRIPT_TIMEOUT_MS,
   SCROLL_DEFAULT_AMOUNT_PX,
   SELECT_OPTION_TIMEOUT_MS,
   SNAPSHOT_MAX_CHARS,
   WAIT_AND_ACT_DEFAULT_MS,
+  WAIT_AND_ACT_POLL_MIN_MS,
   WAIT_AND_ACT_POLL_MS,
   WAIT_FOR_ELEMENT_DEFAULT_MS,
   WAIT_FOR_NAVIGATION_DEFAULT_MS,
@@ -97,6 +99,52 @@ export type HeadlessRoute =
   | { kind: 'unsupported' };
 
 // ---------------------------------------------------------------------------
+// Bounded page scripts
+// ---------------------------------------------------------------------------
+
+/** What bounds a wait: a deadline (Date.now() value) and an optional abort. */
+interface Bound {
+  deadline: number;
+  signal: AbortSignal | undefined;
+}
+
+/**
+ * `work` (a page.evaluate(), which has no timeout of its own), given up
+ * after `ms`, at `bound.deadline` or when `bound.signal` aborts, whichever
+ * comes first. Giving up does not stop the script in the page; it frees
+ * execute()'s lock for the next command.
+ */
+function bounded<T>(work: Promise<T>, bound: Bound, ms: number, what: string): Promise<T> {
+  const limit = Math.max(0, Math.min(ms, bound.deadline - Date.now()));
+  work.catch(() => { /* the loser of the race below */ });
+  return new Promise<T>((resolve, reject) => {
+    const done = (): void => {
+      clearTimeout(timer);
+      bound.signal?.removeEventListener('abort', onAbort);
+    };
+    const onAbort = (): void => {
+      done();
+      reject(new Error(`${what} was cancelled: the caller gave up`));
+    };
+    const timer = setTimeout(() => {
+      done();
+      reject(new Error(`${what} did not finish within ${limit} ms`));
+    }, limit);
+    if (bound.signal?.aborted === true) {
+      onAbort();
+      return;
+    }
+    bound.signal?.addEventListener('abort', onAbort, { once: true });
+    work.then((v) => { done(); resolve(v); }, (e: unknown) => { done(); reject(e); });
+  });
+}
+
+/** page.evaluate(script), bounded by SCRIPT_TIMEOUT_MS and `bound`. */
+function evaluateScript(page: Page, script: string, bound: Bound, what = 'The script'): Promise<unknown> {
+  return bounded(page.evaluate(script), bound, SCRIPT_TIMEOUT_MS, what);
+}
+
+// ---------------------------------------------------------------------------
 // Password guard
 // ---------------------------------------------------------------------------
 
@@ -122,9 +170,9 @@ async function guardedFill(
   value: string,
   args: Record<string, unknown>,
 ): Promise<void> {
-  const target = await page.waitForSelector(selector, { state: 'attached' });
+  const target = await page.waitForSelector(selector, { state: 'attached', timeout: ELEMENT_TIMEOUT_MS });
   refusePassword(await target.evaluate(isPasswordElement), args);
-  await target.fill(value);
+  await target.fill(value, { timeout: ELEMENT_TIMEOUT_MS });
 }
 
 // ---------------------------------------------------------------------------
@@ -294,13 +342,13 @@ const scroll: ActionHandler = async ({ page, args }) => {
 // --- hover ---
 const hover: ActionHandler = async ({ page, args }) => {
   const selector = (args['selector'] as string) ?? '';
-  await page.hover(selector);
+  await page.hover(selector, { timeout: ELEMENT_TIMEOUT_MS });
   return { success: true };
 };
 
 // --- refresh ---
 const refresh: ActionHandler = async ({ page }) => {
-  await page.reload();
+  await page.reload({ timeout: NAVIGATE_TIMEOUT_MS });
   return { success: true };
 };
 
@@ -342,9 +390,9 @@ const getElements: ActionHandler = async ({ page, args }) => {
 };
 
 // --- execute_script ---
-const executeScript: ActionHandler = async ({ page, args }) => {
-  const script = (args['script'] as string) ?? '';
-  const result = await page.evaluate(script);
+const executeScript: ActionHandler = async (c) => {
+  const script = (c.args['script'] as string) ?? '';
+  const result = await evaluateScript(c.page, script, c);
   return { success: true, result };
 };
 
@@ -387,7 +435,13 @@ const createTab: ActionHandler = async ({ args, host }) => {
   const url = (args['url'] as string) ?? 'about:blank';
   const newPage = await host.context.newPage();
   if (url !== 'about:blank') {
-    await newPage.goto(url);
+    try {
+      await newPage.goto(url, { timeout: NAVIGATE_TIMEOUT_MS });
+    } catch (e) {
+      // Not registered yet: close it, or it stays open where no tab command reaches it.
+      await newPage.close().catch(() => { /* the goto error is the one to report */ });
+      throw e;
+    }
   }
   const newId = host.adoptTab(newPage);
   return { success: true, tabId: newId, url: newPage.url() };
@@ -501,7 +555,7 @@ const pressKey: ActionHandler = async ({ page, args }) => {
   if (args['meta']) mods.push('Meta');
   const combo = [...mods, key].join('+');
   const selector = args['selector'] as string | undefined;
-  if (selector) await page.focus(selector);
+  if (selector) await page.focus(selector, { timeout: ELEMENT_TIMEOUT_MS });
   await page.keyboard.press(combo);
   return { success: true, key: combo };
 };
@@ -529,7 +583,8 @@ const findText: ActionHandler = async ({ page, args }) => {
 };
 
 // --- eval_chain ---
-const evalChain: ActionHandler = async ({ page, args }) => {
+const evalChain: ActionHandler = async (c) => {
+  const { page, args } = c;
   const steps = (args['steps'] as Array<Record<string, unknown>>) ?? [];
   const results: Record<string, unknown>[] = [];
   let prev: unknown = null;
@@ -550,7 +605,7 @@ const evalChain: ActionHandler = async ({ page, args }) => {
 
     try {
       const wrapped = `(function($prev) { return (${script}); })(${JSON.stringify(prev)})`;
-      const result = await page.evaluate(wrapped);
+      const result = await evaluateScript(page, wrapped, c, `Step ${label}`);
       prev = result;
       results.push({ label, result, console: consoleMsgs, error: null });
     } catch (e) {
@@ -569,24 +624,40 @@ const evalChain: ActionHandler = async ({ page, args }) => {
 };
 
 // --- wait_and_act ---
-const waitAndAct: ActionHandler = async ({ page, args }) => {
+/** pollIntervalMs as a usable interval: positive and finite, at least WAIT_AND_ACT_POLL_MIN_MS. */
+function pollInterval(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return WAIT_AND_ACT_POLL_MS;
+  return Math.max(WAIT_AND_ACT_POLL_MIN_MS, v);
+}
+
+const waitAndAct: ActionHandler = async (c) => {
+  const { page, args } = c;
   const condition = (args['condition'] as string) ?? 'true';
   const actionScript = (args['actionScript'] as string) ?? '';
-  const pollMs = (args['pollIntervalMs'] as number) ?? WAIT_AND_ACT_POLL_MS;
+  const pollMs = pollInterval(args['pollIntervalMs']);
   const timeoutMs = argTimeout(args, WAIT_AND_ACT_DEFAULT_MS);
-  let elapsed = 0;
-  while (elapsed < timeoutMs) {
+  const startedAt = Date.now();
+  // Measured time, not the sum of the poll intervals: a slow condition
+  // counts, and the loop ends whatever the interval is.
+  const polling: Bound = { deadline: Math.min(startedAt + timeoutMs, c.deadline), signal: c.signal };
+  for (;;) {
+    let ready = false;
     try {
-      const ready = await page.evaluate(condition);
-      if (ready) {
-        const result = await page.evaluate(actionScript);
-        return { success: true, result, elapsed_ms: elapsed };
-      }
+      ready = Boolean(await evaluateScript(page, condition, polling, 'The condition'));
     } catch {
-      // condition threw — keep polling
+      // the condition threw or hung: keep polling
     }
-    await new Promise((r) => setTimeout(r, pollMs));
-    elapsed += pollMs;
+    if (ready) {
+      // Run once: a failing action is reported, not retried.
+      const result = await evaluateScript(page, actionScript, c, 'The action');
+      return { success: true, result, elapsed_ms: Date.now() - startedAt };
+    }
+    if (c.signal?.aborted === true) {
+      return { success: false, error: 'wait_and_act was cancelled: the caller gave up' };
+    }
+    const left = polling.deadline - Date.now();
+    if (left <= 0) break;
+    await new Promise((r) => setTimeout(r, Math.min(pollMs, left)));
   }
   return { success: false, error: `Condition not met within ${timeoutMs}ms` };
 };

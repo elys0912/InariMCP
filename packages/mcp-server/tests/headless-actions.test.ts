@@ -368,3 +368,97 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
     expect((await queued)['success']).toBe(true);
   });
 });
+
+describe('waits and page scripts end on their own (R-1, L-1, R-8)', () => {
+  const ctx = (ms: number): { deadline: number; signal: AbortSignal } =>
+    ({ deadline: Date.now() + ms, signal: new AbortController().signal });
+
+  real('wait_and_act with pollIntervalMs 0 or negative ends at timeoutMs and frees the lock', async () => {
+    await load('<p>x</p>');
+    for (const pollIntervalMs of [0, -50]) {
+      const started = Date.now();
+      const r = await browser.execute('wait_and_act', undefined,
+        { condition: 'false', actionScript: '1', pollIntervalMs, timeoutMs: 300 });
+      expect(r['success']).toBe(false);
+      expect(String(r['error'])).toContain('Condition not met');
+      expect(Date.now() - started).toBeLessThan(5_000);
+    }
+    expect((await browser.execute('get_page_info', undefined, {}))['success']).toBe(true);
+  });
+
+  real('wait_and_act reports the measured elapsed_ms', async () => {
+    await load('<p>x</p>');
+    const r = await browser.execute('wait_and_act', undefined, {
+      condition: `(() => { window.__t ??= Date.now(); return Date.now() - window.__t > 300; })()`,
+      actionScript: "'done'",
+      pollIntervalMs: 50,
+      timeoutMs: 5_000,
+    });
+    expect(r).toMatchObject({ success: true, result: 'done' });
+    expect(r['elapsed_ms'] as number).toBeGreaterThanOrEqual(250);
+  });
+
+  real('a condition that never settles does not hold wait_and_act past timeoutMs', async () => {
+    await load('<p>x</p>');
+    const started = Date.now();
+    const r = await browser.execute('wait_and_act', undefined,
+      { condition: 'new Promise(() => {})', actionScript: '1', timeoutMs: 500 });
+    expect(r['success']).toBe(false);
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  real('execute_script whose promise never settles is given up at the deadline', async () => {
+    await load('<p>x</p>');
+    const started = Date.now();
+    const r = await browser.execute('execute_script', undefined, { script: 'new Promise(() => {})' }, ctx(500));
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain('did not finish');
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect((await browser.execute('get_page_info', undefined, {}))['success']).toBe(true);
+  });
+
+  real('execute_script is given up at once when the caller gives up', async () => {
+    await load('<p>x</p>');
+    const abort = new AbortController();
+    const running = browser.execute('execute_script', undefined, { script: 'new Promise(() => {})' },
+      { deadline: Infinity, signal: abort.signal });
+    await new Promise((r) => setTimeout(r, 200));
+    abort.abort();
+    const r = await running;
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain('cancelled');
+  });
+
+  real('an eval_chain step that never settles fails at the deadline', async () => {
+    await load('<p>x</p>');
+    const r = await browser.execute('eval_chain', undefined,
+      { steps: [{ script: '1' }, { label: 'hang', script: 'new Promise(() => {})' }] }, ctx(500));
+    expect(r['success']).toBe(true);
+    const steps = r['steps'] as Array<{ label: string; error: string | null }>;
+    expect(steps[0]!.error).toBeNull();
+    expect(steps[1]).toMatchObject({ label: 'hang' });
+    expect(String(steps[1]!.error)).toContain('did not finish');
+  });
+});
+
+describe('element waits and create_tab (R-3, R-2)', () => {
+  real('set_value on a missing element fails within the element timeout, not after 60 s', async () => {
+    await load('<p>x</p>');
+    const started = Date.now();
+    const r = await browser.execute('set_value', undefined, { selector: '#never', value: 'v' });
+    expect(r['success']).toBe(false);
+    expect(Date.now() - started).toBeLessThan(15_000);
+  }, 40_000);
+
+  real('a create_tab whose page load fails leaves no page behind', async () => {
+    const pages = (): number =>
+      (browser as unknown as { _context: { pages(): unknown[] } })._context.pages().length;
+    const tabs = async (): Promise<number> =>
+      (await browser.execute('get_tabs', undefined, {}))['totalTabs'] as number;
+    const before = { pages: pages(), tabs: await tabs() };
+    const r = await browser.execute('create_tab', undefined, { url: 'not a url' });
+    expect(r['success']).toBe(false);
+    expect(pages()).toBe(before.pages);
+    expect(await tabs()).toBe(before.tabs);
+  });
+});

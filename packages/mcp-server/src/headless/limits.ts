@@ -7,16 +7,28 @@
  * per-command timeouts the MCP server waits for (connection/manager.ts).
  */
 
-// --- Playwright timeouts of single steps (the call has no timeout for them) ---
+// --- Timeouts of single steps (the call has no timeout argument for them) ---
+// Each stays below HEADLESS_COMMAND_TIMEOUT_MS (35 s, connection/manager.ts),
+// so a step fails on its own before the server stops waiting
+// (tests/headless-helpers.test.ts).
 
-/** page.goto() of navigate. */
+/** page.goto() of navigate and create_tab, page.reload() of refresh. */
 export const NAVIGATE_TIMEOUT_MS = 30_000;
 /** page.goBack() / page.goForward(). */
 export const HISTORY_TIMEOUT_MS = 15_000;
-/** Waiting for the element of click, snapshot and get_text. */
+/**
+ * Waiting for an element: click, hover, snapshot, get_text, the focus of
+ * press_key, and each of the two waits of type / set_value (find, then fill).
+ */
 export const ELEMENT_TIMEOUT_MS = 10_000;
 /** The option lookup and page.selectOption() of select_option. */
 export const SELECT_OPTION_TIMEOUT_MS = 5_000;
+/**
+ * A page script: execute_script, each eval_chain step, and each condition /
+ * action of wait_and_act. A script whose promise never settles is given up
+ * (it may still run in the page).
+ */
+export const SCRIPT_TIMEOUT_MS = 30_000;
 
 // --- Defaults of the timeout / timeoutMs argument (see argTimeout) ---
 
@@ -30,8 +42,10 @@ export const HANDLE_DIALOG_DEFAULT_MS = 10_000;
 
 // --- Waits ---
 
-/** Poll interval of wait_and_act when pollIntervalMs is not given. */
+/** Poll interval of wait_and_act when pollIntervalMs is not given (or not a positive number). */
 export const WAIT_AND_ACT_POLL_MS = 200;
+/** Shortest poll interval of wait_and_act; smaller pollIntervalMs values are raised to it. */
+export const WAIT_AND_ACT_POLL_MIN_MS = 10;
 /** How long fox_highlight's outline stays (the duration argument is ignored). */
 export const HIGHLIGHT_MS = 2_000;
 /** Longest a dialog nobody asked for may stay open before it is dismissed (it blocks the page). */
