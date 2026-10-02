@@ -140,14 +140,28 @@ function header(req: http.IncomingMessage, name: string): string | undefined {
  * Checks signed requests (auth.ts): MAC, timestamp window, and that the
  * nonce was not used before (replay). Nonces are remembered for twice the
  * timestamp window, after which a replay fails the timestamp check anyway.
+ *
+ * The timestamp is compared with the wall clock (the client signs with its
+ * own), but how long a nonce is remembered is measured on a monotonic clock:
+ * a wall clock set forward must not make us forget nonces that are still
+ * inside the window once it is set back, and a clock set back must not
+ * break the expiry order the pruning relies on. Only a wall clock set back
+ * by more than the window after a nonce was forgotten can reopen it.
  */
 export class SignedRequestVerifier {
+  /** nonce → expiry on the monotonic clock. Insertion order = expiry order. */
   private readonly seen = new Map<string, number>();
 
   constructor(
     private readonly token: string,
     private readonly windowMs: number = HTTP_SIGNATURE_WINDOW_MS,
+    private readonly monotonicNow: () => number = () => performance.now(),
   ) {}
+
+  /** Nonces currently remembered (tests). */
+  get rememberedNonces(): number {
+    return this.seen.size;
+  }
 
   /** True when the request carries signature headers at all. */
   static isSigned(req: http.IncomingMessage): boolean {
@@ -173,15 +187,16 @@ export class SignedRequestVerifier {
     );
     if (!macMatches(signature, expected)) return undefined;
 
-    this.prune(now);
+    const mono = this.monotonicNow();
+    this.prune(mono);
     if (this.seen.has(nonce) || this.seen.size >= MAX_REMEMBERED_NONCES) return undefined;
-    this.seen.set(nonce, now + 2 * this.windowMs);
+    this.seen.set(nonce, mono + 2 * this.windowMs);
     return nonce;
   }
 
-  private prune(now: number): void {
+  private prune(mono: number): void {
     for (const [nonce, expiry] of this.seen) {
-      if (expiry > now) break; // insertion order = expiry order
+      if (expiry > mono) break; // insertion order = expiry order (monotonic clock)
       this.seen.delete(nonce);
     }
   }

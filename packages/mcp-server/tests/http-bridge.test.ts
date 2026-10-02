@@ -3,7 +3,7 @@ import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getConnectionManager } from '../src/connection/manager.js';
-import { isAllowedHostHeader, startHttpBridge, type HttpBridgeOptions } from '../src/transport/http-bridge.js';
+import { SignedRequestVerifier, isAllowedHostHeader, startHttpBridge, type HttpBridgeOptions } from '../src/transport/http-bridge.js';
 import {
   AUTH_HEADER,
   DAEMON_PROTOCOL_VERSION,
@@ -132,6 +132,47 @@ describe('signed requests', () => {
     expect(r.status).toBe(200);
     expect(r.json['success']).toBe(true);
     expect(verifyResponse(TOKEN, s.nonce, 200, r.raw, r.headers[AUTH_HEADER.signature])).toBe(true);
+  });
+
+  describe('nonce memory follows a monotonic clock (X-5, L-2)', () => {
+    const WINDOW = 1_000;
+    const T = 1_700_000_000_000;
+
+    function signedReq(wallNow: number): { req: http.IncomingMessage; nonce: string } {
+      const s = signRequest(TOKEN, 'GET', '/daemon/info', '', wallNow);
+      const req = new http.IncomingMessage(new net.Socket());
+      req.method = 'GET';
+      req.url = '/daemon/info';
+      req.headers = { ...s.headers };
+      return { req, nonce: s.nonce };
+    }
+
+    it('a wall clock set forward and back again does not reopen a used nonce', () => {
+      let mono = 0;
+      const v = new SignedRequestVerifier(TOKEN, WINDOW, () => mono);
+      const a = signedReq(T);
+      expect(v.verify(a.req, Buffer.alloc(0), T)).toBe(a.nonce);
+      // The wall clock jumps far ahead (a wall-clock prune would forget A here) ...
+      mono = 1;
+      const b = signedReq(T + 100 * WINDOW);
+      expect(v.verify(b.req, Buffer.alloc(0), T + 100 * WINDOW)).toBe(b.nonce);
+      // ... and back: A is still inside its window, and still a replay.
+      mono = 2;
+      expect(v.verify(a.req, Buffer.alloc(0), T + 1)).toBeUndefined();
+    });
+
+    it('a wall clock set back does not keep expired nonces', () => {
+      let mono = 0;
+      const v = new SignedRequestVerifier(TOKEN, WINDOW, () => mono);
+      expect(v.verify(signedReq(T).req, Buffer.alloc(0), T)).toBeDefined();
+      mono = 1;
+      // Set back by 100 windows: entered later, must not block the pruning of what follows.
+      expect(v.verify(signedReq(T - 100 * WINDOW).req, Buffer.alloc(0), T - 100 * WINDOW)).toBeDefined();
+      expect(v.rememberedNonces).toBe(2);
+      mono = 2 * WINDOW + 2;
+      expect(v.verify(signedReq(T).req, Buffer.alloc(0), T)).toBeDefined();
+      expect(v.rememberedNonces).toBe(1); // both earlier ones expired on the monotonic clock
+    });
   });
 
   it('still accepts X-API-Key for manual debugging, unsigned', async () => {
