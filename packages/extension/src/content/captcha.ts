@@ -9,9 +9,9 @@ function detectCaptcha(): { present: boolean; widgets: CaptchaWidget[] } {
   const widgets: CaptchaWidget[] = [];
 
   function hasResponseToken(name: string): boolean {
-    const el = document.querySelector(
+    const el = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(
       `textarea[name="${CSS.escape(name)}"], input[name="${CSS.escape(name)}"]`,
-    ) as HTMLInputElement | HTMLTextAreaElement | null;
+    );
     return !!(el && el.value && el.value.length > 0);
   }
 

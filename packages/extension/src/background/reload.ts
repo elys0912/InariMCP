@@ -88,22 +88,23 @@ export async function reloadMatchingTabs(
     targets.push(tab);
   }
 
-  const settled = await Promise.allSettled(
-    // async: a reload that throws at once counts as that tab's failure.
-    targets.map(async (tab) => browser.tabs.reload(tab.id, { bypassCache })),
-  );
-  const results: { id: number; url: string; reloaded: boolean; error?: string }[] = targets.map(
-    (tab, i) => {
-      const outcome = settled[i]!;
-      return outcome.status === "fulfilled"
-        ? { id: tab.id, url: tab.url ?? "", reloaded: true }
-        : {
+  // Each tab's reload settles into its own result (none rejects), so one
+  // failure does not stop the others; a reload that throws at once counts
+  // as that tab's failure too.
+  const results: { id: number; url: string; reloaded: boolean; error?: string }[] = await Promise.all(
+    targets.map(async (tab) => {
+      try {
+        await browser.tabs.reload(tab.id, { bypassCache });
+        return { id: tab.id, url: tab.url ?? "", reloaded: true };
+      } catch (reason) {
+        return {
           id: tab.id,
           url: tab.url ?? "",
           reloaded: false,
-          error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason),
+          error: reason instanceof Error ? reason.message : String(reason),
         };
-    },
+      }
+    }),
   );
   const reloadedCount = results.filter((r) => r.reloaded).length;
   const failedCount = results.length - reloadedCount;

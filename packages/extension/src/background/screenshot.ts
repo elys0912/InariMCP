@@ -4,7 +4,7 @@ import type { ContentRequest } from "../content/types";
 import { findUrlRule, type CompiledUrlRule } from "../url-rule";
 import { TIMEOUTS, TOP_FRAME_ID } from "./constants";
 import { isTabInScope } from "./container-scope";
-import { noTargetTab } from "./tab-target";
+import { noTargetTab, resolveTab } from "./tab-target";
 import { urlPatternArg, shouldSkipTab, urlMatches, positiveOr } from "./tab-wait";
 import type { ScreenshotOptions, CommandResult, ScopeFilter, UrlLists } from "./types";
 import { NO_URL_LISTS, violatesUrlLists } from "./url-policy";
@@ -18,10 +18,7 @@ export async function takeScreenshot(
   options: ScreenshotOptions = {},
 ): Promise<CommandResult> {
   try {
-    const currentTab = (
-      await browser.tabs.query({ active: true, currentWindow: true })
-    )[0];
-    const targetTab = tabId ? await browser.tabs.get(tabId) : currentTab;
+    const targetTab = await resolveTab(tabId);
     if (!targetTab) return noTargetTab();
 
     // saveToFile false: images reach the MCP client only as files the

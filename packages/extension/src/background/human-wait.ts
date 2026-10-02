@@ -20,11 +20,16 @@ export async function trackHumanWait(
   tabId: number | undefined,
   run: (tabId: number | undefined) => Promise<CommandResult>,
 ): Promise<CommandResult> {
+  // A given tab id is used as it is (handleCommand already resolved and
+  // pinned the target, and resolveTab would only look the same id up again);
+  // without one, the active tab is pinned here.
   let pinned = tabId;
-  try {
-    pinned = (await resolveTab(tabId))?.id ?? tabId;
-  } catch {
-    // run() reports the missing tab itself
+  if (!tabId) {
+    try {
+      pinned = (await resolveTab(tabId))?.id ?? tabId;
+    } catch {
+      // run() reports the missing tab itself
+    }
   }
   const key = requestId === undefined ? undefined : String(requestId);
   if (key !== undefined && pinned !== undefined) humanWaits.set(key, pinned);

@@ -9,6 +9,9 @@ import {
   sleep,
   getElementInfo,
   isTextInput,
+  isInputElement,
+  isButtonElement,
+  isSelectElement,
   locatorWithoutText,
   hasLocator,
   assertNotPasswordField,
@@ -118,8 +121,13 @@ export function typingDelay(length: number, requested: unknown, budgetMs: number
   return Math.min(base, Math.floor(budgetMs / length));
 }
 
+/** An HTML element with contentEditable on (SVG / MathML elements: false). */
+function isContentEditable(el: Element): boolean {
+  return (el as HTMLElement).isContentEditable === true;
+}
+
 function isEditable(el: Element): boolean {
-  return isTextInput(el) || (el as HTMLElement).isContentEditable === true;
+  return isTextInput(el) || isContentEditable(el);
 }
 
 const IMPLICIT_SUBMIT_BLOCKING_TYPES: ReadonlySet<string> = new Set([
@@ -136,14 +144,14 @@ const IMPLICIT_SUBMIT_BLOCKING_TYPES: ReadonlySet<string> = new Set([
  */
 function implicitSubmit(form: HTMLFormElement): "submitted" | "invalid" | "blocked" {
   const controls = Array.from(form.elements);
-  const submitter = controls.find((el) =>
-    (el.tagName === "BUTTON" && (el as HTMLButtonElement).type === "submit") ||
-    (el.tagName === "INPUT" && ["submit", "image"].includes((el as HTMLInputElement).type)),
-  ) as HTMLButtonElement | HTMLInputElement | undefined;
+  const submitter = controls.find((el): el is HTMLButtonElement | HTMLInputElement =>
+    (isButtonElement(el) && el.type === "submit") ||
+    (isInputElement(el) && ["submit", "image"].includes(el.type)),
+  );
   if (submitter?.disabled) return "blocked";
   if (!submitter) {
     const fields = controls.filter((el) =>
-      el.tagName === "INPUT" && IMPLICIT_SUBMIT_BLOCKING_TYPES.has((el as HTMLInputElement).type),
+      isInputElement(el) && IMPLICIT_SUBMIT_BLOCKING_TYPES.has(el.type),
     );
     if (fields.length > 1) return "blocked";
   }
@@ -172,7 +180,7 @@ function pressEnterOn(target: Element, submit: boolean): string {
   if (proceed) target.dispatchEvent(new KeyboardEvent("keypress", init));
   target.dispatchEvent(new KeyboardEvent("keyup", init));
   if (!proceed) return "prevented";
-  const form = target.tagName === "INPUT" ? (target as HTMLInputElement).form : null;
+  const form = isInputElement(target) ? target.form : null;
   if (!submit || !form) return "none";
   return implicitSubmit(form);
 }
@@ -215,12 +223,11 @@ export async function performType(
   await sleep(100);
 
   const text = options.text || "";
-  const htmlEl = element as HTMLInputElement;
 
   if (options.clear) {
     if (isTextInput(element)) {
-      htmlEl.value = "";
-    } else if ((element as HTMLElement).isContentEditable) {
+      element.value = "";
+    } else if (isContentEditable(element)) {
       element.textContent = "";
     }
     element.dispatchEvent(new Event("input", { bubbles: true }));
@@ -229,8 +236,8 @@ export async function performType(
   const delay = typingDelay(text.length, options.delay, TIMEOUTS.TYPING_BUDGET);
   if (options.instant) {
     if (isTextInput(element)) {
-      htmlEl.value = options.clear ? text : htmlEl.value + text;
-    } else if ((element as HTMLElement).isContentEditable) {
+      element.value = options.clear ? text : element.value + text;
+    } else if (isContentEditable(element)) {
       element.textContent = options.clear
         ? text
         : (element.textContent || "") + text;
@@ -244,8 +251,8 @@ export async function performType(
       element.dispatchEvent(new KeyboardEvent("keypress", keyInit));
 
       if (isTextInput(element)) {
-        htmlEl.value += char;
-      } else if ((element as HTMLElement).isContentEditable) {
+        element.value += char;
+      } else if (isContentEditable(element)) {
         document.execCommand("insertText", false, char);
       }
 
@@ -312,14 +319,11 @@ export async function performScroll(
         scrollX = amount;
         break;
       case "top":
-        if (element) (element as HTMLElement).scrollTop = 0;
+        if (element) element.scrollTop = 0;
         else window.scrollTo({ top: 0, behavior: "smooth" });
         return { scrolled: true, position: { x: 0, y: 0 } };
       case "bottom":
-        if (element)
-          (element as HTMLElement).scrollTop = (
-            element as HTMLElement
-          ).scrollHeight;
+        if (element) element.scrollTop = element.scrollHeight;
         else
           window.scrollTo({
             top: document.body.scrollHeight,
@@ -360,8 +364,8 @@ export async function performScroll(
   return {
     scrolled: true,
     position: {
-      x: element ? (element as HTMLElement).scrollLeft : window.scrollX,
-      y: element ? (element as HTMLElement).scrollTop : window.scrollY,
+      x: element ? element.scrollLeft : window.scrollX,
+      y: element ? element.scrollTop : window.scrollY,
     },
   };
 }
@@ -376,9 +380,9 @@ export function setValue(
 
   if (isTextInput(element)) {
     element.value = options.value;
-  } else if (element.tagName === "SELECT") {
-    (element as HTMLSelectElement).value = options.value;
-  } else if ((element as HTMLElement).isContentEditable) {
+  } else if (isSelectElement(element)) {
+    element.value = options.value;
+  } else if (isContentEditable(element)) {
     element.textContent = options.value;
   }
 
@@ -462,11 +466,11 @@ export function selectOption(
   options: SelectOptionOptions,
 ): Record<string, unknown> {
   const element = findElement(locatorWithoutText(options));
-  if (!element || element.tagName !== "SELECT") {
+  if (!element || !isSelectElement(element)) {
     throw new Error("Select element not found");
   }
 
-  const sel = element as HTMLSelectElement;
+  const sel = element;
   const all = Array.from(sel.options);
   let option: HTMLOptionElement | undefined;
   if (options.value !== undefined) {

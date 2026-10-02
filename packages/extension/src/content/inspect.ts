@@ -12,6 +12,7 @@ import {
   generateXPath,
   notFoundError,
   isTextInput,
+  isSelectElement,
   truncateText,
   truncatedValue,
 } from "./dom";
@@ -30,33 +31,33 @@ let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 export function getPageInfo(): Record<string, unknown> {
   const interactiveElements: Record<string, unknown>[] = [];
 
-  document.querySelectorAll(INTERACTIVE_SELECTORS.join(", ")).forEach((el, index) => {
-    if (index < 100) {
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        const htmlEl = el as HTMLInputElement;
-        interactiveElements.push({
-          tag: el.tagName.toLowerCase(),
-          type: htmlEl.type || null,
-          id: el.id || null,
-          name: htmlEl.name || null,
-          text: truncateText(el.textContent?.trim() ?? "", 100) || null,
-          href: (el as HTMLAnchorElement).href || null,
-          value: isPasswordField(el) ? "[MASKED]" : truncatedValue(htmlEl.value, 100),
-          placeholder: htmlEl.placeholder || null,
-          ariaLabel: el.getAttribute("aria-label"),
-          position: {
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2,
-            width: rect.width,
-            height: rect.height,
-          },
-          visible: isVisible(el),
-          selector: generateSelector(el),
-        });
-      }
+  const candidates = document.querySelectorAll(INTERACTIVE_SELECTORS.join(", "));
+  for (let index = 0; index < candidates.length && index < 100; index++) {
+    const el = candidates[index]!;
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      const htmlEl = el as HTMLInputElement;
+      interactiveElements.push({
+        tag: el.tagName.toLowerCase(),
+        type: htmlEl.type || null,
+        id: el.id || null,
+        name: htmlEl.name || null,
+        text: truncateText(el.textContent?.trim() ?? "", 100) || null,
+        href: (el as HTMLAnchorElement).href || null,
+        value: isPasswordField(el) ? "[MASKED]" : truncatedValue(htmlEl.value, 100),
+        placeholder: htmlEl.placeholder || null,
+        ariaLabel: el.getAttribute("aria-label"),
+        position: {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+          width: rect.width,
+          height: rect.height,
+        },
+        visible: isVisible(el),
+        selector: generateSelector(el),
+      });
     }
-  });
+  }
 
   return {
     url: window.location.href,
@@ -104,15 +105,15 @@ export function getElements(options: {
   const selector = options.selector || "*";
   const limit = options.limit || 50;
 
-  document.querySelectorAll(selector).forEach((el, index) => {
-    if (index < limit) {
-      elements.push(getElementInfo(el));
-    }
-  });
+  // One evaluation of the selector, read up to `limit` (the NodeList is static).
+  const matches = document.querySelectorAll(selector);
+  for (let index = 0; index < matches.length && index < limit; index++) {
+    elements.push(getElementInfo(matches[index]!));
+  }
 
   return {
     elements,
-    count: document.querySelectorAll(selector).length,
+    count: matches.length,
   };
 }
 
@@ -183,8 +184,11 @@ export function highlightElement(
 }
 
 function getVisibleInteractiveElements(): Record<string, unknown>[] {
+  // The first 50 visible ones, in document order: stop once there are 50.
   const elements: Record<string, unknown>[] = [];
-  document.querySelectorAll(INTERACTIVE_SELECTORS.join(", ")).forEach((el) => {
+  const candidates = document.querySelectorAll(INTERACTIVE_SELECTORS.join(", "));
+  for (let index = 0; index < candidates.length && elements.length < 50; index++) {
+    const el = candidates[index]!;
     const rect = el.getBoundingClientRect();
     if (
       rect.top < window.innerHeight &&
@@ -205,9 +209,9 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
         },
       });
     }
-  });
+  }
 
-  return elements.slice(0, 50);
+  return elements;
 }
 
 export async function scrollAndCapture(
@@ -222,7 +226,7 @@ export async function scrollAndCapture(
   const originalScroll = window.scrollY;
   let scrollCount = 0;
 
-  window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
+  window.scrollTo({ top: 0, behavior: "instant" });
   await sleep(delay);
 
   while (scrollCount < maxScrolls) {
@@ -249,7 +253,7 @@ export async function scrollAndCapture(
   if (options.restore !== false) {
     window.scrollTo({
       top: originalScroll,
-      behavior: "instant" as ScrollBehavior,
+      behavior: "instant",
     });
   }
 
@@ -323,10 +327,9 @@ export function getValue(
   if (isPasswordField(element)) {
     value = "[MASKED]";
   } else if (isTextInput(element)) {
-    value = (element as HTMLInputElement).value;
-  } else if (element.tagName === "SELECT") {
-    const sel = element as HTMLSelectElement;
-    value = sel.options[sel.selectedIndex]?.value ?? null;
+    value = element.value;
+  } else if (isSelectElement(element)) {
+    value = element.options[element.selectedIndex]?.value ?? null;
   } else {
     value = element.textContent;
   }

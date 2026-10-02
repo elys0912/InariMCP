@@ -23,9 +23,22 @@ export function isTextInput(el: Element): el is HTMLInputElement | HTMLTextAreaE
   return el.tagName === "INPUT" || el.tagName === "TEXTAREA";
 }
 
+// Element kinds by tag name (as the checks they replace; no instanceof).
+export function isInputElement(el: Element): el is HTMLInputElement {
+  return el.tagName === "INPUT";
+}
+
+export function isButtonElement(el: Element): el is HTMLButtonElement {
+  return el.tagName === "BUTTON";
+}
+
+export function isSelectElement(el: Element): el is HTMLSelectElement {
+  return el.tagName === "SELECT";
+}
+
 export function isPasswordField(element: Element): boolean {
-  if (element.tagName !== "INPUT") return false;
-  const input = element as HTMLInputElement;
+  if (!isInputElement(element)) return false;
+  const input = element;
   return (
     input.type === "password" ||
     input.getAttribute("autocomplete") === "current-password" ||

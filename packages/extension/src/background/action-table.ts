@@ -134,6 +134,16 @@ function toContentScript(action: ContentAction): ActionHandler {
   return (c) => sendToContentScript(c.tabId, { ...c.data, action });
 }
 
+/**
+ * The command's data as the options type of a handler: the one place the
+ * table narrows `data`. Not checked here -- the MCP Server validates each
+ * operation's arguments (operation schemas), and handlers read them
+ * defensively.
+ */
+function optionsOf<T>(c: ActionContext): T {
+  return c.data as T;
+}
+
 /** status (popup): host connection and setup state. */
 async function status(c: ActionContext): Promise<CommandResult> {
   // The popup asks for a recheck (e.g. right after running the installer)
@@ -152,53 +162,53 @@ async function status(c: ActionContext): Promise<CommandResult> {
 
 const ACTIONS = {
   // --- Page interaction ---
-  screenshot: { scope: "tab", protectedCheck: "upfront", handler: (c) => takeScreenshot(c.tabId, c.data as ScreenshotOptions) },
+  screenshot: { scope: "tab", protectedCheck: "upfront", handler: (c) => takeScreenshot(c.tabId, optionsOf<ScreenshotOptions>(c)) },
   click: { scope: "tab", protectedCheck: "upfront", handler: (c) => performClick(c.tabId, c.data) },
   type: { scope: "tab", protectedCheck: "upfront", handler: (c) => performType(c.tabId, c.data) },
   scroll: { scope: "tab", protectedCheck: "upfront", handler: (c) => performScroll(c.tabId, c.data) },
-  navigate: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateTo(c.tabId, c.data as { url: string }) },
+  navigate: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateTo(c.tabId, optionsOf<{ url: string }>(c)) },
   getPageInfo: { scope: "tab", protectedCheck: "upfront", handler: (c) => getPageInfo(c.tabId) },
   getElements: { scope: "tab", protectedCheck: "upfront", handler: (c) => getElements(c.tabId, c.data) },
-  executeScript: { scope: "tab", protectedCheck: "upfront", handler: (c) => executeScript(c.tabId, c.data as { script: string }) },
+  executeScript: { scope: "tab", protectedCheck: "upfront", handler: (c) => executeScript(c.tabId, optionsOf<{ script: string }>(c)) },
   highlight: { scope: "tab", protectedCheck: "upfront", handler: (c) => highlightElement(c.tabId, c.data) },
   waitForElement: { scope: "tab", protectedCheck: "upfront", handler: (c) => waitForElement(c.tabId, c.data) },
 
   // --- Tab management ---
-  getTabs: { scope: "self", protectedCheck: "none", handler: (c) => getAllTabs(c.data as GetAllTabsOptions, c.scope) },
+  getTabs: { scope: "self", protectedCheck: "none", handler: (c) => getAllTabs(optionsOf<GetAllTabsOptions>(c), c.scope) },
   createTab: {
     scope: "self",
     protectedCheck: "none",
     handler: (c) =>
       c.navigateInNewTab
-        ? navigateNewTab(c.data as { url: string; waitForLoad?: boolean }, c.scope)
-        : createNewTab(c.data as { url?: string; active?: boolean }, c.scope),
+        ? navigateNewTab(optionsOf<{ url: string; waitForLoad?: boolean }>(c), c.scope)
+        : createNewTab(optionsOf<{ url?: string; active?: boolean }>(c), c.scope),
   },
   closeTab: { scope: "tab", protectedCheck: "upfront", needsTabId: true, skipUrlReport: true, handler: (c) => closeTab(c.tabId!) },
   focusTab: { scope: "tab", protectedCheck: "upfront", needsTabId: true, handler: (c) => focusTab(c.tabId!) },
   getTabInfo: { scope: "tab", protectedCheck: "upfront", needsTabId: true, handler: (c) => getTabInfo(c.tabId!) },
-  findTabs: { scope: "self", protectedCheck: "none", handler: (c) => findTabs(c.data as FindTabsOptions, c.scope) },
+  findTabs: { scope: "self", protectedCheck: "none", handler: (c) => findTabs(optionsOf<FindTabsOptions>(c), c.scope) },
   screenshotAllTabs: {
     scope: "self",
     protectedCheck: "handler",
-    handler: (c) => screenshotAllTabs(c.data as ScreenshotOptions, c.scope, c.protectedPatterns, c.urlLists),
+    handler: (c) => screenshotAllTabs(optionsOf<ScreenshotOptions>(c), c.scope, c.protectedPatterns, c.urlLists),
   },
 
   // --- Reload / navigation ---
-  refresh: { scope: "tab", protectedCheck: "upfront", handler: (c) => refreshTab(c.tabId, c.data as RefreshOptions) },
+  refresh: { scope: "tab", protectedCheck: "upfront", handler: (c) => refreshTab(c.tabId, optionsOf<RefreshOptions>(c)) },
   hardRefresh: {
     scope: "tab",
     protectedCheck: "upfront",
-    handler: (c) => refreshTab(c.tabId, { ...(c.data as RefreshOptions), bypassCache: true }),
+    handler: (c) => refreshTab(c.tabId, { ...optionsOf<RefreshOptions>(c), bypassCache: true }),
   },
   reloadAll: {
     scope: "self",
     protectedCheck: "handler",
-    handler: (c) => reloadAllTabs(c.data as ReloadAllOptions, c.scope, c.protectedPatterns, c.urlLists),
+    handler: (c) => reloadAllTabs(optionsOf<ReloadAllOptions>(c), c.scope, c.protectedPatterns, c.urlLists),
   },
   reloadByUrl: {
     scope: "self",
     protectedCheck: "handler",
-    handler: (c) => reloadTabsByUrl(c.data as ReloadByUrlOptions, c.scope, c.protectedPatterns, c.urlLists),
+    handler: (c) => reloadTabsByUrl(optionsOf<ReloadByUrlOptions>(c), c.scope, c.protectedPatterns, c.urlLists),
   },
   goBack: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateHistory(c.tabId, "back") },
   goForward: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateHistory(c.tabId, "forward") },
@@ -211,7 +221,7 @@ const ACTIONS = {
   solveCaptcha: {
     scope: "tab",
     protectedCheck: "upfront",
-    handler: (c) => trackHumanWait(c.message.requestId, c.tabId, (id) => solveCaptcha(id, c.data as { detectOnly?: boolean })),
+    handler: (c) => trackHumanWait(c.message.requestId, c.tabId, (id) => solveCaptcha(id, optionsOf<{ detectOnly?: boolean }>(c))),
   },
   cancelHumanWait: { scope: "noTab", protectedCheck: "none", handler: (c) => cancelHumanWait(c.data) },
 
@@ -259,7 +269,7 @@ const ACTIONS = {
     protectedCheck: "none",
     handler: (c) =>
       openInContainer(
-        c.data as { url: string; containerName?: string; cookieStoreId?: string; color?: string; icon?: string; active?: boolean },
+        optionsOf<{ url: string; containerName?: string; cookieStoreId?: string; color?: string; icon?: string; active?: boolean }>(c),
         c.scope,
       ),
   },
