@@ -1,16 +1,19 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
-import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { ENV, isRecord, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { isFalsyEnv, isTruthyEnv, resolveFoxEnv } from '../utils/headless-env.js';
 import { auditLogPath, defaultSafetyConfigPath } from '@kitsune-mcp/shared/node';
 
+// `.strict()` on both objects: an unknown key (a typo such as `readonly` for
+// `read_only`) is a config error, not silently dropped, since the setting
+// the user meant to tighten would otherwise not apply.
 const ContainerScopeSchema = z.object({
   enabled: z.boolean(),
   // An empty name is not a container: the Extension refuses such a scope
   // (config_error), so it is a config error here too, enabled or not.
   containerName: z.string().min(1),
-});
+}).strict();
 
 export const SafetyConfigSchema = z.object({
   enabled: z.boolean(),
@@ -24,7 +27,7 @@ export const SafetyConfigSchema = z.object({
   allowedUrlPatterns: z.array(z.string()),
   protectedUrlPatterns: z.array(z.string()),
   containerScope: ContainerScopeSchema,
-});
+}).strict();
 
 export type SafetyConfig = z.infer<typeof SafetyConfigSchema>;
 
@@ -66,46 +69,111 @@ export const DEFAULT_CONFIG: SafetyConfig = {
   },
 } as const;
 
-const SNAKE_TO_CAMEL: Record<string, keyof SafetyConfig> = {
+/** Key in safety.json (snake_case) for every schema key; a missing entry is a compile error. */
+const FILE_KEYS: { readonly [K in keyof SafetyConfig]: string } = {
   enabled: 'enabled',
-  read_only: 'readOnly',
-  allow_script_execution: 'allowScriptExecution',
-  confirm_protected_actions: 'confirmProtectedActions',
-  allow_password_typing: 'allowPasswordTyping',
-  max_actions_per_minute: 'maxActionsPerMinute',
-  audit_log: 'auditLog',
-  blocked_url_patterns: 'blockedUrlPatterns',
-  allowed_url_patterns: 'allowedUrlPatterns',
-  protected_url_patterns: 'protectedUrlPatterns',
-  container_scope: 'containerScope',
+  readOnly: 'read_only',
+  allowScriptExecution: 'allow_script_execution',
+  confirmProtectedActions: 'confirm_protected_actions',
+  allowPasswordTyping: 'allow_password_typing',
+  maxActionsPerMinute: 'max_actions_per_minute',
+  auditLog: 'audit_log',
+  blockedUrlPatterns: 'blocked_url_patterns',
+  allowedUrlPatterns: 'allowed_url_patterns',
+  protectedUrlPatterns: 'protected_url_patterns',
+  containerScope: 'container_scope',
 };
 
-function snakeToCamelConfig(raw: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(raw)) {
-    const camelKey = SNAKE_TO_CAMEL[key] ?? key;
-    if (key === 'container_scope' && value && typeof value === 'object' && !Array.isArray(value)) {
-      const cs = value as Record<string, unknown>;
-      result[camelKey] = {
-        enabled: cs['enabled'],
-        containerName: cs['container_name'] ?? cs['containerName'],
-      };
-    } else {
-      result[camelKey] = value;
-    }
+const CONTAINER_FILE_KEYS: { readonly [K in keyof SafetyConfig['containerScope']]: string } = {
+  enabled: 'enabled',
+  containerName: 'container_name',
+};
+
+function invert(table: Readonly<Record<string, string>>): ReadonlyMap<string, string> {
+  return new Map(Object.entries(table).map(([camel, snake]) => [snake, camel]));
+}
+
+const FROM_FILE_KEY = invert(FILE_KEYS);
+const FROM_CONTAINER_FILE_KEY = invert(CONTAINER_FILE_KEYS);
+const TO_FILE_KEY: ReadonlyMap<string, string> = new Map(Object.entries(FILE_KEYS));
+const TO_CONTAINER_FILE_KEY: ReadonlyMap<string, string> = new Map(Object.entries(CONTAINER_FILE_KEYS));
+
+/**
+ * snake_case keys to the schema's camelCase. The camelCase spelling is
+ * accepted as well; any other key is kept as written, so that the strict
+ * schema reports it under the name the user wrote. (Object.fromEntries
+ * defines own properties, so even a `__proto__` key stays a reported key.)
+ */
+function camelizeKeys(raw: Record<string, unknown>, keys: ReadonlyMap<string, string>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(raw).map(([key, value]) => [keys.get(key) ?? key, value]));
+}
+
+function toFileKeys(config: SafetyConfig): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(FILE_KEYS) as (keyof SafetyConfig)[]) {
+    out[FILE_KEYS[key]] = key === 'containerScope'
+      ? {
+          [CONTAINER_FILE_KEYS.enabled]: config.containerScope.enabled,
+          [CONTAINER_FILE_KEYS.containerName]: config.containerScope.containerName,
+        }
+      : config[key];
   }
-  return result;
+  return out;
 }
 
-function resolveEnv(foxKey: string, legacyKey?: string): string | undefined {
-  return process.env[foxKey] ?? (legacyKey ? process.env[legacyKey] : undefined);
+export type SafetyConfigResult = { ok: true; config: SafetyConfig } | { ok: false; error: string };
+
+/**
+ * Validate the parsed content of safety.json: keys missing from the file
+ * (and from `container_scope`) take DEFAULT_CONFIG's value; an unknown key
+ * or a wrong type is an error. Shared by loadConfig() and the doctor.
+ */
+export function parseSafetyConfig(raw: unknown): SafetyConfigResult {
+  if (!isRecord(raw)) return { ok: false, error: 'safety.json must contain a JSON object' };
+  const camelized = camelizeKeys(raw, FROM_FILE_KEY);
+  const scope = camelized['containerScope'];
+  const merged = {
+    ...DEFAULT_CONFIG,
+    ...camelized,
+    // Only the keys written in the file: a partial container_scope keeps the
+    // defaults for the rest.
+    ...(isRecord(scope)
+      ? { containerScope: { ...DEFAULT_CONFIG.containerScope, ...camelizeKeys(scope, FROM_CONTAINER_FILE_KEY) } }
+      : {}),
+  };
+  const parsed = SafetyConfigSchema.safeParse(merged);
+  if (parsed.success) return { ok: true, config: parsed.data };
+  const issues = parsed.error.issues.map((i) => (i.path.length > 0 ? `${fileKeyPath(i.path)}: ${i.message}` : i.message));
+  return { ok: false, error: issues.join('; ') };
 }
 
-function getConfigPath(): string {
-  const envPath = resolveEnv(ENV.FOX_SAFETY_CONFIG, LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG);
-  if (envPath) return envPath;
-  return defaultSafetyConfigPath();
+/** A schema path as written in safety.json, e.g. `container_scope.container_name`. */
+function fileKeyPath(issuePath: readonly (string | number)[]): string {
+  return issuePath
+    .map(String)
+    .map((key, i) =>
+      (i === 0 ? TO_FILE_KEY.get(key) : i === 1 && issuePath[0] === 'containerScope' ? TO_CONTAINER_FILE_KEY.get(key) : undefined) ?? key)
+    .join('.');
 }
+
+/** Text of safety.json as JSON (a leading BOM, as some Windows editors write, is ignored). */
+export function parseSafetyConfigText(text: string): SafetyConfigResult {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text.replace(/^\uFEFF/, ''));
+  } catch (e) {
+    return { ok: false, error: `invalid JSON (${e instanceof Error ? e.message : String(e)})` };
+  }
+  return parseSafetyConfig(raw);
+}
+
+/** FOX_SAFETY_CONFIG (or the legacy name) when set and not blank, else ~/.kitsune-mcp/safety.json. */
+export function safetyConfigPath(env: NodeJS.ProcessEnv = process.env): string {
+  return resolveFoxEnv(env, ENV.FOX_SAFETY_CONFIG, LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG) ?? defaultSafetyConfigPath();
+}
+
+/** Mode of a config directory the daemon creates: the owner only. */
+const PRIVATE_DIR_MODE = 0o700;
 
 export function getAuditLogPath(): string {
   return auditLogPath();
@@ -120,52 +188,30 @@ export function getAuditLogPath(): string {
 export type LoadedSafetyConfig = SafetyConfig & { configError?: string };
 
 export function loadConfig(): LoadedSafetyConfig {
-  const configPath = getConfigPath();
+  const configPath = safetyConfigPath();
   let config: LoadedSafetyConfig = { ...DEFAULT_CONFIG };
 
   if (fs.existsSync(configPath)) {
+    let result: SafetyConfigResult;
     try {
-      const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-        throw new Error('safety.json must contain a JSON object');
-      }
-      const camelized = snakeToCamelConfig(raw as Record<string, unknown>);
-      const merged = { ...DEFAULT_CONFIG, ...camelized };
-      if (camelized['containerScope'] && typeof camelized['containerScope'] === 'object') {
-        merged.containerScope = { ...DEFAULT_CONFIG.containerScope, ...(camelized['containerScope'] as object) };
-      }
-      config = SafetyConfigSchema.parse(merged);
+      result = parseSafetyConfigText(fs.readFileSync(configPath, 'utf-8'));
     } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
+      result = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+    if (!result.ok) {
       process.stderr.write(
-        `[KitsuneMCP] WARNING: cannot use ${configPath} (${reason}). ` +
+        `[KitsuneMCP] WARNING: cannot use ${configPath} (${result.error}). ` +
         'The safety guard refuses every tool until the file is fixed and the daemon restarted.\n',
       );
-      return { ...DEFAULT_CONFIG, configError: `${configPath}: ${reason}` };
+      return { ...DEFAULT_CONFIG, configError: `${configPath}: ${result.error}` };
     }
+    config = result.config;
   } else {
     // No config yet: write the defaults. Failing to write them is not a
     // policy problem, so the defaults stay in force.
     try {
-      const dir = path.dirname(configPath);
-      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const fileConfig: Record<string, unknown> = {
-        enabled: DEFAULT_CONFIG.enabled,
-        read_only: DEFAULT_CONFIG.readOnly,
-        allow_script_execution: DEFAULT_CONFIG.allowScriptExecution,
-        confirm_protected_actions: DEFAULT_CONFIG.confirmProtectedActions,
-        allow_password_typing: DEFAULT_CONFIG.allowPasswordTyping,
-        max_actions_per_minute: DEFAULT_CONFIG.maxActionsPerMinute,
-        audit_log: DEFAULT_CONFIG.auditLog,
-        blocked_url_patterns: DEFAULT_CONFIG.blockedUrlPatterns,
-        allowed_url_patterns: DEFAULT_CONFIG.allowedUrlPatterns,
-        protected_url_patterns: DEFAULT_CONFIG.protectedUrlPatterns,
-        container_scope: {
-          enabled: DEFAULT_CONFIG.containerScope.enabled,
-          container_name: DEFAULT_CONFIG.containerScope.containerName,
-        },
-      };
-      fs.writeFileSync(configPath, JSON.stringify(fileConfig, null, 2) + '\n');
+      fs.mkdirSync(path.dirname(configPath), { recursive: true, mode: PRIVATE_DIR_MODE });
+      fs.writeFileSync(configPath, JSON.stringify(toFileKeys(DEFAULT_CONFIG), null, 2) + '\n');
       process.stderr.write(`[KitsuneMCP] Wrote default safety config to ${configPath}\n`);
     } catch (e) {
       process.stderr.write(
