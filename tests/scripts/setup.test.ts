@@ -1279,6 +1279,21 @@ describe('daemon authentication copy', () => {
       .toEqual({ host: '::ffff:127.0.0.1', port: MAX_PORT });
     expect(httpEndpoint({ FOX_HTTP_PORT: String(MAX_PORT + 1) }).port).toBe(8765);
   });
+
+  it('httpEndpoint treats an empty variable as unset like @kitsune-mcp/shared (R2-A R-2)', () => {
+    const legacyPort = 9001;
+    const legacyHost = '127.0.0.2';
+    const legacyPortEnv = { FOX_HTTP_PORT: '', CLAUDE_BROWSER_HTTP_PORT: String(legacyPort) };
+    const legacyHostEnv = { FOX_HOST: '', CLAUDE_BROWSER_HOST: legacyHost };
+    const emptyEnv = { FOX_HOST: '', FOX_HTTP_PORT: '' };
+    for (const env of [legacyPortEnv, legacyHostEnv, emptyEnv]) {
+      const endpoint = httpEndpoint(env);
+      expect(endpoint.port, JSON.stringify(env)).toBe(serverAuth.resolveHttpPort(undefined, env));
+      expect(endpoint.host, JSON.stringify(env)).toBe(serverAuth.resolveHost(env));
+    }
+    expect(httpEndpoint(legacyPortEnv).port).toBe(legacyPort);
+    expect(httpEndpoint(legacyHostEnv).host).toBe(legacyHost);
+  });
   // TODO(test): stopDaemonGracefully outcomes (stopped / refused / unanswered / still-running) and the uninstall daemon branch
 });
 
