@@ -1,7 +1,7 @@
 // Captcha detection and the wait for the human to solve it.
 
 import { t } from "../i18n";
-import { CAPTCHA_BANNER_ID, TIMEOUTS } from "./constants";
+import { CAPTCHA_BANNER_ID, DELAYS, TIMEOUTS } from "./constants";
 import { BANNER_SUPERSEDED, closeOverlayBanner, createOverlayBanner } from "./overlay";
 import type { CaptchaWidget, CaptchaOptions } from "./types";
 
@@ -110,7 +110,7 @@ export async function solveCaptcha(
         clearInterval(poll);
         resolve("token");
       }
-    }, 1000);
+    }, DELAYS.CAPTCHA_POLL);
     // Clean up poll when banner resolves first
     bannerPromise.then(() => clearInterval(poll));
   });

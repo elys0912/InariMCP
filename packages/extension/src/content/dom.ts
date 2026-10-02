@@ -1,6 +1,7 @@
 // DOM helpers: element location, locators, selectors / XPath, element info,
 // and the password field guard.
 
+import { LIMITS } from "./constants";
 import type { FindElementOptions, ElementInfo } from "./types";
 
 /**
@@ -148,7 +149,7 @@ function findByText(text: string): Element | null {
   );
   let firstVisible: Element | null = null;
   let first: Element | null = null;
-  for (let i = 0; i < Math.min(matches.snapshotLength, 50); i++) {
+  for (let i = 0; i < Math.min(matches.snapshotLength, LIMITS.TEXT_MATCHES); i++) {
     const el = matches.snapshotItem(i) as Element;
     first ??= el;
     if (!isVisible(el)) continue;
@@ -263,7 +264,7 @@ export function generateSelector(element: Element): string {
         .filter((c) => c && !/^[0-9]/.test(c));
       if (classes.length > 0) {
         selector +=
-          "." + classes.slice(0, 2).map((c) => CSS.escape(c)).join(".");
+          "." + classes.slice(0, LIMITS.SELECTOR_CLASSES).map((c) => CSS.escape(c)).join(".");
       }
     }
 
@@ -324,8 +325,8 @@ export function getElementInfo(element: Element): ElementInfo {
     classes: Array.from(element.classList),
     name: htmlEl.name || null,
     type: htmlEl.type || null,
-    text: truncateText(element.textContent?.trim() ?? "", 200) || null,
-    value: isPassword ? "[MASKED]" : truncatedValue(htmlEl.value, 200),
+    text: truncateText(element.textContent?.trim() ?? "", LIMITS.ELEMENT_TEXT) || null,
+    value: isPassword ? "[MASKED]" : truncatedValue(htmlEl.value, LIMITS.ELEMENT_TEXT),
     href: (element as HTMLAnchorElement).href || null,
     src: (element as HTMLImageElement).src || null,
     placeholder: htmlEl.placeholder || null,

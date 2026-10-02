@@ -30,7 +30,7 @@
 // passed to installPageHooks (log-store.ts), and it imports nothing from
 // log-store.ts.
 
-import { LOG_TEXT_LIMIT } from "./constants";
+import { LIMITS, LOG_TEXT_LIMIT } from "./constants";
 import { truncateText } from "./dom";
 import type { ConsoleLogEntry, NetworkLogEntry } from "./types";
 
@@ -180,7 +180,7 @@ function describeFetch(input: unknown, init: unknown): NetworkLogEntry {
     const fromInit = readHeaders(opts.headers);
     if (fromInit) requestHeaders = fromInit;
     if (opts.body !== undefined && opts.body !== null) {
-      requestBody = truncateText(safeString(opts.body), 1000);
+      requestBody = truncateText(safeString(opts.body), LIMITS.REQUEST_BODY);
     }
   }
 
@@ -379,7 +379,7 @@ function installXhrHooks(pageWin: Window & typeof globalThis, sink: PageHookSink
           entry.startTime = new Date().toISOString();
           entry.requestBody =
             args[0] !== undefined && args[0] !== null
-              ? truncateText(safeString(args[0]), 1000)
+              ? truncateText(safeString(args[0]), LIMITS.REQUEST_BODY)
               : null;
 
           xhr.addEventListener("load", () => {

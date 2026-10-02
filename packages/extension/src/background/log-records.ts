@@ -3,7 +3,7 @@
 
 import type { CommandResult } from "./types";
 import { clipText } from "../text-clip";
-import { LOG_TEXT_LIMIT } from "./constants";
+import { DEFAULTS, LIMITS, LOG_TEXT_LIMIT } from "./constants";
 
 /**
  * Copy one log entry from a content script into plain data: strings (cut
@@ -13,7 +13,7 @@ import { LOG_TEXT_LIMIT } from "./constants";
 export function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(raw).slice(0, 20)) {
+  for (const [key, value] of Object.entries(raw).slice(0, LIMITS.LOG_RECORD_FIELDS)) {
     if (typeof value === "string") {
       out[key] = clipText(value, LOG_TEXT_LIMIT);
     } else if (typeof value === "number") {
@@ -22,8 +22,8 @@ export function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null 
       out[key] = value;
     } else if (typeof value === "object" && !Array.isArray(value)) {
       const record: Record<string, string> = {};
-      for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, 50)) {
-        if (typeof v === "string") record[clipText(k, 200)] = clipText(v, 1000);
+      for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, LIMITS.LOG_RECORD_ENTRIES)) {
+        if (typeof v === "string") record[clipText(k, LIMITS.LOG_RECORD_KEY)] = clipText(v, LIMITS.LOG_RECORD_VALUE);
       }
       out[key] = record;
     }
@@ -48,9 +48,9 @@ export function appendLogRecords(target: Record<string, unknown>[], incoming: un
   return added;
 }
 
-/** Positive integer `limit`, else 100 (the tool default). */
+/** Positive integer `limit`, else DEFAULTS.LOGS_LIMIT (the tool default). */
 export function logLimit(value: unknown): number {
-  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 100;
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : DEFAULTS.LOGS_LIMIT;
 }
 
 /** fox_get_console_logs filters over a buffer (newest `limit` entries). */

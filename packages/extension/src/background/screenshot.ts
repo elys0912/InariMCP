@@ -2,7 +2,7 @@
 
 import type { ContentRequest } from "../content/types";
 import { findUrlRule, type CompiledUrlRule } from "../url-rule";
-import { TIMEOUTS, TOP_FRAME_ID } from "./constants";
+import { DEFAULTS, TIMEOUTS, TOP_FRAME_ID } from "./constants";
 import { isTabInScope } from "./container-scope";
 import { noTargetTab, resolveTab } from "./tab-target";
 import { urlPatternArg, shouldSkipTab, urlMatches, positiveOr } from "./tab-wait";
@@ -49,8 +49,8 @@ export async function takeScreenshot(
     // tab even when it is in the background, so the active tab is never
     // changed (no focus is taken from the user).
     const dataUrl = await browser.tabs.captureTab(targetTab.id, {
-      format: options.format || "png",
-      quality: options.quality || 90,
+      format: options.format || DEFAULTS.SCREENSHOT_FORMAT,
+      quality: options.quality || DEFAULTS.SCREENSHOT_QUALITY,
     });
 
     if (options.fullPage) {
@@ -93,15 +93,15 @@ async function captureFullPageImage(
   try {
     dimensions = (await browser.tabs.sendMessage(
       targetTab.id,
-      { action: "captureFullPage", format: options.format || "png" } satisfies ContentRequest,
+      { action: "captureFullPage", format: options.format || DEFAULTS.SCREENSHOT_FORMAT } satisfies ContentRequest,
       { frameId: TOP_FRAME_ID },
     )) as Record<string, unknown>;
     const width = dimensions.scrollWidth;
     const height = dimensions.scrollHeight;
     if (typeof width === "number" && typeof height === "number" && width > 0 && height > 0) {
       const fullDataUrl = await browser.tabs.captureTab(targetTab.id, {
-        format: options.format || "png",
-        quality: options.quality || 90,
+        format: options.format || DEFAULTS.SCREENSHOT_FORMAT,
+        quality: options.quality || DEFAULTS.SCREENSHOT_QUALITY,
         rect: { x: 0, y: 0, width, height },
       });
       return {
@@ -191,8 +191,8 @@ export async function screenshotAllTabs(
     const results = await captureTabsWithin(
       targetTabs,
       (tab) => browser.tabs.captureTab(tab.id, {
-        format: options.format || "png",
-        quality: options.quality || 90,
+        format: options.format || DEFAULTS.SCREENSHOT_FORMAT,
+        quality: options.quality || DEFAULTS.SCREENSHOT_QUALITY,
       }),
       { perTabMs: TIMEOUTS.CAPTURE_TAB, budgetMs, keepData: options.includeData === true },
     );

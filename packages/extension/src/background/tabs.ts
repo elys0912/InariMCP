@@ -1,7 +1,7 @@
 // Tab management tools and find_text (L3).
 
 import type { ContentRequest } from "../content/types";
-import { TOP_FRAME_ID } from "./constants";
+import { DEFAULTS, TOP_FRAME_ID } from "./constants";
 import { isTabInScope, ensureScopeContainer } from "./container-scope";
 import { noTargetTab } from "./tab-target";
 import { urlPatternArg, urlMatches } from "./tab-wait";
@@ -22,7 +22,7 @@ export async function getAllTabs(
     const limit =
       typeof options.limit === "number" && Number.isInteger(options.limit) && options.limit > 0
         ? options.limit
-        : 50;
+        : DEFAULTS.TABS_LIMIT;
 
     const queryOpts: browser.tabs.QueryInfo = currentWindowOnly
       ? { currentWindow: true }

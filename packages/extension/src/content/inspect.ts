@@ -1,7 +1,7 @@
 // Observation and display: page info, element lists, highlight, scroll
 // snapshots, full-page dimensions, inspect element, values and text.
 
-import { INTERACTIVE_SELECTORS, TIMEOUTS } from "./constants";
+import { DEFAULTS, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
 import {
   isPasswordField,
   isVisible,
@@ -32,7 +32,7 @@ export function getPageInfo(): Record<string, unknown> {
   const interactiveElements: Record<string, unknown>[] = [];
 
   const candidates = document.querySelectorAll(INTERACTIVE_SELECTORS.join(", "));
-  for (let index = 0; index < candidates.length && index < 100; index++) {
+  for (let index = 0; index < candidates.length && index < LIMITS.PAGE_INFO_ELEMENTS; index++) {
     const el = candidates[index]!;
     const rect = el.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
@@ -42,9 +42,9 @@ export function getPageInfo(): Record<string, unknown> {
         type: htmlEl.type || null,
         id: el.id || null,
         name: htmlEl.name || null,
-        text: truncateText(el.textContent?.trim() ?? "", 100) || null,
+        text: truncateText(el.textContent?.trim() ?? "", LIMITS.PAGE_INFO_TEXT) || null,
         href: (el as HTMLAnchorElement).href || null,
-        value: isPasswordField(el) ? "[MASKED]" : truncatedValue(htmlEl.value, 100),
+        value: isPasswordField(el) ? "[MASKED]" : truncatedValue(htmlEl.value, LIMITS.PAGE_INFO_TEXT),
         placeholder: htmlEl.placeholder || null,
         ariaLabel: el.getAttribute("aria-label"),
         position: {
@@ -74,7 +74,7 @@ export function getPageInfo(): Record<string, unknown> {
       action: form.action,
       method: form.method,
       fields: Array.from(form.elements)
-        .slice(0, 20)
+        .slice(0, LIMITS.FORM_FIELDS)
         .map((el) => {
           const inp = el as HTMLInputElement;
           return {
@@ -84,15 +84,15 @@ export function getPageInfo(): Record<string, unknown> {
             id: el.id,
             placeholder: inp.placeholder,
             required: inp.required,
-            value: inp.type === "password" ? "[MASKED]" : truncatedValue(inp.value, 50),
+            value: inp.type === "password" ? "[MASKED]" : truncatedValue(inp.value, LIMITS.FORM_FIELD_VALUE),
           };
         }),
     })),
     headings: Array.from(document.querySelectorAll("h1, h2, h3"))
-      .slice(0, 20)
+      .slice(0, LIMITS.HEADINGS)
       .map((h) => ({
         level: parseInt(h.tagName[1]),
-        text: truncateText(h.textContent?.trim() ?? "", 100),
+        text: truncateText(h.textContent?.trim() ?? "", LIMITS.HEADING_TEXT),
       })),
   };
 }
@@ -103,7 +103,7 @@ export function getElements(options: {
 }): Record<string, unknown> {
   const elements: ElementInfo[] = [];
   const selector = options.selector || "*";
-  const limit = options.limit || 50;
+  const limit = options.limit || DEFAULTS.ELEMENTS_LIMIT;
 
   // One evaluation of the selector, read up to `limit` (the NodeList is static).
   const matches = document.querySelectorAll(selector);
@@ -177,17 +177,17 @@ export function highlightElement(
   document.body.appendChild(highlightOverlay);
 
   if (options.duration !== 0) {
-    highlightTimer = setTimeout(removeHighlight, options.duration || 3000);
+    highlightTimer = setTimeout(removeHighlight, options.duration || TIMEOUTS.HIGHLIGHT);
   }
 
   return { highlighted: true, element: getElementInfo(element) };
 }
 
 function getVisibleInteractiveElements(): Record<string, unknown>[] {
-  // The first 50 visible ones, in document order: stop once there are 50.
+  // The first LIMITS.SNAPSHOT_ELEMENTS visible ones, in document order: stop once there are that many.
   const elements: Record<string, unknown>[] = [];
   const candidates = document.querySelectorAll(INTERACTIVE_SELECTORS.join(", "));
-  for (let index = 0; index < candidates.length && elements.length < 50; index++) {
+  for (let index = 0; index < candidates.length && elements.length < LIMITS.SNAPSHOT_ELEMENTS; index++) {
     const el = candidates[index]!;
     const rect = el.getBoundingClientRect();
     if (
@@ -201,7 +201,7 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
     ) {
       elements.push({
         tag: el.tagName.toLowerCase(),
-        text: truncateText(el.textContent?.trim() ?? "", 50) || null,
+        text: truncateText(el.textContent?.trim() ?? "", LIMITS.SNAPSHOT_TEXT) || null,
         selector: generateSelector(el),
         position: {
           x: Math.round(rect.left + rect.width / 2),
@@ -218,9 +218,9 @@ export async function scrollAndCapture(
   options: ScrollCaptureOptions,
 ): Promise<Record<string, unknown>> {
   const scrollStep =
-    options.scrollStep || window.innerHeight * 0.8;
+    options.scrollStep || window.innerHeight * DEFAULTS.SCROLL_CAPTURE_STEP_RATIO;
   const delay = options.delay || TIMEOUTS.SCROLL_STEP;
-  const maxScrolls = options.maxScrolls || 20;
+  const maxScrolls = options.maxScrolls || DEFAULTS.SCROLL_CAPTURE_MAX_SCROLLS;
 
   const snapshots: Record<string, unknown>[] = [];
   const originalScroll = window.scrollY;
@@ -240,7 +240,7 @@ export async function scrollAndCapture(
 
     if (
       window.scrollY + window.innerHeight >=
-      document.documentElement.scrollHeight - 10
+      document.documentElement.scrollHeight - LIMITS.SCROLL_END_SLACK
     ) {
       break;
     }
@@ -305,7 +305,7 @@ export function inspectElement(): Record<string, unknown> {
 
   highlightElement({
     selector: generateSelector(element),
-    duration: 5000,
+    duration: TIMEOUTS.INSPECT_HIGHLIGHT,
   });
 
   return {
@@ -347,7 +347,7 @@ export function getText(
     element = found;
   }
 
-  const maxLength = options.maxLength || 20000;
+  const maxLength = options.maxLength || DEFAULTS.TEXT_MAX_LENGTH;
   const text =
     (element as HTMLElement).innerText || element.textContent || "";
 

@@ -1,6 +1,6 @@
 // Input: click, type, scroll, set / select values, hover, key presses.
 
-import { TIMEOUTS } from "./constants";
+import { DEFAULTS, DELAYS, TIMEOUTS } from "./constants";
 import {
   findElement,
   notFoundError,
@@ -39,7 +39,7 @@ export async function performClick(
   }
 
   element.scrollIntoView({ behavior: "smooth", block: "center" });
-  await sleep(100);
+  await sleep(DELAYS.SCROLL_INTO_VIEW);
 
   const rect = element.getBoundingClientRect();
   const x = rect.left + rect.width / 2;
@@ -75,7 +75,7 @@ export async function performClick(
         clientY: y,
       }),
     );
-    await sleep(50);
+    await sleep(DELAYS.MOUSE_DOWN_UP);
     element.dispatchEvent(
       new MouseEvent("mouseup", {
         bubbles: true,
@@ -116,7 +116,7 @@ export function typingDelay(length: number, requested: unknown, budgetMs: number
   const base =
     typeof requested === "number" && Number.isFinite(requested) && requested >= 0
       ? requested
-      : 50;
+      : DEFAULTS.TYPING_DELAY;
   if (length <= 0) return base;
   return Math.min(base, Math.floor(budgetMs / length));
 }
@@ -220,7 +220,7 @@ export async function performType(
 
   (element as HTMLElement).focus();
   element.scrollIntoView({ behavior: "smooth", block: "center" });
-  await sleep(100);
+  await sleep(DELAYS.SCROLL_INTO_VIEW);
 
   const text = options.text || "";
 
@@ -295,13 +295,13 @@ export async function performScroll(
         behavior: options.smooth !== false ? "smooth" : "auto",
         block: options.block || "center",
       });
-      await sleep(500);
+      await sleep(DELAYS.SCROLL_TO_ELEMENT);
       return { scrolled: true, element: getElementInfo(targetElement) };
     }
   }
 
   if (options.direction) {
-    const amount = options.amount || 300;
+    const amount = options.amount || DEFAULTS.SCROLL_AMOUNT;
     let scrollX = 0;
     let scrollY = 0;
 
@@ -359,7 +359,7 @@ export async function performScroll(
     }
   }
 
-  await sleep(300);
+  await sleep(DELAYS.SCROLL_SETTLE);
 
   return {
     scrolled: true,
@@ -399,7 +399,7 @@ export async function hoverElement(
   if (!element) throw notFoundError(options);
 
   element.scrollIntoView({ behavior: "smooth", block: "center" });
-  await sleep(100);
+  await sleep(DELAYS.SCROLL_INTO_VIEW);
 
   const rect = element.getBoundingClientRect();
   const x = rect.left + rect.width / 2;

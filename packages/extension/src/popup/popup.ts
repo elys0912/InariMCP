@@ -204,6 +204,9 @@ async function refreshStatus(os: string, recheck: boolean): Promise<void> {
   renderSetup(state, os);
 }
 
+/** How long a toast stays. */
+const TOAST_MS = 3_000;
+
 function showToast(message: string, type: ToastType = 'info'): void {
   const existing = document.querySelector('.toast');
   if (existing) existing.remove();
@@ -213,7 +216,7 @@ function showToast(message: string, type: ToastType = 'info'): void {
   toast.textContent = message;
   document.body.appendChild(toast);
 
-  setTimeout(() => toast.remove(), 3000);
+  setTimeout(() => toast.remove(), TOAST_MS);
 }
 
 // ---------------------------------------------------------------------------

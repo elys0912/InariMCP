@@ -15,7 +15,7 @@ import {
   type ApprovalDecision,
 } from "../approval";
 import { clipText } from "../text-clip";
-import { TIMEOUTS } from "./constants";
+import { LIMITS, TIMEOUTS } from "./constants";
 import { setPendingApprovalCount } from "./setup-badge";
 import type { CommandResult } from "./types";
 
@@ -67,7 +67,7 @@ function notifyApproval(view: ApprovalView): void {
     const message =
       view.kind === "protected_action"
         ? t("notifyApprovalProtected", [view.toolName ?? "", view.host ?? ""])
-        : t("notifyApprovalQuestion", clipText(view.message || t("notifyApprovalDefault"), 160));
+        : t("notifyApprovalQuestion", clipText(view.message || t("notifyApprovalDefault"), LIMITS.APPROVAL_NOTIFICATION_TEXT));
     browser.notifications
       .create(APPROVAL_NOTIFICATION_PREFIX + view.id, {
         type: "basic",

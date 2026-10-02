@@ -1,7 +1,7 @@
 // Waits and observers: element, DOM change, network idle, mutation
 // observers, click and wait.
 
-import { TIMEOUTS } from "./constants";
+import { DELAYS, LIMITS, TIMEOUTS } from "./constants";
 import { findElement, isVisible, getElementInfo, sleep, generateSelector } from "./dom";
 import { performClick } from "./input";
 import { ensurePageHooks } from "./log-store";
@@ -21,7 +21,7 @@ export async function waitForElement(
   options: WaitOptions,
 ): Promise<Record<string, unknown>> {
   const timeout = options.timeout || TIMEOUTS.WAIT_ELEMENT;
-  const interval = options.interval || 100;
+  const interval = options.interval || DELAYS.POLL;
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeout) {
@@ -146,7 +146,7 @@ export async function waitForNetworkIdle(
   // were installed are not seen.
   ensurePageHooks();
   const timeout = options.timeout || TIMEOUTS.NETWORK_IDLE;
-  const idleTime = options.idleTime || 500;
+  const idleTime = options.idleTime || DELAYS.NETWORK_IDLE_TIME;
   const startTime = Date.now();
   let lastActivitySnapshot = activeRequestCount();
   let lastChangeTime = Date.now();
@@ -165,7 +165,7 @@ export async function waitForNetworkIdle(
         interception: { fetch: interceptionStatus().fetch, xhr: interceptionStatus().xhr },
       };
     }
-    await sleep(100);
+    await sleep(DELAYS.POLL);
   }
 
   // A timeout is a failure (success: false overrides the background's
@@ -219,7 +219,7 @@ export function observeElement(
         oldValue: mutation.oldValue,
       });
 
-      if (changes.length > 100) changes.shift();
+      if (changes.length > LIMITS.OBSERVER_CHANGES) changes.shift();
     }
   });
 
@@ -269,7 +269,7 @@ export function stopObserving(options: {
 export async function clickAndWait(
   options: ClickAndWaitOptions,
 ): Promise<Record<string, unknown>> {
-  const waitTimeout = options.waitTimeout || 5000;
+  const waitTimeout = options.waitTimeout || TIMEOUTS.CLICK_AND_WAIT;
   const waitForSel = options.waitForSelector;
   const shouldWaitForChange = options.waitForChange !== false;
 
@@ -308,10 +308,10 @@ export async function clickAndWait(
           waited: true,
           waitedMs: Date.now() - startTime,
           foundElement: getElementInfo(el),
-          changes: changes.slice(0, 20),
+          changes: changes.slice(0, LIMITS.CLICK_WAIT_CHANGES),
         };
       }
-      await sleep(100);
+      await sleep(DELAYS.POLL);
     }
   } else if (shouldWaitForChange) {
     let lastChangeCount = 0;
@@ -322,10 +322,10 @@ export async function clickAndWait(
         lastChangeCount = changes.length;
         stableTime = 0;
       } else {
-        stableTime += 100;
-        if (stableTime >= 500) break;
+        stableTime += DELAYS.POLL;
+        if (stableTime >= DELAYS.CLICK_SETTLE) break;
       }
-      await sleep(100);
+      await sleep(DELAYS.POLL);
     }
   }
 
@@ -335,7 +335,7 @@ export async function clickAndWait(
     ...clickResult,
     waited: true,
     waitedMs: Date.now() - startTime,
-    changes: changes.slice(0, 20),
+    changes: changes.slice(0, LIMITS.CLICK_WAIT_CHANGES),
     totalChanges: changes.length,
   };
 }
