@@ -7,9 +7,13 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+interface FakeStream extends EventEmitter {
+  setEncoding: ReturnType<typeof vi.fn>;
+}
+
 interface FakeChild extends EventEmitter {
-  stdout: EventEmitter;
-  stderr: EventEmitter;
+  stdout: FakeStream;
+  stderr: FakeStream;
   kill: ReturnType<typeof vi.fn>;
 }
 
@@ -27,10 +31,16 @@ vi.mock('node:child_process', () => ({
 
 const { spawnDaemonBreakaway } = await import('../src/breakaway.js');
 
+function fakeStream(): FakeStream {
+  const stream = new EventEmitter() as FakeStream;
+  stream.setEncoding = vi.fn();
+  return stream;
+}
+
 function fakeChild(): FakeChild {
   const child = new EventEmitter() as FakeChild;
-  child.stdout = new EventEmitter();
-  child.stderr = new EventEmitter();
+  child.stdout = fakeStream();
+  child.stderr = fakeStream();
   child.kill = vi.fn();
   return child;
 }
@@ -55,7 +65,7 @@ const LOG = 'C:\\Users\\someone\\.kitsune-mcp\\logs\\daemon.log';
 describe('spawnDaemonBreakaway', () => {
   it('runs a non-interactive PowerShell and passes the paths through the environment only', async () => {
     const started = spawnDaemonBreakaway(ENTRY, LOG);
-    child.stdout.emit('data', Buffer.from('4242\r\n'));
+    child.stdout.emit('data', '4242\r\n');
     child.emit('close', 0);
     await expect(started).resolves.toBe(4242);
 
@@ -77,7 +87,7 @@ describe('spawnDaemonBreakaway', () => {
 
   it('starts PowerShell in the given cwd (the daemon inherits it)', async () => {
     const started = spawnDaemonBreakaway(ENTRY, LOG, 'C:\\work');
-    child.stdout.emit('data', Buffer.from('7'));
+    child.stdout.emit('data', '7');
     child.emit('close', 0);
     await expect(started).resolves.toBe(7);
     expect(spawned.calls[0]!.options['cwd']).toBe('C:\\work');
@@ -85,7 +95,7 @@ describe('spawnDaemonBreakaway', () => {
 
   it('rejects with the exit code and the first stderr lines when PowerShell fails', async () => {
     const started = spawnDaemonBreakaway(ENTRY, LOG);
-    child.stderr.emit('data', Buffer.from('Exception calling "Start"\r\nAccess is denied\r\nline 3\r\nline 4\r\n'));
+    child.stderr.emit('data', 'Exception calling "Start"\r\nAccess is denied\r\nline 3\r\nline 4\r\n');
     child.emit('close', 1);
     await expect(started).rejects.toThrow('exit code 1: Exception calling "Start" Access is denied line 3');
     await expect(started).rejects.not.toThrow(/line 4/);
@@ -96,7 +106,7 @@ describe('spawnDaemonBreakaway', () => {
       child = fakeChild();
       spawned.child = child;
       const started = spawnDaemonBreakaway(ENTRY, LOG);
-      child.stdout.emit('data', Buffer.from(out));
+      child.stdout.emit('data', out);
       child.emit('close', 0);
       await expect(started, `stdout ${JSON.stringify(out)}`).rejects.toThrow(/^exit code 0$/);
     }
