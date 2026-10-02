@@ -211,6 +211,29 @@ describe('other issues', () => {
     expect(patterns).toHaveLength(1);
     expect(issues[0]!.fatal).toBe(false);
   });
+
+  // R2-B T-15: the warning was given only when the entry was written exactly
+  // as the (lower-cased) host, so these spellings went without it.
+  it.each(['LOCALHOST', 'intranet/', 'intranet:8080', 'http://intranet', 'intranet/admin'])(
+    'a single label written as %j warns as well',
+    (source) => {
+      for (const list of ['blocked', 'protected'] as const) {
+        const { patterns, issues } = compileUrlPatterns([source], list);
+        expect(patterns, `${list} ${source}`).toHaveLength(1);
+        expect(issues.map((i) => [i.fatal, /not '.+\.com' or other names containing it/.test(i.message)]), `${list} ${source}`)
+          .toEqual([[false, true]]);
+      }
+    },
+  );
+
+  it.each([
+    ['allowed', 'intranet'],
+    ['blocked', 'intra.net'],
+    ['blocked', '*.intranet'],
+    ['blocked', '[::1]'],
+  ] as const)('no single-label warning for %s %j', (list, source) => {
+    expect(compileUrlPatterns([source], list).issues).toEqual([]);
+  });
 });
 
 describe('wireSource (sent to the Extension, compiled there with flag i)', () => {

@@ -157,6 +157,20 @@ interface HostSpec {
   path: string | null;
 }
 
+/** Whether hostname `h` is one of the hosts a spec covers, by `hosts`. */
+const HOST_MATCHES: { readonly [K in HostSpec['hosts']]: (h: string, host: string) => boolean } = {
+  exact: (h, host) => h === host,
+  sub: (h, host) => h.endsWith(`.${host}`),
+  tree: (h, host) => h === host || h.endsWith(`.${host}`),
+};
+
+/** The same in wireSource: what may precede the host. */
+const SUBDOMAIN_RE: { readonly [K in HostSpec['hosts']]: string } = {
+  exact: '',
+  sub: '(?:[^/?#@]+\\.)',
+  tree: '(?:[^/?#@]+\\.)?',
+};
+
 /** Why a host-form pattern is unusable, or a spec. */
 type ParseResult = HostSpec | { error: string } | null;
 
@@ -260,13 +274,7 @@ function hostPattern(source: string, spec: HostSpec, list: PatternListName): Url
     const n = normalizeUrl(raw);
     if (n === null || n.hostname === '') return false;
     if (spec.scheme !== null && n.url.protocol !== `${spec.scheme}:`) return false;
-    const h = n.hostname;
-    const isSub = h.endsWith(`.${spec.host}`);
-    const hostOk =
-      spec.hosts === 'exact' ? h === spec.host
-        : spec.hosts === 'sub' ? isSub
-          : h === spec.host || isSub;
-    if (!hostOk) return false;
+    if (!HOST_MATCHES[spec.hosts](n.hostname, spec.host)) return false;
     if (spec.port !== null && effectivePort(n.url) !== spec.port) return false;
     if (wantPath === null) return true;
     const actual = strictPath ? n.url.pathname : loosePath(n.url.pathname);
@@ -275,8 +283,7 @@ function hostPattern(source: string, spec: HostSpec, list: PatternListName): Url
   };
 
   const scheme = spec.scheme !== null ? escapeRegex(spec.scheme) : '[a-z][a-z0-9+.-]*';
-  const sub =
-    spec.hosts === 'exact' ? '' : spec.hosts === 'sub' ? '(?:[^/?#@]+\\.)' : '(?:[^/?#@]+\\.)?';
+  const sub = SUBDOMAIN_RE[spec.hosts];
   let tail: string;
   if (wantPath === null) {
     tail = '(?:[/?#]|$)';
@@ -330,12 +337,12 @@ function regexPattern(
   regexSource: string,
   kind: 'regex' | 'legacy',
   list: PatternListName,
-): UrlPattern | string {
+): UrlPattern | { error: string } {
   let re: RegExp;
   try {
     re = new RegExp(regexSource, 'i');
   } catch (e) {
-    return e instanceof Error ? e.message : String(e);
+    return { error: e instanceof Error ? e.message : String(e) };
   }
   return {
     source,
@@ -370,8 +377,8 @@ export function compileUrlPatterns(
       // Always a whole-URL match, in every list (the legacy branch below
       // keeps its old unanchored meaning).
       const compiled = regexPattern(source, anchorRegex(s.slice(3)), 'regex', list);
-      if (typeof compiled === 'string') {
-        issues.push({ pattern: source, message: `invalid regex: ${compiled}`, fatal: true });
+      if ('error' in compiled) {
+        issues.push({ pattern: source, message: `invalid regex: ${compiled.error}`, fatal: true });
       } else {
         patterns.push(compiled);
       }
@@ -386,9 +393,12 @@ export function compileUrlPatterns(
     const spec = parsed ?? (REGEX_META_RE.test(s) ? convertLegacy(s) : null);
     if (spec !== null) {
       patterns.push(hostPattern(source, spec, list));
+      // A dot-less name written as a host pattern (any case, with or without
+      // a scheme, port or path; not a converted legacy regex) is easily
+      // mistaken for "any URL containing it".
       if (
-        list !== 'allowed' && !spec.host.includes('.') && !spec.host.startsWith('[') &&
-        spec.hosts === 'tree' && s === spec.host
+        list !== 'allowed' && parsed !== null && !spec.host.includes('.') && !spec.host.startsWith('[') &&
+        spec.hosts === 'tree'
       ) {
         issues.push({
           pattern: source,
@@ -414,8 +424,8 @@ export function compileUrlPatterns(
     }
 
     const legacy = regexPattern(source, s, 'legacy', list);
-    if (typeof legacy === 'string') {
-      issues.push({ pattern: source, message: `invalid pattern: ${legacy}`, fatal: true });
+    if ('error' in legacy) {
+      issues.push({ pattern: source, message: `invalid pattern: ${legacy.error}`, fatal: true });
       continue;
     }
     patterns.push(legacy);
