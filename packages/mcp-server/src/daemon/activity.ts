@@ -20,6 +20,8 @@ export const RELAY_TTL_MS = 3 * RELAY_HEARTBEAT_MS;
 
 const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000;
 const IDLE_CHECK_INTERVAL_MS = 30_000;
+/** Shortest check interval (a very short idle timeout must not spin the timer). */
+const IDLE_CHECK_MIN_MS = 1_000;
 
 export function resolveIdleTimeoutMs(): number {
   const raw = process.env[ENV.FOX_DAEMON_IDLE_TIMEOUT];
@@ -91,9 +93,9 @@ export class DaemonActivity {
    * Start the idle watchdog.
    * @param nativeHostCount current number of Native Host WS connections
    * @param onIdle          called once when the idle timeout has elapsed
+   * @param idleTimeoutMs   0 disables the watchdog (default: FOX_DAEMON_IDLE_TIMEOUT)
    */
-  start(nativeHostCount: () => number, onIdle: () => void): void {
-    const idleTimeoutMs = resolveIdleTimeoutMs();
+  start(nativeHostCount: () => number, onIdle: () => void, idleTimeoutMs: number = resolveIdleTimeoutMs()): void {
     if (idleTimeoutMs === 0 || this.timer !== null) return;
 
     this.idleSince = Date.now();
@@ -113,7 +115,9 @@ export class DaemonActivity {
         this.stop();
         onIdle();
       }
-    }, Math.min(IDLE_CHECK_INTERVAL_MS, Math.max(1_000, idleTimeoutMs / 2)));
+      // Checked every half timeout (at most every 30 s): an idle period is
+      // noticed at most half a timeout late.
+    }, Math.min(IDLE_CHECK_INTERVAL_MS, Math.max(IDLE_CHECK_MIN_MS, idleTimeoutMs / 2)));
     this.timer.unref();
   }
 

@@ -174,11 +174,9 @@ async function startHeadless(): Promise<void> {
       .then((result) => {
         connectionManager.handleResponse({
           requestId: command.requestId,
-          success: (result as Record<string, unknown>).success === true,
+          success: result['success'] === true,
           data: result,
-          error: typeof (result as Record<string, unknown>).error === 'string'
-            ? (result as Record<string, unknown>).error as string
-            : undefined,
+          error: typeof result['error'] === 'string' ? result['error'] : undefined,
         });
       })
       .catch((err: unknown) => {
@@ -350,13 +348,13 @@ export async function runDaemon(): Promise<void> {
   markReady();
 
   const idleMs = resolveIdleTimeoutMs();
-  process.stderr.write([
-    `[KitsuneMCP:daemon] kitsune-mcp v${PACKAGE_VERSION} (PID ${process.pid})`,
-    `[KitsuneMCP:daemon] HTTP  : ${host}:${httpPort}`,
-    `[KitsuneMCP:daemon] WS    : ${host}:${wsPort}`,
-    `[KitsuneMCP:daemon] Mode  : ${headlessMode ? 'headless' : 'extension'}`,
-    `[KitsuneMCP:daemon] Idle  : ${idleMs === 0 ? 'never exits' : `exits after ${idleMs / 1000}s unused`}`,
-  ].join('\n') + '\n');
+  for (const line of [
+    `kitsune-mcp v${PACKAGE_VERSION} (PID ${process.pid})`,
+    `HTTP  : ${host}:${httpPort}`,
+    `WS    : ${host}:${wsPort}`,
+    `Mode  : ${headlessMode ? 'headless' : 'extension'}`,
+    `Idle  : ${idleMs === 0 ? 'never exits' : `exits after ${idleMs / 1000}s unused`}`,
+  ]) log(line);
 
   process.on('SIGINT', () => void shutdown.stop('SIGINT received'));
   process.on('SIGTERM', () => void shutdown.stop('SIGTERM received'));
@@ -364,5 +362,6 @@ export async function runDaemon(): Promise<void> {
   activity.start(
     () => connectionManager.nativeHostCount,
     () => void shutdown.stop(`idle for ${idleMs / 1000}s (no relay, no Native Host)`),
+    idleMs,
   );
 }

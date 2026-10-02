@@ -68,7 +68,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord } from '@kitsune-mcp/shared';
 import { runWithCallSignal, type BrowserConnectionManager } from '../connection/manager.js';
 import { getScreenshotsDir, listScreenshots } from '../utils/screenshot.js';
 import { callSchemaFor, callableToolNames, describeTool } from '../tools/operations.js';
@@ -107,6 +107,8 @@ const MAX_REMEMBERED_NONCES = 100_000;
 const BODY_TIMEOUT_MS = 30_000;
 /** How long a client has to send its request headers. */
 const HEADERS_TIMEOUT_MS = 10_000;
+/** x-kitsune-timestamp: milliseconds since the epoch, decimal (16 digits reach far past year 2100). */
+const TIMESTAMP_PATTERN = /^\d{1,16}$/;
 
 // ---------------------------------------------------------------------------
 // Auth helpers
@@ -175,7 +177,7 @@ export class SignedRequestVerifier {
     const timestamp = header(req, AUTH_HEADER.timestamp);
     const nonce = header(req, AUTH_HEADER.nonce);
     const signature = header(req, AUTH_HEADER.signature);
-    if (timestamp === undefined || !/^\d{1,16}$/.test(timestamp) || !isNonce(nonce)) return undefined;
+    if (timestamp === undefined || !TIMESTAMP_PATTERN.test(timestamp) || !isNonce(nonce)) return undefined;
     if (Math.abs(now - Number(timestamp)) > this.windowMs) return undefined;
 
     const expected = computeMac(
@@ -576,11 +578,11 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
         let data: Record<string, unknown>;
         try {
           const parsed: unknown = JSON.parse(rawBody.length > 0 ? rawBody.toString('utf-8') : '{}');
-          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          if (!isRecord(parsed)) {
             reply.error(400, 'Request body must be a JSON object');
             return;
           }
-          data = parsed as Record<string, unknown>;
+          data = parsed;
         } catch {
           reply.error(400, 'Invalid JSON');
           return;
@@ -673,7 +675,7 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
     }
 
     const args: unknown = parsed.data;
-    if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+    if (!isRecord(args)) {
       reply.error(400, 'Tool arguments must be an object');
       return;
     }
@@ -687,7 +689,7 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
     activity?.beginCall();
     ready
       .then(
-        () => runWithCallSignal(abort.signal, () => handler(args as Record<string, unknown>, { approvalToken }))
+        () => runWithCallSignal(abort.signal, () => handler(args, { approvalToken }))
           .then(
             (result) => reply.json(200, { success: result.isError !== true, result }),
             (err: unknown) => reply.error(500, `Tool execution failed: ${errorText(err)}`),

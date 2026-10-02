@@ -1,7 +1,8 @@
 /**
  * WebSocket server bridge for browser connections.
  *
- * Uses the `ws` library. Listens on `ws://127.0.0.1:{FOX_WS_PORT}`.
+ * Uses the `ws` library. Listens on `ws://{host}:{FOX_WS_PORT}` (the daemon
+ * passes FOX_HOST, 127.0.0.1 by default).
  *
  * v0.1 client: the Native Host (packages/native-host/src/ws-client.ts),
  * which relays commands to the Extension over Native Messaging. A direct
@@ -17,7 +18,7 @@
  *     cannot pose as an Origin-less client; and every client, with or
  *     without Origin, must still pass step 2.
  *  2. Server sends `{ type: 'auth_challenge', protocol, nonce: S }`.
- *  3. Client answers within 5 s with
+ *  3. Client answers within AUTH_TIMEOUT_MS (5 s) with
  *     `{ type: 'auth', protocol, nonce: C, mac: MAC('ws-client', S, C) }`.
  *     Anything else (including the old `{ token }` frame), a bad MAC or a
  *     timeout → close 1008 (Policy Violation). The token never travels.
@@ -47,7 +48,7 @@
 
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
-import { ENV_DEFAULTS, parseBrowserResponse } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord, parseBrowserResponse } from '@kitsune-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
 import { AUTH_PROTOCOL, computeMac, isNonce, MAC_LABEL, macMatches, newNonce, stderrLogger } from '@kitsune-mcp/shared/node';
 
@@ -133,7 +134,7 @@ interface HostSocket {
 }
 
 /**
- * Start the WebSocket server for Extension connections.
+ * Start the WebSocket server for the Native Host connections.
  *
  * @returns The WebSocketServer instance, once it is listening. Rejects with
  *          the listen error (e.g. EADDRINUSE) — same contract as
@@ -214,7 +215,7 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
       setTimeout(() => ws.terminate(), CLOSE_GRACE_MS).unref();
     };
 
-    const origin = req.headers['origin'] as string | undefined;
+    const origin = req.headers.origin;
 
     // ----- Origin check -----
     if (!isOriginAllowed(origin)) {
@@ -238,7 +239,8 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
 
     // ----- Byte budget until the auth frame is in -----
     // A peer still sending would not read a close frame, and `ws` would go
-    // on buffering what it sends: cut it at once.
+    // on buffering what it sends: cut it at once (terminate() right after
+    // close(): the close frame is queued, but not waited for).
     let received = 0;
     // Set by the first frame. `ws` may deliver it from inside the very
     // 'data' event that also carries later bytes, and an emit already in
@@ -256,7 +258,7 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
     req.socket.on('data', countBytes);
     ws.on('close', () => req.socket.off('data', countBytes));
 
-    // ----- Challenge (5 s to answer) -----
+    // ----- Challenge (AUTH_TIMEOUT_MS to answer) -----
     const serverNonce = newNonce();
     const authTimer = setTimeout(() => {
       log('WebSocket connection refused: auth timeout');
@@ -283,7 +285,7 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
       } catch {
         msg = undefined;
       }
-      const frame = typeof msg === 'object' && msg !== null ? (msg as Record<string, unknown>) : {};
+      const frame = isRecord(msg) ? msg : {};
 
       if (frame['type'] !== 'auth' || frame['protocol'] !== AUTH_PROTOCOL) {
         const legacy = typeof frame['token'] === 'string';
@@ -362,10 +364,7 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
         }
 
         // Event from the browser side (no requestId)
-        const eventType =
-          typeof parsed === 'object' && parsed !== null && 'type' in parsed
-            ? String((parsed as { type: unknown }).type)
-            : 'unknown';
+        const eventType = isRecord(parsed) && 'type' in parsed ? String(parsed['type']) : 'unknown';
         log(`Browser event: ${eventType}`);
       });
 

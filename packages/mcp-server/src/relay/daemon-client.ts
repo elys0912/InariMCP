@@ -394,9 +394,11 @@ export class DaemonClient {
       if (restarted) {
         // A daemon started by someone else (another session, the Native Host)
         // may have won the race: report its settings if they differ.
-        void this.settingsMismatch().then((warnings) => {
-          for (const w of warnings) log(`WARNING: ${w}`);
-        });
+        void this.settingsMismatch()
+          .then((warnings) => {
+            for (const w of warnings) log(`WARNING: ${w}`);
+          })
+          .catch((err: unknown) => log(`settings check failed: ${err instanceof Error ? err.message : String(err)}`));
       }
 
       return this.toCallToolResult(name, reply);
