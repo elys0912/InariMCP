@@ -665,6 +665,24 @@ function routePost(
 }
 
 /**
+ * Write the answer of a call that ran. `answer` may throw (a result
+ * JSON.stringify cannot encode): that is logged and answered 500 instead of
+ * leaving the request open as an unhandled rejection.
+ */
+function sendAnswer<T>(res: http.ServerResponse, reply: Responder, answer: (result: T) => void, result: T): void {
+  try {
+    answer(result);
+  } catch (err: unknown) {
+    process.stderr.write(`[KitsuneMCP] HTTP answer could not be written: ${errorText(err)}\n`);
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
+    reply.error(500, `Internal error: the answer could not be written (${errorText(err)})`);
+  }
+}
+
+/**
  * Run `work` once the daemon is ready, as an in-flight call (idle
  * tracking), cancelled when the client hangs up. `failure` starts the 500
  * message when `work` throws.
@@ -684,7 +702,7 @@ function runTrackedCall<T>(
     .then(
       () => runWithCallSignal(abort.signal, work)
         .then(
-          answer,
+          (result) => sendAnswer(res, reply, answer, result),
           (err: unknown) => reply.error(500, `${failure}: ${errorText(err)}`),
         ),
       (err: unknown) => reply.error(500, notStarted(err)),
