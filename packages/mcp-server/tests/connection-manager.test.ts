@@ -26,7 +26,7 @@ describe('requestId (5.6)', () => {
     void manager.sendCommand({ action: 'get_tabs', requestId: 'ignored' }, 1_000);
     void manager.sendCommand({ action: 'get_tabs', requestId: 'ignored' }, 1_000);
     expect(sent.map((s) => s.requestId)).toEqual([`${manager.bootId}-1`, `${manager.bootId}-2`]);
-    expect(manager.bootId).toMatch(/^[a-z0-9]+$/);
+    expect(manager.bootId).toMatch(/^[a-z0-9]{6}$/);
     manager.shutdown();
   });
 

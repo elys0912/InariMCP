@@ -63,7 +63,7 @@ export const ARM_TTL_MS = 30_000;
 
 /** fox_snapshot text is cut at this many characters. */
 export const SNAPSHOT_MAX_CHARS = 50_000;
-/** get_elements returns at most this many elements (the limit argument is ignored). */
+/** get_elements returns at most this many elements (a larger limit is capped to it). */
 export const GET_ELEMENTS_MAX = 50;
 /** Text of an element in get_elements / scroll toElement results is cut at this many characters. */
 export const ELEMENT_TEXT_MAX_CHARS = 100;

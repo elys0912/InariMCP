@@ -445,6 +445,33 @@ describe('waits and observers', () => {
     expect(childListOnly.map((c) => c['type'])).toEqual(['childList']);
     expect(childListOnly[0]).toMatchObject({ addedNodes: ['b'] });
   });
+
+  real('a text change is recorded with the selector of the text node\'s parent', async () => {
+    await load('<div id="t">x</div>');
+    const changes = await run<Record<string, unknown>[]>(
+      `f.wait.observeElement({ selector: '#t', observerId: 'text' });
+       document.getElementById('t').firstChild.data = 'y';
+       await sleep(50);
+       return f.wait.stopObserving({ observerId: 'text' }).changes;`,
+    );
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ type: 'characterData', target: '#t' });
+  });
+});
+
+describe('element kinds in an XHTML document (tagName is lower case there)', () => {
+  real('a password input of an XML document is still a password field', async () => {
+    await load('<p></p>');
+    const r = await run<{ tagName: string; password: boolean; textInput: boolean }>(
+      `const xhtml = 'http://www.w3.org/1999/xhtml';
+       const doc = document.implementation.createDocument(xhtml, 'html', null);
+       const el = doc.createElementNS(xhtml, 'input');
+       el.setAttribute('type', 'password');
+       doc.documentElement.appendChild(el);
+       return { tagName: el.tagName, password: f.dom.isPasswordField(el), textInput: f.dom.isTextInput(el) };`,
+    );
+    expect(r).toEqual({ tagName: 'input', password: true, textInput: true });
+  });
 });
 
 describe('content-side log batching', () => {

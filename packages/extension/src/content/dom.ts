@@ -10,21 +10,23 @@ export function truncatedValue(value: unknown, max: number): string | null {
   return value === undefined || value === null ? null : clipText(String(value), max);
 }
 
+// Element kinds by localName, not instanceof (elements of another realm,
+// e.g. an iframe, fail instanceof) nor tagName (lower case in XHTML
+// documents, so an upper-case comparison misses them there).
 export function isTextInput(el: Element): el is HTMLInputElement | HTMLTextAreaElement {
-  return el.tagName === "INPUT" || el.tagName === "TEXTAREA";
+  return el.localName === "input" || el.localName === "textarea";
 }
 
-// Element kinds by tag name (as the checks they replace; no instanceof).
 export function isInputElement(el: Element): el is HTMLInputElement {
-  return el.tagName === "INPUT";
+  return el.localName === "input";
 }
 
 export function isButtonElement(el: Element): el is HTMLButtonElement {
-  return el.tagName === "BUTTON";
+  return el.localName === "button";
 }
 
 export function isSelectElement(el: Element): el is HTMLSelectElement {
-  return el.tagName === "SELECT";
+  return el.localName === "select";
 }
 
 export function isPasswordField(element: Element): boolean {

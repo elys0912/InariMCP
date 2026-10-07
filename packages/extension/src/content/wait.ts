@@ -185,6 +185,20 @@ export async function waitForNetworkIdle(
   };
 }
 
+/**
+ * Selector of a mutation's target. A characterData change targets a text
+ * node, which has no selector of its own: its parent element stands for it
+ * ("text" when it has none, e.g. directly under a shadow root).
+ */
+function mutationTargetSelector(node: Node): string {
+  const element = isElementNode(node) ? node : node.parentElement;
+  return element ? generateSelector(element) : "text";
+}
+
+function isElementNode(node: Node): node is Element {
+  return node.nodeType === Node.ELEMENT_NODE;
+}
+
 export function observeElement(
   options: ObserveOptions,
 ): Record<string, unknown> {
@@ -207,7 +221,7 @@ export function observeElement(
       changes.push({
         type: mutation.type,
         timestamp: Date.now(),
-        target: generateSelector(mutation.target as Element),
+        target: mutationTargetSelector(mutation.target),
         // Added / removed text nodes have no tagName: reported as "text".
         addedNodes: Array.from(mutation.addedNodes)
           .map((n) => (n as Element).tagName?.toLowerCase() || "text")
