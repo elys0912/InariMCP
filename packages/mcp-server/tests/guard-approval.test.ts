@@ -1,6 +1,7 @@
+import * as fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SafetyGuard } from '../src/safety/guard.js';
-import { DEFAULT_CONFIG, type SafetyConfig } from '../src/safety/config.js';
+import { SafetyGuard, type SafetyDenial } from '../src/safety/guard.js';
+import { DEFAULT_CONFIG, getAuditLogPath, type SafetyConfig } from '../src/safety/config.js';
 import { grantCoversDenial, hashArgs, type ApprovalGrant } from '../src/safety/approval.js';
 
 const PROTECTED = 'https://bank.example.test/transfer';
@@ -75,15 +76,32 @@ describe('SafetyGuard.check with an approval grant', () => {
     expect(guard().check('fox_navigate', js, undefined, grantFor('fox_navigate', js)))
       .toMatchObject({ safetyDecision: 'blocked_scheme' });
   });
+
+  // WP-G P-4: allowed_by_human only for a call the grant let through.
+  it('audits allowed_by_human only when the grant lifted the confirmation', () => {
+    const lastDecision = (): unknown =>
+      JSON.parse(fs.readFileSync(getAuditLogPath(), 'utf-8').trim().split('\n').at(-1)!)['decision'];
+    const g = guard({ auditLog: true });
+
+    const toProtected = { url: PROTECTED };
+    expect(g.check('fox_navigate', toProtected, undefined, grantFor('fox_navigate', toProtected))).toBeNull();
+    expect(lastDecision()).toBe('allowed_by_human');
+
+    // Nothing to lift: an ordinary allowed call.
+    const toPlain = { url: 'https://plain.example.test/' };
+    expect(g.check('fox_navigate', toPlain, undefined, grantFor('fox_navigate', toPlain))).toBeNull();
+    expect(lastDecision()).toBe('allowed');
+  });
 });
 
 describe('grantCoversDenial', () => {
-  const denial = {
-    success: false as const,
+  const elicitation = { protectedUrl: PROTECTED, matchedPattern: 'p', toolName: 'fox_click' };
+  const denial: SafetyDenial = {
+    success: false,
     safetyDecision: 'confirmation_required',
     error: 'x',
-    confirmationRequired: true as const,
-    elicitation: { protectedUrl: PROTECTED, matchedPattern: 'p', toolName: 'fox_click' },
+    confirmationRequired: true,
+    elicitation,
   };
 
   it('needs a grant, a confirmation_required denial and the same host', () => {
@@ -94,7 +112,7 @@ describe('grantCoversDenial', () => {
     expect(grantCoversDenial({ ...denial, safetyDecision: 'read_only' }, grant)).toBe(false);
     expect(grantCoversDenial(denial, grantFor('fox_click', {}, 'bank.example.test.evil.test'))).toBe(false);
     expect(
-      grantCoversDenial({ ...denial, elicitation: { ...denial.elicitation, protectedUrl: '(target tab)' } }, grant),
+      grantCoversDenial({ ...denial, elicitation: { ...elicitation, protectedUrl: '(target tab)' } }, grant),
     ).toBe(false);
   });
 });

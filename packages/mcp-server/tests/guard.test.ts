@@ -1,12 +1,13 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { BrowserResponse } from '@kitsune-mcp/shared';
-import { SafetyGuard } from '../src/safety/guard.js';
+import { BROWSER_ACTIONS, type BrowserCommand, type BrowserResponse } from '@kitsune-mcp/shared';
+import { SafetyGuard, targetUrlOf, type DenialDecision } from '../src/safety/guard.js';
 import { DEFAULT_CONFIG, getAuditLogPath, loadConfig, type LoadedSafetyConfig } from '../src/safety/config.js';
 import { createToolHandler } from '../src/tools/handlers.js';
+import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 
 /**
@@ -214,6 +215,17 @@ describe('loadConfig (2.B2)', () => {
     const cfg = loadConfig();
     expect(cfg.configError).toBeUndefined();
     expect(cfg.readOnly).toBe(true);
+    // WP-G T-5: fox_safety_status names the file that was read.
+    expect(new SafetyGuard(cfg).status().configFile).toBe(file);
+  });
+
+  it('WP-G T-5: with both settings blank, fox_safety_status names the default file by its full path', () => {
+    vi.stubEnv('HOME', dir);
+    vi.stubEnv('USERPROFILE', dir);
+    vi.stubEnv('FOX_SAFETY_CONFIG', ' ');
+    vi.stubEnv('CLAUDE_BROWSER_SAFETY_CONFIG', '');
+    expect(new SafetyGuard({ ...DEFAULT_CONFIG }).status().configFile)
+      .toBe(path.join(dir, '.kitsune-mcp', 'safety.json'));
   });
 
   // Windows ignores the mode bits (see the WP2 note on 0o600 / 0o700).
@@ -308,6 +320,35 @@ describe('per-tab URL tracking (2.B4)', () => {
     expect(g.urlFor(1)).toBe('https://a.test/');
     expect(g.urlFor()).toBe('https://b.test/');
   });
+
+  // WP-G S-3: headless results carry no tab id.
+  it('a result without a tab id keeps the known active tab id', () => {
+    const g = guard(PROTECTED);
+    g.noteUrl({ tabs: [{ id: 2, url: 'https://a.test/', active: true }] }, {}, 'fox_get_tabs');
+    g.noteUrl({ url: 'https://b.test/' }, { url: 'https://b.test/' }, 'fox_navigate');
+    expect(g.urlFor(2)).toBe('https://b.test/');
+    // The active tab named by its id: still the tab later calls without tabId act on.
+    g.noteUrl({ url: 'https://bank.test/' }, { tabId: 2, url: 'https://bank.test/' }, 'fox_navigate');
+    expect(decision(g, 'fox_click', {})).toBe('confirmation_required');
+  });
+
+  it('a new tab without a reported id becomes active under no known id', () => {
+    const g = guard();
+    g.noteUrl({ tabs: [{ id: 2, url: 'https://a.test/', active: true }] }, {}, 'fox_get_tabs');
+    g.noteUrl({ url: 'https://new.test/' }, { url: 'https://new.test/' }, 'fox_create_tab');
+    expect(g.urlFor()).toBe('https://new.test/');
+    expect(g.urlFor(2)).toBe('https://a.test/');
+    g.noteUrl({ url: 'https://c.test/' }, { tabId: 2 }, 'fox_get_text');
+    expect(g.urlFor()).toBe('https://new.test/');
+  });
+
+  // WP-G O-1: what a backend that reports the tab id at the top level gets.
+  it('a top-level tabId in a result names the active tab', () => {
+    const g = guard(PROTECTED);
+    g.noteUrl({ url: 'https://a.test/', tabId: 1 }, { url: 'https://a.test/' }, 'fox_navigate');
+    g.noteUrl({ url: 'https://bank.test/' }, { tabId: 1, url: 'https://bank.test/' }, 'fox_navigate');
+    expect(decision(g, 'fox_click', {})).toBe('confirmation_required');
+  });
 });
 
 describe('the reached URL and the tab URL against blocked/allowed lists (2.B3)', () => {
@@ -359,6 +400,15 @@ describe('confirmationFromBrowser', () => {
     expect(c.elicitation?.matchedPattern).toBe('bank.test');
     expect(g.urlFor(5)).toBe('https://bank.test/');
   });
+
+  // WP-G P-2: the refused call closed nothing.
+  it('a refused fox_close_tab leaves the tab and the active tab known', () => {
+    const g = guard({ protectedUrlPatterns: ['bank.test'] });
+    g.noteUrl({ url: 'https://bank.test/' }, { tabId: 2 }, 'fox_switch_tab');
+    g.confirmationFromBrowser('fox_close_tab', { tabId: 2 }, 'https://bank.test/a', undefined, null);
+    expect(g.urlFor(2)).toBe('https://bank.test/a');
+    expect(g.urlFor()).toBe('https://bank.test/a');
+  });
 });
 
 describe('review follow-ups', () => {
@@ -366,6 +416,36 @@ describe('review follow-ups', () => {
     const g = guard({ blockedUrlPatterns: ['blocked.test'] });
     g.noteUrl({ url: 'https://blocked.test/' }, { tabId: 1 }, 'fox_click');
     expect(decision(g, 'fox_wait_for_url', { tabId: 1, url: 'https://fine.test/' })).toBe('blocked_url');
+  });
+
+  // WP-G P-1: only goto goes to its url (the call schema refuses the rest;
+  // the guard does not rely on that).
+  it("the url of fox_navigate back / forward / refresh is not a target: the tab URL is checked", () => {
+    const g = guard({ protectedUrlPatterns: ['bank.test'], blockedUrlPatterns: ['blocked.test'] });
+    g.noteUrl({ url: 'https://bank.test/' }, { tabId: 1 }, 'fox_click');
+    g.noteUrl({ url: 'https://blocked.test/' }, { tabId: 2 }, 'fox_click');
+    expect(decision(g, 'fox_navigate', { tabId: 1, action: 'refresh', url: 'https://fine.test/' }))
+      .toBe('confirmation_required');
+    expect(decision(g, 'fox_navigate', { tabId: 2, action: 'back', url: 'https://fine.test/' })).toBe('blocked_url');
+  });
+
+  it('targetUrlOf: the url a call goes to or opens', () => {
+    const url = 'https://a.test/';
+    expect(targetUrlOf('fox_navigate', { url })).toBe(url);
+    expect(targetUrlOf('fox_navigate', { action: 'goto', url })).toBe(url);
+    expect(targetUrlOf('fox_navigate', { action: 'forward', url })).toBeNull();
+    expect(targetUrlOf('fox_create_tab', { url })).toBe(url);
+    expect(targetUrlOf('fox_wait_for_url', { url })).toBeNull();
+    expect(targetUrlOf('fox_navigate', { url: '' })).toBeNull();
+  });
+
+  // WP-G: a denial carries only the decisions that refuse.
+  it('DenialDecision is the refusing part of AuditDecision', () => {
+    expectTypeOf<DenialDecision>().toEqualTypeOf<
+      'rate_limited' | 'blocked_scheme' | 'blocked_url' | 'not_allowlisted' | 'read_only' |
+      'scripts_disabled' | 'confirmation_required' | 'out_of_scope' | 'invalid_url' |
+      'blocked_after_navigation' | 'config_error'
+    >();
   });
 
   it('the default protected list covers mychart portals on any host label', () => {
@@ -433,6 +513,83 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     // Noted first, so the pre-check refuses the next call on that tab.
     expect(g.urlFor(3)).toBe('https://www.blocked.test/landing');
     expect(decision(g, 'fox_get_text', { tabId: 3 })).toBe('blocked_url');
+  });
+
+  /** The audit log lines `run` adds (the log is under the isolated HOME). */
+  async function auditLinesOf(run: () => Promise<unknown>): Promise<Array<Record<string, unknown>>> {
+    const file = getAuditLogPath();
+    const read = (): string => (fs.existsSync(file) ? fs.readFileSync(file, 'utf-8') : '');
+    const before = read();
+    await run();
+    return read().slice(before.length).split('\n').filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  }
+
+  const decisions = (lines: Array<Record<string, unknown>>): unknown[] => lines.map((l) => l['decision']);
+
+  // WP-G T-1: the guard's line is the only one for a call that ran; a
+  // failure adds browser_error (not denied), and audit_log off means no line.
+  it('audits a call that ran once, and a browser failure as browser_error', async () => {
+    handlerGuard({ auditLog: true });
+    stubBrowser({ success: true, data: { url: 'https://fine.test/' } });
+    const ok = await auditLinesOf(() => createToolHandler('fox_click')({ tabId: 2, selector: '#a' }));
+    expect(decisions(ok)).toEqual(['allowed']);
+
+    stubBrowser({ success: false, error: 'Element not found' });
+    const failed = await auditLinesOf(() => createToolHandler('fox_click')({ tabId: 2, selector: '#a' }));
+    expect(decisions(failed)).toEqual(['allowed', 'browser_error']);
+    expect(failed[1]).toMatchObject({ tool: 'fox_click', args: { tabId: 2, selector: '#a' } });
+  });
+
+  it('writes no audit line with audit_log off', async () => {
+    handlerGuard({ auditLog: false });
+    stubBrowser({ success: false, error: 'Element not found' });
+    const lines = await auditLinesOf(() => createToolHandler('fox_click')({ selector: '#a' }));
+    expect(lines).toEqual([]);
+  });
+
+  // WP-G P-3: refused before the guard, so neither counted nor audited as allowed.
+  it('a password field is refused as denied, without using up the rate limit', async () => {
+    const g = handlerGuard({ auditLog: true, maxActionsPerMinute: 10 });
+    const send = vi.spyOn(getConnectionManager(), 'sendCommand');
+    const lines = await auditLinesOf(
+      () => createToolHandler('fox_type')({ selector: 'input[type=password]', text: 'x' }),
+    );
+    expect(send).not.toHaveBeenCalled();
+    expect(decisions(lines)).toEqual(['denied']);
+    expect(g.status().actionsInLastMinute).toBe(0);
+  });
+
+  it('an invalid regex argument is refused without an audit line or a counted action', async () => {
+    const g = handlerGuard({ auditLog: true, maxActionsPerMinute: 10 });
+    const send = vi.spyOn(getConnectionManager(), 'sendCommand');
+    let result: CallToolResult | undefined;
+    const lines = await auditLinesOf(async () => {
+      result = await createToolHandler('fox_get_tabs')({ urlPattern: '(' });
+    });
+    expect(result?.isError).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+    expect(lines).toEqual([]);
+    expect(g.status().actionsInLastMinute).toBe(0);
+  });
+
+  // WP-G B-2: the fox_ prefix rule is checked against BROWSER_ACTIONS, so
+  // every operation must reach a known browser action.
+  it('every operation sends a browser action of BROWSER_ACTIONS', async () => {
+    handlerGuard({ enabled: false });
+    const sent: BrowserCommand[] = [];
+    vi.spyOn(getConnectionManager(), 'sendCommand').mockImplementation(async (command) => {
+      sent.push(command);
+      return { requestId: command.requestId, success: true } as BrowserResponse;
+    });
+    // fox_set_value is also the name of a grouped public tool, whose call is parsed.
+    const parsedArgs: Record<string, Record<string, unknown>> = { fox_set_value: { selector: '#a', value: 'v' } };
+    for (const op of Object.keys(TOOL_SCHEMAS)) {
+      await createToolHandler(op)(parsedArgs[op] ?? {});
+    }
+    const known = new Set<string>(BROWSER_ACTIONS);
+    expect(sent.map((c) => c.action).filter((a) => !known.has(a))).toEqual([]);
+    expect(sent.length).toBeGreaterThan(0);
   });
 });
 

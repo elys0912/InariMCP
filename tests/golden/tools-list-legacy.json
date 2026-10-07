@@ -323,6 +323,7 @@
         },
         "limit": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "default": 100,
           "description": "Maximum number of logs to return"
         },
@@ -351,6 +352,7 @@
         },
         "limit": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "default": 50,
           "description": "Maximum elements to return"
         },
@@ -395,6 +397,7 @@
         },
         "limit": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "default": 100,
           "description": "Maximum number of logs to return"
         },
@@ -443,6 +446,7 @@
         },
         "limit": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "default": 50,
           "description": "Max tabs to return"
         },
@@ -476,6 +480,7 @@
         },
         "maxLength": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "default": 20000,
           "description": "Truncate returned text to this many characters"
         },
@@ -545,6 +550,7 @@
         },
         "duration": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "default": 3000,
           "description": "Highlight duration in ms"
         },
@@ -670,7 +676,7 @@
         },
         "url": {
           "type": "string",
-          "description": "URL to navigate to (required for goto)"
+          "description": "URL to navigate to (required for goto; not allowed with the other actions)"
         },
         "tabId": {
           "type": "integer",
@@ -994,15 +1000,18 @@
         },
         "scrollStep": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "description": "Pixels to scroll each step (default: 80% of viewport)"
         },
         "delay": {
           "type": "integer",
+          "minimum": 0,
           "default": 500,
           "description": "Delay between scrolls in ms (for scroll_capture scope)"
         },
         "maxScrolls": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "default": 20,
           "description": "Maximum number of scroll steps (for scroll_capture scope)"
         },
@@ -1040,6 +1049,7 @@
         },
         "amount": {
           "type": "integer",
+          "minimum": 0,
           "default": 300,
           "description": "Scroll amount in pixels"
         },
@@ -1084,6 +1094,7 @@
         },
         "index": {
           "type": "integer",
+          "minimum": 0,
           "description": "Option index to select"
         },
         "tabId": {
@@ -1312,11 +1323,13 @@
         },
         "pollIntervalMs": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "default": 200,
           "description": "How often to check condition"
         },
         "timeoutMs": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "maximum": 580000,
           "default": 15000,
           "description": "Max wait time in ms before giving up (at most 580000)"
@@ -1430,6 +1443,7 @@
         },
         "idleTime": {
           "type": "integer",
+          "minimum": 0,
           "default": 500,
           "description": "How long network must be idle (ms)"
         },
