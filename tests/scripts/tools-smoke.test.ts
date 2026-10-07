@@ -42,6 +42,15 @@ describe('tools-smoke: interpretCallResponse', () => {
     expect(interpretCallResponse(null).isError).toBe(true);
   });
 
+  it('reports a 2xx body without a result object (array, {}) as an error (R3 §4)', () => {
+    for (const body of [[], ['ok'], {}, { success: true }, { success: true, result: [] }, { result: null }]) {
+      const r = interpretCallResponse(answer(200, body));
+      expect(r.isError, JSON.stringify(body)).toBe(true);
+      expect(r.text, JSON.stringify(body)).toMatch(/^HTTP 200: /);
+      expect(r.content).toEqual([]);
+    }
+  });
+
   it('truncate counts code points (does not split a surrogate pair)', () => {
     expect(truncate('a\u{1F98A}b', 2)).toBe('a\u{1F98A}');
     expect(truncate('  x \n y  ', 120)).toBe(' x y ');

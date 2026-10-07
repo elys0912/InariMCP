@@ -16,7 +16,8 @@ vi.mock('node:fs', async (importOriginal) => {
   };
 });
 
-import { MAX_LOG_BYTES, log, resetLoggerForTests, rotateIfLarge } from '../src/logger.js';
+import { nativeHostLogPath } from '@kitsune-mcp/shared/node';
+import { MAX_LOG_BYTES, log, resetLoggerForTests, resolveLogPath, rotateIfLarge } from '../src/logger.js';
 
 describe('logger rotation', () => {
   let dir: string;
@@ -102,5 +103,23 @@ describe('logger rotation', () => {
   it('prefixes every file line with a timestamp and pid', () => {
     log('hello');
     expect(fs.readFileSync(file, 'utf-8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z \[\d+\] \[KitsuneMCP:NativeHost\] hello\n$/);
+  });
+});
+
+describe('resolveLogPath (FOX_NATIVE_HOST_LOG)', () => {
+  it('unset, empty or blank: the default ~/.kitsune-mcp/logs/native-host.log', () => {
+    for (const env of [{}, { FOX_NATIVE_HOST_LOG: '' }, { FOX_NATIVE_HOST_LOG: '  ' }]) {
+      expect(resolveLogPath(env), JSON.stringify(env)).toBe(nativeHostLogPath());
+    }
+  });
+
+  it.each(['0', 'off', 'OFF', 'false', 'no', 'none', ' None '])('%j disables file logging', (value) => {
+    expect(resolveLogPath({ FOX_NATIVE_HOST_LOG: value })).toBeUndefined();
+  });
+
+  it('a path is resolved to an absolute one, without surrounding blanks', () => {
+    const absolute = path.join(os.tmpdir(), 'kitsune-host.log');
+    expect(resolveLogPath({ FOX_NATIVE_HOST_LOG: ` ${absolute} ` })).toBe(path.resolve(absolute));
+    expect(resolveLogPath({ FOX_NATIVE_HOST_LOG: 'relative.log' })).toBe(path.resolve('relative.log'));
   });
 });

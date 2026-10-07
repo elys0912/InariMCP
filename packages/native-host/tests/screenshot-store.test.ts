@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { isRecord } from '@kitsune-mcp/shared';
 import { externalizeScreenshots, getScreenshotsDir } from '../src/screenshot-store.js';
 
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
@@ -10,6 +11,38 @@ const JPEG_URL = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 1]).to
 
 let dir: string;
 const noLog = (): void => {};
+
+/** `response.data`; fails the test when it is not an object. */
+function dataOf(response: Record<string, unknown>): Record<string, unknown> {
+  const data = response['data'];
+  if (!isRecord(data)) throw new Error('response.data is not an object');
+  return data;
+}
+
+/** `record[key]` as a string; fails the test otherwise. */
+function stringAt(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  if (typeof value !== 'string') throw new Error(`${key} is not a string`);
+  return value;
+}
+
+function imagePathOf(response: Record<string, unknown>): string {
+  return stringAt(dataOf(response), 'imagePath');
+}
+
+/** `response.data.screenshots` (entries may be anything). */
+function shotsOf(response: Record<string, unknown>): unknown[] {
+  const shots = dataOf(response)['screenshots'];
+  if (!Array.isArray(shots)) throw new Error('response.data.screenshots is not an array');
+  return shots;
+}
+
+/** Entry `i` of `response.data.screenshots`; fails the test when it is not an object. */
+function shotAt(response: Record<string, unknown>, i: number): Record<string, unknown> {
+  const shot = shotsOf(response)[i];
+  if (!isRecord(shot)) throw new Error(`screenshots[${i}] is not an object`);
+  return shot;
+}
 
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-shots-'));
@@ -51,10 +84,10 @@ describe('externalizeScreenshots', () => {
     };
     externalizeScreenshots(response, undefined, noLog);
 
-    const data = response['data'] as Record<string, unknown>;
+    const data = dataOf(response);
     expect(data).not.toHaveProperty('imageData');
     expect(data['url']).toBe('https://example.test/');
-    const imagePath = data['imagePath'] as string;
+    const imagePath = imagePathOf(response);
     expect(path.dirname(imagePath)).toBe(path.resolve(dir));
     expect(imagePath).toMatch(/\.png$/);
     expect(fs.readFileSync(imagePath)).toEqual(PNG_BYTES);
@@ -65,7 +98,7 @@ describe('externalizeScreenshots', () => {
   it('uses the requested filename reduced to a safe basename, extension from the MIME type', () => {
     const response: Record<string, unknown> = { requestId: '1', success: true, data: { imageData: JPEG_URL } };
     externalizeScreenshots(response, '../../evil name.png', noLog);
-    const imagePath = (response['data'] as Record<string, unknown>)['imagePath'] as string;
+    const imagePath = imagePathOf(response);
     expect(path.dirname(imagePath)).toBe(path.resolve(dir));
     expect(path.basename(imagePath)).toBe('evil_name.jpg');
   });
@@ -75,7 +108,7 @@ describe('externalizeScreenshots', () => {
       requestId: '1', success: true, data: { imageData: PNG_BYTES.toString('base64') },
     };
     externalizeScreenshots(response, 'shot', noLog);
-    const imagePath = (response['data'] as Record<string, unknown>)['imagePath'] as string;
+    const imagePath = imagePathOf(response);
     expect(path.basename(imagePath)).toBe('shot.png');
   });
 
@@ -85,7 +118,7 @@ describe('externalizeScreenshots', () => {
       requestId: '1', success: true, data: { imageData: 'data:image/png;base64,' },
     };
     externalizeScreenshots(response, undefined, log);
-    const data = response['data'] as Record<string, unknown>;
+    const data = dataOf(response);
     expect(data).not.toHaveProperty('imageData');
     expect(data).not.toHaveProperty('imagePath');
     expect(response['success']).toBe(false);
@@ -123,10 +156,10 @@ describe('externalizeScreenshots', () => {
     };
     externalizeScreenshots(response, 'all', noLog);
 
-    const shots = (response['data'] as { screenshots: unknown[] }).screenshots as Record<string, unknown>[];
-    expect(path.basename(shots[0]!['imagePath'] as string)).toBe('all_tab12.png');
-    expect(path.basename(shots[1]!['imagePath'] as string)).toBe('all_1.png');
-    expect(shots[2]!['imageError']).toMatch(/^Native Host failed to save screenshot: /);
+    const shots = shotsOf(response);
+    expect(path.basename(stringAt(shotAt(response, 0), 'imagePath'))).toBe('all_tab12.png');
+    expect(path.basename(stringAt(shotAt(response, 1), 'imagePath'))).toBe('all_1.png');
+    expect(shotAt(response, 2)['imageError']).toMatch(/^Native Host failed to save screenshot: /);
     expect(shots[3]).toEqual({ tabId: 15, error: 'restricted page' });
     expect(shots[4]).toBe('not-an-object');
     for (const shot of shots.slice(0, 3)) expect(shot).not.toHaveProperty('imageData');
@@ -140,7 +173,7 @@ describe('externalizeScreenshots', () => {
     expect(first['data']).not.toHaveProperty('imageOverwritten');
     const second: Record<string, unknown> = { requestId: '2', success: true, data: { imageData: PNG_URL } };
     externalizeScreenshots(second, 'same', noLog);
-    const data = second['data'] as Record<string, unknown>;
+    const data = dataOf(second);
     expect(data['imageOverwritten']).toBe(true);
     expect(data['warnings']).toEqual([expect.stringContaining('same.png already existed')]);
   });
@@ -151,8 +184,7 @@ describe('externalizeScreenshots', () => {
       data: { screenshots: [{ tabId: 12, imageData: PNG_URL }] },
     };
     externalizeScreenshots(first, 'same', noLog);
-    expect((first['data'] as { screenshots: Record<string, unknown>[] }).screenshots[0])
-      .not.toHaveProperty('imageOverwritten');
+    expect(shotAt(first, 0)).not.toHaveProperty('imageOverwritten');
 
     const second: Record<string, unknown> = {
       requestId: '2', success: true,
@@ -164,10 +196,9 @@ describe('externalizeScreenshots', () => {
       },
     };
     externalizeScreenshots(second, 'same', noLog);
-    const data = second['data'] as { screenshots: Record<string, unknown>[]; warnings?: unknown };
-    expect(data.screenshots[0]!['imageOverwritten']).toBe(true);
-    expect(data.screenshots[1]).not.toHaveProperty('imageOverwritten');
-    expect(data.warnings).toEqual([expect.stringContaining('same_tab12.png already existed')]);
+    expect(shotAt(second, 0)['imageOverwritten']).toBe(true);
+    expect(shotAt(second, 1)).not.toHaveProperty('imageOverwritten');
+    expect(dataOf(second)['warnings']).toEqual([expect.stringContaining('same_tab12.png already existed')]);
     expect(second['success']).toBe(true);
     expect(fs.readdirSync(dir).sort()).toEqual(['same_tab12.png', 'same_tab13.png']);
   });
@@ -178,10 +209,10 @@ describe('externalizeScreenshots', () => {
         requestId, success: true, data: { imageData: PNG_URL },
       };
       externalizeScreenshots(response, undefined, noLog);
-      const data = response['data'] as Record<string, unknown>;
+      const data = dataOf(response);
       expect(data).not.toHaveProperty('imageOverwritten');
       expect(data).not.toHaveProperty('warnings');
-      expect(path.basename(data['imagePath'] as string)).toMatch(/^screenshot_\d{13}_[a-z0-9]{1,6}\.png$/);
+      expect(path.basename(imagePathOf(response))).toMatch(/^screenshot_\d{13}_[a-z0-9]{6}\.png$/);
     }
 
     for (const requestId of ['3', '4']) {
@@ -190,9 +221,8 @@ describe('externalizeScreenshots', () => {
         data: { screenshots: [{ tabId: 12, imageData: PNG_URL }, { imageData: PNG_URL }] },
       };
       externalizeScreenshots(response, undefined, noLog);
-      const data = response['data'] as { screenshots: Record<string, unknown>[]; warnings?: unknown };
-      for (const shot of data.screenshots) expect(shot).not.toHaveProperty('imageOverwritten');
-      expect(data.warnings).toBeUndefined();
+      for (const shot of shotsOf(response)) expect(shot).not.toHaveProperty('imageOverwritten');
+      expect(dataOf(response)['warnings']).toBeUndefined();
     }
 
     // Two single + four all_tabs files, all with distinct generated names.

@@ -31,7 +31,7 @@
  */
 
 import WebSocket from 'ws';
-import { ENV_DEFAULTS, isRecord } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, MS_PER_SECOND, isRecord } from '@kitsune-mcp/shared';
 import type { ServerLauncher } from './server-launcher.js';
 import { log } from './logger.js';
 import { AUTH_PROTOCOL, MAC_LABEL, computeMac, isNonce, macMatches, newNonce } from '@kitsune-mcp/shared/node';
@@ -282,7 +282,7 @@ export class ServerConnection {
     this.silenceTimer = setTimeout(() => {
       this.silenceTimer = null;
       if (this.ws !== ws) return;
-      log(`WS silent for ${this.serverSilenceMs / 1000}s (no ping) — assuming a dead connection`);
+      log(`WS silent for ${this.serverSilenceMs / MS_PER_SECOND}s (no ping) — assuming a dead connection`);
       ws.terminate();
     }, this.serverSilenceMs);
   }

@@ -25,6 +25,8 @@ import { ENV, ENV_DEFAULTS, isRecord, MAX_PORT } from '@kitsune-mcp/shared';
 import {
   AUTH_HEADER,
   DAEMON_PROTOCOL_VERSION,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
   dataDir,
   daemonLogPath,
   evaluateHealth,
@@ -67,7 +69,8 @@ const DAEMON_POLICY_VARS = [ENV.FOX_READ_ONLY, ENV.FOX_ALLOW_SCRIPTS, ENV.FOX_SA
  * settings actually inherited are therefore logged, by name only.
  */
 export function daemonEnvNote(env: NodeJS.ProcessEnv = process.env): string {
-  const set = DAEMON_POLICY_VARS.filter((name) => env[name] !== undefined && env[name] !== '');
+  // Blank counts as unset, as the daemon reads them (mcp-server resolveFoxEnv).
+  const set = DAEMON_POLICY_VARS.filter((name) => (env[name]?.trim() ?? '') !== '');
   return set.length === 0
     ? 'daemon inherits no FOX_READ_ONLY / FOX_ALLOW_SCRIPTS / FOX_SAFETY_CONFIG from the Native Host environment'
     : `daemon inherits ${set.join(', ')} from the Native Host environment ` +
@@ -90,6 +93,30 @@ const WS_BIND_RETRY_MS = 500;
 const PORT_PROBE_TIMEOUT_MS = 1_000;
 /** Timeout of GET /health and GET /daemon/info. */
 const HTTP_PROBE_TIMEOUT_MS = 3_000;
+
+/**
+ * Make sure daemon.log can be written and mark the start in it. Both start
+ * paths open daemon.log for appending; a daemon from an earlier start may
+ * still hold it open, hence copy-truncate. Logging is best-effort.
+ */
+function prepareDaemonLog(): void {
+  const logPath = daemonLogPath();
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true, mode: PRIVATE_DIR_MODE });
+  } catch {
+    // Logging is best-effort
+  }
+  rotateIfLarge(logPath, true);
+  try {
+    fs.appendFileSync(
+      logPath,
+      `${new Date().toISOString()} --- daemon start requested by Native Host (PID ${process.pid}) ---\n`,
+      { mode: PRIVATE_FILE_MODE },
+    );
+  } catch {
+    // Logging is best-effort
+  }
+}
 
 /** The daemon / MCP server entry point, relative to this package. */
 export function serverEntryPath(): string {
@@ -170,7 +197,6 @@ export class ServerLauncher {
     }
 
     const serverEntry = this.serverEntry;
-
     if (!fs.existsSync(serverEntry)) {
       // Retrying cannot help until the package is built / reinstalled.
       this.restartAttempts = ENV_DEFAULTS.MAX_RESTART_ATTEMPTS;
@@ -178,60 +204,56 @@ export class ServerLauncher {
       return false;
     }
 
-    try {
-      fs.mkdirSync(path.dirname(daemonLogPath()), { recursive: true, mode: 0o700 });
-    } catch {
-      // Logging is best-effort
-    }
+    // Every way on from here counts as an attempt (a busy WS port and a spawn
+    // that throws included), so the health monitor's limit and backoff apply.
+    this.restartAttempts++;
+
     // A daemon that cannot bind its WS port exits at once; say why instead.
     if (await this.isPortInUse(this.wsPort)) {
-      // Counts as an attempt, so the health monitor's limit and backoff apply.
-      this.restartAttempts++;
       log(`WS port ${this.host}:${this.wsPort} is in use by another process — not starting the daemon`);
       return false;
     }
 
-    // Both start paths below open daemon.log for appending. A daemon from an
-    // earlier start may still hold it open, hence copy-truncate.
-    rotateIfLarge(daemonLogPath(), true);
-    try {
-      fs.appendFileSync(
-        daemonLogPath(),
-        `${new Date().toISOString()} --- daemon start requested by Native Host (PID ${process.pid}) ---\n`,
-        { mode: 0o600 },
-      );
-    } catch {
-      // Logging is best-effort
-    }
+    prepareDaemonLog();
     log(daemonEnvNote());
 
-    // Windows: outside Firefox's job object, or closing Firefox kills the
-    // daemon (see breakaway.ts). Falls back to a plain spawn on failure.
-    if (process.platform === 'win32') {
-      sweepRunDir(path.join(daemonCwd(), 'run'));
-      const result = await startOutsideJob(
-        {
-          exe: process.execPath,
-          args: [serverEntry, '--daemon'],
-          env: daemonEnvFrom(process.env),
-          log: daemonLogPath(),
-          cwd: daemonCwd(),
-        },
-        defaultDeps(path.join(daemonCwd(), 'run')),
-      );
-      if (result.ok) {
-        this.restartAttempts++;
-        log(`started daemon outside the job object via ${result.via} (attempt #${this.restartAttempts})`);
-        return this.waitUntilHealthy();
-      }
-      log(
-        `WARNING: could not start the daemon outside Firefox's job object (${result.errors.join('; ')}); ` +
-        'starting it inside the job: it will stop when Firefox closes, together with the Claude Code sessions using it',
-      );
+    if (process.platform === 'win32' && (await this.startOutsideJobOrWarn(serverEntry))) {
+      return this.waitUntilHealthy();
     }
+    return this.spawnPlain(serverEntry) && this.waitUntilHealthy();
+  }
 
-    // A spawn that throws counts as an attempt too.
-    this.restartAttempts++;
+  /**
+   * Windows: start the daemon outside Firefox's job object, or closing Firefox
+   * kills it (see breakaway.ts). False (with a warning) when that failed and
+   * the caller falls back to a plain spawn.
+   */
+  private async startOutsideJobOrWarn(serverEntry: string): Promise<boolean> {
+    const runDir = path.join(daemonCwd(), 'run');
+    sweepRunDir(runDir);
+    const result = await startOutsideJob(
+      {
+        exe: process.execPath,
+        args: [serverEntry, '--daemon'],
+        env: daemonEnvFrom(process.env),
+        log: daemonLogPath(),
+        cwd: daemonCwd(),
+      },
+      defaultDeps(runDir),
+    );
+    if (result.ok) {
+      log(`started daemon outside the job object via ${result.via} (attempt #${this.restartAttempts})`);
+      return true;
+    }
+    log(
+      `WARNING: could not start the daemon outside Firefox's job object (${result.errors.join('; ')}); ` +
+      'starting it inside the job: it will stop when Firefox closes, together with the Claude Code sessions using it',
+    );
+    return false;
+  }
+
+  /** Spawn the daemon as a detached child. False when the spawn throws. */
+  private spawnPlain(serverEntry: string): boolean {
     try {
       const pid = spawnDetachedDaemon({
         entry: serverEntry,
@@ -240,13 +262,12 @@ export class ServerLauncher {
         onError: (err) => log(`daemon spawn error: ${err.message}`),
       });
       log(`started daemon (PID: ${pid ?? 'unknown'}, attempt #${this.restartAttempts})`);
+      return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       log(`failed to start daemon (attempt #${this.restartAttempts}): ${msg}`);
       return false;
     }
-
-    return this.waitUntilHealthy();
   }
 
   /** Wait up to STARTUP_WAIT_MS for a daemon we just started to answer /health. */
