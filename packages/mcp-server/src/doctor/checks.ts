@@ -21,7 +21,7 @@ import { ENV, ENV_DEFAULTS, isRecord, LEGACY_ENV } from '@kitsune-mcp/shared';
 
 import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, macMatches, newNonce, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
 import { apiTokenPath, dataDir as kitsuneDataDir, kitsuneHealth, type HealthVerdict } from '@kitsune-mcp/shared/node';
-import { DAEMON_SETTING_KEYS, readApiTokenFile, resolveHost, resolveHttpPort } from '../utils/endpoint.js';
+import { DAEMON_SETTING_KEYS, compareDaemonSettings, readApiTokenFile, resolveHost, resolveHttpPort } from '../utils/endpoint.js';
 import { resolveFoxEnv } from '../utils/headless-env.js';
 import { MAX_LOG_BYTES } from '../utils/log-file.js';
 import { HEALTH_PROBE_TIMEOUT_MS } from '../daemon/probe.js';
@@ -714,17 +714,16 @@ export function checkToken(ctx: DoctorContext): CheckResult {
   return { id, status: 'OK', detail: `${ctx.tokenPath} present, mode ${(st.mode & 0o777).toString(8)}` };
 }
 
+/**
+ * Same rule as the relay (compareDaemonSettings): effective values, so
+ * `true` / `1` and old / new variable names are not reported as different.
+ */
 export function checkSettings(ctx: DoctorContext): CheckResult {
   const id = 'settings';
-  if (ctx.daemon.info === undefined || !isRecord(ctx.daemon.info['settings'])) {
+  const { info } = ctx.daemon;
+  const diffs = info === undefined ? null : compareDaemonSettings(sessionEnv(ctx), info);
+  if (diffs === null) {
     return { id, status: 'SKIP', detail: 'daemon settings not readable (daemon down or not verified)' };
-  }
-  const mine = sessionEnv(ctx);
-  const diffs: string[] = [];
-  for (const key of DAEMON_SETTING_KEYS) {
-    const expected = mine[key] ?? '';
-    const actual = daemonSetting(ctx, key) ?? '';
-    if (expected !== actual) diffs.push(`${key}: session '${expected || '(unset)'}', daemon '${actual || '(unset)'}'`);
   }
   const source = ctx.claude.entries.length > 0 ? 'this shell + the Claude Code registration env' : 'this shell';
   if (diffs.length > 0) {

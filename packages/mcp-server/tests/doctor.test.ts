@@ -237,7 +237,7 @@ describe('doctor', () => {
     }));
     expect(byId(results, 'daemon')).toMatchObject({ status: 'WARN' });
     expect(byId(results, 'daemon').detail).toContain('v0.0.1');
-    expect(byId(results, 'settings').detail).toContain("FOX_READ_ONLY: session '(unset)', daemon '1'");
+    expect(byId(results, 'settings').detail).toContain("FOX_READ_ONLY: this session 'off', daemon 'on'");
     expect(byId(results, 'browsers').detail).toContain('2 Native Hosts');
   });
 
@@ -484,6 +484,37 @@ describe('doctor: claude registrations', () => {
     const results = await runChecks(deps({ token: TOKEN, info: { settings: { FOX_READ_ONLY: '1' } } }));
     expect(byId(results, 'settings')).toMatchObject({ status: 'OK' });
     expect(byId(results, 'settings').detail).toContain('the Claude Code registration env');
+  });
+
+  it('R-2: compares effective values like the relay: true and 1, old and new names agree', async () => {
+    writeToken(TOKEN);
+    writeClaudeConfig({
+      projects: {
+        [cwd]: {
+          mcpServers: {
+            'kitsune-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: 'true', CLAUDE_BROWSER_ALLOW_SCRIPTS: '0' } },
+          },
+        },
+      },
+    });
+    const results = await runChecks(deps({
+      token: TOKEN,
+      info: {
+        settings: { FOX_READ_ONLY: '1', FOX_ALLOW_SCRIPTS: '0' },
+        effectiveSettings: { FOX_READ_ONLY: 'on', FOX_ALLOW_SCRIPTS: 'off' },
+      },
+    }));
+    expect(byId(results, 'settings')).toMatchObject({ status: 'OK' });
+  });
+
+  it('R-2: an effective difference is still a WARN', async () => {
+    writeToken(TOKEN);
+    writeClaudeConfig({
+      projects: { [cwd]: { mcpServers: { 'kitsune-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: 'true' } } } } },
+    });
+    const results = await runChecks(deps({ token: TOKEN, info: { effectiveSettings: { FOX_READ_ONLY: 'off' } } }));
+    expect(byId(results, 'settings')).toMatchObject({ status: 'WARN' });
+    expect(byId(results, 'settings').detail).toContain("FOX_READ_ONLY: this session 'on', daemon 'off'");
   });
 });
 
