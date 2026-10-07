@@ -23,6 +23,10 @@ export const TIMEOUTS = {
   WAIT_FOR_URL: 15_000,
   /** After the last reconnect attempt gave up: start a fresh cycle. */
   RECONNECT_RESTART: 60_000,
+  /** sendToNativeHost: wait before the next attempt when not connected or posting failed. */
+  SEND_RETRY_DELAY: 1_000,
+  /** sendToNativeHost: wait for connectNativeHost() before checking the port again. */
+  CONNECT_SETTLE: 500,
 } as const;
 
 /** Growth of the reconnect delay per attempt (up to TIMEOUTS.RECONNECT_MAX). */
@@ -53,6 +57,8 @@ export const LIMITS = {
   /** Console summary of a Native Messaging frame: action / requestId length, key names listed. */
   NATIVE_SUMMARY_TEXT: 64,
   NATIVE_SUMMARY_KEYS: 20,
+  /** sendToNativeHost: attempts after the first when not connected or posting fails. */
+  SEND_RETRIES: 3,
 } as const;
 
 // Message types and log limits shared with the content script (../wire-messages.ts).

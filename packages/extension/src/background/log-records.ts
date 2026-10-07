@@ -1,6 +1,7 @@
 // Console / network log records: sanitizing and querying a buffer (L0, pure).
 // The per-tab buffers themselves are in logging.ts.
 
+import { errorMessage } from "../error-message";
 import type { CommandResult } from "./types";
 import { clipText } from "../text-clip";
 import { DEFAULTS, LIMITS, LOG_TEXT_LIMIT } from "./constants";
@@ -22,7 +23,7 @@ export function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null 
       out[key] = value;
     } else if (typeof value === "object" && !Array.isArray(value)) {
       const record: Record<string, string> = {};
-      for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, LIMITS.LOG_RECORD_ENTRIES)) {
+      for (const [k, v] of Object.entries<unknown>(value).slice(0, LIMITS.LOG_RECORD_ENTRIES)) {
         if (typeof v === "string") record[clipText(k, LIMITS.LOG_RECORD_KEY)] = clipText(v, LIMITS.LOG_RECORD_VALUE);
       }
       out[key] = record;
@@ -82,7 +83,7 @@ export function queryNetworkLogs(
     try {
       pattern = new RegExp(options.urlPattern);
     } catch (error) {
-      return { success: false, error: `Invalid urlPattern: ${(error as Error).message}` };
+      return { success: false, error: `Invalid urlPattern: ${errorMessage(error)}` };
     }
     logs = logs.filter((l) => typeof l.url === "string" && pattern.test(l.url));
   }

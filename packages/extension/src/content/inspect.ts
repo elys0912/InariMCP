@@ -2,7 +2,7 @@
 // snapshots, full-page dimensions, inspect element, values and text.
 
 import { clipText } from "../text-clip";
-import { DEFAULTS, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
+import { DEFAULTS, HIGHLIGHT_STYLE, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
 import {
   isPasswordField,
   isVisible,
@@ -33,9 +33,10 @@ export function getPageInfo(): Record<string, unknown> {
 
   const candidates = document.querySelectorAll(INTERACTIVE_SELECTORS.join(", "));
   for (let index = 0; index < candidates.length && index < LIMITS.PAGE_INFO_ELEMENTS; index++) {
-    const el = candidates[index]!;
+    const el = candidates.item(index);
     const rect = el.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
+      // Property reads only: on an element without them they are undefined (→ null below).
       const htmlEl = el as HTMLInputElement;
       interactiveElements.push({
         tag: el.tagName.toLowerCase(),
@@ -76,6 +77,7 @@ export function getPageInfo(): Record<string, unknown> {
       fields: Array.from(form.elements)
         .slice(0, LIMITS.FORM_FIELDS)
         .map((el) => {
+          // A form control of any kind: property reads only, undefined where absent.
           const inp = el as HTMLInputElement;
           return {
             tag: el.tagName.toLowerCase(),
@@ -108,7 +110,7 @@ export function getElements(options: {
   // One evaluation of the selector, read up to `limit` (the NodeList is static).
   const matches = document.querySelectorAll(selector);
   for (let index = 0; index < matches.length && index < limit; index++) {
-    elements.push(getElementInfo(matches[index]!));
+    elements.push(getElementInfo(matches.item(index)));
   }
 
   return {
@@ -150,11 +152,11 @@ export function highlightElement(
       top: ${rect.top}px;
       width: ${rect.width}px;
       height: ${rect.height}px;
-      border: 3px solid #7c3aed;
-      background: rgba(124, 58, 237, 0.1);
+      border: 3px solid ${HIGHLIGHT_STYLE.COLOR};
+      background: ${HIGHLIGHT_STYLE.FILL};
       pointer-events: none;
-      z-index: 999999;
-      box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
+      z-index: ${HIGHLIGHT_STYLE.Z_INDEX};
+      box-shadow: 0 0 10px ${HIGHLIGHT_STYLE.GLOW};
       transition: all 0.3s ease;
     `;
 
@@ -163,7 +165,7 @@ export function highlightElement(
       position: absolute;
       top: -25px;
       left: 0;
-      background: #7c3aed;
+      background: ${HIGHLIGHT_STYLE.COLOR};
       color: white;
       padding: 2px 8px;
       font-size: 12px;
@@ -188,7 +190,7 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
   const elements: Record<string, unknown>[] = [];
   const candidates = document.querySelectorAll(INTERACTIVE_SELECTORS.join(", "));
   for (let index = 0; index < candidates.length && elements.length < LIMITS.SNAPSHOT_ELEMENTS; index++) {
-    const el = candidates[index]!;
+    const el = candidates.item(index);
     const rect = el.getBoundingClientRect();
     if (
       rect.top < window.innerHeight &&
@@ -288,6 +290,7 @@ let lastContextTarget: Element | null = null;
  * can reach.
  */
 export function rememberContextTarget(event: { target: EventTarget | null }): void {
+  // Checked by nodeType below (a page element is not `instanceof Element` in this sandbox).
   const target = event.target as Element | null;
   lastContextTarget = target && target.nodeType === 1 ? target : null;
 }

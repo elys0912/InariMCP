@@ -6,25 +6,15 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BROWSER_ACTIONS } from '@kitsune-mcp/shared';
+import { WIRE_ACTION_MAP as wireMap } from '../../packages/extension/src/action-map.ts';
 import {
   ACTION_TABLE,
   UNKNOWN_ACTION,
   describeAction,
 } from '../../packages/extension/src/background/action-table.ts';
 
-type WireMap = ReadonlyMap<string, string | null>;
-
-let wireMap: WireMap;
-
-beforeAll(async () => {
-  // action-map.ts imports only a type; loading it as a module runs it once
-  // and it publishes the table on globalThis (it also exports it).
-  await import('../../packages/extension/src/action-map.ts');
-  wireMap = (globalThis as { KITSUNE_WIRE_ACTION_MAP?: WireMap }).KITSUNE_WIRE_ACTION_MAP!;
-});
-
 describe('BROWSER_ACTIONS ⇔ WIRE_ACTION_MAP', () => {
-  it('the extension publishes the table', () => {
+  it('the extension exports the table as a Map', () => {
     expect(wireMap).toBeInstanceOf(Map);
   });
 
@@ -101,8 +91,9 @@ describe('3.A17: observer id round trip, wire name to a fake content script', ()
 
   /** One wire command, through WIRE_ACTION_MAP and the action table. */
   const run = async (wire: string, data: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    const action = wireMap.get(wire)!;
-    const row = ACTION_TABLE.get(action)!;
+    const action = wireMap.get(wire);
+    const row = action ? ACTION_TABLE.get(action) : undefined;
+    if (!action || !row) throw new Error(`${wire} has no row of the action table`);
     return row.handler({ action, data, tabId: TAB_ID } as never);
   };
 

@@ -1,5 +1,6 @@
 // navigate / new-tab navigate / back / forward (L3).
 
+import { errorMessage } from "../error-message";
 import { resolveTab, noTargetTab } from "./tab-target";
 import { waitForTabLoad, TAB_LOAD_OPTIONS, tabLoadError } from "./tab-wait";
 import { createNewTab } from "./tabs";
@@ -29,7 +30,7 @@ export async function navigateTo(
     }
     return { success: true, url: updated?.url || data.url };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 
@@ -63,7 +64,7 @@ export async function navigateNewTab(
     const updated = await browser.tabs.get(tabId);
     return { success: true, url: updated.url || data.url, tabId };
   } catch (error) {
-    return { success: false, error: (error as Error).message, tabId };
+    return { success: false, error: errorMessage(error), tabId };
   }
 }
 
@@ -89,6 +90,6 @@ export async function navigateHistory(
     }
     return { success: true, url: updated?.url, title: updated?.title };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }

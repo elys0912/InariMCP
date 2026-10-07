@@ -50,9 +50,9 @@ let pageHooksInstalled = false;
 // "loading" at init means the early document_start injection ran.
 // readyStateAtInit is set by content.ts right after its guard
 // (recordScriptStart), not at module load.
-const injectionInfo = {
-  readyStateAtInit: null as string | null,
-  readyStateAtHookInstall: null as string | null,
+const injectionInfo: { readyStateAtInit: string | null; readyStateAtHookInstall: string | null } = {
+  readyStateAtInit: null,
+  readyStateAtHookInstall: null,
 };
 
 /** Where the hooks hand what they see (log-store.ts). */
@@ -116,7 +116,7 @@ function stringifyArg(arg: unknown): string {
 
 function errorMessage(reason: unknown): string {
   if (typeof reason === "object" && reason !== null) {
-    const message = (reason as { message?: unknown }).message;
+    const message = "message" in reason ? reason.message : undefined;
     if (typeof message === "string") return message;
   }
   return safeString(reason);
@@ -127,6 +127,7 @@ function readHeaders(headers: unknown): Record<string, string> | undefined {
   if (typeof headers !== "object" || headers === null) return undefined;
   const out: Record<string, string> = {};
   try {
+    // A page-realm Headers is not `instanceof Headers` here: duck-typed below.
     const h = headers as Headers;
     if (typeof h.forEach === "function" && typeof h.get === "function") {
       h.forEach((value, key) => {
@@ -203,6 +204,7 @@ async function recordFetchResponse(
   sink: PageHookSink,
 ): Promise<void> {
   try {
+    // The page's Response (another realm): every field is type-checked below.
     const res = response as Response;
     entry.status = typeof res.status === "number" ? res.status : undefined;
     entry.statusText = typeof res.statusText === "string" ? res.statusText : undefined;
@@ -362,6 +364,7 @@ function installXhrHooks(pageWin: Window & typeof globalThis, sink: PageHookSink
   const sendHook = function (this: unknown, ...args: unknown[]): unknown {
     let settle: (() => void) | null = null;
     if (typeof this === "object" && this !== null) {
+      // The page's XHR (another realm, not `instanceof XMLHttpRequest` here).
       const xhr = this as XMLHttpRequest;
       try {
         settle = beginRequest();

@@ -140,6 +140,7 @@ function findByText(text: string): Element | null {
   let firstVisible: Element | null = null;
   let first: Element | null = null;
   for (let i = 0; i < Math.min(matches.snapshotLength, LIMITS.TEXT_MATCHES); i++) {
+    // XPathResult types its nodes as Node; the text locator selects elements only.
     const el = matches.snapshotItem(i) as Element;
     first ??= el;
     if (!isVisible(el)) continue;
@@ -202,6 +203,7 @@ export function findElement(options: FindElementOptions): Element | null {
       XPathResult.FIRST_ORDERED_NODE_TYPE,
       null,
     );
+    // XPathResult types its node as Node; a locator XPath is meant to select an element.
     return result.singleNodeValue as Element | null;
   }
   if (options.text) {
@@ -260,8 +262,9 @@ export function generateSelector(element: Element): string {
 
     const siblings = current.parentElement?.children;
     if (siblings) {
+      const tagName = current.tagName;
       const sameTagSiblings = Array.from(siblings).filter(
-        (s) => s.tagName === current!.tagName,
+        (s) => s.tagName === tagName,
       );
       if (sameTagSiblings.length > 1) {
         const index = sameTagSiblings.indexOf(current) + 1;
@@ -306,6 +309,7 @@ export function generateXPath(element: Element): string {
 
 export function getElementInfo(element: Element): ElementInfo {
   const rect = element.getBoundingClientRect();
+  // Property reads only: on an element without them they are undefined (→ null below).
   const htmlEl = element as HTMLInputElement;
   const isPassword = isPasswordField(element);
 

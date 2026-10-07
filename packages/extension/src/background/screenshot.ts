@@ -1,5 +1,6 @@
 // Screenshots: single tab (visible / full page) and all tabs (L3).
 
+import { errorMessage } from "../error-message";
 import type { ContentRequest } from "../content/types";
 import { findUrlRule, type CompiledUrlRule } from "../url-rule";
 import { DEFAULTS, TIMEOUTS, TOP_FRAME_ID } from "./constants";
@@ -68,7 +69,7 @@ export async function takeScreenshot(
       },
     };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 
@@ -211,7 +212,7 @@ export async function screenshotAllTabs(
       ...excluded,
     };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 
@@ -256,7 +257,7 @@ export async function captureTabsWithin(
         timestamp: Date.now(),
       });
     } catch (e) {
-      results.push({ ...base, success: false, error: (e as Error).message });
+      results.push({ ...base, success: false, error: errorMessage(e) });
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }

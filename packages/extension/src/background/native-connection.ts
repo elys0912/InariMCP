@@ -4,8 +4,9 @@
 // set by background.ts (setConnectionHooks), so this module imports none of
 // the modules above it.
 
-import { LIMITS, RECONNECT_BACKOFF_FACTOR, TIMEOUTS } from "./constants";
+import { errorMessage } from "../error-message";
 import { clipText } from "../text-clip";
+import { LIMITS, RECONNECT_BACKOFF_FACTOR, TIMEOUTS } from "./constants";
 import type { NativeMessage } from "./types";
 
 interface PendingRequest {
@@ -16,11 +17,9 @@ interface PendingRequest {
   port: browser.runtime.Port;
 }
 
-/** sendToNativeHost: attempts after the first when not connected or posting fails. */
-const MAX_SEND_RETRIES = 3;
-const SEND_RETRY_DELAY_MS = 1000;
-/** sendToNativeHost: wait for connectNativeHost() before checking the port again. */
-const CONNECT_SETTLE_MS = 500;
+const MAX_SEND_RETRIES = LIMITS.SEND_RETRIES;
+const SEND_RETRY_DELAY_MS = TIMEOUTS.SEND_RETRY_DELAY;
+const CONNECT_SETTLE_MS = TIMEOUTS.CONNECT_SETTLE;
 
 const NATIVE_HOST_NAME = "kitsune_mcp";
 let nativePort: browser.runtime.Port | null = null;
@@ -167,19 +166,15 @@ function releasePort(port: browser.runtime.Port): void {
   }
 }
 
-function handleDisconnect(port: browser.runtime.Port): void {
-  if (port !== nativePort) {
-    // A port already replaced (posting on it failed): its late onDisconnect
-    // must not drop the current port. Only its own requests are failed.
-    port.onMessage.removeListener(handleNativeMessage);
-    port.onDisconnect.removeListener(handleDisconnect);
-    rejectPending(port, "Native host disconnected - reconnecting...");
-    return;
-  }
-  console.log("[KitsuneMCP] Disconnected from native host");
-  if (port.error) {
-    console.error("[KitsuneMCP] Disconnect error:", port.error);
-    lastHostError = port.error.message;
+/**
+ * The current port is lost (onDisconnect, or posting on it failed): record
+ * why, update the reconnect counter and forget the port. `error`: what the
+ * browser reported; without it, a host that never answered is reported as
+ * having exited.
+ */
+function forgetCurrentPort(error: string | undefined): void {
+  if (error !== undefined) {
+    lastHostError = error;
   } else if (!hostConfirmed) {
     lastHostError = "Native host exited without answering";
   }
@@ -192,6 +187,20 @@ function handleDisconnect(port: browser.runtime.Port): void {
   hostConfirmed = false;
   hostConfirmedAt = null;
   nativePort = null;
+}
+
+function handleDisconnect(port: browser.runtime.Port): void {
+  if (port !== nativePort) {
+    // A port already replaced (posting on it failed): its late onDisconnect
+    // must not drop the current port. Only its own requests are failed.
+    port.onMessage.removeListener(handleNativeMessage);
+    port.onDisconnect.removeListener(handleDisconnect);
+    rejectPending(port, "Native host disconnected - reconnecting...");
+    return;
+  }
+  console.log("[KitsuneMCP] Disconnected from native host");
+  if (port.error) console.error("[KitsuneMCP] Disconnect error:", port.error);
+  forgetCurrentPort(port.error?.message);
 
   rejectPending(null, "Native host disconnected - reconnecting...");
   // Nobody is left to receive an answer: open approval requests are
@@ -225,19 +234,47 @@ export function describeNativeMessage(raw: unknown): string {
   return parts.join(" ");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A Native Messaging frame as a NativeMessage, or null when it is not one:
+ * an object whose action / error (when there) are strings, requestId a
+ * number or a string, tabId a number and data an object. The fields inside
+ * `data` are not checked here (handlers read them defensively).
+ */
+export function parseNativeMessage(raw: unknown): NativeMessage | null {
+  if (!isRecord(raw)) return null;
+  const { action, requestId, tabId, data, error } = raw;
+  if (!(action === undefined || typeof action === "string")) return null;
+  if (!(requestId === undefined || typeof requestId === "number" || typeof requestId === "string")) return null;
+  if (!(tabId === undefined || typeof tabId === "number")) return null;
+  if (!(data === undefined || isRecord(data))) return null;
+  if (!(error === undefined || typeof error === "string")) return null;
+  return { ...raw, action, requestId, tabId, data, error };
+}
+
 function handleNativeMessage(raw: unknown): void {
-  const message = raw as NativeMessage;
   console.log(`[KitsuneMCP] Received from native host: ${describeNativeMessage(raw)}`);
 
+  // Any frame shows the host is up, a malformed one included.
   if (!hostConfirmed) {
     hostConfirmed = true;
     lastHostError = null;
     hostConfirmedAt = Date.now();
   }
 
-  if (typeof message.requestId === "number" && pendingRequests.has(message.requestId)) {
-    const entry = pendingRequests.get(message.requestId)!;
-    pendingRequests.delete(message.requestId);
+  const message = parseNativeMessage(raw);
+  if (message === null) {
+    console.error("[KitsuneMCP] Dropped a malformed message from the native host");
+    return;
+  }
+
+  const requestId = message.requestId;
+  const entry = typeof requestId === "number" ? pendingRequests.get(requestId) : undefined;
+  if (typeof requestId === "number" && entry !== undefined) {
+    pendingRequests.delete(requestId);
     // BUG FIX: clear the timeout so it doesn't fire after resolution
     clearTimeout(entry.timeoutId);
 
@@ -265,19 +302,15 @@ export function sendToNativeHost(
 
 /**
  * Posting failed on `port` (it is broken): stop using it, fail its requests
- * and report the loss as handleDisconnect would, since its own onDisconnect
- * is no longer listened to. The caller then retries on a new port, or, out
- * of retries, schedules the reconnect handleDisconnect would have. True when
- * `port` was the current port.
+ * and report the loss as handleDisconnect would (lastError, reconnect
+ * counter, hooks), since its own onDisconnect is no longer listened to. The
+ * caller then retries on a new port, or, out of retries, schedules the
+ * reconnect handleDisconnect would have. True when `port` was the current
+ * port.
  */
-function dropFailedPort(port: browser.runtime.Port): boolean {
+function dropFailedPort(port: browser.runtime.Port, error: unknown): boolean {
   const wasCurrent = port === nativePort;
-  if (wasCurrent) {
-    nativePort = null;
-    isConnected = false;
-    hostConfirmed = false;
-    hostConfirmedAt = null;
-  }
+  if (wasCurrent) forgetCurrentPort(errorMessage(error));
   releasePort(port);
   rejectPending(port, "Native host disconnected - reconnecting...");
   if (wasCurrent) hooks.onDisconnected();
@@ -332,7 +365,7 @@ function sendAttempt(message: NativeMessage, timeoutMs: number, retryCount: numb
         pendingRequests.delete(requestId);
         clearTimeout(timeoutId);
 
-        const wasCurrent = dropFailedPort(port);
+        const wasCurrent = dropFailedPort(port, error);
         if (retryCount < MAX_SEND_RETRIES) {
           console.log("[KitsuneMCP] Send failed, reconnecting and retrying...");
           retry();

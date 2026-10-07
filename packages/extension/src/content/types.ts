@@ -58,12 +58,11 @@ export interface TypeOptions extends FindElementOptions {
 
 export type ScrollDirection = "up" | "down" | "left" | "right" | "top" | "bottom";
 
-export interface ScrollOptions extends FindElementOptions {
+/** fox_scroll arguments (the server schema: direction, amount, selector, toElement). */
+export interface ScrollOptions extends Pick<FindElementOptions, "selector" | "xpath" | "id"> {
   toElement?: string;
   direction?: ScrollDirection;
   amount?: number;
-  smooth?: boolean;
-  block?: ScrollLogicalPosition;
 }
 
 export interface HighlightOptions extends FindElementOptions {

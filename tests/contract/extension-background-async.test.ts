@@ -14,6 +14,7 @@ import { registerListeners } from '../../packages/extension/src/background/liste
 import { sanitizeLogRecord } from '../../packages/extension/src/background/log-records.ts';
 import { clipApprovalText, isApprovedHost } from '../../packages/extension/src/approval.ts';
 import { clipText } from '../../packages/extension/src/text-clip.ts';
+import { LIMITS, TIMEOUTS } from '../../packages/extension/src/background/constants.ts';
 import {
   setupStateOfReply,
   setupStateOfFailure,
@@ -172,12 +173,12 @@ describe('native connection: a replaced port (E-02, E-24)', () => {
     const pending = mod.sendToNativeHost({ action: 'status' }).then(() => 'resolved', (e: Error) => e.message);
     // Each retry opens a new port (after the retry delay); it breaks before
     // the request is posted on it (the connect settle time).
-    const RETRIES = 3;
+    const RETRIES = LIMITS.SEND_RETRIES;
     for (let i = 1; i <= RETRIES; i++) {
-      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(TIMEOUTS.SEND_RETRY_DELAY);
       expect(ports).toHaveLength(i + 1);
       ports[i]!.failPost = true;
-      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(TIMEOUTS.CONNECT_SETTLE);
     }
     expect(await pending).toBe('Attempt to postMessage on disconnected port');
     const last = ports[RETRIES]!;
@@ -188,6 +189,59 @@ describe('native connection: a replaced port (E-02, E-24)', () => {
     // The reconnect is scheduled without waiting for an onDisconnect.
     await vi.advanceTimersByTimeAsync(5_000);
     expect(ports.length).toBeGreaterThan(RETRIES + 1);
+  });
+
+  it('a failed post reports the loss like a disconnect: lastError and the reconnect counter (E-7)', async () => {
+    const { mod, ports } = await loadNativeConnection();
+    // Two hosts that exit without answering: the backoff counter reaches 2.
+    mod.connectNativeHost();
+    ports[0]!.onDisconnect.fire(ports[0]!);
+    expect(mod.hostStatus().lastError).toBe('Native host exited without answering');
+    await vi.advanceTimersByTimeAsync(TIMEOUTS.RECONNECT_INITIAL);
+    ports[1]!.onDisconnect.fire(ports[1]!);
+    await vi.advanceTimersByTimeAsync(TIMEOUTS.RECONNECT_INITIAL * 1.5);
+    expect(ports).toHaveLength(3);
+    // The third host answers and stays up past the stable period.
+    answerLast(ports[2]!);
+    expect(mod.hostStatus()).toMatchObject({ confirmed: true, lastError: null });
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    ports[2]!.failPost = true;
+    const pending = mod.sendToNativeHost({ action: 'status' }).then(() => 'resolved', (e: Error) => e.message);
+    expect(mod.hostStatus()).toMatchObject({
+      confirmed: false,
+      portOpen: false,
+      lastError: 'Attempt to postMessage on disconnected port',
+    });
+    // The retry opens a new port; that host exits without answering.
+    await vi.advanceTimersByTimeAsync(TIMEOUTS.SEND_RETRY_DELAY + TIMEOUTS.CONNECT_SETTLE);
+    expect(ports).toHaveLength(4);
+    ports[3]!.onDisconnect.fire(ports[3]!);
+    expect(await pending).toMatch(/disconnected/);
+    // The stable connection started the counter over: the next attempt
+    // comes after the initial delay, not after 1.5^2 of it.
+    await vi.advanceTimersByTimeAsync(TIMEOUTS.RECONNECT_INITIAL);
+    expect(ports).toHaveLength(5);
+  });
+
+  it('a malformed frame is dropped, not taken as an answer or a command (E-9)', async () => {
+    const { mod, ports, hooks } = await loadNativeConnection();
+    mod.connectNativeHost();
+    const pending = mod.sendToNativeHost({ action: 'status' }, { timeoutMs: 5_000 })
+      .then(() => 'resolved', (e: Error) => e.message);
+    await vi.advanceTimersByTimeAsync(0);
+    const last = ports[0]!.posted.at(-1)!;
+    ports[0]!.onMessage.fire({ requestId: last.requestId, error: { code: 1 } });
+    ports[0]!.onMessage.fire({ action: 'click', requestId: 'r1', data: 'not an object' });
+    ports[0]!.onMessage.fire(['click']);
+    expect(hooks.onCommand).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await pending).toBe('Request timeout');
+
+    expect(mod.parseNativeMessage({ action: 'click', requestId: 'r2', tabId: 3, data: { selector: '#a' } }))
+      .toEqual({ action: 'click', requestId: 'r2', tabId: 3, data: { selector: '#a' } });
+    expect(mod.parseNativeMessage({ requestId: 4, data: [] })).toBeNull();
+    expect(mod.parseNativeMessage({ action: 'click', tabId: '3' })).toBeNull();
   });
 
   it('timeoutMs bounds how long a posted request stays pending', async () => {

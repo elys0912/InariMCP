@@ -74,6 +74,7 @@ export async function waitForChange(
       for (const mutation of mutations) {
         const change: Record<string, unknown> = {
           type: mutation.type,
+          // A text node target has no tagName: `?.` leaves it undefined.
           target: (mutation.target as Element).tagName?.toLowerCase(),
           addedNodes: mutation.addedNodes.length,
           removedNodes: mutation.removedNodes.length,
@@ -116,7 +117,8 @@ export async function waitForChange(
       childList: true,
       subtree: options.subtree !== false,
       attributes: options.attributes !== false,
-      characterData: options.characterData === true,
+      // changeType "text" waits for characterData records: observe them.
+      characterData: options.characterData === true || options.changeType === "text",
       attributeOldValue: options.attributeOldValue === true,
     });
 
@@ -206,6 +208,7 @@ export function observeElement(
         type: mutation.type,
         timestamp: Date.now(),
         target: generateSelector(mutation.target as Element),
+        // Added / removed text nodes have no tagName: reported as "text".
         addedNodes: Array.from(mutation.addedNodes)
           .map((n) => (n as Element).tagName?.toLowerCase() || "text")
           .filter(Boolean),
@@ -243,14 +246,14 @@ export function stopObserving(options: {
 }): Record<string, unknown> {
   const observerId = options.observerId;
 
-  if (!activeObservers.has(observerId)) {
+  const record = activeObservers.get(observerId);
+  if (!record) {
     throw new Error(
       `No observer '${observerId}' on this page (observers end when the page ` +
       "reloads or navigates)",
     );
   }
 
-  const record = activeObservers.get(observerId)!;
   record.observer.disconnect();
   activeObservers.delete(observerId);
 
@@ -278,6 +281,7 @@ export async function clickAndWait(
       for (const mutation of mutations) {
         changes.push({
           type: mutation.type,
+          // A text node target has no tagName: `?.` leaves it undefined.
           target: (mutation.target as Element).tagName?.toLowerCase(),
           addedNodes: mutation.addedNodes.length,
           removedNodes: mutation.removedNodes.length,

@@ -53,7 +53,7 @@ export type LogRecordRefusal = "not_top_frame" | "not_logging" | "protected_page
 export function acceptLogRecords(
   tabId: number,
   pageUrls: (string | undefined)[],
-  payload: { console?: unknown; network?: unknown },
+  payload: Readonly<Record<string, unknown>>,
 ): LogRecordRefusal | null {
   const buffer = logBuffers.get(tabId);
   if (!buffer) return "not_logging";
@@ -107,7 +107,7 @@ export async function stopLoggingOnTab(target: browser.tabs.Tab | undefined): Pr
   if (!target) return noTargetTab();
   // Ask the page first, so the entries it has not sent yet are kept.
   const reply = await sendToContentScript(target.id, { action: "stopLogging" });
-  if (reply.success) acceptLogRecords(target.id, [target.url], reply as { console?: unknown; network?: unknown });
+  if (reply.success) acceptLogRecords(target.id, [target.url], reply);
   loggingTabs.delete(target.id);
   return {
     success: true,
@@ -130,7 +130,7 @@ export async function getLogsOfTab(
   // themselves come from the background buffer, so they are there even
   // when the current page has no content script.
   const flush = await sendToContentScript(target.id, { action: "flushLogs" });
-  if (flush.success) acceptLogRecords(target.id, [target.url], flush as { console?: unknown; network?: unknown });
+  if (flush.success) acceptLogRecords(target.id, [target.url], flush);
   const buffer = logBuffers.get(target.id) ?? { console: [], network: [] };
   const result = action === "getConsoleLogs"
     ? queryConsoleLogs(buffer.console, data)
