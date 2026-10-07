@@ -1,5 +1,6 @@
 /**
- * Password guard for keyboard input without a selector (headless fox_type):
+ * Password guard for keyboard input without a selector (headless fox_type,
+ * fox_press_key):
  * is the element that receives the keys a password field?
  *
  * The focused element is followed through open shadow roots
@@ -20,8 +21,9 @@ export async function focusedIsPassword(frame: Frame): Promise<boolean> {
     for (let depth = 0; depth <= FOCUS_MAX_FRAME_DEPTH; depth++) {
       const element = (await current.evaluateHandle(deepActiveElement)).asElement();
       if (!element) return false; // nothing focused: the keys go nowhere
-      const tag = await element.evaluate((el) => el.tagName);
-      if (tag !== 'IFRAME' && tag !== 'FRAME') return await element.evaluate(isPasswordElement);
+      // localName: tagName is lower case in XML (XHTML) documents.
+      const name = await element.evaluate((el) => el.localName);
+      if (name !== 'iframe' && name !== 'frame') return await element.evaluate(isPasswordElement);
       const child = await element.contentFrame();
       if (!child) return true;
       current = child;

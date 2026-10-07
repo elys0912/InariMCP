@@ -25,13 +25,15 @@ export function unrecognizedHeadlessValue(env: NodeJS.ProcessEnv = process.env):
 
 /**
  * The value of FOX_* or else its legacy CLAUDE_BROWSER_* name; a blank value
- * (empty or white space only) counts as unset. Every daemon setting is read
- * this way (safety/config.ts, utils/screenshot.ts, the doctor).
+ * (empty or white space only) counts as unset, and a value is returned
+ * without surrounding white space (a path such as FOX_EXECUTABLE is used as
+ * is). Every daemon setting is read this way (safety/config.ts,
+ * utils/screenshot.ts, the doctor).
  */
 export function resolveFoxEnv(env: NodeJS.ProcessEnv, foxKey: string, legacyKey: string): string | undefined {
   for (const key of [foxKey, legacyKey]) {
-    const value = env[key];
-    if (value !== undefined && value.trim() !== '') return value;
+    const value = env[key]?.trim();
+    if (value !== undefined && value !== '') return value;
   }
   return undefined;
 }

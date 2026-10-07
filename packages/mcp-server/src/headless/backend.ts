@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { headlessStartupTimeoutMs, resolveFoxEnv } from '../utils/headless-env.js';
 import { ignoredParamWarnings, parseArgs } from './helpers.js';
-import { headlessRoute, NO_TAB_ERROR, type TabHost } from './actions.js';
+import { headlessRoute, NO_TAB_ERROR, type DialogHost, type TabHost } from './actions.js';
 import {
   ARM_TTL_MS,
   DIALOG_GRACE_MS,
@@ -24,19 +24,43 @@ const NOT_STARTED_ERROR = 'Headless browser not started';
 const NOT_RUN_ERROR =
   'Not run: the command timed out or was cancelled while it waited for an earlier headless command';
 
+const DIALOG_ACTIONS = ['accept', 'dismiss'] as const;
+
+/** What is done with a dialog. */
+type DialogAction = (typeof DIALOG_ACTIONS)[number];
+
 /** fox_handle_dialog's arguments as the tool schema delivers them (helpers.ts parseArgs). */
 const handleDialogArgs = z.object({
-  action: z.enum(['accept', 'dismiss']),
+  action: z.enum(DIALOG_ACTIONS),
   promptText: z.string().optional(),
   timeout: z.number(),
 });
 
-interface DialogEvent {
+/** A dialog and what was done with it. */
+interface DialogInfo {
   type: string;
   message: string;
-  handled: 'accept' | 'dismiss';
+  handled: DialogAction;
+}
+
+interface DialogEvent extends DialogInfo {
   /** Dismissed by the backend because no fox_handle_dialog was waiting or armed. */
   auto: boolean;
+}
+
+/** A fox_handle_dialog that found no dialog: it applies to the next one until `until`. */
+interface ArmedDialog {
+  action: DialogAction;
+  promptText?: string;
+  /** Date.now() value after which it no longer applies. */
+  until: number;
+}
+
+/** A closed gate: `promise` resolves once `open` is called. */
+function gate(): { promise: Promise<void>; open: () => void } {
+  let open: () => void = () => { /* replaced below */ };
+  const promise = new Promise<void>((resolve) => { open = resolve; });
+  return { promise, open };
 }
 
 /** How a fox_handle_dialog wait ended without a dialog. */
@@ -53,7 +77,7 @@ export class HeadlessBrowser {
   // waiting for a dialog must not block the click that opens it.
   private _pendingDialog = new Map<number, Dialog>();
   private _dialogWaiters = new Map<number, DialogWaiter>();
-  private _armed = new Map<number, { action: 'accept' | 'dismiss'; promptText?: string; until: number }>();
+  private _armed = new Map<number, ArmedDialog>();
   private _dialogEvents = new Map<number, DialogEvent[]>();
   private _browser: Browser | null = null;
   private _context: BrowserContext | null = null;
@@ -79,6 +103,11 @@ export class HeadlessBrowser {
       this._activeTabId = tabId;
       this._page = page;
     },
+  };
+
+  /** The dialog handling the unlocked route of handle_dialog (actions.ts) calls. */
+  private readonly _dialogHost: DialogHost = {
+    handleDialog: (tabId, args, signal) => this._handleDialog(tabId, args, signal),
   };
 
   // -----------------------------------------------------------------------
@@ -139,6 +168,15 @@ export class HeadlessBrowser {
   /** Started and not stopped (also while no tab is open). */
   isReady(): boolean {
     return this._context !== null;
+  }
+
+  /**
+   * Pages open in the browser context, registered as tabs or not (0 when
+   * not started). For the tests: a page that is no tab is a leak.
+   * @internal
+   */
+  contextPageCount(): number {
+    return this._context?.pages().length ?? 0;
   }
 
   // -----------------------------------------------------------------------
@@ -204,13 +242,13 @@ export class HeadlessBrowser {
     const route = headlessRoute(action);
     // Not serialised: it waits for a dialog that a queued action may be about to open.
     if (route.kind === 'unlocked') {
-      return this._finish(action, tabId ?? this._activeTabId, args, await this._run(action, () => this._handleDialog(tabId, args, signal)));
+      const result = await this._run(action, () => route.run({ tabId, args, signal, dialogs: this._dialogHost }));
+      return this._finish(action, tabId ?? this._activeTabId, args, result);
     }
 
-    let release!: () => void;
-    const gate = new Promise<void>((r) => { release = r; });
+    const lock = gate();
     const prev = this._lockChain;
-    this._lockChain = gate;
+    this._lockChain = lock.promise;
     await prev;
     try {
       if (signal?.aborted === true || Date.now() >= deadline) {
@@ -231,7 +269,7 @@ export class HeadlessBrowser {
       if (route.kind === 'dispatch' && route.needsPage) this._reportTab(result, target);
       return this._finish(action, target, args, result);
     } finally {
-      release();
+      lock.open();
     }
   }
 
@@ -342,12 +380,12 @@ export class HeadlessBrowser {
 
   private async _settle(
     dialog: Dialog,
-    action: 'accept' | 'dismiss',
+    action: DialogAction,
     promptText?: string,
     /** Called before the dialog is settled, so a result that waits for it already finds the record. */
-    onInfo?: (info: { type: string; message: string; handled: 'accept' | 'dismiss' }) => void,
-  ): Promise<{ type: string; message: string; handled: 'accept' | 'dismiss' }> {
-    const info = { type: dialog.type(), message: dialog.message(), handled: action };
+    onInfo?: (info: DialogInfo) => void,
+  ): Promise<DialogInfo> {
+    const info: DialogInfo = { type: dialog.type(), message: dialog.message(), handled: action };
     onInfo?.(info);
     try {
       if (action === 'accept') await dialog.accept(promptText);

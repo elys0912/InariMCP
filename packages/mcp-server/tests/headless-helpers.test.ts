@@ -2,8 +2,16 @@ import * as fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { AnyZodObject, ZodTypeAny } from 'zod';
-import { filterAriaSnapshot, ignoredParamWarnings, parseArgs } from '../src/headless/helpers.js';
+import {
+  countOccurrences,
+  filterAriaSnapshot,
+  HEADLESS_IGNORED,
+  ignoredParamWarnings,
+  parseArgs,
+} from '../src/headless/helpers.js';
+import { CAPTCHA_SELECTORS } from '../src/headless/actions.js';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
+import { readExtensionSource } from '../../../tests/contract/helpers/extension-source.js';
 import { HEADLESS_COMMAND_TIMEOUT_MS } from '../src/connection/manager.js';
 import {
   ELEMENT_TIMEOUT_MS,
@@ -23,9 +31,17 @@ describe('parseArgs', () => {
       .toEqual({ selector: '#a', timeout: 5 });
   });
 
-  it('names the action and every issue when they do not fit', () => {
-    expect(() => parseArgs(schema, { timeout: '5' }, 'wait_for_element'))
-      .toThrow('Invalid arguments for wait_for_element: selector: Required; timeout: Expected number, received string');
+  it('names the action and every field at fault when they do not fit', () => {
+    // The field names, not zod's wording (H-27).
+    let message = '';
+    try {
+      parseArgs(schema, { timeout: '5' }, 'wait_for_element');
+    } catch (e) {
+      message = e instanceof Error ? e.message : String(e);
+    }
+    expect(message).toMatch(/^Invalid arguments for wait_for_element: /);
+    expect(message).toContain('selector');
+    expect(message).toContain('timeout');
   });
 });
 
@@ -73,6 +89,32 @@ describe('filterAriaSnapshot', () => {
   });
 });
 
+describe('countOccurrences (find_text, H-7)', () => {
+  const TEXT = 'Cat cat concatenate. CAT_x (cat)';
+
+  it('counts case-insensitively by default, case-sensitively on request', () => {
+    expect(countOccurrences(TEXT, 'cat', false, false)).toBe(5);
+    expect(countOccurrences(TEXT, 'cat', true, false)).toBe(3);
+  });
+
+  it('entireWord skips matches adjoined by a letter, digit or underscore', () => {
+    expect(countOccurrences(TEXT, 'cat', false, true)).toBe(3);
+    expect(countOccurrences('café cafés', 'café', false, true)).toBe(1);
+  });
+
+  it('reads the query as literal text', () => {
+    expect(countOccurrences('a.b axb', 'a.b', false, false)).toBe(1);
+    expect(countOccurrences('path\\', 'path\\', false, false)).toBe(1);
+    expect(countOccurrences('say "hi"', '"hi"', false, false)).toBe(1);
+    expect(countOccurrences('(x)', '(', false, false)).toBe(1);
+  });
+
+  it('counts non-overlapping matches and 0 for an empty query', () => {
+    expect(countOccurrences('aaaa', 'aa', false, false)).toBe(2);
+    expect(countOccurrences('abc', '', false, false)).toBe(0);
+  });
+});
+
 describe('ignoredParamWarnings', () => {
   it('is silent for defaults and unknown actions', () => {
     expect(ignoredParamWarnings('click', { doubleClick: false, rightClick: false })).toEqual([]);
@@ -86,6 +128,22 @@ describe('ignoredParamWarnings', () => {
     expect(w.join(' ')).toContain('pressEnter');
     expect(w.join(' ')).toContain('delay');
     expect(ignoredParamWarnings('click', { xpath: '//a' })).toHaveLength(1);
+  });
+
+  it('type clear is honoured with a selector and warned about without one (H-2)', () => {
+    expect(ignoredParamWarnings('type', { clear: true, selector: '#a' })).toEqual([]);
+    expect(ignoredParamWarnings('type', { clear: true })).toEqual([expect.stringContaining('clear')]);
+  });
+
+  it('get_elements warns only for a limit above what headless returns (H-8)', () => {
+    expect(ignoredParamWarnings('get_elements', { limit: 10 })).toEqual([]);
+    expect(ignoredParamWarnings('get_elements', { limit: 500 })).toEqual([expect.stringContaining('limit')]);
+  });
+
+  it('honoured parameters give no warning (H-7, H-15)', () => {
+    expect(ignoredParamWarnings('find_text', { caseSensitive: true, entireWord: true })).toEqual([]);
+    expect(ignoredParamWarnings('highlight', { duration: 100 })).toEqual([]);
+    expect(ignoredParamWarnings('wait_for_element', { visible: false })).toEqual([]);
   });
 
   it('screenshot warns only when saveToFile is turned off', () => {
@@ -102,23 +160,17 @@ describe('ignoredParamWarnings', () => {
 });
 
 describe('HEADLESS_IGNORED against the tool schemas', () => {
-  // The table is not exported: read its action / key pairs from the source.
-  const source = fs.readFileSync(new URL('../src/headless/helpers.ts', import.meta.url), 'utf-8');
-  const block = source.slice(source.indexOf('const HEADLESS_IGNORED'), source.indexOf('export function ignoredParamWarnings'));
-  const table = new Map<string, string[]>();
-  let action = '';
-  for (const line of block.split(/\r?\n/)) {
-    const a = /^ {2}(\w+): \[/.exec(line);
-    if (a) { action = a[1]!; table.set(action, []); }
-    for (const k of line.matchAll(/key: '(\w+)'/g)) table.get(action)!.push(k[1]!);
-  }
+  // Action -> ignored keys, from the exported table (H-17: no longer parsed from the source).
+  const table = new Map<string, string[]>(
+    Object.entries(HEADLESS_IGNORED).map(([action, params]) => [action, (params ?? []).map((p) => p.key)]),
+  );
 
   // Which tools send which wire action, as recorded by tests/contract/tool-golden.test.ts.
   interface Entry { id: string; tool: string; command: { action: string; data: Record<string, unknown> } | null }
   const golden = JSON.parse(fs.readFileSync(new URL('../../../tests/golden/tool-commands.json', import.meta.url), 'utf-8')) as Entry[];
   const toolsOf = (wire: string) => [...new Set(golden.filter((e) => e.command?.action === wire).map((e) => e.tool))];
 
-  it('was read from the source', () => {
+  it('lists the ignored parameters', () => {
     expect(table.size).toBeGreaterThan(10);
     expect(table.get('type')).toContain('pressEnter');
   });
@@ -148,6 +200,15 @@ describe('HEADLESS_IGNORED against the tool schemas', () => {
       }
     }
     expect(checked).toBeGreaterThan(10);
+  });
+});
+
+describe('captcha detection: the same strings as the Extension (H-12)', () => {
+  it('every selector and token name of CAPTCHA_SELECTORS appears in content/captcha.ts', () => {
+    const extension = readExtensionSource('content/captcha.ts');
+    for (const [name, value] of Object.entries(CAPTCHA_SELECTORS)) {
+      expect(extension, name).toContain(value);
+    }
   });
 });
 
