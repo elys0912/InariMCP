@@ -9,7 +9,7 @@
  */
 
 import {
-  CLAUDE_NAME, MIN_NODE_MAJOR, UsageError, buildManifest, buildWrapper, claudeAddArgs,
+  CLAUDE_NAME, DIR_MODE, MANIFEST_MODE, MIN_NODE_MAJOR, UsageError, WRAPPER_MODE, buildManifest, buildWrapper, claudeAddArgs,
   claudeConfigPath, claudeEntryState, claudeRemoveArgs, dataPaths, detectFirefox, findClaudeEntries,
   formatCommand, httpEndpoint, isAscii, isWsl, lookup, manifestState, nmManifestTargets, nodeMajor, nodeVersionManager,
   parseInstallArgs, parseRegDefaultValue, pathApi, repoPaths, samePath, serializeJson,
@@ -170,14 +170,14 @@ async function install(argv, deps, r) {
     plannedDirs.add(dir);
     if (dry) r.plan(`create ${dir}`);
     else {
-      deps.fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+      deps.fs.mkdirSync(dir, { recursive: true, mode: DIR_MODE });
       r.ok(`created ${dir}`);
     }
   }
   if (!dry && platform !== 'win32') {
     for (const dir of [data.dataDir, data.nativeHostDir]) {
       try {
-        deps.fs.chmodSync(dir, 0o700);
+        deps.fs.chmodSync(dir, DIR_MODE);
       } catch {
         // best effort
       }
@@ -189,7 +189,7 @@ async function install(argv, deps, r) {
     r.warn('a path contains non-ASCII characters: run-host.cmd switches to UTF-8 (chcp 65001).');
     r.warn('If Firefox cannot start the host, move the repository / Node.js to an ASCII-only path.');
   }
-  writeIfChanged(deps, r, dry, data.wrapperPath, wrapper, platform === 'win32' ? undefined : 0o700);
+  writeIfChanged(deps, r, dry, data.wrapperPath, wrapper, platform === 'win32' ? undefined : WRAPPER_MODE);
 
   if (platform === 'win32' && fsx(data.nativeHostDir)) {
     // Wrappers from earlier manual setups (run-host-e2e.cmd …) are not referenced any more.
@@ -237,7 +237,7 @@ async function install(argv, deps, r) {
         if (dry) r.plan(`create ${dir}`);
         else deps.fs.mkdirSync(dir, { recursive: true });
       }
-      writeIfChanged(deps, r, dry, t.file, manifestText, platform === 'win32' ? undefined : 0o644);
+      writeIfChanged(deps, r, dry, t.file, manifestText, platform === 'win32' ? undefined : MANIFEST_MODE);
     }
     if (t.note) r.info(`note: ${t.note}`);
 
@@ -312,26 +312,24 @@ async function registerWindows(deps, r, opts, key, manifestPath) {
   r.ok(`${q.value === null ? 'registered' : 'updated'} ${key} = ${manifestPath}`);
 }
 
-async function claudeStep(deps, r, opts, { nodePath, serverEntry, repo, home, env, platform }) {
-  const scope = opts.claudeScope;
-  const manual = formatCommand('claude', claudeAddArgs(scope, nodePath, serverEntry), platform);
-
-  const configFile = claudeConfigPath(platform, home, env);
-  let config = null;
-  let projectMcp = null;
-  // Display only: install does not rewrite these files, so an unreadable one is a warning.
-  try {
-    const t = readTextOrNull(deps.fs, configFile);
-    config = t === null ? null : JSON.parse(t);
-  } catch (err) {
-    r.warn(`could not read ${configFile} (${err.message}); the current registration is unknown`);
-  }
-  try {
-    const t = readTextOrNull(deps.fs, repo.projectMcpJson);
-    projectMcp = t === null ? null : JSON.parse(t);
-  } catch (err) {
-    r.warn(`could not read ${repo.projectMcpJson} (${err.message})`);
-  }
+/**
+ * Read the Claude Code configuration and report the kitsune-mcp entries
+ * found. Display only: install does not rewrite these files, so an
+ * unreadable one is a warning.
+ * @returns {{scope: string, entry: object}[]}
+ */
+function reportClaudeRegistrations(deps, r, { nodePath, serverEntry, repo, home, env, platform }) {
+  const readJson = (file, unreadable) => {
+    try {
+      const t = readTextOrNull(deps.fs, file);
+      return t === null ? null : JSON.parse(t);
+    } catch (err) {
+      r.warn(`could not read ${file} (${err.message})${unreadable}`);
+      return null;
+    }
+  };
+  const config = readJson(claudeConfigPath(platform, home, env), '; the current registration is unknown');
+  const projectMcp = readJson(repo.projectMcpJson, '');
   const { found, otherLocal } = findClaudeEntries({ config, projectMcp, repoRoot: repo.repoRoot, platform });
   const describe = (e) => formatCommand(String(e.entry.command ?? ''), (Array.isArray(e.entry.args) ? e.entry.args : []).map(String), platform);
   for (const e of found) {
@@ -342,10 +340,40 @@ async function claudeStep(deps, r, opts, { nodePath, serverEntry, repo, home, en
   if (otherLocal.length > 0) {
     r.info(`also registered with scope local in ${otherLocal.length} other director${otherLocal.length === 1 ? 'y' : 'ies'}`);
   }
+  return found;
+}
+
+/**
+ * Run `claude mcp remove` (when replacing) and `claude mcp add` in the
+ * repository (local / project scopes belong to the current directory).
+ * @returns {boolean} false when a command failed (already reported)
+ */
+function runClaudeCommands(deps, r, opts, claude, steps, { repo, platform, manual }) {
+  for (const args of steps) {
+    if (opts.dryRun) {
+      r.plan(`run ${formatCommand(claude, args, platform)} (in ${repo.repoRoot})`);
+      continue;
+    }
+    const res = runProgram(deps, claude, args, { cwd: repo.repoRoot, inherit: true, timeoutMs: PROGRAM_TIMEOUT_MS });
+    if (res.status !== 0) {
+      r.warn(`claude ${args.slice(0, 2).join(' ')} failed (exit code ${res.status ?? res.error?.message}). Register by hand:`);
+      r.info(`  ${manual}`);
+      return false;
+    }
+  }
+  return true;
+}
+
+async function claudeStep(deps, r, opts, ctx) {
+  const { nodePath, serverEntry, platform } = ctx;
+  const scope = opts.claudeScope;
+  const manual = formatCommand('claude', claudeAddArgs(scope, nodePath, serverEntry), platform);
+  const found = reportClaudeRegistrations(deps, r, ctx);
+  const current = found.find((e) => e.scope === scope);
+  const currentState = current ? claudeEntryState(current.entry, { nodePath, serverEntry, platform }) : undefined;
 
   if (!opts.registerClaude) {
-    const inScope = found.find((e) => e.scope === scope);
-    if (!inScope || claudeEntryState(inScope.entry, { nodePath, serverEntry, platform }) !== 'same') {
+    if (currentState !== 'same') {
       r.info('Not changed (pass --register-claude to register). To register by hand:');
       r.info(`  ${manual}`);
     }
@@ -358,10 +386,8 @@ async function claudeStep(deps, r, opts, { nodePath, serverEntry, repo, home, en
     r.info(`  ${manual}`);
     return;
   }
-  const current = found.find((e) => e.scope === scope);
   if (current) {
-    const st = claudeEntryState(current.entry, { nodePath, serverEntry, platform });
-    if (st === 'same') {
+    if (currentState === 'same') {
       r.ok(`'${CLAUDE_NAME}' (scope ${scope}) already matches this installation`);
       return;
     }
@@ -370,20 +396,8 @@ async function claudeStep(deps, r, opts, { nodePath, serverEntry, repo, home, en
       return;
     }
   }
-  // local / project scopes belong to the current directory: run claude in the repository.
   const steps = [...(current ? [claudeRemoveArgs(scope)] : []), claudeAddArgs(scope, nodePath, serverEntry)];
-  for (const args of steps) {
-    if (opts.dryRun) {
-      r.plan(`run ${formatCommand(claude, args, platform)} (in ${repo.repoRoot})`);
-      continue;
-    }
-    const res = runProgram(deps, claude, args, { cwd: repo.repoRoot, inherit: true, timeoutMs: PROGRAM_TIMEOUT_MS });
-    if (res.status !== 0) {
-      r.warn(`claude ${args.slice(0, 2).join(' ')} failed (exit code ${res.status ?? res.error?.message}). Register by hand:`);
-      r.info(`  ${manual}`);
-      return;
-    }
-  }
+  if (!runClaudeCommands(deps, r, opts, claude, steps, { ...ctx, manual })) return;
   if (!opts.dryRun) r.ok(`registered '${CLAUDE_NAME}' (scope ${scope}); restart Claude Code to use it`);
 }
 

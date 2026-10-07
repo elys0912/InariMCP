@@ -13,7 +13,7 @@
  */
 
 import {
-  CLAUDE_NAME, UsageError, claudeConfigPath, claudeRemoveArgs, classifyProcesses, dataPaths,
+  CLAUDE_NAME, MS_PER_SECOND, UsageError, claudeConfigPath, claudeRemoveArgs, classifyProcesses, dataPaths,
   findClaudeEntries, formatCommand, httpEndpoint, nmManifestTargets, parseRegDefaultValue,
   lookup, parseUninstallArgs, pathApi, repoPaths, samePath,
 } from './lib/core.mjs';
@@ -141,7 +141,26 @@ async function uninstall(argv, deps, r) {
 
   // -------------------------------------------------------------------------
   r.step('4. Stopping running processes');
+  problems += await stopProcessesStep(deps, r, opts, { data, repo, env, platform });
 
+  // -------------------------------------------------------------------------
+  r.step(`5. Data directory ${data.dataDir}`);
+  problems += removeDataDirStep(deps, r, opts, data);
+
+  r.raw(`
+${dry ? 'Dry run finished: nothing was changed.' : problems === 0 ? 'Uninstall complete.' : `Uninstall finished with ${problems} problem(s); see the warnings above.`}
+Remove the extension in Firefox as well (about:addons, or about:debugging for a temporary add-on).
+The repository (${repo.repoRoot}) was not modified.
+`);
+  return dry || problems === 0 ? 0 : 1;
+}
+
+/**
+ * Find this repository's Native Hosts and daemon and stop them (step 4).
+ * @returns {Promise<number>} problems
+ */
+async function stopProcessesStep(deps, r, opts, { data, repo, env, platform }) {
+  let problems = 0;
   const endpoint = httpEndpoint(env);
   let token;
   try {
@@ -156,12 +175,7 @@ async function uninstall(argv, deps, r) {
     ? classifyProcesses(procs, { hostEntry: repo.hostEntry, serverEntry: repo.serverEntry, platform, selfPid: deps.pid })
     : null;
 
-  if (daemon.kind === 'none') r.ok(`no daemon answers on ${endpoint.host}:${endpoint.port}`);
-  else if (daemon.kind === 'foreign') r.warn(`${endpoint.host}:${endpoint.port} answers but is not a KitsuneMCP daemon — left alone`);
-  else {
-    r.info(`KitsuneMCP daemon on ${endpoint.host}:${endpoint.port} (version ${daemon.version ?? '?'}, browsers connected: ${daemon.browsers ?? '?'}, ` +
-      `${daemon.verified ? `verified with the API token${daemon.pid ? `, PID ${daemon.pid}` : ''}` : 'not verified: no matching API token'})`);
-  }
+  reportDaemon(r, endpoint, daemon);
   if (!classes) {
     r.warn('could not list processes (ps / WMI unavailable): running Native Hosts cannot be found.');
     r.warn('Quit Firefox or remove the extension, otherwise a running Native Host starts the daemon again.');
@@ -186,93 +200,117 @@ async function uninstall(argv, deps, r) {
   } else if (hostPids.length + daemonPids.size === 0) {
     if (classes) r.ok('no KitsuneMCP Native Host or daemon of this repository is running');
   } else {
-    // Native Hosts first: a live host restarts a stopped daemon. Then the
-    // daemon, gracefully over its signed POST /daemon/shutdown when we hold
-    // its token (running calls finish, Firefox is closed); by signal only
-    // when it cannot be asked (no token, older daemon, no answer).
-    const graceful = daemon.kind === 'kitsune' && daemon.verified && token !== undefined;
+    // Native Hosts first: a live host restarts a stopped daemon.
     const order = [...hostPids.map((pid) => ['Native Host', pid]), ...[...daemonPids].map((pid) => ['daemon', pid])];
-    if (!dry && !(await confirm(deps, opts,
+    if (!opts.dryRun && !(await confirm(deps, opts,
       `Stop ${order.map(([k, pid]) => `${k} ${pid}`).join(', ')}? Claude Code sessions lose the browser tools.`, true))) {
       r.info('left running');
     } else {
-      let daemonStopped = false;
-      for (const [kind, pid] of order) {
-        if (dry) {
-          r.plan(kind === 'daemon' && graceful
-            ? `stop daemon PID ${pid} over POST /daemon/shutdown (signal after ${opts.graceMs / 1000}s if it keeps running)`
-            : `stop ${kind} PID ${pid} (SIGTERM, SIGKILL after ${opts.graceMs / 1000}s)`);
-          continue;
-        }
-        if (kind === 'daemon' && graceful && !daemonStopped) {
-          const outcome = await stopDaemonGracefully(deps, endpoint, token, opts.graceMs);
-          if (outcome === 'stopped') {
-            daemonStopped = true;
-            if (!deps.isAlive(pid)) {
-              r.ok(`daemon PID ${pid}: stopped (POST /daemon/shutdown)`);
-              continue;
-            }
-            r.info(`daemon answered the stop request but PID ${pid} is still alive — sending a signal`);
-          } else {
-            r.info(`POST /daemon/shutdown ${lookup(SHUTDOWN_OUTCOME_TEXT, outcome, 'shutdown outcome')} — sending a signal`);
-          }
-        } else if (kind === 'daemon' && daemonStopped && !deps.isAlive(pid)) {
-          r.ok(`daemon PID ${pid}: already gone`);
-          continue;
-        }
-        const result = await stopProcess(deps, pid, opts.graceMs);
-        if (result === 'failed') {
-          r.warn(`could not stop ${kind} PID ${pid}`);
-          problems++;
-        } else {
-          r.ok(`${kind} PID ${pid}: ${lookup(STOP_RESULT_TEXT, result, 'stop result')}`);
-        }
-      }
-      if (!dry && daemon.kind === 'kitsune') {
-        const after = await probeDaemon(deps, endpoint, token);
-        if (after.kind === 'kitsune') {
-          r.warn(`a KitsuneMCP daemon still answers on ${endpoint.host}:${endpoint.port}`);
-          problems++;
-        }
-      }
+      problems += await stopInOrder(deps, r, opts, order, { endpoint, token, daemon });
     }
   }
   if (classes && classes.relays.length > 0) {
     r.warn(`Claude Code sessions still run KitsuneMCP (relay PID ${classes.relays.map((x) => x.pid).join(', ')}).`);
     r.warn('They start the daemon again (and recreate api_token) on their next browser tool call: restart them.');
   }
+  return problems;
+}
 
-  // -------------------------------------------------------------------------
-  r.step(`5. Data directory ${data.dataDir}`);
-  if (!fsx(data.dataDir)) r.ok('not present');
-  else if (opts.purge) problems += removeDir(deps, r, dry, data.dataDir);
+/** One line on what answers on the daemon port. */
+function reportDaemon(r, endpoint, daemon) {
+  if (daemon.kind === 'none') r.ok(`no daemon answers on ${endpoint.host}:${endpoint.port}`);
+  else if (daemon.kind === 'foreign') r.warn(`${endpoint.host}:${endpoint.port} answers but is not a KitsuneMCP daemon — left alone`);
   else {
-    // A daemon restarted by a relay may recreate files meanwhile (ENOTEMPTY),
-    // or the directory may be held (EBUSY / EACCES): report, do not crash.
-    try {
-      const left = deps.fs.readdirSync(data.dataDir).filter((n) => !(dry && n === 'native-host'));
-      if (left.length === 0) {
-        if (dry) r.plan(`remove the empty directory ${data.dataDir}`);
-        else {
-          deps.fs.rmdirSync(data.dataDir);
-          r.ok('empty — removed');
+    r.info(`KitsuneMCP daemon on ${endpoint.host}:${endpoint.port} (version ${daemon.version ?? '?'}, browsers connected: ${daemon.browsers ?? '?'}, ` +
+      `${daemon.verified ? `verified with the API token${daemon.pid ? `, PID ${daemon.pid}` : ''}` : 'not verified: no matching API token'})`);
+  }
+}
+
+/**
+ * Stop the processes of `order` one by one. The daemon is asked first over
+ * its signed POST /daemon/shutdown when we hold its token (running calls
+ * finish, Firefox is closed); by signal only when it cannot be asked (no
+ * token, older daemon, no answer).
+ * @returns {Promise<number>} problems
+ */
+async function stopInOrder(deps, r, opts, order, { endpoint, token, daemon }) {
+  const dry = opts.dryRun;
+  const graceS = opts.graceMs / MS_PER_SECOND;
+  const graceful = daemon.kind === 'kitsune' && daemon.verified && token !== undefined;
+  let problems = 0;
+  let daemonStopped = false;
+  for (const [kind, pid] of order) {
+    if (dry) {
+      r.plan(kind === 'daemon' && graceful
+        ? `stop daemon PID ${pid} over POST /daemon/shutdown (signal after ${graceS}s if it keeps running)`
+        : `stop ${kind} PID ${pid} (SIGTERM, SIGKILL after ${graceS}s)`);
+      continue;
+    }
+    if (kind === 'daemon' && graceful && !daemonStopped) {
+      const outcome = await stopDaemonGracefully(deps, endpoint, token, opts.graceMs);
+      if (outcome === 'stopped') {
+        daemonStopped = true;
+        if (!deps.isAlive(pid)) {
+          r.ok(`daemon PID ${pid}: stopped (POST /daemon/shutdown)`);
+          continue;
         }
+        r.info(`daemon answered the stop request but PID ${pid} is still alive — sending a signal`);
       } else {
-        r.info('kept (use --purge to delete it):');
-        for (const n of left) r.info(`  ${n}`);
+        r.info(`POST /daemon/shutdown ${lookup(SHUTDOWN_OUTCOME_TEXT, outcome, 'shutdown outcome')} — sending a signal`);
       }
-    } catch (err) {
-      r.warn(`could not check or remove ${data.dataDir}: ${err.message}`);
+    } else if (kind === 'daemon' && daemonStopped && !deps.isAlive(pid)) {
+      r.ok(`daemon PID ${pid}: already gone`);
+      continue;
+    }
+    const result = await stopProcess(deps, pid, opts.graceMs);
+    if (result === 'failed') {
+      r.warn(`could not stop ${kind} PID ${pid}`);
+      problems++;
+    } else {
+      r.ok(`${kind} PID ${pid}: ${lookup(STOP_RESULT_TEXT, result, 'stop result')}`);
+    }
+  }
+  if (!dry && daemon.kind === 'kitsune') {
+    const after = await probeDaemon(deps, endpoint, token);
+    if (after.kind === 'kitsune') {
+      r.warn(`a KitsuneMCP daemon still answers on ${endpoint.host}:${endpoint.port}`);
       problems++;
     }
   }
+  return problems;
+}
 
-  r.raw(`
-${dry ? 'Dry run finished: nothing was changed.' : problems === 0 ? 'Uninstall complete.' : `Uninstall finished with ${problems} problem(s); see the warnings above.`}
-Remove the extension in Firefox as well (about:addons, or about:debugging for a temporary add-on).
-The repository (${repo.repoRoot}) was not modified.
-`);
-  return dry || problems === 0 ? 0 : 1;
+/**
+ * ~/.kitsune-mcp (step 5): deleted with --purge, removed when empty, else
+ * listed and kept.
+ * @returns {number} problems
+ */
+function removeDataDirStep(deps, r, opts, data) {
+  const dry = opts.dryRun;
+  if (!exists(deps.fs, data.dataDir)) {
+    r.ok('not present');
+    return 0;
+  }
+  if (opts.purge) return removeDir(deps, r, dry, data.dataDir);
+  // A daemon restarted by a relay may recreate files meanwhile (ENOTEMPTY),
+  // or the directory may be held (EBUSY / EACCES): report, do not crash.
+  try {
+    const left = deps.fs.readdirSync(data.dataDir).filter((n) => !(dry && n === 'native-host'));
+    if (left.length === 0) {
+      if (dry) r.plan(`remove the empty directory ${data.dataDir}`);
+      else {
+        deps.fs.rmdirSync(data.dataDir);
+        r.ok('empty — removed');
+      }
+    } else {
+      r.info('kept (use --purge to delete it):');
+      for (const n of left) r.info(`  ${n}`);
+    }
+    return 0;
+  } catch (err) {
+    r.warn(`could not check or remove ${data.dataDir}: ${err.message}`);
+    return 1;
+  }
 }
 
 /**
