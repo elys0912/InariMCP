@@ -6,8 +6,8 @@
  *   FOX_HTTP_PORT / CLAUDE_BROWSER_HTTP_PORT  default 8765
  *   FOX_WS_PORT   / CLAUDE_BROWSER_WS_PORT    default 8766
  *
- * An empty value counts as unset (the legacy name, then the default, apply).
- * A port must be an integer in 1..65535; anything else falls back to the
+ * An empty or blank value counts as unset (the legacy name, then the default,
+ * apply); a set value is used without its surrounding blanks. A port must be an integer in 1..65535; anything else falls back to the
  * default (reported through `onInvalid` when given).
  */
 
@@ -23,20 +23,28 @@ function portOf(raw: string): number | undefined {
   return Number.isInteger(n) && n > 0 && n <= MAX_PORT ? n : undefined;
 }
 
+/** `raw` without surrounding blanks, or undefined when that leaves nothing. */
+function nonBlank(raw: string | undefined): string | undefined {
+  const value = raw?.trim();
+  return value === undefined || value === '' ? undefined : value;
+}
+
 export function parsePort(raw: string | undefined, fallback: number): number {
-  if (raw === undefined || raw === '') return fallback;
-  return portOf(raw) ?? fallback;
+  const value = nonBlank(raw);
+  if (value === undefined) return fallback;
+  return portOf(value) ?? fallback;
 }
 
 /**
- * The first of `names` that is set to a non-empty value. An empty value
- * counts as unset, so `FOX_HOST=` falls through to the legacy name and then
- * to the default (it must not become `''`, which binds every interface).
+ * The first of `names` that is set to a non-blank value, trimmed. An empty or
+ * blank value counts as unset, so `FOX_HOST=` (or `FOX_HOST=' '`) falls
+ * through to the legacy name and then to the default (it must not become
+ * `''`, which binds every interface, nor `' '`, which no socket accepts).
  */
 function pick(env: Env, ...names: string[]): { name: string; raw: string } | undefined {
   for (const name of names) {
-    const raw = env[name];
-    if (raw !== undefined && raw !== '') return { name, raw };
+    const raw = nonBlank(env[name]);
+    if (raw !== undefined) return { name, raw };
   }
   return undefined;
 }

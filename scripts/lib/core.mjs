@@ -429,17 +429,24 @@ export function isLoopbackHost(host) {
   return h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h) || h === '::ffff:127.0.0.1';
 }
 
-/** The first value that is set and not empty (same rule as the shared endpoint resolution). */
-function firstNonEmpty(...values) {
-  return values.find((v) => v !== undefined && v !== '');
+/**
+ * The first value that is set and not blank, without its surrounding blanks
+ * (same rule as the shared endpoint resolution: empty or blank counts as unset).
+ */
+function firstNonBlank(...values) {
+  for (const v of values) {
+    const trimmed = typeof v === 'string' ? v.trim() : '';
+    if (trimmed !== '') return trimmed;
+  }
+  return undefined;
 }
 
 /** Same port resolution as the daemon (FOX_HTTP_PORT, legacy CLAUDE_BROWSER_HTTP_PORT). */
 export function httpEndpoint(env) {
-  const raw = firstNonEmpty(env.FOX_HTTP_PORT, env.CLAUDE_BROWSER_HTTP_PORT);
+  const raw = firstNonBlank(env.FOX_HTTP_PORT, env.CLAUDE_BROWSER_HTTP_PORT);
   const n = Number(raw);
-  const port = raw && Number.isInteger(n) && n > 0 && n <= MAX_PORT ? n : DEFAULT_HTTP_PORT;
-  const host = firstNonEmpty(env.FOX_HOST, env.CLAUDE_BROWSER_HOST) ?? DEFAULT_HTTP_HOST;
+  const port = raw !== undefined && Number.isInteger(n) && n > 0 && n <= MAX_PORT ? n : DEFAULT_HTTP_PORT;
+  const host = firstNonBlank(env.FOX_HOST, env.CLAUDE_BROWSER_HOST) ?? DEFAULT_HTTP_HOST;
   return { host: isLoopbackHost(host) ? bareHost(host) : DEFAULT_HTTP_HOST, port };
 }
 

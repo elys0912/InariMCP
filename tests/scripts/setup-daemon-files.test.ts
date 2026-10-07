@@ -394,18 +394,22 @@ describe('daemon authentication copy', () => {
     expect(httpEndpoint({ FOX_HTTP_PORT: String(MAX_PORT + 1) }).port).toBe(8765);
   });
 
-  it('httpEndpoint treats an empty variable as unset like @kitsune-mcp/shared (R2-A R-2)', () => {
+  it('httpEndpoint treats an empty or blank variable as unset like @kitsune-mcp/shared (R2-A R-2, R3 N-1)', () => {
     const legacyPort = 9001;
     const legacyHost = '127.0.0.2';
     const legacyPortEnv = { FOX_HTTP_PORT: '', CLAUDE_BROWSER_HTTP_PORT: String(legacyPort) };
     const legacyHostEnv = { FOX_HOST: '', CLAUDE_BROWSER_HOST: legacyHost };
     const emptyEnv = { FOX_HOST: '', FOX_HTTP_PORT: '' };
-    for (const env of [legacyPortEnv, legacyHostEnv, emptyEnv]) {
+    const blankEnv = { FOX_HOST: ' ', FOX_HTTP_PORT: ' ', CLAUDE_BROWSER_HTTP_PORT: String(legacyPort) };
+    const paddedEnv = { FOX_HOST: ' 127.0.0.1 ', FOX_HTTP_PORT: ' 8765 ' };
+    for (const env of [legacyPortEnv, legacyHostEnv, emptyEnv, blankEnv, paddedEnv]) {
       const endpoint = httpEndpoint(env);
       expect(endpoint.port, JSON.stringify(env)).toBe(serverAuth.resolveHttpPort(undefined, env));
       expect(endpoint.host, JSON.stringify(env)).toBe(serverAuth.resolveHost(env));
     }
     expect(httpEndpoint(legacyPortEnv).port).toBe(legacyPort);
     expect(httpEndpoint(legacyHostEnv).host).toBe(legacyHost);
+    expect(httpEndpoint(blankEnv)).toEqual({ host: '127.0.0.1', port: legacyPort });
+    expect(httpEndpoint(paddedEnv)).toEqual({ host: '127.0.0.1', port: 8765 });
   });
 });
