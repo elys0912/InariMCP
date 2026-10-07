@@ -9,7 +9,7 @@ import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   CLAUDE_NAME, buildManifest, buildPosixWrapper, buildWindowsWrapper, buildWrapper, claudeConfigPath,
-  claudeEntryState, commandInvocation, findClaudeEntries, formatCommand, manifestState, nodeVersionManager,
+  claudeEntryState, commandInvocation, envValue, findClaudeEntries, formatCommand, manifestState, nodeVersionManager,
   parseRegDefaultValue, shellQuote,
 } from '../../scripts/lib/core.mjs';
 import { defaultDeps } from '../../scripts/lib/system.mjs';
@@ -164,12 +164,27 @@ describe('already registered? (paths are compared)', () => {
   });
 });
 
+describe('envValue', () => {
+  it('is the trimmed value, or undefined when unset, empty or blank (R3 §3)', () => {
+    expect(envValue({}, 'X')).toBeUndefined();
+    expect(envValue({ X: '' }, 'X')).toBeUndefined();
+    expect(envValue({ X: ' \t ' }, 'X')).toBeUndefined();
+    expect(envValue({ X: ' a b ' }, 'X')).toBe('a b');
+  });
+});
+
 describe('claudeConfigPath', () => {
   it('is ~/.claude.json unless CLAUDE_CONFIG_DIR says otherwise', () => {
     expect(claudeConfigPath('linux', '/home/u', {})).toBe('/home/u/.claude.json');
     expect(claudeConfigPath('win32', 'C:\\Users\\u', {})).toBe('C:\\Users\\u\\.claude.json');
     expect(claudeConfigPath('linux', '/home/u', { CLAUDE_CONFIG_DIR: '/cfg/claude' })).toBe('/cfg/claude/.claude.json');
     expect(claudeConfigPath('win32', 'C:\\Users\\u', { CLAUDE_CONFIG_DIR: 'D:\\cfg' })).toBe('D:\\cfg\\.claude.json');
+  });
+
+  it('takes an empty or blank CLAUDE_CONFIG_DIR as unset and trims a set one (R3 §3)', () => {
+    expect(claudeConfigPath('linux', '/home/u', { CLAUDE_CONFIG_DIR: '' })).toBe('/home/u/.claude.json');
+    expect(claudeConfigPath('linux', '/home/u', { CLAUDE_CONFIG_DIR: '  ' })).toBe('/home/u/.claude.json');
+    expect(claudeConfigPath('linux', '/home/u', { CLAUDE_CONFIG_DIR: ' /cfg ' })).toBe('/cfg/.claude.json');
   });
 
   it('is read by the installer from the isolated home of this test run', () => {
@@ -272,6 +287,7 @@ describe('commandInvocation', () => {
     expect(commandInvocation('C:\\x\\claude.BAT', [], 'win32', {}).file).toBe('cmd.exe');
     expect(commandInvocation('C:\\x\\claude.cmd', [], 'win32', { ComSpec: 'C:\\Windows\\System32\\cmd.exe' }).file)
       .toBe('C:\\Windows\\System32\\cmd.exe');
+    expect(commandInvocation('C:\\x\\claude.cmd', [], 'win32', { ComSpec: ' ' }).file).toBe('cmd.exe');
   });
 
   it('starts anything else directly', () => {

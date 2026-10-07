@@ -29,6 +29,16 @@ export const DEFAULT_HTTP_PORT = 8765;
 export const DEFAULT_HTTP_HOST = '127.0.0.1';
 /** Highest TCP port number (same as MAX_PORT of @kitsune-mcp/shared). */
 export const MAX_PORT = 65_535;
+/** Milliseconds per second. */
+export const MS_PER_SECOND = 1_000;
+/** Longest --grace of the uninstaller, in seconds. */
+export const MAX_GRACE_S = 60;
+/** Mode of directories the installer creates under ~/.kitsune-mcp (POSIX; same as PRIVATE_DIR_MODE of @kitsune-mcp/shared). */
+export const DIR_MODE = 0o700;
+/** Mode of the generated run-host.sh (owner only, executable). */
+export const WRAPPER_MODE = 0o700;
+/** Mode of the Native Messaging manifest and other files Firefox must read. */
+export const MANIFEST_MODE = 0o644;
 /** Per-user registration Firefox reads on Windows (every edition). */
 export const WIN_REG_KEY = `HKCU\\Software\\Mozilla\\NativeMessagingHosts\\${HOST_NAME}`;
 /** Flatpak application IDs of Firefox builds (Flathub publishes Release only). */
@@ -46,6 +56,19 @@ export function lookup(table, key, what) {
 /** path.win32 or path.posix, so results do not depend on the machine running the tests. */
 export function pathApi(platform) {
   return platform === 'win32' ? path.win32 : path.posix;
+}
+
+/**
+ * `env[name]` without surrounding blanks, or undefined when it is unset,
+ * empty or blank. Every environment variable the scripts read goes through
+ * this: an empty or blank value counts as unset everywhere (same rule as
+ * @kitsune-mcp/shared and the daemon).
+ */
+export function envValue(env, name) {
+  const raw = env[name];
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  return trimmed === '' ? undefined : trimmed;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,9 +146,8 @@ export function nmManifestTargets({ platform, home, env, exists, all = false }) 
     file: file(p.join(home, '.mozilla', 'native-messaging-hosts')),
   }];
 
-  const xdgConfig = env.XDG_CONFIG_HOME && p.isAbsolute(env.XDG_CONFIG_HOME)
-    ? env.XDG_CONFIG_HOME
-    : p.join(home, '.config');
+  const xdgEnv = envValue(env, 'XDG_CONFIG_HOME');
+  const xdgConfig = xdgEnv !== undefined && p.isAbsolute(xdgEnv) ? xdgEnv : p.join(home, '.config');
   if (all || exists(p.join(xdgConfig, 'mozilla'))) {
     targets.push({
       id: 'linux-xdg',
@@ -290,9 +312,8 @@ export function parseRegDefaultValue(stdout) {
 /** Global Claude Code config (holds user and local scoped MCP servers). */
 export function claudeConfigPath(platform, home, env) {
   const p = pathApi(platform);
-  return env.CLAUDE_CONFIG_DIR
-    ? p.join(env.CLAUDE_CONFIG_DIR, '.claude.json')
-    : p.join(home, '.claude.json');
+  const configDir = envValue(env, 'CLAUDE_CONFIG_DIR');
+  return p.join(configDir ?? home, '.claude.json');
 }
 
 /**
@@ -367,7 +388,7 @@ export function commandInvocation(file, args, platform, env) {
     // cmd /c expands %NAME% even inside the double quotes.
     if (all.some((a) => a.includes('%'))) throw new Error(`cannot pass an argument with a % to ${file}`);
     const line = all.map((a) => `"${a}"`).join(' ');
-    return { file: env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], verbatim: true };
+    return { file: envValue(env, 'ComSpec') ?? 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], verbatim: true };
   }
   return { file, args, verbatim: false };
 }
@@ -412,7 +433,8 @@ export function nodeVersionManager(nodePath) {
 
 export function isWsl({ platform, env, procVersion }) {
   if (platform !== 'linux') return false;
-  return Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP) || /microsoft/i.test(procVersion ?? '');
+  return envValue(env, 'WSL_DISTRO_NAME') !== undefined || envValue(env, 'WSL_INTEROP') !== undefined ||
+    /microsoft/i.test(procVersion ?? '');
 }
 
 /** `host` without surrounding blanks and IPv6 brackets. */
@@ -429,24 +451,21 @@ export function isLoopbackHost(host) {
   return h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h) || h === '::ffff:127.0.0.1';
 }
 
-/**
- * The first value that is set and not blank, without its surrounding blanks
- * (same rule as the shared endpoint resolution: empty or blank counts as unset).
- */
-function firstNonBlank(...values) {
-  for (const v of values) {
-    const trimmed = typeof v === 'string' ? v.trim() : '';
-    if (trimmed !== '') return trimmed;
+/** envValue() of the first of `names` that is set and not blank (same rule as the shared endpoint resolution). */
+function firstEnvValue(env, ...names) {
+  for (const name of names) {
+    const value = envValue(env, name);
+    if (value !== undefined) return value;
   }
   return undefined;
 }
 
 /** Same port resolution as the daemon (FOX_HTTP_PORT, legacy CLAUDE_BROWSER_HTTP_PORT). */
 export function httpEndpoint(env) {
-  const raw = firstNonBlank(env.FOX_HTTP_PORT, env.CLAUDE_BROWSER_HTTP_PORT);
+  const raw = firstEnvValue(env, 'FOX_HTTP_PORT', 'CLAUDE_BROWSER_HTTP_PORT');
   const n = Number(raw);
   const port = raw !== undefined && Number.isInteger(n) && n > 0 && n <= MAX_PORT ? n : DEFAULT_HTTP_PORT;
-  const host = firstNonBlank(env.FOX_HOST, env.CLAUDE_BROWSER_HOST) ?? DEFAULT_HTTP_HOST;
+  const host = firstEnvValue(env, 'FOX_HOST', 'CLAUDE_BROWSER_HOST') ?? DEFAULT_HTTP_HOST;
   return { host: isLoopbackHost(host) ? bareHost(host) : DEFAULT_HTTP_HOST, port };
 }
 
@@ -463,7 +482,9 @@ export function detectFirefox({ platform, home, env, exists, which }) {
     if (!found.some((f) => samePath(f.path, where, platform))) found.push({ edition, path: where });
   };
   if (platform === 'win32') {
-    const roots = [env.ProgramFiles, env['ProgramFiles(x86)'], env.LOCALAPPDATA].filter(Boolean);
+    const localAppData = envValue(env, 'LOCALAPPDATA');
+    const roots = [envValue(env, 'ProgramFiles'), envValue(env, 'ProgramFiles(x86)'), localAppData]
+      .filter((root) => root !== undefined);
     const dirs = [
       ['Mozilla Firefox', 'Firefox (Release / Beta / ESR)'],
       ['Firefox Developer Edition', 'Firefox Developer Edition'],
@@ -475,8 +496,8 @@ export function detectFirefox({ platform, home, env, exists, which }) {
         if (exists(exe)) add(edition, exe);
       }
     }
-    if (env.LOCALAPPDATA) {
-      const alias = p.join(env.LOCALAPPDATA, 'Microsoft', 'WindowsApps', 'firefox.exe');
+    if (localAppData !== undefined) {
+      const alias = p.join(localAppData, 'Microsoft', 'WindowsApps', 'firefox.exe');
       if (exists(alias)) add('Firefox (Microsoft Store)', alias);
     }
   } else if (platform === 'darwin') {
@@ -568,6 +589,11 @@ export function classifyProcesses(list, { hostEntry, serverEntry, platform, self
 // ---------------------------------------------------------------------------
 
 const AUTH_PROTOCOL = 'kitsune-hmac-v1';
+/** Random bytes of a nonce (NONCE_BYTES of @kitsune-mcp/shared/node auth.ts). */
+const NONCE_BYTES = 16;
+/** Hex digits of an HMAC-SHA256 (MAC_BYTES * 2 of auth.ts). */
+const MAC_HEX_LENGTH = 64;
+const MAC_RE = new RegExp(`^[0-9a-f]{${MAC_HEX_LENGTH}}$`);
 export const AUTH_HEADER = {
   timestamp: 'x-kitsune-timestamp',
   nonce: 'x-kitsune-nonce',
@@ -575,7 +601,7 @@ export const AUTH_HEADER = {
 };
 
 export function newNonce() {
-  return crypto.randomBytes(16).toString('hex');
+  return crypto.randomBytes(NONCE_BYTES).toString('hex');
 }
 
 function sha256Hex(data) {
@@ -587,7 +613,7 @@ export function computeMac(token, label, ...parts) {
 }
 
 export function macMatches(provided, expected) {
-  if (typeof provided !== 'string' || !/^[0-9a-f]{64}$/.test(provided)) return false;
+  if (typeof provided !== 'string' || !MAC_RE.test(provided)) return false;
   return crypto.timingSafeEqual(Buffer.from(provided, 'hex'), Buffer.from(expected, 'hex'));
 }
 
@@ -717,8 +743,8 @@ export function parseUninstallArgs(argv) {
     purge: false, claude: 'ask', stop: true, grace: '5',
   });
   const grace = Number(opts.grace);
-  if (!Number.isFinite(grace) || grace < 0 || grace > 60) {
-    throw new UsageError(`--grace must be a number of seconds between 0 and 60 (got '${opts.grace}')`);
+  if (!Number.isFinite(grace) || grace < 0 || grace > MAX_GRACE_S) {
+    throw new UsageError(`--grace must be a number of seconds between 0 and ${MAX_GRACE_S} (got '${opts.grace}')`);
   }
-  return { ...opts, graceMs: Math.round(grace * 1000) };
+  return { ...opts, graceMs: Math.round(grace * MS_PER_SECOND) };
 }

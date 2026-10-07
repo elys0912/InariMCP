@@ -19,7 +19,7 @@ import * as path from 'node:path';
 import * as readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import {
-  AUTH_HEADER, SERVICE_NAME, commandInvocation, computeMac, macMatches, newNonce,
+  AUTH_HEADER, MANIFEST_MODE, SERVICE_NAME, commandInvocation, computeMac, envValue, macMatches, newNonce,
   parsePsOutput, parseTabOutput, pathApi, responseSignatureValid, signGet, signPost,
 } from './core.mjs';
 
@@ -47,6 +47,11 @@ const SHUTDOWN_REQUEST_TIMEOUT_MS = 15_000;
 const SHUTDOWN_POLL_MS = 200;
 const SHUTDOWN_MIN_WAIT_MS = 2_000;
 const HEALTH_POLL_TIMEOUT_MS = 1_000;
+/** writeFileAtomic: rename attempts while another process holds the target, and the backoff step. */
+export const RENAME_RETRIES = 10;
+const RENAME_RETRY_STEP_MS = 50;
+/** Rename errors that mean "the target is in use" (Windows), worth another attempt. */
+const RETRYABLE_RENAME_CODES = new Set(['EPERM', 'EACCES', 'EBUSY']);
 
 // ---------------------------------------------------------------------------
 // Dependencies
@@ -154,7 +159,7 @@ export function writeFileAtomic(target, data, { mode } = {}, fsApi = fs) {
   const tmp = path.join(dir, `.${path.basename(target)}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
   let fd;
   try {
-    fd = fsApi.openSync(tmp, 'wx', mode ?? 0o644);
+    fd = fsApi.openSync(tmp, 'wx', mode ?? MANIFEST_MODE);
     fsApi.writeFileSync(fd, data);
     fsApi.fsyncSync(fd);
     fsApi.closeSync(fd);
@@ -165,8 +170,8 @@ export function writeFileAtomic(target, data, { mode } = {}, fsApi = fs) {
         fsApi.renameSync(tmp, target);
         break;
       } catch (err) {
-        if (attempt >= 9 || !['EPERM', 'EACCES', 'EBUSY'].includes(err && err.code)) throw err;
-        blockMs(50 * (attempt + 1));
+        if (attempt + 1 >= RENAME_RETRIES || !RETRYABLE_RENAME_CODES.has(err && err.code)) throw err;
+        blockMs(RENAME_RETRY_STEP_MS * (attempt + 1));
       }
     }
   } catch (err) {
@@ -223,9 +228,10 @@ export function removeTreeSafe(root, fsApi = fs) {
 export function which(name, deps) {
   const { platform, env, fs: fsApi } = deps;
   const p = pathApi(platform);
-  const dirs = String(env.PATH ?? env.Path ?? '').split(platform === 'win32' ? ';' : ':').filter(Boolean);
+  const searchPath = envValue(env, 'PATH') ?? envValue(env, 'Path') ?? '';
+  const dirs = searchPath.split(platform === 'win32' ? ';' : ':').filter((dir) => dir.trim() !== '');
   const exts = platform === 'win32'
-    ? ['', ...String(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)]
+    ? ['', ...(envValue(env, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)]
     : [''];
   for (const dir of dirs) {
     for (const ext of exts) {
@@ -456,7 +462,8 @@ export async function probeDaemon(deps, endpoint, token) {
   } catch {
     return { kind: 'foreign' };
   }
-  if (res.status !== 200 || !body || body.service !== SERVICE_NAME) return { kind: 'foreign' };
+  // Same test as kitsuneHealth of @kitsune-mcp/shared/node (health.ts).
+  if (res.status !== 200 || !body || body.status !== 'ok' || body.service !== SERVICE_NAME) return { kind: 'foreign' };
   const info = { kind: 'kitsune', verified: false, pid: undefined, version: body.version, browsers: body.browsers_connected };
   if (!token) return info;
   info.verified = macMatches(body.proof, computeMac(token, 'health', nonce));
@@ -503,11 +510,20 @@ export async function confirm(deps, opts, question, defaultYes) {
   return answer.startsWith('y');
 }
 
-/** Exit quietly when the reader of stdout goes away (… | head). */
+/**
+ * Exit quietly when the reader of stdout goes away (… | head). Any other
+ * stdout error is reported in one line without a stack trace (same policy
+ * as runInstall / runUninstall) and exits with 1.
+ */
 export function exitOnBrokenPipe() {
   process.stdout.on('error', (err) => {
     if (err && err.code === 'EPIPE') process.exit(0);
-    throw err;
+    try {
+      process.stderr.write(`\n[error] ${err instanceof Error ? err.message : String(err)}\n`);
+    } catch {
+      // stderr gone as well
+    }
+    process.exit(1);
   });
 }
 
