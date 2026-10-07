@@ -3,42 +3,22 @@
  * the MCP Server's (packages/mcp-server/src/safety/url-pattern.ts) give the
  * same answer for the same pattern and URL. The server sends each pattern
  * as a WireUrlRule (shared/src/protocol.ts); the Extension has its own copy
- * of the rules (url-pattern.ts is not browser code), cut out of the source
- * here (helpers/extension-source.ts).
+ * of the rules (url-pattern.ts is not browser code), imported here.
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { WireUrlRuleSchema } from '@kitsune-mcp/shared';
 import { compileUrlPatterns, type PatternListName } from '../../packages/mcp-server/src/safety/url-pattern.js';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG } from '../../packages/mcp-server/src/safety/config.js';
-import { compileUrlRules, findUrlRule } from '../../packages/extension/src/url-rule.ts';
-import { loadExtensionFunctions } from './helpers/extension-source.js';
+import * as ext from '../../packages/extension/src/url-rule.ts';
+import type { PageHookSink } from '../../packages/extension/src/content/page-hooks.ts';
 
-type Compiled = { rule: { source: string }; regex: RegExp | null };
-interface UrlRuleFns {
-  parseUrlRule(raw: unknown): unknown;
-  compileUrlRule(rule: unknown): Compiled | null;
-  compileUrlRules(raw: unknown): { rules: Compiled[]; invalid: number };
-  urlRuleMatches(rule: Compiled, url: string): boolean;
-  urlListViolation(
-    url: string | undefined,
-    blocked: Compiled[],
-    allowed: Compiled[],
-    allowlistActive: boolean,
-  ): { decision: string; reason: string } | null;
-}
-
-const URL_RULE_FUNCTIONS = [
-  'parseUrlRule', 'compileUrlRule', 'compileUrlRules', 'normalizeRuleUrl',
-  'effectiveRulePort', 'looseRulePath', 'urlRuleMatches', 'findUrlRule', 'urlListViolation',
-] as const;
-
-let ext: UrlRuleFns;
-
-beforeAll(async () => {
-  ext = await loadExtensionFunctions<UrlRuleFns>('url-rule.ts', URL_RULE_FUNCTIONS);
-});
+/** A wire rule as the Extension reads and compiles it (null if unusable). */
+const compileWire = (wire: unknown): ext.CompiledUrlRule | null => {
+  const rule = ext.parseUrlRule(wire);
+  return rule === null ? null : ext.compileUrlRule(rule);
+};
 
 const PATTERNS = [
   'example.test',
@@ -98,7 +78,7 @@ describe('host / regex rules: Extension matcher = server matcher', () => {
       for (const p of patterns) {
         expect(WireUrlRuleSchema.safeParse(p.wire).success, p.source).toBe(true);
         // As it travels: JSON over Native Messaging.
-        const compiled = ext.compileUrlRule(ext.parseUrlRule(JSON.parse(JSON.stringify(p.wire))));
+        const compiled = compileWire(JSON.parse(JSON.stringify(p.wire)));
         expect(compiled, p.source).not.toBeNull();
         for (const url of URLS) {
           expect(ext.urlRuleMatches(compiled!, url), `${list} ${p.source} vs ${url}`).toBe(p.test(url));
@@ -147,7 +127,11 @@ describe('hosts the URL parser rewrites, and a rule without `port`', () => {
     expect(issues.filter((i) => i.fatal), source).toEqual([]);
     return patterns[0]!;
   };
-  const compiled = (wire: unknown) => ext.compileUrlRule(ext.parseUrlRule(wire))!;
+  const compiled = (wire: unknown): ext.CompiledUrlRule => {
+    const c = compileWire(wire);
+    if (c === null) throw new Error(`unusable rule: ${JSON.stringify(wire)}`);
+    return c;
+  };
 
   it('an IDN host is punycode on both sides', () => {
     const p = only('例え.テスト');
@@ -206,47 +190,50 @@ describe('hosts the URL parser rewrites, and a rule without `port`', () => {
   });
 });
 
-describe('content script: onProtectedPage (content/log-store.ts)', () => {
-  interface LogStoreFns {
-    onProtectedPage(): boolean;
-    shouldRecord(): boolean;
-  }
-
-  // The functions are cut out of the module, so their free names
-  // (findUrlRule, window, and the module state they read) come from
-  // globalThis while they run.
+describe('content script: protected pages pause recording (content/log-store.ts)', () => {
+  const PAGE_HOOKS = '../../packages/extension/src/content/page-hooks.ts';
   const g = globalThis as Record<string, unknown>;
-  let fns: LogStoreFns;
-
-  /** The rules the background compiles from the server's protectedUrlRules. */
-  const rulesFor = (sources: string[]) =>
-    compileUrlRules(compileUrlPatterns(sources, 'protected').patterns.map((p) => p.wire)).rules;
-
-  const at = (href: string): void => {
-    g.window = { location: { href } };
-  };
+  type LogStore = typeof import('../../packages/extension/src/content/log-store.ts');
+  let log: LogStore;
+  /** What log-store hands to the page hooks: they ask it before recording. */
+  let sink: PageHookSink | undefined;
 
   beforeAll(async () => {
-    g.findUrlRule = findUrlRule;
-    g.loggingEnabled = true;
-    g.protectedPatterns = [];
-    fns = await loadExtensionFunctions<LogStoreFns>('content/log-store.ts', [
-      'onProtectedPage', 'shouldRecord',
-    ]);
+    // The page hooks need Firefox's Xray wrappers: replaced by a stub that
+    // keeps the sink log-store installs them with.
+    vi.resetModules();
+    vi.doMock(PAGE_HOOKS, () => ({
+      installPageHooks: (s: PageHookSink) => { sink = s; },
+      interceptionStatus: () => ({ fetch: false, xhr: false, console: false }),
+      injectionStatus: () => ({ readyStateAtInit: null, readyStateAtHookInstall: null }),
+    }));
+    log = await import('../../packages/extension/src/content/log-store.ts');
   });
 
   afterAll(() => {
-    for (const name of ['findUrlRule', 'loggingEnabled', 'protectedPatterns', 'window']) delete g[name];
+    vi.doUnmock(PAGE_HOOKS);
+    delete g.window;
   });
 
+  /** start_logging with the wire rules the server sends for `sources`. */
+  const startWith = (sources: string[]): void => {
+    log.startLogging({ protectedPatterns: compileUrlPatterns(sources, 'protected').patterns.map((p) => p.wire) });
+  };
+
+  /** Would the page hooks record an entry on a document at `href`? */
+  const recordsAt = (href: string): boolean => {
+    g.window = { location: { href } };
+    if (!sink) throw new Error('log-store installed no page hooks');
+    return sink.shouldRecord();
+  };
+
   it('no patterns: no page is protected', () => {
-    g.protectedPatterns = [];
-    at('https://example.test/admin');
-    expect(fns.onProtectedPage()).toBe(false);
+    startWith([]);
+    expect(recordsAt('https://example.test/admin')).toBe(true);
   });
 
   it('the current document URL decides, as the wire rules match it', () => {
-    g.protectedPatterns = rulesFor(['example.test/admin', '*.bank.test']);
+    startWith(['example.test/admin', '*.bank.test']);
     for (const href of [
       'https://example.test/admin',
       'https://example.test/admin/users?x=1',
@@ -254,26 +241,20 @@ describe('content script: onProtectedPage (content/log-store.ts)', () => {
       'https://example.test/ADMIN',
       'https://a.bank.test/',
     ]) {
-      at(href);
-      expect(fns.onProtectedPage(), href).toBe(true);
+      expect(recordsAt(href), href).toBe(false);
     }
     for (const href of ['https://example.test/', 'https://bank.test/', 'https://example.test.attacker.test/admin']) {
-      at(href);
-      expect(fns.onProtectedPage(), href).toBe(false);
+      expect(recordsAt(href), href).toBe(true);
     }
   });
 
-  it('a same-document move onto a protected URL pauses recording', () => {
-    g.protectedPatterns = rulesFor(['example.test/admin']);
-    g.loggingEnabled = true;
-    at('https://example.test/public');
-    expect(fns.shouldRecord()).toBe(true);
-    at('https://example.test/admin/1'); // history.pushState
-    expect(fns.shouldRecord()).toBe(false);
-    at('https://example.test/public');
-    expect(fns.shouldRecord()).toBe(true);
-    g.loggingEnabled = false;
-    expect(fns.shouldRecord()).toBe(false);
+  it('a same-document move onto a protected URL pauses recording; stop_logging ends it', () => {
+    startWith(['example.test/admin']);
+    expect(recordsAt('https://example.test/public')).toBe(true);
+    expect(recordsAt('https://example.test/admin/1')).toBe(false); // history.pushState
+    expect(recordsAt('https://example.test/public')).toBe(true);
+    log.stopLogging();
+    expect(recordsAt('https://example.test/public')).toBe(false);
   });
 });
 
@@ -299,14 +280,10 @@ describe('R2-C fail-closed wire input', () => {
     expect(ext.compileUrlRules([hostWire('/a?x=1'), hostWire('/a')]).invalid).toBe(1);
   });
 
-  it('A-01: the server refuses such a pattern, and no rule it sends has one', () => {
+  // That the server refuses `? # %3F %23` in a path is checked by
+  // packages/mcp-server/tests/url-pattern.test.ts.
+  it('A-01: percent-escapes of other characters still decode into a rule the Extension can use', () => {
     for (const list of LISTS) {
-      for (const source of ['example.test/a?x=1', 'example.test/a#f', 'example.test/a%3Fx', 'example.test/a%23f']) {
-        const { patterns, issues } = compileUrlPatterns([source], list);
-        expect(patterns, `${list} ${source}`).toEqual([]);
-        expect(issues.map((i) => i.fatal), `${list} ${source}`).toEqual([true]);
-      }
-      // Percent-escapes of other characters still decode into a usable rule.
       const { patterns } = compileUrlPatterns([...PATTERNS, 'example.test/%61dmin'], list);
       const { invalid } = ext.compileUrlRules(patterns.map((p) => JSON.parse(JSON.stringify(p.wire))));
       expect(invalid, list).toBe(0);
