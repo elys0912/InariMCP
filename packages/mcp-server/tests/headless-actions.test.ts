@@ -310,6 +310,9 @@ describe('warnings and timeouts', () => {
   });
 });
 
+// Without a selector the guard follows the focus from the top document's
+// activeElement (the <iframe> / shadow host) to the field inside it
+// (headless/focus.ts). The Extension path still has the old limit.
 describe('type without selector: password guard follows the focus (WP30)', () => {
   const BOX = 'position:absolute;left:0;top:0;width:300px;height:60px;border:0;margin:0';
   const FIELD = (type: string): string => `<input type=${type} style="${BOX}">`;
@@ -323,10 +326,15 @@ describe('type without selector: password guard follows the focus (WP30)', () =>
     return browser.execute('type', undefined, { text: 'x', allowPassword: false });
   }
 
+  async function valueOf(field: string): Promise<unknown> {
+    return (await browser.execute('execute_script', undefined, { script: `${field}.value` }))['result'];
+  }
+
   real('refuses a focused password field inside a same-origin iframe', async () => {
     const r = await typeAfterClick(`<iframe srcdoc="${frameDoc('password').replace(/"/g, '&quot;')}" style="${BOX}"></iframe>`);
     expect(r['success']).toBe(false);
     expect(String(r['error'])).toMatch(/password field/);
+    expect(await valueOf('document.querySelector("iframe").contentDocument.querySelector("input")')).toBe('');
   });
 
   real('refuses a focused password field inside a cross-origin (data:) iframe', async () => {
@@ -342,6 +350,7 @@ describe('type without selector: password guard follows the focus (WP30)', () =>
     );
     expect(r['success']).toBe(false);
     expect(String(r['error'])).toMatch(/password field/);
+    expect(await valueOf('document.getElementById("h").shadowRoot.querySelector("input")')).toBe('');
   });
 
   real('still types into a text field inside an iframe', async () => {
