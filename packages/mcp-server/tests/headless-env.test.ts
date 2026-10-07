@@ -7,6 +7,7 @@ import {
   headlessStartupTimeoutMs,
   isHeadlessEnabled,
   isTruthyEnv,
+  resolveFoxEnv,
   unrecognizedHeadlessValue,
 } from '../src/utils/headless-env.js';
 import { checkHeadlessContainerScope, headlessContainerScopeWarning } from '../src/safety/container.js';
@@ -51,6 +52,16 @@ describe('unrecognizedHeadlessValue', () => {
       expect(unrecognizedHeadlessValue({ FOX_HEADLESS: v })).toBeUndefined();
     }
     expect(unrecognizedHeadlessValue({})).toBeUndefined();
+  });
+});
+
+describe('resolveFoxEnv', () => {
+  it('returns the value without surrounding white space, the FOX_ name first (H-16)', () => {
+    expect(resolveFoxEnv({ FOX_EXECUTABLE: '  /opt/ff/firefox \n' }, 'FOX_EXECUTABLE', 'CLAUDE_BROWSER_EXECUTABLE'))
+      .toBe('/opt/ff/firefox');
+    expect(resolveFoxEnv({ FOX_EXECUTABLE: ' ', CLAUDE_BROWSER_EXECUTABLE: ' /legacy ' }, 'FOX_EXECUTABLE', 'CLAUDE_BROWSER_EXECUTABLE'))
+      .toBe('/legacy');
+    expect(resolveFoxEnv({}, 'FOX_EXECUTABLE', 'CLAUDE_BROWSER_EXECUTABLE')).toBeUndefined();
   });
 });
 

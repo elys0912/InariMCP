@@ -50,6 +50,14 @@ describe('HeadlessBrowser lifecycle', () => {
     expect(launch.mock.calls[0]?.[0]).not.toHaveProperty('executablePath');
   });
 
+  it('uses the legacy CLAUDE_BROWSER_EXECUTABLE when FOX_EXECUTABLE is blank, trimmed (H-16, H-22)', async () => {
+    vi.stubEnv('FOX_EXECUTABLE', '  ');
+    vi.stubEnv('CLAUDE_BROWSER_EXECUTABLE', ' /opt/legacy/firefox ');
+    fakeBrowser();
+    await new HeadlessBrowser().start();
+    expect(launch.mock.calls[0]?.[0]).toMatchObject({ executablePath: '/opt/legacy/firefox' });
+  });
+
   it('is ready after start() and not ready after stop()', async () => {
     const { close } = fakeBrowser();
     const browser = new HeadlessBrowser();
