@@ -61,8 +61,8 @@ const PLAIN_URL = 'https://plain.example.test/';
 
 const browser = {
   tabUrl: PLAIN_URL,
-  /** What the "human" answers in the popup. */
-  popupDecision: 'approved' as 'approved' | 'denied' | 'timeout',
+  /** What the "human" answers in the popup (`error`: the popup itself fails). */
+  popupDecision: 'approved' as 'approved' | 'denied' | 'timeout' | 'cancelled' | 'error',
   received: [] as BrowserCommand[],
 };
 
@@ -70,6 +70,7 @@ function extensionAnswer(command: BrowserCommand): Record<string, unknown> {
   if (command.action === 'request_approval') {
     const view = ext.parseApprovalPrompt(command.data, command.requestId, Date.now(), 60_000);
     if (!view) return { success: false, error: 'Malformed approval request' };
+    if (browser.popupDecision === 'error') return { success: false, error: 'The popup could not be shown' };
     return ext.approvalCommandResult(view, browser.popupDecision, Date.now());
   }
   // background.ts checkProtectedTarget: patterns against the real tab URL,
@@ -244,16 +245,30 @@ describe('popup approval → one-time token', () => {
     expect(browser.received).toEqual([]);
   });
 
-  it('denied or unanswered in the popup → no token, request closed', async () => {
-    for (const decision of ['denied', 'timeout'] as const) {
+  it('denied, unanswered or cancelled in the popup → no token, request closed', async () => {
+    const reasons = { denied: 'declined', timeout: 'timeout', cancelled: 'cancelled' } as const;
+    for (const decision of ['denied', 'timeout', 'cancelled'] as const) {
       browser.popupDecision = decision;
       const first = await createToolHandler('fox_navigate')({ action: 'goto', url: PROTECTED_URL });
       const requestId = findApprovalRequest(first)!.requestId;
       const reply = await askBrowser(requestId, getConnectionManager());
-      expect(reply).toMatchObject({ success: true, approved: false, reason: decision === 'denied' ? 'declined' : 'timeout' });
+      expect(reply).toMatchObject({ success: true, approved: false, reason: reasons[decision] });
       expect(reply.approvalToken).toBeUndefined();
       expect(getApprovalStore().getRequest(requestId)).toBeUndefined();
     }
+  });
+
+  // G-21 (c): the popup itself failed: nobody answered, so the request stays open.
+  it('a failed popup → browser_error, no token, request still open', async () => {
+    browser.popupDecision = 'error';
+    const first = await createToolHandler('fox_navigate')({ action: 'goto', url: PROTECTED_URL });
+    const requestId = findApprovalRequest(first)!.requestId;
+    const reply = await askBrowser(requestId, getConnectionManager());
+    expect(reply).toMatchObject({
+      success: false, approved: false, reason: 'browser_error', error: 'The popup could not be shown',
+    });
+    expect(reply.approvalToken).toBeUndefined();
+    expect(getApprovalStore().getRequest(requestId)).toBeDefined();
   });
 
   it('acting on the current protected tab: the approved host reaches the Extension', async () => {
