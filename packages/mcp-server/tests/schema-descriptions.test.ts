@@ -5,12 +5,12 @@
 
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import type { ZodObject, ZodRawShape, ZodTypeAny } from 'zod';
+import type { ZodRawShape, ZodTypeAny } from 'zod';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
 import { PUBLIC_TOOLS } from '../src/tools/public-tools.js';
 
 function shapeOf(tool: string): ZodRawShape {
-  return (TOOL_SCHEMAS[tool]!.inputSchema as ZodObject<ZodRawShape>).shape;
+  return TOOL_SCHEMAS[tool]!.inputSchema.shape;
 }
 
 describe('tool descriptions', () => {
@@ -67,7 +67,7 @@ function identifiers(description: string): string[] {
 
 describe('arguments named in tool descriptions', () => {
   const tools: Array<[string, string, ZodTypeAny]> = [
-    ...Object.entries(TOOL_SCHEMAS).map(([n, d]) => [`legacy ${n}`, d.description, d.inputSchema as ZodTypeAny] as [string, string, ZodTypeAny]),
+    ...Object.entries(TOOL_SCHEMAS).map(([n, d]) => [`legacy ${n}`, d.description, d.inputSchema] as [string, string, ZodTypeAny]),
     ...Object.entries(PUBLIC_TOOLS).map(([n, t]) => [`public ${n}`, t.description, t.listSchema] as [string, string, ZodTypeAny]),
   ];
 

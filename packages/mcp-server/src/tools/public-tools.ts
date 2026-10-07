@@ -21,15 +21,18 @@
 
 import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
+import { isRecord } from '@kitsune-mcp/shared';
 import { MAX_TIMEOUT_ARG_MS, TOOL_SCHEMAS, callSchemaOf } from './schemas.js';
+import type { OperationName } from './schemas.js';
 import { toolAnnotations } from './classification.js';
 import type { ToolAnnotations } from './classification.js';
+import { isOneOf } from './one-of.js';
 
 export interface PublicVariant {
-  /** The operation it runs (a TOOL_SCHEMAS key), from its parsed arguments. */
-  op(args: Record<string, unknown>): string;
+  /** The operation it runs, from its parsed arguments. */
+  op(args: Record<string, unknown>): OperationName;
   /** Operations it can run (annotations). */
-  ops: string[];
+  ops: OperationName[];
   /**
    * The operation's arguments, from the variant's parsed arguments
    * (discriminator included). Default: the same keys; the operation's
@@ -64,15 +67,9 @@ export interface PublicTool {
 // Building blocks
 // ---------------------------------------------------------------------------
 
-function opShape(op: string): ZodRawShape {
-  const schema = TOOL_SCHEMAS[op]?.inputSchema;
-  if (!(schema instanceof z.ZodObject)) throw new Error(`no object schema for operation ${op}`);
-  return schema.shape as ZodRawShape;
-}
-
 /** The fields `keys` of an operation's schema (all of them by default). */
-function fieldsOf(op: string, keys?: string[]): ZodRawShape {
-  const shape = opShape(op);
+function fieldsOf(op: OperationName, keys?: string[]): ZodRawShape {
+  const shape: ZodRawShape = TOOL_SCHEMAS[op].inputSchema.shape;
   if (!keys) return { ...shape };
   const picked: ZodRawShape = {};
   for (const key of keys) {
@@ -83,19 +80,19 @@ function fieldsOf(op: string, keys?: string[]): ZodRawShape {
   return picked;
 }
 
-/** Strip ZodDefault / ZodOptional wrappers. */
-function unwrap(field: ZodTypeAny): { base: ZodTypeAny; required: boolean; defaultValue?: unknown } {
+/** Strip ZodDefault / ZodOptional wrappers (also used by tests/contract/public-tools.test.ts). */
+export function unwrap(field: ZodTypeAny): { base: ZodTypeAny; required: boolean; defaultValue?: unknown } {
   let base = field;
   let required = true;
   let defaultValue: unknown;
   for (;;) {
     if (base instanceof z.ZodDefault) {
-      defaultValue = (base._def as { defaultValue: () => unknown }).defaultValue();
+      defaultValue = base._def.defaultValue();
       required = false;
-      base = base._def.innerType as ZodTypeAny;
+      base = base._def.innerType;
     } else if (base instanceof z.ZodOptional) {
       required = false;
-      base = base._def.innerType as ZodTypeAny;
+      base = base._def.innerType;
     } else {
       return { base, required, defaultValue };
     }
@@ -119,7 +116,8 @@ function flatListSchema(
   const names = Object.keys(variants);
   const occurrences = new Map<string, Array<{ variant: string; field: ZodTypeAny }>>();
   for (const [variant, schema] of Object.entries(variants)) {
-    for (const [key, field] of Object.entries(schema.shape as Record<string, ZodTypeAny>)) {
+    const variantShape: ZodRawShape = schema.shape;
+    for (const [key, field] of Object.entries(variantShape)) {
       if (key === discriminator) continue;
       const list = occurrences.get(key) ?? [];
       list.push({ variant, field });
@@ -127,8 +125,9 @@ function flatListSchema(
     }
   }
 
-  const enumValues = names as [string, ...string[]];
-  const disc = z.enum(enumValues).describe(discriminatorDescription);
+  const [firstName, ...otherNames] = names;
+  if (firstName === undefined) throw new Error(`${discriminator}: no variants`);
+  const disc = z.enum([firstName, ...otherNames]).describe(discriminatorDescription);
   const shape: ZodRawShape = { [discriminator]: discriminatorOptional ? disc.optional() : disc };
 
   for (const [key, list] of occurrences) {
@@ -158,11 +157,7 @@ function flatListSchema(
 
 /** fold the variants' operation annotations: readOnlyHint AND, destructiveHint OR. */
 function foldAnnotations(variants: Record<string, PublicVariant>): ToolAnnotations {
-  const all = Object.values(variants).flatMap((v) => v.ops).map((op) => {
-    const def = TOOL_SCHEMAS[op];
-    if (!def) throw new Error(`unknown operation ${op}`);
-    return toolAnnotations(def);
-  });
+  const all = Object.values(variants).flatMap((v) => v.ops).map((op) => toolAnnotations(TOOL_SCHEMAS[op]));
   return {
     readOnlyHint: all.every((a) => a.readOnlyHint),
     destructiveHint: all.some((a) => a.destructiveHint),
@@ -173,9 +168,8 @@ function foldAnnotations(variants: Record<string, PublicVariant>): ToolAnnotatio
  * A tool that is one operation as is. `description` replaces the
  * operation's own (FOX_CAPS=legacy keeps that one).
  */
-function asIs(op: string, description?: string): PublicTool {
+function asIs(op: OperationName, description?: string): PublicTool {
   const def = TOOL_SCHEMAS[op];
-  if (!def || !(def.inputSchema instanceof z.ZodObject)) throw new Error(`no object schema for operation ${op}`);
   const variants = { default: { op: () => op, ops: [op] } };
   return {
     name: op,
@@ -194,7 +188,7 @@ interface VariantSpec {
 }
 
 /** Run operation `op` with the variant's arguments as they are. */
-function same(op: string): PublicVariant {
+function same(op: OperationName): PublicVariant {
   return { op: () => op, ops: [op] };
 }
 
@@ -214,11 +208,13 @@ function grouped(options: {
   for (const [value, spec] of Object.entries(options.variants)) {
     objects[value] = z.object({ [discriminator]: z.literal(value), ...spec.fields });
   }
-  const members = Object.values(objects) as [z.AnyZodObject, z.AnyZodObject, ...z.AnyZodObject[]];
-  const union = z.discriminatedUnion(discriminator, members as never);
-  const refined = options.refine
-    ? union.superRefine((v, ctx) => options.refine!(v as Record<string, unknown>, ctx))
-    : union;
+  const [first, second, ...rest] = Object.values(objects);
+  if (first === undefined || second === undefined) {
+    throw new Error(`${options.name}: a grouped tool needs at least two variants`);
+  }
+  const union = z.discriminatedUnion(discriminator, [first, second, ...rest]);
+  const refine = options.refine;
+  const refined = refine ? union.superRefine((v, ctx) => refine(v, ctx)) : union;
   const callSchema = options.defaultVariant === undefined
     ? refined
     : z.preprocess((raw) => {
@@ -327,12 +323,13 @@ const foxTab = grouped({
         op: (args) => (args['container'] === undefined ? 'fox_create_tab' : 'fox_open_in_container'),
         ops: ['fox_create_tab', 'fox_open_in_container'],
         toOp: (args) => {
-          const { container, ...rest } = args as { container?: { name?: string; cookieStoreId?: string } };
-          if (container === undefined) return rest;
+          const { container, ...rest } = args;
+          if (!isRecord(container)) return rest;
+          const { name, cookieStoreId } = container;
           return {
             ...rest,
-            ...(container.name !== undefined ? { containerName: container.name } : {}),
-            ...(container.cookieStoreId !== undefined ? { cookieStoreId: container.cookieStoreId } : {}),
+            ...(name !== undefined ? { containerName: name } : {}),
+            ...(cookieStoreId !== undefined ? { cookieStoreId } : {}),
           };
         },
         fromOp: (opArgs) => {
@@ -352,9 +349,9 @@ const foxTab = grouped({
     switch: { fields: fieldsOf('fox_switch_tab'), run: same('fox_switch_tab') },
   },
   refine: (args, ctx) => {
-    if (args['action'] !== 'create' || args['container'] === undefined) return;
-    const container = args['container'] as { name?: string; cookieStoreId?: string };
-    if (container.name === undefined && container.cookieStoreId === undefined) {
+    const container = args['container'];
+    if (args['action'] !== 'create' || !isRecord(container)) return;
+    if (container['name'] === undefined && container['cookieStoreId'] === undefined) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['container'], message: 'container needs name or cookieStoreId' });
     }
     if (typeof args['url'] !== 'string' || args['url'] === '') {
@@ -387,14 +384,14 @@ const foxSetValue = grouped({
       run: {
         ...same('fox_select_option'),
         toOp: (args) => {
-          const { option, ...rest } = args as { option: Record<string, unknown> };
-          return { ...rest, ...option };
+          const { option, ...rest } = args;
+          return isRecord(option) ? { ...rest, ...option } : rest;
         },
         fromOp: (opArgs) => {
           const option: Record<string, unknown> = {};
           const rest: Record<string, unknown> = {};
           for (const [key, value] of Object.entries(opArgs)) {
-            if ((OPTION_KEYS as readonly string[]).includes(key)) option[key] = value;
+            if (isOneOf(OPTION_KEYS, key)) option[key] = value;
             else rest[key] = value;
           }
           return { ...rest, option };
@@ -403,8 +400,8 @@ const foxSetValue = grouped({
     },
   },
   refine: (args, ctx) => {
-    if (args['kind'] !== 'select') return;
-    const option = args['option'] as Record<string, unknown>;
+    const option = args['option'];
+    if (args['kind'] !== 'select' || !isRecord(option)) return;
     const given = OPTION_KEYS.filter((key) => option[key] !== undefined);
     if (given.length !== 1) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['option'], message: 'option needs exactly one of value, text or index' });
@@ -516,7 +513,7 @@ const foxObserver = grouped({
  * Public descriptions of tools that are an operation as is: shorter than
  * the operation's, and naming the public tools.
  */
-const AS_IS_DESCRIPTIONS: Record<string, string> = {
+const AS_IS_DESCRIPTIONS = {
   fox_screenshot:
     "Take a screenshot. Images are saved to files and returned as resource_link, never as base64 (saveToFile=false captures nothing, includeData has no effect, the same filename overwrites the file). scope: viewport (visible area; a background tab given by tabId is captured without switching to it; a discarded tab fails), full_page (entire page; falls back to the visible area with fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls and returns the interactive elements visible at each position). Headless: viewport and full_page only.",
   fox_snapshot:
@@ -529,39 +526,64 @@ const AS_IS_DESCRIPTIONS: Record<string, string> = {
   // for the legacy names only: the public tool is in the core profile.
   fox_handle_dialog:
     'Extension path: not implemented (returns an error; commands to a tab showing an alert/confirm/prompt time out there). Headless only: wait for the next dialog and accept or dismiss it (promptText for prompts). Call it before the action that opens the dialog: it does not block other commands, and when no dialog comes within timeout it arms itself for the next dialog on the tab (30 s). Dialogs nobody handles are dismissed automatically after 2 s and reported in the next result of that tab.',
-};
+} satisfies Partial<Record<OperationName, string>>;
 
-export const PUBLIC_TOOLS: Record<string, PublicTool> = Object.fromEntries([
-  asIs('fox_screenshot', AS_IS_DESCRIPTIONS['fox_screenshot']),
-  asIs('fox_snapshot', AS_IS_DESCRIPTIONS['fox_snapshot']),
-  foxRead,
-  foxFind,
-  foxTabs,
-  foxTab,
-  asIs('fox_navigate'),
-  asIs('fox_click', AS_IS_DESCRIPTIONS['fox_click']),
-  asIs('fox_type', AS_IS_DESCRIPTIONS['fox_type']),
-  asIs('fox_press_key'),
-  foxSetValue,
-  foxInteract,
-  foxWait,
-  foxLogging,
-  foxGetLogs,
-  foxEvaluate,
-  foxObserver,
-  asIs('fox_handle_dialog', AS_IS_DESCRIPTIONS['fox_handle_dialog']),
-  asIs('fox_request_approval'),
-  asIs('fox_detect_captcha'),
-  asIs('fox_safety_status'),
-].map((tool) => [tool.name, tool]));
+/**
+ * The public tools by name, in tools/list order. Each key is the `name` of
+ * its tool (tests/contract/public-tools.test.ts).
+ */
+const PUBLIC_TOOL_TABLE = {
+  fox_screenshot: asIs('fox_screenshot', AS_IS_DESCRIPTIONS.fox_screenshot),
+  fox_snapshot: asIs('fox_snapshot', AS_IS_DESCRIPTIONS.fox_snapshot),
+  fox_read: foxRead,
+  fox_find: foxFind,
+  fox_tabs: foxTabs,
+  fox_tab: foxTab,
+  fox_navigate: asIs('fox_navigate'),
+  fox_click: asIs('fox_click', AS_IS_DESCRIPTIONS.fox_click),
+  fox_type: asIs('fox_type', AS_IS_DESCRIPTIONS.fox_type),
+  fox_press_key: asIs('fox_press_key'),
+  fox_set_value: foxSetValue,
+  fox_interact: foxInteract,
+  fox_wait: foxWait,
+  fox_logging: foxLogging,
+  fox_get_logs: foxGetLogs,
+  fox_evaluate: foxEvaluate,
+  fox_observer: foxObserver,
+  fox_handle_dialog: asIs('fox_handle_dialog', AS_IS_DESCRIPTIONS.fox_handle_dialog),
+  fox_request_approval: asIs('fox_request_approval'),
+  fox_detect_captcha: asIs('fox_detect_captcha'),
+  fox_safety_status: asIs('fox_safety_status'),
+} satisfies Record<string, PublicTool>;
+
+export type PublicToolName = keyof typeof PUBLIC_TOOL_TABLE;
+
+export const PUBLIC_TOOLS: Readonly<Record<PublicToolName, PublicTool>> = PUBLIC_TOOL_TABLE;
+
+/** Whether `name` (a name from the wire) is a public tool. */
+export function isPublicToolName(name: string): name is PublicToolName {
+  return Object.hasOwn(PUBLIC_TOOLS, name);
+}
+
+/** Every public tool name, in tools/list order. */
+export const PUBLIC_TOOL_NAMES: readonly PublicToolName[] = Object.keys(PUBLIC_TOOLS).filter(isPublicToolName);
+
+/** The operations that are no public tool any more (the deprecated names). */
+export type LegacyOperationName = Exclude<OperationName, PublicToolName>;
+
+/** Whether `name` is a deprecated operation name. */
+export function isLegacyOperationName(name: string): name is LegacyOperationName {
+  return Object.hasOwn(LEGACY_REPLACEMENTS, name);
+}
 
 /**
  * Deprecated tool names (the operations that are no public tool any more)
  * and what replaces them: `[tool, discriminator value]`, or null when the
  * tool was removed (fox_run_workflow, fox_audit_page: not implemented on
- * any backend).
+ * any backend). The key set is checked by the type: every operation is a
+ * public tool or listed here.
  */
-export const LEGACY_REPLACEMENTS: Record<string, readonly [string, string] | null> = {
+export const LEGACY_REPLACEMENTS: Readonly<Record<LegacyOperationName, readonly [PublicToolName, string] | null>> = {
   fox_get_page_info: ['fox_read', 'info'],
   fox_get_text: ['fox_read', 'text'],
   fox_get_elements: ['fox_find', 'selector'],

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { OBSERVE_TOOLS, SCRIPT_TOOLS, toolAnnotations } from '../src/tools/classification.js';
-import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
+import {
+  OBSERVE_TOOLS,
+  SCRIPT_TOOLS,
+  TAB_INDEPENDENT_TOOLS,
+  isOperationIn,
+  toolAnnotations,
+} from '../src/tools/classification.js';
+import { OPERATION_NAMES, TOOL_SCHEMAS } from '../src/tools/schemas.js';
 import { SafetyGuard } from '../src/safety/guard.js';
 import { DEFAULT_CONFIG, type SafetyConfig } from '../src/safety/config.js';
 
@@ -30,8 +36,16 @@ describe('tool sets derived from the schemas', () => {
 
   it('carry none of the former names', () => {
     for (const name of FORMER_NAMES) {
-      expect(OBSERVE_TOOLS.has(name), name).toBe(false);
+      expect(isOperationIn(OBSERVE_TOOLS, name), name).toBe(false);
     }
+  });
+
+  // G-8: derived from ToolDefinition.tabIndependent, the set the guard had by hand.
+  it('put the tab-independent tools in TAB_INDEPENDENT_TOOLS', () => {
+    expect([...TAB_INDEPENDENT_TOOLS].sort()).toEqual([
+      'fox_close_tab', 'fox_create_tab', 'fox_get_tabs', 'fox_list_containers',
+      'fox_open_in_container', 'fox_safety_status', 'fox_switch_tab',
+    ]);
   });
 
   it('put every script-class tool (and nothing else) in SCRIPT_TOOLS', () => {
@@ -45,7 +59,7 @@ describe('tool sets derived from the schemas', () => {
   // (readOnly column); this states the rule behind it.
   it('read-only mode lets exactly the observation tools through and refuses every other tool', () => {
     const g = guard({ readOnly: true });
-    for (const name of Object.keys(TOOL_SCHEMAS)) {
+    for (const name of OPERATION_NAMES) {
       const expected = OBSERVE_TOOLS.has(name) ? null : 'read_only';
       expect(g.check(name, {})?.safetyDecision ?? null, name).toBe(expected);
     }
@@ -56,7 +70,7 @@ describe('tool sets derived from the schemas', () => {
 // (and tests/contract/public-tools.test.ts for the public tools); these are the
 // rules that tie them to the guard, so an MCP client can rely on them.
 describe('toolAnnotations', () => {
-  const annotated = Object.values(TOOL_SCHEMAS).map((def) => [def.name, toolAnnotations(def)] as const);
+  const annotated = OPERATION_NAMES.map((name) => [name, toolAnnotations(TOOL_SCHEMAS[name])] as const);
 
   it('a read-only tool is let through in read-only mode', () => {
     for (const [name, { readOnlyHint }] of annotated) {

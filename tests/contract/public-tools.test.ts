@@ -12,8 +12,14 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { ZodTypeAny } from 'zod';
-import { TOOL_SCHEMAS, callSchemaOf } from '../../packages/mcp-server/src/tools/schemas.js';
-import { PUBLIC_TOOLS, type PublicTool } from '../../packages/mcp-server/src/tools/public-tools.js';
+import { TOOL_SCHEMAS } from '../../packages/mcp-server/src/tools/schemas.js';
+import {
+  PUBLIC_TOOLS,
+  PUBLIC_TOOL_NAMES,
+  unwrap,
+  type PublicTool,
+  type PublicToolName,
+} from '../../packages/mcp-server/src/tools/public-tools.js';
 
 const GROUPED = Object.values(PUBLIC_TOOLS).filter((t) => t.discriminator !== undefined);
 
@@ -24,24 +30,6 @@ function variantObjects(tool: PublicTool): Record<string, z.AnyZodObject> {
   if (!(schema instanceof z.ZodDiscriminatedUnion)) throw new Error(`${tool.name}: not a discriminated union`);
   const options = schema.options as z.AnyZodObject[];
   return Object.fromEntries(options.map((o) => [(o.shape[tool.discriminator!] as z.ZodLiteral<string>).value, o]));
-}
-
-function unwrap(field: ZodTypeAny): { base: ZodTypeAny; required: boolean; defaultValue?: unknown } {
-  let base = field;
-  let required = true;
-  let defaultValue: unknown;
-  for (;;) {
-    if (base instanceof z.ZodDefault) {
-      defaultValue = (base._def.defaultValue as () => unknown)();
-      required = false;
-      base = base._def.innerType as ZodTypeAny;
-    } else if (base instanceof z.ZodOptional) {
-      required = false;
-      base = base._def.innerType as ZodTypeAny;
-    } else {
-      return { base, required, defaultValue };
-    }
-  }
 }
 
 /** A value of the field's type (all object keys set). */
@@ -61,18 +49,35 @@ function sample(field: ZodTypeAny): unknown {
 }
 
 const opKeys = (op: string): string[] =>
-  Object.keys((TOOL_SCHEMAS[op]!.inputSchema as z.AnyZodObject).shape).sort();
+  Object.keys(TOOL_SCHEMAS[op]!.inputSchema.shape).sort();
 
 // ---------------------------------------------------------------------------
 
+describe('the public tool table', () => {
+  it('keys every tool by its own name', () => {
+    for (const name of PUBLIC_TOOL_NAMES) expect(PUBLIC_TOOLS[name].name).toBe(name);
+  });
+});
+
 describe('tools that are an operation as is', () => {
-  it('list and parse with the operation schemas themselves', () => {
+  it('list with the operation schema itself', () => {
     for (const tool of Object.values(PUBLIC_TOOLS).filter((t) => t.discriminator === undefined)) {
-      const def = TOOL_SCHEMAS[tool.name]!;
-      expect(tool.listSchema, tool.name).toBe(def.inputSchema);
-      expect(tool.callSchema, tool.name).toBe(callSchemaOf(def));
+      expect(tool.listSchema, tool.name).toBe(TOOL_SCHEMAS[tool.name]!.inputSchema);
       expect(Object.keys(tool.variants), tool.name).toEqual(['default']);
     }
+  });
+
+  // G-7: the call schema is the operation's callSchema where it has one,
+  // else its inputSchema.
+  it('parse with the operation callSchema when there is one, else with its inputSchema', () => {
+    const navigate = TOOL_SCHEMAS['fox_navigate']!;
+    expect(navigate.callSchema).toBeDefined();
+    expect(PUBLIC_TOOLS.fox_navigate.callSchema).toBe(navigate.callSchema);
+    expect(PUBLIC_TOOLS.fox_navigate.callSchema.safeParse({}).success).toBe(false);
+
+    const click = TOOL_SCHEMAS['fox_click']!;
+    expect(click.callSchema).toBeUndefined();
+    expect(PUBLIC_TOOLS.fox_click.callSchema).toBe(click.inputSchema);
   });
 });
 
@@ -129,7 +134,7 @@ describe('listSchema of the grouped tools', () => {
 });
 
 describe('tool annotations (WP13 specification 2.2)', () => {
-  const EXPECTED: Record<string, [readOnlyHint: boolean, destructiveHint: boolean]> = {
+  const EXPECTED: Record<PublicToolName, [readOnlyHint: boolean, destructiveHint: boolean]> = {
     fox_screenshot: [true, false],
     fox_snapshot: [true, false],
     fox_read: [true, false],
@@ -154,9 +159,9 @@ describe('tool annotations (WP13 specification 2.2)', () => {
   };
 
   it('every public tool has the specified readOnlyHint / destructiveHint', () => {
-    expect(Object.keys(PUBLIC_TOOLS).sort()).toEqual(Object.keys(EXPECTED).sort());
-    for (const [name, [readOnlyHint, destructiveHint]] of Object.entries(EXPECTED)) {
-      expect(PUBLIC_TOOLS[name]!.annotations, name).toEqual({ readOnlyHint, destructiveHint });
+    for (const name of PUBLIC_TOOL_NAMES) {
+      const [readOnlyHint, destructiveHint] = EXPECTED[name];
+      expect(PUBLIC_TOOLS[name].annotations, name).toEqual({ readOnlyHint, destructiveHint });
     }
   });
 });

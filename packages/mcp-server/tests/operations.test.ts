@@ -1,14 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
-import { LEGACY_REPLACEMENTS, PUBLIC_TOOLS } from '../src/tools/public-tools.js';
-import { callSchemaFor, deprecationNote, resolveOperation } from '../src/tools/operations.js';
+import { PUBLIC_TOOLS } from '../src/tools/public-tools.js';
+import { callSchemaFor, deprecationNote, describeTool, resolveOperation } from '../src/tools/operations.js';
 
+// Every operation is a public tool or a replaced name: the type of
+// LEGACY_REPLACEMENTS (Record<LegacyOperationName, ...>) checks that.
 describe('public tools and operations', () => {
-  it('every operation is a public tool or a replaced name', () => {
-    for (const op of Object.keys(TOOL_SCHEMAS)) {
-      expect(op in PUBLIC_TOOLS || op in LEGACY_REPLACEMENTS, op).toBe(true);
-    }
-  });
 
   it('fox_tab create with a container runs fox_open_in_container with the old argument names', () => {
     const args = callSchemaFor('fox_tab')!.parse({
@@ -43,6 +39,35 @@ describe('public tools and operations', () => {
   it('listSchema notes a per-variant default as "<value> (<variant>)"', () => {
     const shape = PUBLIC_TOOLS['fox_wait']!.listSchema.shape as Record<string, { description?: string }>;
     expect(shape['timeout']!.description).toContain('10000 (element)');
+  });
+
+  // G-21 (d): the callers parse with callSchemaFor() first, which refuses
+  // both; resolveOperation() itself does not guess.
+  it('throws for an unknown variant and for a name that is no tool', () => {
+    expect(() => resolveOperation('fox_wait', { for: 'nothing' })).toThrow("fox_wait: unknown for 'nothing'");
+    expect(() => resolveOperation('fox_tab', {})).toThrow("fox_tab: unknown action 'undefined'");
+    expect(() => resolveOperation('fox_no_such_tool', {})).toThrow('fox_no_such_tool: unknown tool');
+  });
+
+  // G-25: the classes as a list next to the joined string.
+  it('describeTool gives the classes of every operation a tool can run', () => {
+    expect(describeTool('fox_tab')).toMatchObject({ classification: 'act|interact', classifications: ['act', 'interact'] });
+    expect(describeTool('fox_get_text')).toMatchObject({ classification: 'observe', classifications: ['observe'] });
+    expect(describeTool('fox_no_such_tool')).toBeNull();
+  });
+});
+
+// G-4: the audit log shows a call the same way whichever name it was made
+// by: the defaults of the public tool's schema in both.
+describe('audited arguments by public and deprecated name', () => {
+  it.each([
+    ['fox_get_text', {}, 'fox_read', { mode: 'text' }],
+    ['fox_scroll', { direction: 'down' }, 'fox_interact', { action: 'scroll', direction: 'down' }],
+    ['fox_wait_for_element', { selector: '#a' }, 'fox_wait', { for: 'element', selector: '#a' }],
+  ] as const)('%s and %s', (legacy, legacyArgs, tool, toolArgs) => {
+    const viaLegacy = resolveOperation(legacy, callSchemaFor(legacy)!.parse(legacyArgs) as Record<string, unknown>);
+    const viaTool = resolveOperation(tool, callSchemaFor(tool)!.parse(toolArgs) as Record<string, unknown>);
+    expect(viaLegacy.label.auditArgs).toEqual(viaTool.label.args);
   });
 });
 

@@ -18,7 +18,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { registerTools } from '../../packages/mcp-server/src/tools/registry.js';
+import { PROFILE_NAMES, registerTools } from '../../packages/mcp-server/src/tools/registry.js';
 import { PUBLIC_TOOLS } from '../../packages/mcp-server/src/tools/public-tools.js';
 import { TOOL_SCHEMAS } from '../../packages/mcp-server/src/tools/schemas.js';
 
@@ -64,8 +64,7 @@ describe('tools/list', () => {
   });
 
   it('every public tool is in a FOX_CAPS profile', async () => {
-    const profiles = ['core', 'logs', 'script', 'workflow', 'human', 'container', 'wait'];
-    const names = new Set((await listTools(profiles.join(','))).map((t) => t.name));
+    const names = new Set((await listTools(PROFILE_NAMES.join(','))).map((t) => t.name));
     expect([...names].sort()).toEqual(Object.keys(PUBLIC_TOOLS).sort());
   });
 
