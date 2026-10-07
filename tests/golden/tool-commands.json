@@ -1672,7 +1672,8 @@
         "ctrl": false,
         "shift": false,
         "alt": false,
-        "meta": false
+        "meta": false,
+        "allowPassword": false
       },
       "containerScope": {
         "containerName": "Golden Agent"
@@ -1744,7 +1745,8 @@
         "ctrl": true,
         "shift": true,
         "alt": true,
-        "meta": true
+        "meta": true,
+        "allowPassword": false
       },
       "containerScope": {
         "containerName": "Golden Agent"
@@ -1814,7 +1816,8 @@
         "ctrl": false,
         "shift": false,
         "alt": false,
-        "meta": false
+        "meta": false,
+        "allowPassword": false
       },
       "containerScope": {
         "containerName": "Golden Agent"
