@@ -145,7 +145,7 @@ describe('headless _guardedFill (Playwright)', () => {
       '<script>setTimeout(() => { document.getElementById("host").innerHTML = ' +
       '\'<input id="pw" type="password">\'; }, 300)</script>',
     );
-    const r: Result = await browser.execute('type', undefined, { selector: '#pw', text: 'secret' });
+    const r: Result = await browser.execute('type', undefined, { selector: '#pw', text: 'secret', clear: false });
     expect(r['success']).toBe(false);
     expect(String(r['error'])).toContain(PASSWORD_REFUSAL);
     expect(await script('document.getElementById("pw").value')).toBe('');
@@ -157,13 +157,13 @@ describe('headless _guardedFill (Playwright)', () => {
       '<script>setTimeout(() => { document.getElementById("host").innerHTML = ' +
       '\'<input id="user" type="text">\'; }, 300)</script>',
     );
-    expect((await browser.execute('type', undefined, { selector: '#user', text: 'alice' }))['success']).toBe(true);
+    expect((await browser.execute('type', undefined, { selector: '#user', text: 'alice', clear: false }))['success']).toBe(true);
     expect(await script('document.getElementById("user").value')).toBe('alice');
   });
 
   real('refuses a <label for> that points at a password field', async () => {
     await load('<label for="pw">Password</label><input id="pw" type="password">');
-    const r: Result = await browser.execute('type', undefined, { selector: 'label[for=pw]', text: 'secret' });
+    const r: Result = await browser.execute('type', undefined, { selector: 'label[for=pw]', text: 'secret', clear: false });
     expect(r['success']).toBe(false);
     expect(String(r['error'])).toContain(PASSWORD_REFUSAL);
     expect(await script('document.getElementById("pw").value')).toBe('');
@@ -172,7 +172,7 @@ describe('headless _guardedFill (Playwright)', () => {
   real('allows a password field when the command carries allowPassword', async () => {
     await load('<input id="pw" type="password">');
     const r: Result = await browser.execute('type', undefined, {
-      selector: '#pw', text: 'secret', allowPassword: true,
+      selector: '#pw', text: 'secret', clear: false, allowPassword: true,
     });
     expect(r['success']).toBe(true);
     expect(await script('document.getElementById("pw").value')).toBe('secret');
@@ -181,7 +181,7 @@ describe('headless _guardedFill (Playwright)', () => {
   real('refuses the focused password field when no selector is given', async () => {
     await load('<input id="pw" type="password">');
     await script('document.getElementById("pw").focus()');
-    const r: Result = await browser.execute('type', undefined, { text: 'secret' });
+    const r: Result = await browser.execute('type', undefined, { text: 'secret', clear: false });
     expect(r['success']).toBe(false);
     expect(String(r['error'])).toContain(PASSWORD_REFUSAL);
   });

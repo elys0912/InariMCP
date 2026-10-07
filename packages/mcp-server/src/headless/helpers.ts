@@ -5,7 +5,7 @@
 
 import type { z } from 'zod';
 import { BrowserActionSchema, formatZodIssues, type BrowserAction } from '@kitsune-mcp/shared';
-import { GET_ELEMENTS_MAX, HIGHLIGHT_MS } from './limits.js';
+import { GET_ELEMENTS_MAX } from './limits.js';
 
 /**
  * The arguments of `action`, checked against `schema`. Calls through the MCP
@@ -24,6 +24,27 @@ export function parseArgs<S extends z.ZodTypeAny>(
     throw new Error(`Invalid arguments for ${action}: ${formatZodIssues(parsed.error.issues)}`);
   }
   return parsed.data;
+}
+
+/** `s` as a literal inside a RegExp. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** A letter, digit or underscore: what ends a word for find_text entireWord. */
+const WORD_CHAR = '[\\p{L}\\p{N}_]';
+
+/**
+ * Occurrences of `query` in `text` (non-overlapping), as the Extension's
+ * browser.find counts them (fox_find_text): case-insensitive unless
+ * caseSensitive; with entireWord, only where no word character adjoins.
+ * The query is literal text (no pattern). An empty query counts 0.
+ */
+export function countOccurrences(text: string, query: string, caseSensitive: boolean, entireWord: boolean): number {
+  if (query === '') return 0;
+  const body = escapeRegExp(query);
+  const source = entireWord ? `(?<!${WORD_CHAR})${body}(?!${WORD_CHAR})` : body;
+  return Array.from(text.matchAll(new RegExp(source, caseSensitive ? 'gu' : 'giu'))).length;
 }
 
 interface AriaFilter {
@@ -55,17 +76,19 @@ export function filterAriaSnapshot(yaml: string, o: AriaFilter): string {
   return lines.join('\n');
 }
 
-interface IgnoredParam {
+export interface IgnoredParam {
   key: string;
   /** Schema default: a value equal to it is not worth a warning. */
   def?: unknown;
   /** Other values that ask for what headless does anyway (no warning). */
   same?: readonly unknown[];
+  /** Ignored only when this holds for the value and the other arguments (default: always). */
+  when?: (value: unknown, args: Record<string, unknown>) => boolean;
   note: string;
 }
 
-/** Parameters the headless backend does not honour, per action. */
-const HEADLESS_IGNORED: Readonly<Partial<Record<BrowserAction, readonly IgnoredParam[]>>> = {
+/** Parameters the headless backend does not honour, per action (exported for the tests). */
+export const HEADLESS_IGNORED: Readonly<Partial<Record<BrowserAction, readonly IgnoredParam[]>>> = {
   navigate: [{ key: 'waitForLoad', def: true, note: 'always waits for domcontentloaded' }],
   refresh: [{ key: 'bypassCache', def: false, note: 'cache is not bypassed' }],
   screenshot: [
@@ -84,7 +107,13 @@ const HEADLESS_IGNORED: Readonly<Partial<Record<BrowserAction, readonly IgnoredP
     { key: 'placeholder', note: 'use selector' },
     { key: 'name', note: 'use selector' },
     { key: 'id', note: 'use selector' },
-    { key: 'clear', def: false, note: 'existing content is always replaced' },
+    // With a selector, clear is honoured (without it the text is appended).
+    {
+      key: 'clear',
+      def: false,
+      when: (_v, args) => typeof args['selector'] !== 'string' || args['selector'] === '',
+      note: 'without selector the keys go to the focused element as they are; pass selector to clear',
+    },
     { key: 'pressEnter', def: false, note: 'Enter is not pressed; use fox_press_key' },
     { key: 'delay', def: 50, same: [0], note: 'text is entered at once' },
   ],
@@ -93,23 +122,20 @@ const HEADLESS_IGNORED: Readonly<Partial<Record<BrowserAction, readonly IgnoredP
     { key: 'text', note: 'use selector' },
     { key: 'id', note: 'use selector' },
   ],
-  get_elements: [{ key: 'limit', def: 50, note: `always returns at most ${GET_ELEMENTS_MAX} elements` }],
-  find_text: [
-    { key: 'caseSensitive', def: false, note: 'not applied' },
-    { key: 'entireWord', def: false, note: 'not applied' },
-    { key: 'includeRectData', def: false, note: 'no rect data' },
-  ],
+  get_elements: [{
+    key: 'limit',
+    def: 50,
+    when: (v) => typeof v === 'number' && v > GET_ELEMENTS_MAX,
+    note: `at most ${GET_ELEMENTS_MAX} elements are returned (count is every match)`,
+  }],
+  find_text: [{ key: 'includeRectData', def: false, note: 'no rect data' }],
   get_tabs: [
     { key: 'urlPattern', note: 'tabs are not filtered' },
     { key: 'includeFavicon', def: false, note: 'no favicon' },
     { key: 'limit', def: 50, note: 'not applied' },
   ],
-  highlight: [
-    { key: 'duration', def: 3000, note: `fixed at ${HIGHLIGHT_MS} ms` },
-    { key: 'label', note: 'no label is drawn' },
-  ],
+  highlight: [{ key: 'label', note: 'no label is drawn' }],
   create_tab: [{ key: 'active', def: true, note: 'the new tab always becomes active' }],
-  wait_for_element: [{ key: 'visible', def: true, note: 'always waits for the element to be visible' }],
   wait_for_network_idle: [{ key: 'idleTime', def: 500, note: 'fixed by the browser engine' }],
   wait_for_navigation: [
     { key: 'waitUntil', def: 'load', note: 'not applied' },
@@ -127,6 +153,7 @@ export function ignoredParamWarnings(action: string, args: Record<string, unknow
   for (const p of params) {
     const v = args[p.key];
     if (v === undefined || v === null || v === p.def || p.same?.includes(v)) continue;
+    if (p.when !== undefined && !p.when(v, args)) continue;
     out.push(`${p.key}: ignored in headless mode (${p.note})`);
   }
   return out;

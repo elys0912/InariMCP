@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { AnyZodObject, ZodTypeAny } from 'zod';
-import { filterAriaSnapshot, ignoredParamWarnings, parseArgs } from '../src/headless/helpers.js';
+import { countOccurrences, filterAriaSnapshot, ignoredParamWarnings, parseArgs } from '../src/headless/helpers.js';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
 import { HEADLESS_COMMAND_TIMEOUT_MS } from '../src/connection/manager.js';
 import {
@@ -73,6 +73,32 @@ describe('filterAriaSnapshot', () => {
   });
 });
 
+describe('countOccurrences (find_text, H-7)', () => {
+  const TEXT = 'Cat cat concatenate. CAT_x (cat)';
+
+  it('counts case-insensitively by default, case-sensitively on request', () => {
+    expect(countOccurrences(TEXT, 'cat', false, false)).toBe(5);
+    expect(countOccurrences(TEXT, 'cat', true, false)).toBe(3);
+  });
+
+  it('entireWord skips matches adjoined by a letter, digit or underscore', () => {
+    expect(countOccurrences(TEXT, 'cat', false, true)).toBe(3);
+    expect(countOccurrences('café cafés', 'café', false, true)).toBe(1);
+  });
+
+  it('reads the query as literal text', () => {
+    expect(countOccurrences('a.b axb', 'a.b', false, false)).toBe(1);
+    expect(countOccurrences('path\\', 'path\\', false, false)).toBe(1);
+    expect(countOccurrences('say "hi"', '"hi"', false, false)).toBe(1);
+    expect(countOccurrences('(x)', '(', false, false)).toBe(1);
+  });
+
+  it('counts non-overlapping matches and 0 for an empty query', () => {
+    expect(countOccurrences('aaaa', 'aa', false, false)).toBe(2);
+    expect(countOccurrences('abc', '', false, false)).toBe(0);
+  });
+});
+
 describe('ignoredParamWarnings', () => {
   it('is silent for defaults and unknown actions', () => {
     expect(ignoredParamWarnings('click', { doubleClick: false, rightClick: false })).toEqual([]);
@@ -86,6 +112,22 @@ describe('ignoredParamWarnings', () => {
     expect(w.join(' ')).toContain('pressEnter');
     expect(w.join(' ')).toContain('delay');
     expect(ignoredParamWarnings('click', { xpath: '//a' })).toHaveLength(1);
+  });
+
+  it('type clear is honoured with a selector and warned about without one (H-2)', () => {
+    expect(ignoredParamWarnings('type', { clear: true, selector: '#a' })).toEqual([]);
+    expect(ignoredParamWarnings('type', { clear: true })).toEqual([expect.stringContaining('clear')]);
+  });
+
+  it('get_elements warns only for a limit above what headless returns (H-8)', () => {
+    expect(ignoredParamWarnings('get_elements', { limit: 10 })).toEqual([]);
+    expect(ignoredParamWarnings('get_elements', { limit: 500 })).toEqual([expect.stringContaining('limit')]);
+  });
+
+  it('honoured parameters give no warning (H-7, H-15)', () => {
+    expect(ignoredParamWarnings('find_text', { caseSensitive: true, entireWord: true })).toEqual([]);
+    expect(ignoredParamWarnings('highlight', { duration: 100 })).toEqual([]);
+    expect(ignoredParamWarnings('wait_for_element', { visible: false })).toEqual([]);
   });
 
   it('screenshot warns only when saveToFile is turned off', () => {

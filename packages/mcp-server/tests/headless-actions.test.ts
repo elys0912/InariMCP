@@ -73,14 +73,16 @@ describe('snapshot', () => {
 describe('scroll', () => {
   const TALL = '<div style="height:3000px">tall</div><div id="t" style="height:10px">target</div><div style="height:3000px"></div>';
 
-  real('moves the window by direction and amount (no direction: down)', async () => {
+  real('moves the window by direction and amount; no direction moves nothing (H-26)', async () => {
     await load(TALL);
     const down = await browser.execute('scroll', undefined, { direction: 'down', amount: 300 });
     expect(down).toMatchObject({ success: true, scrolled: true, target: 'window', position: { y: 300 } });
-    const dflt = await browser.execute('scroll', undefined, { amount: 300 });
-    expect(dflt).toMatchObject({ direction: 'down', position: { y: 600 } });
+    // As on the Extension: nothing moves, and the answer is scrolled: true.
+    const none = await browser.execute('scroll', undefined, { amount: 300 });
+    expect(none).toMatchObject({ success: true, scrolled: true, position: { y: 300 } });
+    expect(none).not.toHaveProperty('direction');
     const up = await browser.execute('scroll', undefined, { direction: 'up', amount: -100 });
-    expect(up['position']).toMatchObject({ y: 500 });
+    expect(up['position']).toMatchObject({ y: 200 });
     const top = await browser.execute('scroll', undefined, { direction: 'top', amount: 300 });
     expect(top['position']).toMatchObject({ y: 0 });
   });
@@ -120,10 +122,16 @@ describe('scroll', () => {
     expect((r['position'] as { y: number }).y).toBeGreaterThan(2000);
   });
 
-  real('an unknown selector or toElement fails', async () => {
+  real('an unknown selector scrolls the window, an unknown toElement falls through to direction (as on the Extension)', async () => {
     await load(TALL);
-    expect((await browser.execute('scroll', undefined, { selector: '#none', direction: 'down', amount: 300 }))['success']).toBe(false);
-    expect((await browser.execute('scroll', undefined, { toElement: '#none', amount: 300 }))['success']).toBe(false);
+    const sel = await browser.execute('scroll', undefined, { selector: '#none', direction: 'down', amount: 300 });
+    expect(sel).toMatchObject({ success: true, target: 'window', position: { y: 300 } });
+    expect(String((sel['warnings'] as string[])[0])).toContain('#none');
+    const to = await browser.execute('scroll', undefined, { toElement: '#none', direction: 'down', amount: 100 });
+    expect(to).toMatchObject({ success: true, position: { y: 400 } });
+    expect(String((to['warnings'] as string[])[0])).toContain('toElement');
+    const only = await browser.execute('scroll', undefined, { toElement: '#none', amount: 100 });
+    expect(only).toMatchObject({ success: true, scrolled: true, position: { y: 400 } });
   });
 });
 
@@ -150,6 +158,12 @@ describe('select_option', () => {
     expect(index['success']).toBe(false);
   });
 
+  real('text falls back to the trimmed option text, as on the Extension', async () => {
+    await load('<select id="s"><option value="a"> Alpha </option><option value="b">Beta</option></select>');
+    expect(await browser.execute('select_option', undefined, { selector: '#s', text: 'Alpha' }))
+      .toMatchObject({ success: true, value: 'a' });
+  });
+
   real('fails for a non-select element', async () => {
     await load('<div id="d">x</div>');
     const r = await browser.execute('select_option', undefined, { selector: '#d', value: 'a' });
@@ -164,6 +178,105 @@ describe('get_value', () => {
       expect(await browser.execute('get_value', undefined, { selector })).toMatchObject({ success: true, value: '[MASKED]' });
     }
     expect(await browser.execute('get_value', undefined, { selector: '#t' })).toMatchObject({ success: true, value: 'plain' });
+  });
+
+  real('reads a <label>, a <select> and other elements as the Extension does (H-20, H-21)', async () => {
+    await load('<label id="l" for="p">Password</label><input id="p" type="password" value="secret">' +
+      '<select id="s"><option value="a">A</option><option value="b" selected>B</option></select><div id="d">some <b>text</b></div>');
+    expect(await browser.execute('get_value', undefined, { selector: '#l' })).toMatchObject({ success: true, value: 'Password' });
+    expect(await browser.execute('get_value', undefined, { selector: '#s' })).toMatchObject({ success: true, value: 'b' });
+    expect(await browser.execute('get_value', undefined, { selector: '#d' })).toMatchObject({ success: true, value: 'some text' });
+  });
+});
+
+describe('type and set_value (H-2, H-6)', () => {
+  async function valueOf(selector: string): Promise<unknown> {
+    return (await browser.execute('get_value', undefined, { selector }))['value'];
+  }
+
+  real('type with selector appends unless clear, and clear gives no warning', async () => {
+    await load('<input id="t" value="ab"><div id="e" contenteditable="true">xy</div>');
+    const appended = await browser.execute('type', undefined, { selector: '#t', text: 'cd', clear: false });
+    expect(appended['success']).toBe(true);
+    expect(await valueOf('#t')).toBe('abcd');
+    const cleared = await browser.execute('type', undefined, { selector: '#t', text: 'z', clear: true });
+    expect(cleared['success']).toBe(true);
+    expect(cleared['warnings']).toBeUndefined();
+    expect(await valueOf('#t')).toBe('z');
+    expect((await browser.execute('type', undefined, { selector: '#e', text: 'z', clear: false }))['success']).toBe(true);
+    expect(await valueOf('#e')).toBe('xyz');
+  });
+
+  real('type without selector warns that clear is not applied', async () => {
+    await load('<input id="t" value="ab">');
+    await browser.execute('execute_script', undefined, { script: 'document.getElementById("t").focus()' });
+    const r = await browser.execute('type', undefined, { text: 'c', clear: true });
+    expect(r['success']).toBe(true);
+    expect(String((r['warnings'] as string[])[0])).toContain('clear');
+  });
+
+  real('set_value fills an input and sets a <select> with input and change events', async () => {
+    await load('<input id="t" value="old"><select id="s"><option value="a">A</option><option value="b">B</option></select>' +
+      '<script>window.events = []; for (const t of ["input", "change"]) document.getElementById("s").addEventListener(t, () => events.push(t));</script>');
+    expect((await browser.execute('set_value', undefined, { selector: '#t', value: 'new' }))['success']).toBe(true);
+    expect(await valueOf('#t')).toBe('new');
+    expect((await browser.execute('set_value', undefined, { selector: '#s', value: 'b' }))['success']).toBe(true);
+    expect(await valueOf('#s')).toBe('b');
+    expect((await browser.execute('execute_script', undefined, { script: 'window.events' }))['result']).toEqual(['input', 'change']);
+  });
+});
+
+describe('reading the page (H-3, H-7, H-8, H-15)', () => {
+  real('get_text returns totalLength and title as the Extension does', async () => {
+    await load('<title>T</title><p>hello world</p>');
+    const r = await browser.execute('get_text', undefined, { maxLength: 5 });
+    expect(r).toMatchObject({ success: true, text: 'hello', truncated: true, title: 'T' });
+    expect(r['totalLength']).toBeGreaterThan(5);
+    expect(r).not.toHaveProperty('total_length');
+  });
+
+  real('find_text counts occurrences, honours caseSensitive / entireWord, and refuses an empty query', async () => {
+    await load('<p>Cat cat concatenate</p><p>end\\</p>');
+    const find = (query: string, caseSensitive = false, entireWord = false): Promise<Result> =>
+      browser.execute('find_text', undefined, { query, caseSensitive, entireWord, includeRectData: false });
+    expect(await find('cat')).toMatchObject({ success: true, count: 3 });
+    expect((await find('cat', true))['count']).toBe(2);
+    expect((await find('cat', false, true))['count']).toBe(2);
+    // Quotes and a trailing backslash are literal text (no selector syntax error).
+    expect((await find('end\\'))['count']).toBe(1);
+    expect(await find('"')).toMatchObject({ success: true, count: 0 });
+    expect((await find(''))['success']).toBe(false);
+  });
+
+  real('get_elements returns count of every match and honours a smaller limit', async () => {
+    await load('<ul><li>a</li><li>b</li><li style="display:none">c</li></ul>');
+    const r = await browser.execute('get_elements', undefined, { selector: 'li', limit: 2 });
+    expect(r).toMatchObject({ success: true, count: 3 });
+    expect(r['elements']).toHaveLength(2);
+    expect((r['elements'] as Array<{ tag: string; text: string }>)[0]).toMatchObject({ tag: 'li', text: 'a' });
+    const all = await browser.execute('get_elements', undefined, { selector: 'li', limit: 50 });
+    expect((all['elements'] as Array<{ box: unknown }>)[2]?.box).toBeNull();
+  });
+
+  real('highlight keeps the outline for duration', async () => {
+    await load('<p id="p">x</p>');
+    expect((await browser.execute('highlight', undefined, { selector: '#p', duration: 200 }))['success']).toBe(true);
+    const outline = async (): Promise<unknown> =>
+      (await browser.execute('execute_script', undefined, { script: 'document.getElementById("p").style.outline' }))['result'];
+    expect(await outline()).not.toBe('');
+    await new Promise((r) => setTimeout(r, 400));
+    expect(await outline()).toBe('');
+  });
+});
+
+describe('direct execute() calls the tool schemas would refuse (H-24, H-25)', () => {
+  real('close_tab without tabId closes nothing; navigate with an empty url fails', async () => {
+    await load('<p>x</p>');
+    const before = (await browser.execute('get_tabs', undefined, {}))['totalTabs'];
+    const r = await browser.execute('close_tab', undefined, {});
+    expect(r).toMatchObject({ success: false, error: 'close_tab requires tabId' });
+    expect((await browser.execute('get_tabs', undefined, {}))['totalTabs']).toBe(before);
+    expect(await browser.execute('navigate', undefined, { url: '', newTab: false })).toMatchObject({ success: false });
   });
 });
 
@@ -297,7 +410,7 @@ describe('warnings and timeouts', () => {
   real('timeout shortens a wait', async () => {
     await load('<p>x</p>');
     const started = Date.now();
-    const r = await browser.execute('wait_for_element', undefined, { selector: '#never', timeout: 300 });
+    const r = await browser.execute('wait_for_element', undefined, { selector: '#never', timeout: 300, visible: true });
     expect(r['success']).toBe(false);
     expect(Date.now() - started).toBeLessThan(5_000);
   });
@@ -323,7 +436,7 @@ describe('type without selector: password guard follows the focus (WP30)', () =>
     await load(body);
     const click = await browser.execute('click', undefined, { x: 20, y: 20 });
     expect(click['success']).toBe(true);
-    return browser.execute('type', undefined, { text: 'x', allowPassword: false });
+    return browser.execute('type', undefined, { text: 'x', clear: false, allowPassword: false });
   }
 
   async function valueOf(field: string): Promise<unknown> {
@@ -422,7 +535,7 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
 
   async function busy(): Promise<Result> {
     // Holds the lock for ~500 ms.
-    return browser.execute('wait_for_element', undefined, { selector: '#never', timeout: 500 });
+    return browser.execute('wait_for_element', undefined, { selector: '#never', timeout: 500, visible: true });
   }
 
   real('a command whose caller gave up meanwhile is not run', async () => {

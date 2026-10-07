@@ -44,9 +44,7 @@ export const WAIT_AND_ACT_POLL_MS = 200;
 
 /** Shortest poll interval of wait_and_act; smaller pollIntervalMs values are raised to it. */
 export const WAIT_AND_ACT_POLL_MIN_MS = 10;
-/** How long fox_highlight's outline stays (the duration argument is ignored). */
-export const HIGHLIGHT_MS = 2_000;
-/** The CSS outline fox_highlight draws. */
+/** The CSS outline fox_highlight draws (for its duration argument). */
 export const HIGHLIGHT_OUTLINE = '3px solid red';
 /** Longest a dialog nobody asked for may stay open before it is dismissed (it blocks the page). */
 export const DIALOG_GRACE_MS = 2_000;
