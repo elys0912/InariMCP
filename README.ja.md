@@ -38,7 +38,7 @@ KitsuneMCPは意図的に用途を絞っている。以下に当てはまる場�
 - **ページの外での承認** — 保護対象サイトでの操作は、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのKitsuneMCPツールバーのポップアップで人が承認する。ページの中からは承認できない。[保護対象サイトでの人による承認](#保護対象サイトでの人による承認)を参照。
 - **コンテナ分離（オプトイン）** — Firefoxの`contextualIdentities`を使い、エージェントを専用コンテナに制限できる。これにより、他のタブで開いている銀行・メールのセッションをエージェントから見えなくできる。これはFirefox専用の機能で、Chromiumには同等のものが存在しない。
 - **ヘッドレスモード（上級者向け）** — 拡張機能経由を使いたくない場合のための、Playwrightベースの、Firefox専用ヘッドレスバックエンド。使えないツール・引数が多い（[ツールの対応状況](#ツールの対応状況)を参照）。
-- **Firefoxネイティブなapi** — トークンを節約できるページ内テキスト検索用の`browser.find`、全ページ・全タブのスクリーンショット用の`tabs.captureTab`（背景タブの可視範囲を撮るときは、そのタブを一瞬前面に出してから元に戻す）。
+- **FirefoxネイティブなAPI** — トークンを節約できるページ内テキスト検索用の`browser.find`、全ページ・全タブを含むスクリーンショット用の`tabs.captureTab`（背景タブも切り替えずに撮る。破棄済み（discarded）のタブは、切り替えるまでエラーになる）。
 
 ## クイックスタート
 
@@ -155,7 +155,7 @@ curl --noproxy '*' -sS http://127.0.0.1:8765/health    # Windows PowerShell: cur
 
 | ファイル | 書き込み元 |
 |---|---|
-| `native-host.log` | Native Host（`FOX_NATIVE_HOST_LOG`で変更でき、`0`/`off`で無効化） |
+| `native-host.log` | Native Host（`FOX_NATIVE_HOST_LOG`で変更でき、`0` / `off` / `false` / `no` / `none`で無効化） |
 | `daemon.log` | 共有daemonのstderr |
 | `audit.jsonl` | 安全ガードの監査ログ（`safety.json`の`audit_log`） |
 
@@ -176,17 +176,17 @@ node packages/mcp-server/dist/index.js [オプション]
 | `-h`、`--help` | 使い方を表示する |
 | `-v`、`--version` | 版を表示する |
 
-`--help`と`--version`は、ほかの処理より前に表示して終わる。daemonは起動せず、APIトークンもログファイルも作らない。知らない引数（または2つのモードの同時指定）は終了コード2で終わる。
+`--help`と`--version`は、ほかの処理より前に表示して終わる。daemonは起動せず、APIトークンもログファイルも作らない。知らない引数（または2つのモードの同時指定、`--stop-daemon`なしの`--force`）は終了コード2で終わる。
 
-`--doctor`は項目ごとに`OK`・`WARN`・`FAIL`・`SKIP`を1行ずつ表示し、問題には対処を添える。FAILが1つでもあれば終了コード1（なければ0）。`native-messaging`の登録がないのはWARN（拡張機能の経路（Firefox）では必要、ヘッドレスだけなら不要）。14項目: `node`、`versions`（全パッケージと拡張機能のマニフェストの版が一致するか）、`build`（`dist`がソースより新しいか）、`native-messaging`（Firefoxへの登録と、マニフェストのname・type・許可する拡張機能・path）、`nm-wrapper`（ラッパーがこのチェックアウトを指し、そのnodeがあるか）、`claude`（Claude Codeへの登録。`~/.claude.json`と`.mcp.json`から読む）、`powershell`（Windows: Native Hostが使えるか）、`daemon`（`/health`のprotocol・proof・版）、`token`、`settings`（ここでの`FOX_*`と動いているdaemonの差）、`browsers`（接続しているNative Host）、`safety-config`（`safety.json`が読めて正しいか）、`screenshots`（`FOX_SCREENSHOTS_DIR`）、`logs`（サイズ、Native Hostの起動試行の上限）。読み取りだけで、トークンを作らず、daemonを起動せず、ログを書かず、`claude mcp get`も実行しない（実行するとサーバーが起動して接続を試すため）。
+`--doctor`は項目ごとに`OK`・`WARN`・`FAIL`・`SKIP`を1行ずつ表示し、問題には対処を添える。FAILが1つでもあれば終了コード1（なければ0）。`native-messaging`の登録がないのはWARN（拡張機能の経路（Firefox）では必要、ヘッドレスだけなら不要）。14項目: `node`、`versions`（全パッケージと拡張機能のマニフェストの版が一致するか）、`build`（`dist`がソースより新しいか）、`native-messaging`（Firefoxへの登録と、マニフェストのname・type・許可する拡張機能・path）、`nm-wrapper`（ラッパーがこのチェックアウトを指し、そのnodeがあるか）、`claude`（Claude Codeへの登録。`~/.claude.json`（`CLAUDE_CONFIG_DIR`があれば`$CLAUDE_CONFIG_DIR/.claude.json`）と`.mcp.json`から読む）、`powershell`（Windows: Native Hostが使えるか）、`daemon`（`/health`のprotocol・proof・版）、`token`、`settings`（ここでの`FOX_*`と動いているdaemonの差）、`browsers`（接続しているNative Host）、`safety-config`（`safety.json`が読めて正しいか）、`screenshots`（`FOX_SCREENSHOTS_DIR`）、`logs`（サイズ、Native Hostの起動試行の上限）。読み取りだけで、トークンを作らず、daemonを起動せず、ログを書かず、`claude mcp get`も実行しない（実行するとサーバーが起動して接続を試すため）。
 
-`--stop-daemon`は署名付きの`POST /daemon/shutdown`でdaemonに停止を求める（`~/.kitsune-mcp/api_token`が必要）。実行中のツール呼び出しは最大10秒まで完了を待ち（`--force`では待たない）、ヘッドレスのFirefoxを閉じてからdaemonが終了する。daemonが無くなれば（もともと動いていなければ）終了コード0、そうでなければ1。すべてのClaude Codeのセッションは、次の呼び出しでdaemonが起動するまでブラウザのツールを使えない。動いているNative Host（拡張機能を入れたFirefox）は20秒ほどでdaemonを起動し直すので、止めたままにするには先にFirefoxを終了する。
+`--stop-daemon`は署名付きの`POST /daemon/shutdown`でdaemonに停止を求める（`~/.kitsune-mcp/api_token`が必要）。実行中のツール呼び出しは最大10秒まで完了を待ち（`--force`では待たない）、その間の新しいツール呼び出しにはHTTP 503を返し、ヘッドレスのFirefoxを閉じてからdaemonが終了する。`--stop-daemon`より前の古い版のdaemonはこの方法では止められないので、PIDでプロセスを終了する。`--stop-daemon`は、daemonが無くなれば（もともと動いていなければ）終了コード0、そうでなければ1。すべてのClaude Codeのセッションは、次の呼び出しでdaemonが起動するまでブラウザのツールを使えない。動いているNative Host（拡張機能を入れたFirefox）は20秒ほどでdaemonを起動し直すので、止めたままにするには先にFirefoxを終了する。
 
 `scripts/e2e/nm-probe.mjs [manifest.json]`は、Firefoxと同じ方法でNative Messaging hostを起動し（既定はインストールしたマニフェスト）、`ping`と`status`を送って、daemonに届くかを確かめる（終了コード0 = 成功、1 = 失敗、2 = 引数の誤り）。daemonが動いていなければ起動する。
 
 ### ヘッドレスモード
 
-拡張機能をインストールしたくない場合は、`FOX_HEADLESS=1`を設定してdaemonを起動すると、実際のブラウザと通信する代わりにPlaywrightで管理されたFirefoxインスタンスを直接操作する。
+拡張機能をインストールしたくない場合は、daemonに`FOX_HEADLESS=1`を設定すると、実際のブラウザと通信する代わりにPlaywrightで管理されたFirefoxインスタンスを直接操作する。中継は自分が起動するdaemonに自分の環境変数を引き継ぐので、daemonがまだ動いていなければ、中継（Claude Codeが実行するコマンド）に設定すれば足りる。
 
 ```bash
 FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
@@ -205,11 +205,11 @@ npm run build
 npm run setup
 ```
 
-その後、`about:debugging`で拡張機能を再読み込みし（またはFirefoxを再起動して読み込み直し）、Claude Codeを再起動する。古い版のdaemonは止めるまで動き続ける。新しい中継やNative Hostが、動いているdaemonについて「speaks protocol …」「is from another version」と報告したら、そのdaemonのプロセスを止める（Native Hostが起動したものならFirefoxも再起動する）。次のツール呼び出しで対応する版のdaemonが起動する。
+その後、`about:debugging`で拡張機能を再読み込みし（またはFirefoxを再起動して読み込み直し）、Claude Codeを再起動する。古い版のdaemonは止めるまで動き続ける。新しい中継やNative Hostが、動いているdaemonについて「speaks protocol …」「is from another version」と報告したら、そのdaemonのプロセスを止める（Native Hostが起動したものならFirefoxも再起動する）。次のツール呼び出しで対応する版のdaemonが起動する。`--stop-daemon`より前のdaemonはPIDで終了する（探すポートは`--doctor`が表示する）。それより新しいdaemonは`node packages/mcp-server/dist/index.js --stop-daemon`で止められる。
 
 #### 更新時の注意
 
-- **`re:`のURLパターンはURL全体に一致するようになった**。すべてのリストで`^(?:<正規表現>)$`として扱う（[`safety.json`](#safetyjson)を参照）。前方一致のつもりで書いた既存の`re:`パターン、たとえば`re:^https://example\.com/`は、それより長いURLに一致しなくなる。`allowed_url_patterns`ではそのURLが拒否されるようになり、`blocked_url_patterns` / `protected_url_patterns`ではブロック・保護の対象から外れる（許可される側に変わる）。このための警告は出ない。前方一致のままにするには末尾に`.*`を付ける（`re:^https://example\.com/.*`）。たとえば開発中の版が`protected_url_patterns`に書いた既定値`re:^https?://(?:[^/?#@]+\.)?mychart\.`は、現在は`re:https?://(?:[^/?#@]+\.)?mychart\..*`になっている。`re:`の付かないパターンは影響を受けない。daemonを再起動したら`fox_safety_status`で結果を確認すること。
+- **`re:`のURLパターンはURL全体に一致するようになった**。すべてのリストで`^(?:<正規表現>)$`として扱う（[`safety.json`](#safetyjson)を参照）。前方一致のつもりで書いた既存の`re:`パターン、たとえば`re:^https://example\.com/`は、それより長いURLに一致しなくなる。`allowed_url_patterns`ではそのURLが拒否されるようになり、`blocked_url_patterns` / `protected_url_patterns`ではブロック・保護の対象から外れる。このための警告は出ない。前方一致のままにするには末尾に`.*`を付ける（`re:^https://example\.com/.*`）。たとえば開発中の版が`protected_url_patterns`に書いた既定値`re:^https?://(?:[^/?#@]+\.)?mychart\.`は、現在は`re:https?://(?:[^/?#@]+\.)?mychart\..*`になっている。`re:`の付かないパターンは影響を受けない。daemonを再起動したら`fox_safety_status`で結果を確認すること。
 
 ### アンインストール
 
@@ -227,7 +227,7 @@ npm run teardown
 
 KitsuneMCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す。アンインストーラがそれを表示するので、再起動する。リポジトリとFirefoxの拡張機能は変更しない（拡張機能はFirefoxで外す）。Claude Codeの設定ファイル（`~/.claude.json`、`.mcp.json`）が読めないか解析できなければ、「未登録」ではなく問題として報告する（終了コード1）。`claude mcp list`で確認すること。Firefoxの登録が別のチェックアウトのNative Hostを指していれば、警告を出したうえでそれも外す。
 
-オプション（npm経由では`--`の後）: `-n`/`--dry-run`、`-y`/`--yes`（Claude Codeの登録も削除する）、`--unregister-claude`、`--keep-claude`、`--no-stop`（何も止めない）、`--grace 秒`（既定5）、`--purge`、`--manual`、`-h`/`--help`。`--stop-daemon`、`--no-stop-daemon`、`--no-unregister-claude`も受け付ける。`npm run uninstall:windows` / `uninstall:unix`は別名として残っている。
+オプション（npm経由では`--`の後）: `-n`/`--dry-run`、`-y`/`--yes`（Claude Codeの登録も削除する）、`--unregister-claude`、`--keep-claude`、`--no-stop`（何も止めない）、`--grace 秒`（0〜60、既定5。範囲外は使い方の誤り）、`--purge`、`--manual`、`-h`/`--help`。`--stop-daemon`、`--no-stop-daemon`、`--no-unregister-claude`も受け付ける。`npm run uninstall:windows` / `uninstall:unix`は別名として残っている。
 
 ### 手作業での設定
 
@@ -278,17 +278,17 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 `claude mcp add`のコマンドは変わらない。中継が最初の利用時に共有サーバーを起動し（Firefoxが先ならNative Hostが起動する）、共有サーバーは10分使われなければ自分で終了する（`FOX_DAEMON_IDLE_TIMEOUT`）。セッションごとに中継が1つずつ立ち、全員が1つの共有サーバーを使うので、Claude Codeを複数セッション同時に使ってもポートがぶつからない。安全ガードの状態（レート制限、監査ログ、タブごとの最後に見たURL）もセッション間で共有される。
 
-中継とNative Hostはdaemonを、daemonは中継とNative Hostを、`~/.kitsune-mcp/api_token`のAPIトークンを使ったHMACのチャレンジ応答で確かめ合う（トークン自体は送らない）。ポートを横取りしたプログラムはdaemonになりすませない。`GET /health`は認証不要で、nonceを付けると`proof`を加え、中継とNative Hostが確認する`protocol`の版を返す。HTTP APIは`X-API-Key: <token>`ヘッダーも受け付けるが、手作業のデバッグ用（その応答には署名が付かない）。`FOX_HOST`がループバック以外のアドレスだと、daemonは警告をログに出す（ポートが他のマシンから届くようになる）。
+中継とNative Hostはdaemonを、daemonは中継とNative Hostを、`~/.kitsune-mcp/api_token`のAPIトークンを使ったHMACのチャレンジ応答で確かめ合う（トークン自体は送らない）。ポートを横取りしたプログラムはdaemonになりすませない。`GET /health`は認証不要で、nonceを付けると`proof`を加え、中継とNative Hostが確認する`protocol`の版を返す。HTTP APIは`X-API-Key: <token>`ヘッダーも受け付けるが、手作業のデバッグ用（その応答には署名が付かない）。ただし`POST /daemon/shutdown`は署名付きの要求しか受け付けない。`FOX_HOST`がループバック以外のアドレスだと、daemonは警告をログに出す（ポートが他のマシンから届くようになる）。
 
 ## 設定
 
 ### 環境変数
 
-下表はコードが読む名前。注記のあるものは、フォーク元から引き継いだ古い`CLAUDE_BROWSER_*`の名前も、`FOX_*`版が未設定の場合のフォールバックとして使える。daemonは、空または空白だけの`FOX_HEADLESS`・`FOX_SAFETY_CONFIG`・`FOX_SCREENSHOTS_DIR`・`FOX_READ_ONLY`・`FOX_ALLOW_SCRIPTS`・`FOX_APPROVAL_ELICITATION`を未設定として扱う。
+下表はコードが読む名前。注記のあるものは、フォーク元から引き継いだ古い`CLAUDE_BROWSER_*`の名前も、`FOX_*`版が未設定の場合のフォールバックとして使える。daemonは、空または空白だけの`FOX_HEADLESS`・`FOX_HEADLESS_STARTUP_TIMEOUT`・`FOX_EXECUTABLE`・`FOX_SAFETY_CONFIG`・`FOX_SCREENSHOTS_DIR`・`FOX_READ_ONLY`・`FOX_ALLOW_SCRIPTS`・`FOX_APPROVAL_ELICITATION`・`FOX_DAEMON_IDLE_TIMEOUT`を未設定として扱う（旧名があれば旧名、なければ既定値を使う）。Native Hostも`FOX_SCREENSHOTS_DIR`・`FOX_SCREENSHOT_RETENTION_DAYS`・`FOX_NATIVE_HOST_LOG`を同じように扱う。
 
 | 変数 | 既定値 | 読むプロセス | 説明 |
 |---|---|---|---|
-| `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host | HTTP/WSサーバーのアドレス。ループバック以外なら警告を出す。空の値は未設定として扱う。旧名: `CLAUDE_BROWSER_HOST` |
+| `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host、アンインストーラ | HTTP/WSサーバーのアドレス。ループバック以外なら警告を出す。空の値は未設定として扱う。旧名: `CLAUDE_BROWSER_HOST` |
 | `FOX_HTTP_PORT` | `8765` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空なら旧名を使う。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
 | `FOX_WS_PORT` | `8766` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空なら旧名を使う。旧名: `CLAUDE_BROWSER_WS_PORT` |
 | `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。`legacy`を指定すると、代わりに以前のツール名を一覧にする（[ツール名の移行](#ツール名の移行)を参照）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、スクリプト禁止、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
@@ -296,11 +296,11 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない）。旧名: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | PlaywrightのFirefox | daemon（ヘッドレスのみ） | Playwrightが起動するFirefoxバイナリのパス。旧名: `CLAUDE_BROWSER_EXECUTABLE` |
 | `FOX_SCREENSHOTS_DIR` | `~/.kitsune-mcp/screenshots` | Native Host（拡張機能経路）、daemon（ヘッドレス経路、`GET /screenshots`） | スクリーンショットの保存先。相対パスはそのプロセスの作業ディレクトリから解決する。旧名: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
-| `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | Native Hostが起動するたびに、自動で付けた名前で保存したスクリーンショットのうち、この日数より古いものを削除する（`0`ですべて残す）。`filename`を指定して保存したものと、ヘッドレスのスクリーンショットは削除しない |
+| `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | Native Hostが起動するたびに、自動で付けた名前で保存したスクリーンショットのうち、この日数より古いものを削除する（`0`ですべて残す。負の値や数値でない値は`30`として扱う）。`filename`を指定して保存したものと、ヘッドレスのスクリーンショットは削除しない |
 | `FOX_READ_ONLY` | 未設定 | daemon | `1` / `true` / `yes`で読み取り専用モードを強制する。旧名: `CLAUDE_BROWSER_READ_ONLY` |
 | `FOX_ALLOW_SCRIPTS` | 未設定 | daemon | `0` / `false` / `no` / `off`でスクリプト系ツール（`fox_evaluate`、`fox_observer`。以前の名前は`fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act`、`fox_inject_observer`、`fox_remove_observer`）を無効化する。旧名: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
 | `FOX_SAFETY_CONFIG` | `~/.kitsune-mcp/safety.json` | daemon | 安全ポリシーファイルの代替パス。旧名: `CLAUDE_BROWSER_SAFETY_CONFIG` |
-| `FOX_APPROVAL_ELICITATION` | 有効 | 中継、daemon | `0` / `false` / `off` / `no`でMCP elicitationによる承認を無効にする。保護対象サイトでの操作は常にFirefoxのポップアップで承認することになる |
+| `FOX_APPROVAL_ELICITATION` | 有効 | 中継、daemon | `0` / `false` / `off` / `no`でMCP elicitationによる承認を無効にする。保護対象サイトでの操作は常にFirefoxのポップアップで承認することになる。中継とdaemonはそれぞれ自分の環境変数を読む。無効にした中継はelicitationで尋ねない。無効にしたdaemonはelicitationの回答を受け付けないので、そこで「はい」と答えた要求はポップアップで改めて尋ねる |
 | `FOX_DAEMON_IDLE_TIMEOUT` | `600` | daemon | 中継・Native Host・実行中の呼び出しがどれもない状態が何秒続いたらdaemonが終了するか（`0`で終了しない） |
 | `FOX_NATIVE_HOST_LOG` | `~/.kitsune-mcp/logs/native-host.log` | Native Host | ログファイルのパス。`0` / `off` / `false` / `no` / `none`でファイルへのログを無効化する |
 
@@ -319,7 +319,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `wait` | `fox_wait` |
 | `all` | 全ツール（`FOX_CAPS`未設定と同じ） |
 
-`fox_safety_status`は常に登録され、すべてのツールが少なくとも1つのプロファイルに入っている。知らないプロファイル名はstderrに警告を出して無視する。`legacy`（単独、または他のプロファイルと一緒に: `legacy,core`）は、代わりに以前のツール名とその以前のプロファイルを登録する。[ツール名の移行](#ツール名の移行)を参照。
+`fox_safety_status`はどのプロファイルにも入らず、常に登録される。ほかのツールはすべて少なくとも1つのプロファイルに入っている。知らないプロファイル名はstderrに警告を出して無視する。指定した名前がすべて知らないものなら、登録されるのは`fox_safety_status`だけになる。`legacy`（単独、または他のプロファイルと一緒に: `legacy,core`）は、代わりに以前のツール名とその以前のプロファイルを登録する。[ツール名の移行](#ツール名の移行)を参照。
 
 ### ツール名の移行
 
@@ -356,7 +356,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 ### `safety.json`
 
-初回実行時に`~/.kitsune-mcp/safety.json`（または`FOX_SAFETY_CONFIG`）に自動生成される。ファイル（または`container_scope`の中）に書かなかったキーは既定値になる。この表にないキー（`readonly`のような綴りの誤り）があるとファイルは使えなくなる（下記）。
+初回実行時に`~/.kitsune-mcp/safety.json`（または`FOX_SAFETY_CONFIG`）に自動生成される。ファイル（または`container_scope`の中）に書かなかったキーは既定値になる。キーはcamelCaseの綴り（`readOnly`）でも受け付ける。この表にないキー（`readonly`のような綴りの誤り）があるとファイルは使えなくなる（下記）。
 
 | キー | 既定値 | 意味 |
 |---|---|---|
@@ -382,18 +382,20 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 | `https://example.com` | ……のうち、そのスキームのもの |
 | `example.com:8443` | ……のうち、そのポートのもの（ポートのないURLはスキームの既定のポート。`example.com:443`は`https://example.com/`に一致する） |
 | `[::1]` | IPv6アドレス（角かっこで囲む） |
-| `re:<正規表現>` | 正規化したURL（`scheme://host[:port]/path?query#hash`、ユーザー名・パスワードなし）に対する、大文字小文字を区別しない正規表現。URL全体に一致する必要がある（常に`^(?:<正規表現>)$`として扱う）。`re:example\.com`は`https://example.com.attacker.net/`に一致しない。前方一致にするには末尾に`.*`を付ける（`re:https://example\.com/.*`） |
+| `re:<正規表現>` | 正規化したURL（`scheme://host[:port]/path?query#hash`、ユーザー名・パスワードなし）に対する、大文字小文字を区別しない正規表現。URL全体に一致する必要がある（常に`^(?:<正規表現>)$`として扱う）。`re:example\.com`は`https://example.com.attacker.net/`に一致しない。前方一致にするには末尾に`.*`を付ける（`re:https://example\.com/.*`）。ブロックと保護対象のリストでは、書かれたままの（正規化していない）URLにも照合し、どちらかに一致すればよい |
 
 ホストとスキームは大文字小文字を区別しない。`allowed_url_patterns`ではパスは書いたとおりに一致する（区切りの位置で: `/admin`は`/administrator`を含まない）。ブロックと保護対象のリストでは、`%xx`のエスケープを戻し、連続するスラッシュをまとめ、大文字小文字をそろえたうえで、後ろに何が続いても一致する。以前の版の正規表現もできるだけそのまま使える。単純なもの（`paypal\.com`、`\.gov(/|$)`、`^https://a\.example/`）は同じ意味のホストパターンとして読む。それ以外は、ブロックと保護対象のリストでは以前の意味（URLのどこかに一致）のまま警告付きで使い、許可リストではエラーにする。
 
-`safety.json`を使えない場合（読めない、JSONとして不正、未知のキー、型の誤り、使えないURLパターン）、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。遷移先も確認する: 許可するのは`http://`・`https://`・`about:blank`だけで、ホストの前にユーザー名やパスワードが付いたURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。
+`safety.json`を使えない場合（読めない、JSONとして不正、未知のキー、型の誤り、使えないURLパターン）、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。使えないURLパターンとは、空のもの、不正な`re:`の正規表現、ホストパターンのうち不正なポート（1〜65535以外）やIPv6アドレス、IPアドレスの前の`*.`、末尾の`/*`以外でパスに含まれる`*`、パスに含まれる`?` / `#`（`%3F` / `%23`も）、`allowed_url_patterns`のうちホストパターンでも`re:`でもないもの、コンパイルできない以前の版の正規表現。ブロックと保護対象のリストにあるドットのないホストパターン（`paypal`はホスト`paypal`とそのサブドメインにだけ一致する）と、そのまま使う以前の版の正規表現は、警告付きで使い、警告は`fox_safety_status`（`patternWarnings`）に出る。遷移先も確認する: 許可するのは`http://`・`https://`・`about:blank`だけで、ホストの前にユーザー名やパスワードが付いたURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。
 
 ### 保護対象サイトでの人による承認
 
 ツールが`protected_url_patterns`に一致するURLで操作しようとすると（`confirm_protected_actions`が有効な場合）、その呼び出しは実行されない。daemonが1回限りの承認要求を作り、Claude Codeのセッションがあなたに尋ねる。
 
 1. クライアントが対応していて、`FOX_APPROVAL_ELICITATION`が無効にされていなければ、Claude Code自身の確認ダイアログ（MCP elicitation）で
-2. そうでなければFirefoxで。KitsuneMCPのツールバーボタンに黄色の件数が出て（OSの通知も出る）、ポップアップで承認か拒否をする
+2. そうでなければFirefoxで。KitsuneMCPのツールバーボタンに黄色の件数が出て（OSの通知も出る）、ポップアップで承認か拒否をする。elicitationの要求が失敗した場合（クライアントがメソッドを知らない、通信エラー）もポップアップを使う。確認ダイアログがタイムアウトした場合は、承認されないまま終わる
+
+承認が要るのは、ページのデータを変えるツール（入力、遷移、タブの変更、スクリプト）。読み取るだけのツールのうち承認が要るのは3つ: 単一タブの`fox_screenshot`（`scope: "all_tabs"`は保護対象のタブを除いて撮る）、`scope: "scroll_capture"`、`action: "start"`の`fox_logging`（ログ収集中のタブが保護対象サイトにある間は記録を止める）。ほかの読み取りツール（`fox_read`、`fox_find`、`fox_tabs`など）、`fox_wait`、UIだけを変えるツール（`fox_interact`、`action: "switch"`の`fox_tab`）は、保護対象サイトでも承認なしで動く。同時に待てる承認要求は最大32件。
 
 承認が効くのは、そのツールをその引数のまま、そのホストで1回呼ぶことだけ。要求の期限（120秒。Firefoxのポップアップが待つのは最大60秒）までに答える必要があり、承認は中継だけが見る1回限りのトークンで運ばれる（モデルには見えない）。ページの中のもの — ボタン、`fox_click`、`fox_evaluate` — では承認できない。elicitationでの承認が有効な間は、1つのリスクを受け入れている: 回答はローカルのHTTPでdaemonに届くので、`~/.kitsune-mcp/api_token`を読めるローカルのプロセスは自分の要求を自分で承認できる。Firefoxのポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する（ヘッドレスモードでは承認できなくなる）。
 
@@ -401,7 +403,7 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 
 ### 先にdaemonを起動した側の設定が勝つ
 
-daemon はセッションごとに新しく起動されるわけではない。Claude Codeの中継とFirefox（Native Host経由）のどちらか先に起動した方がdaemonを立ち上げ、残りは全員その1つのdaemonと通信する。これは環境変数に影響する — `FOX_READ_ONLY`、`FOX_HEADLESS`、`FOX_ALLOW_SCRIPTS`、`FOX_APPROVAL_ELICITATION`などは、実際にdaemonを起動したプロセスの環境変数だけが読まれる。Native Hostが起動したdaemonはFirefoxの環境変数を引き継ぎ、Claude Codeのセッションのものは使わない。Firefoxが先にdaemonを起動していた場合、後から起動したClaude CodeセッションのMCP設定に`FOX_READ_ONLY=1`と書いてあっても効かない。警告は出る（セッション開始時と`fox_safety_status`の結果）が、既存のdaemonはそのままの設定で動き続ける。
+daemon はセッションごとに新しく起動されるわけではない。Claude Codeの中継とFirefox（Native Host経由）のどちらか先に起動した方がdaemonを立ち上げ、残りは全員その1つのdaemonと通信する。これは環境変数に影響する — `FOX_READ_ONLY`、`FOX_HEADLESS`、`FOX_ALLOW_SCRIPTS`などは、実際にdaemonを起動したプロセスの環境変数だけが読まれる（`FOX_APPROVAL_ELICITATION`は両側で読む。中継はそれぞれ自分の環境変数から、daemonは起動されたときの環境変数から。[環境変数](#環境変数)を参照）。Native Hostが起動したdaemonはFirefoxの環境変数を引き継ぎ、Claude Codeのセッションのものは使わない。Firefoxが先にdaemonを起動していた場合、後から起動したClaude CodeセッションのMCP設定に`FOX_READ_ONLY=1`と書いてあっても効かない。警告は出る（セッション開始時と`fox_safety_status`の結果）が、既存のdaemonはそのままの設定で動き続ける。
 
 `safety.json`にはこの問題がない。どちらがdaemonを起動しても、既定では同じ固定パス（`~/.kitsune-mcp/safety.json`）から読まれるからだ。`read_only`などを確実に効かせたいなら、環境変数ではなく`safety.json`側に設定すること。
 
@@ -417,7 +419,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 - ヘッドレスPlaywrightバックエンド（P4）
 - ネイティブメッセージングホスト（P5）
 - 拡張機能のTypeScript移植（P6）
-- Firefoxネイティブapi: コンテナタブ、`browser.find`、`tabs.captureTab`（P7）
+- FirefoxネイティブAPI: コンテナタブ、`browser.find`、`tabs.captureTab`（P7）
 - 拡張機能経路のエンドツーエンド結合、および中継＋共有サーバー構成への移行（Claude Codeを複数セッション同時に使ってもポートを取り合わない）（P7.5）
 - Windows 11 + Firefoxでの実機E2E（2026-09-27）
 - インストーラー — 最初はPowerShell / bashのスクリプトで、実機Windows 11と、Linux（WSL2のUbuntu 24.04、deb版Firefox 156）で結線を確認済み（2026-09-28）。その後、PowerShellの要らない全プラットフォーム共通のNode.jsのインストーラとアンインストーラ（`scripts/install.mjs` / `scripts/uninstall.mjs`、`npm run setup` / `npm run teardown`）に置き換えた。macOS固有の経路は実機のmacOSではまだ動かしていない。Linuxの確認に使ったスモークテストは`scripts/e2e/`にある
@@ -468,7 +470,7 @@ npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（Pla
 | コマンド | 確認すること |
 |---|---|
 | `npm run test:e2e` | MCP経由で中継 → daemon → ヘッドレスFirefox（`tests/e2e/`。`npx playwright install firefox`が必要）。一時的なホームディレクトリと空きポートを使うので、動いているdaemonには触れない |
-| `npm run e2e:extension` | 拡張機能が一時的なアドオンとしてFirefoxに読み込まれる（`scripts/e2e/extension-load.mjs`、PlaywrightのFirefoxで`web-ext`を使う） |
+| `npm run e2e:extension` | 拡張機能が一時的なアドオンとしてFirefoxに読み込まれる（`scripts/e2e/extension-load.mjs`、PlaywrightのFirefoxで`web-ext`を使う。別のFirefoxは`FOX_E2E_FIREFOX`か引数のパスで指定、全体の制限時間は`FOX_E2E_TIMEOUT_MS`、既定60000） |
 | `node scripts/e2e/tools-smoke.mjs` | 実際のFirefoxでdaemon → Native Host → 拡張機能（インストーラ実行済み、拡張機能読み込み済み。インターネット接続が必要） |
 | `node scripts/e2e/nm-probe.mjs` | インストールしたNative Messaging hostが起動してdaemonに届く |
 
