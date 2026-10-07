@@ -157,6 +157,16 @@ describe('select_option', () => {
   });
 });
 
+describe('get_value', () => {
+  real('masks a password field as the Extension does, and returns other values', async () => {
+    await load('<input id="p" type="password" value="secret"><input id="c" autocomplete="current-password" value="secret"><input id="t" value="plain">');
+    for (const selector of ['#p', '#c']) {
+      expect(await browser.execute('get_value', undefined, { selector })).toMatchObject({ success: true, value: '[MASKED]' });
+    }
+    expect(await browser.execute('get_value', undefined, { selector: '#t' })).toMatchObject({ success: true, value: 'plain' });
+  });
+});
+
 describe('dialogs', () => {
   const ALERT = '<button id="b" onclick="alert(\'hello\'); document.title = \'after\'">go</button>';
 

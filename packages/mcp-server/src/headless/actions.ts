@@ -167,6 +167,9 @@ function evaluateScript(page: Page, script: string, bound: Bound, what = 'The sc
 // Password guard
 // ---------------------------------------------------------------------------
 
+/** get_value's answer for a password field, as on the Extension (content/inspect.ts getValue). */
+const PASSWORD_VALUE_MASK = '[MASKED]';
+
 /**
  * Password guard: refuse a password field unless the command carries
  * allowPassword: true (set by handlers.ts from safety.json, see
@@ -526,7 +529,10 @@ const focusTab: ActionHandler = async ({ page, tabId, host }) => {
 // --- get_value ---
 const getValue: ActionHandler = async ({ page, args }) => {
   const { selector } = parseArgs(selectorArgs, args, 'get_value');
-  const value = await page.$eval(selector, (e) => ('value' in e ? e.value : undefined));
+  const el = await page.$(selector);
+  if (el === null) return { success: false, error: `No element matches selector: ${selector}` };
+  if (await el.evaluate(isPasswordElement)) return { success: true, value: PASSWORD_VALUE_MASK };
+  const value = await el.evaluate((e) => ('value' in e ? e.value : undefined));
   return { success: true, value };
 };
 
