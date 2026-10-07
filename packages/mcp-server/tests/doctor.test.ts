@@ -537,6 +537,52 @@ describe('doctor: browsers and build', () => {
   });
 });
 
+describe('doctor: safety-config (the daemon\'s own validator)', () => {
+  function writeSafety(content: string, dir = path.join(home, '.kitsune-mcp')): string {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'safety.json');
+    fs.writeFileSync(file, content);
+    return file;
+  }
+
+  // R2-B S-1 / R-5: an unknown key used to be a WARN ("ignored keys") while
+  // the daemon dropped it; the daemon now refuses the file, so does the doctor.
+  it('an unknown key → FAIL naming it; the fix says every tool is refused', async () => {
+    writeSafety('{ "readonly": true }');
+    const s = byId(await runChecks(deps(undefined)), 'safety-config');
+    expect(s.status).toBe('FAIL');
+    expect(s.detail).toContain('readonly');
+    expect(s.fix).toContain('config_error');
+  });
+
+  it('a partial container_scope → OK (the daemon fills in the defaults)', async () => {
+    writeSafety('{ "container_scope": { "container_name": "Foo" } }');
+    const s = byId(await runChecks(deps(undefined)), 'safety-config');
+    expect(s.status).toBe('OK');
+  });
+
+  it('a blank FOX_SAFETY_CONFIG falls through to CLAUDE_BROWSER_SAFETY_CONFIG, as in the daemon', async () => {
+    const file = writeSafety('{ "read_only": true }', tempDir('kitsune-doctor-safety-'));
+    process.env['FOX_SAFETY_CONFIG'] = ' ';
+    process.env['CLAUDE_BROWSER_SAFETY_CONFIG'] = file;
+    const s = byId(await runChecks(deps(undefined)), 'safety-config');
+    expect(s.status).toBe('OK');
+    expect(s.detail).toContain(file);
+  });
+
+  it("the running daemon's path wins; its blank FOX_ value falls through to the legacy one", async () => {
+    writeToken(TOKEN);
+    const file = writeSafety('{ "audit_log": "yes" }', tempDir('kitsune-doctor-safety-'));
+    const s = byId(await runChecks(deps({
+      token: TOKEN,
+      info: { settings: { FOX_SAFETY_CONFIG: '', CLAUDE_BROWSER_SAFETY_CONFIG: file } },
+    })), 'safety-config');
+    expect(s.status).toBe('FAIL');
+    expect(s.detail).toContain(file);
+    expect(s.detail).toContain('audit_log: Expected boolean');
+  });
+});
+
 describe('doctor: screenshots and logs', () => {
   it('no FOX_SCREENSHOTS_DIR → OK with the default directory', async () => {
     const s = byId(await runChecks(deps(undefined)), 'screenshots');
@@ -560,6 +606,14 @@ describe('doctor: screenshots and logs', () => {
     expect(s.status).toBe('WARN');
     expect(s.detail).toContain(`this session uses ${dir}`);
     expect(s.fix).toContain('set the same FOX_SCREENSHOTS_DIR for Firefox');
+  });
+
+  // R2-B C-3 / L-5: a blank value is unset, as the daemon reads it.
+  it('a blank FOX_SCREENSHOTS_DIR → OK with the default directory', async () => {
+    process.env['FOX_SCREENSHOTS_DIR'] = '  ';
+    const s = byId(await runChecks(deps(undefined)), 'screenshots');
+    expect(s.status).toBe('OK');
+    expect(s.detail).toContain(path.join(home, '.kitsune-mcp', 'screenshots'));
   });
 
   it("the running daemon's FOX_SCREENSHOTS_DIR wins over the session's", async () => {

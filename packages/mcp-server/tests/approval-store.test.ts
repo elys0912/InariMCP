@@ -15,6 +15,7 @@ import {
   summarizeArgs,
   type ApprovalTarget,
 } from '../src/safety/approval.js';
+import { truncateCodePoints } from '../src/utils/text.js';
 
 function clock(start = 1_000_000): { now: () => number; advance: (ms: number) => void } {
   let t = start;
@@ -60,6 +61,33 @@ describe('approval target helpers', () => {
     expect(summary).not.toContain('secret');
     expect(summary.length).toBeLessThan(400);
     expect(summarizeArgs({})).toBe('(no arguments)');
+  });
+
+  // R2-B S-4: slice() on UTF-16 units left half of a surrogate pair, shown as U+FFFD.
+  it('summarizeArgs cuts by code point, never inside a surrogate pair', () => {
+    const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    // `"` + emoji: the value cut falls on every possible offset across the two cases.
+    for (const text of ['😀'.repeat(200), `a${'😀'.repeat(200)}`]) {
+      const summary = summarizeArgs({ text });
+      expect(summary).not.toMatch(loneSurrogate);
+      expect(summary.endsWith('…')).toBe(true);
+    }
+    // the whole summary as well (many values, each under the per-value cut)
+    const many: Record<string, unknown> = {};
+    for (let i = 0; i < 20; i++) many[`k${String(i).padStart(2, '0')}`] = '😀'.repeat(50);
+    const summary = summarizeArgs(many);
+    expect(summary).not.toMatch(loneSurrogate);
+    expect(Array.from(summary).length).toBe(800 + 1);
+  });
+});
+
+describe('truncateCodePoints', () => {
+  it('counts code points and appends the ellipsis only when it cut', () => {
+    expect(truncateCodePoints('abc', 3)).toBe('abc');
+    expect(truncateCodePoints('abcd', 3)).toBe('abc…');
+    expect(truncateCodePoints('😀😀😀', 3)).toBe('😀😀😀');
+    expect(truncateCodePoints('😀😀😀😀', 3)).toBe('😀😀😀…');
+    expect(truncateCodePoints('a😀b', 2, '')).toBe('a😀');
   });
 });
 

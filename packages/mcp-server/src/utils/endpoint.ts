@@ -4,7 +4,7 @@
  * lives in @kitsune-mcp/shared/node (also used by the Native Host).
  */
 
-import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { ENV, ENV_DEFAULTS, isRecord, LEGACY_ENV } from '@kitsune-mcp/shared';
 import { isElicitationApprovalEnabled } from '../safety/approval.js';
 import {
   headlessStartupTimeoutMs,
@@ -27,34 +27,10 @@ export {
 /** HTTP header a relay uses to identify itself to the daemon (audit log, idle tracking). */
 export const RELAY_ID_HEADER = 'x-kitsune-relay';
 
-/** Relay IDs are short random hex strings; anything else is ignored. */
+/** Relay IDs: 1-32 characters of A-Z, a-z, 0-9, `_` and `-` (relays send random hex); anything else is ignored. */
 export function isValidRelayId(value: string): boolean {
   return /^[A-Za-z0-9_-]{1,32}$/.test(value);
 }
-
-/**
- * Environment variables that configure the daemon (safety policy, backend,
- * screenshot directory). They are read by the daemon process only: a relay
- * passes its own values on when it spawns the daemon, and warns when an
- * already-running daemon was started with different values.
- */
-export const DAEMON_SETTING_KEYS: readonly string[] = [
-  ENV.FOX_HEADLESS,
-  ENV.FOX_HEADLESS_STARTUP_TIMEOUT,
-  ENV.FOX_EXECUTABLE,
-  ENV.FOX_SCREENSHOTS_DIR,
-  ENV.FOX_SAFETY_CONFIG,
-  ENV.FOX_READ_ONLY,
-  ENV.FOX_ALLOW_SCRIPTS,
-  ENV.FOX_APPROVAL_ELICITATION,
-  LEGACY_ENV.CLAUDE_BROWSER_HEADLESS,
-  LEGACY_ENV.CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT,
-  LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE,
-  LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR,
-  LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG,
-  LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY,
-  LEGACY_ENV.CLAUDE_BROWSER_ALLOW_SCRIPTS,
-];
 
 /** Settings compared between a session and the running daemon, by their FOX_* name. */
 export const DAEMON_SETTINGS = [
@@ -68,6 +44,30 @@ export const DAEMON_SETTINGS = [
   'FOX_APPROVAL_ELICITATION',
 ] as const;
 export type DaemonSettingName = (typeof DAEMON_SETTINGS)[number];
+
+/** The legacy CLAUDE_BROWSER_* name of each setting, if it has one. */
+const LEGACY_SETTING_NAMES: { readonly [K in DaemonSettingName]: string | undefined } = {
+  FOX_HEADLESS: LEGACY_ENV.CLAUDE_BROWSER_HEADLESS,
+  FOX_HEADLESS_STARTUP_TIMEOUT: LEGACY_ENV.CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT,
+  FOX_EXECUTABLE: LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE,
+  FOX_SCREENSHOTS_DIR: LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR,
+  FOX_SAFETY_CONFIG: LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG,
+  FOX_READ_ONLY: LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY,
+  FOX_ALLOW_SCRIPTS: LEGACY_ENV.CLAUDE_BROWSER_ALLOW_SCRIPTS,
+  FOX_APPROVAL_ELICITATION: undefined,
+};
+
+/**
+ * Environment variables that configure the daemon (safety policy, backend,
+ * screenshot directory): every DAEMON_SETTINGS name, then the legacy names.
+ * They are read by the daemon process only: a relay passes its own values on
+ * when it spawns the daemon, and warns when an already-running daemon was
+ * started with different values.
+ */
+export const DAEMON_SETTING_KEYS: readonly string[] = [
+  ...DAEMON_SETTINGS.map((name) => ENV[name]),
+  ...DAEMON_SETTINGS.flatMap((name) => LEGACY_SETTING_NAMES[name] ?? []),
+];
 /** What each setting amounts to, e.g. 'on' / 'off' or a resolved value; '' = default. */
 export type EffectiveDaemonSettings = Record<DaemonSettingName, string>;
 
@@ -128,17 +128,17 @@ export function diffDaemonSettings(
 export function daemonSettingsFromInfo(body: Record<string, unknown>): EffectiveDaemonSettings | null {
   const raw = body['settings'];
   const rawStrings: Env = {};
-  if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+  if (isRecord(raw)) {
     for (const [k, v] of Object.entries(raw)) if (typeof v === 'string') rawStrings[k] = v;
   } else if (!('effectiveSettings' in body)) {
     return null;
   }
   const fallback = effectiveDaemonSettings(rawStrings, 'legacy');
   const eff = body['effectiveSettings'];
-  if (typeof eff !== 'object' || eff === null || Array.isArray(eff)) return fallback;
+  if (!isRecord(eff)) return fallback;
   const out = { ...fallback };
   for (const k of DAEMON_SETTINGS) {
-    const v = (eff as Record<string, unknown>)[k];
+    const v = eff[k];
     if (typeof v === 'string') out[k] = v;
   }
   return out;

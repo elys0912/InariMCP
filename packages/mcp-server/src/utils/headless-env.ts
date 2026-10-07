@@ -1,11 +1,12 @@
 import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
 
+const TRUTHY_VALUES: readonly string[] = ['1', 'true', 'yes'];
+const FALSY_VALUES: readonly string[] = ['0', 'false', 'no', 'off'];
+
 /** `1`, `true` or `yes` (any case) — nothing else enables a flag (`0`, `false`, `off`, … do not). */
 export function isTruthyEnv(value: string | undefined): boolean {
-  return value !== undefined && ['1', 'true', 'yes'].includes(value.trim().toLowerCase());
+  return value !== undefined && TRUTHY_VALUES.includes(value.trim().toLowerCase());
 }
-
-const FALSY_VALUES = ['0', 'false', 'no', 'off'];
 
 /** `0`, `false`, `no` or `off` (any case). */
 export function isFalsyEnv(value: string | undefined): boolean {
@@ -19,10 +20,14 @@ export function isFalsyEnv(value: string | undefined): boolean {
 export function unrecognizedHeadlessValue(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const raw = resolveFoxEnv(env, ENV.FOX_HEADLESS, LEGACY_ENV.CLAUDE_BROWSER_HEADLESS);
   if (raw === undefined || isTruthyEnv(raw)) return undefined;
-  return FALSY_VALUES.includes(raw.trim().toLowerCase()) ? undefined : raw;
+  return isFalsyEnv(raw) ? undefined : raw;
 }
 
-/** The first non-empty value of FOX_* or its legacy CLAUDE_BROWSER_* name. */
+/**
+ * The value of FOX_* or else its legacy CLAUDE_BROWSER_* name; a blank value
+ * (empty or white space only) counts as unset. Every daemon setting is read
+ * this way (safety/config.ts, utils/screenshot.ts, the doctor).
+ */
 export function resolveFoxEnv(env: NodeJS.ProcessEnv, foxKey: string, legacyKey: string): string | undefined {
   for (const key of [foxKey, legacyKey]) {
     const value = env[key];

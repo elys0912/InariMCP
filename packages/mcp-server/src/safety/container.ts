@@ -41,11 +41,6 @@ export function getContainerConfig(
   };
 }
 
-/** Whether the MCP Server runs the headless (Playwright) backend. */
-function isHeadlessBackend(): boolean {
-  return isHeadlessEnabled();
-}
-
 /**
  * Server-side part of Layer 0.
  *
@@ -59,14 +54,9 @@ function isHeadlessBackend(): boolean {
 export function checkHeadlessContainerScope(
   config: SafetyConfig,
 ): ContainerDenial | null {
-  if (!getContainerConfig(config).enabled || !isHeadlessBackend()) {
-    return null;
-  }
-  return {
-    success: false,
-    safetyDecision: 'out_of_scope',
-    error: `${headlessContainerScopeWarning(config)} fox_safety_status still works.`,
-  };
+  const why = headlessContainerScopeWarning(config);
+  if (why === null) return null;
+  return { success: false, safetyDecision: 'out_of_scope', error: `${why} fox_safety_status still works.` };
 }
 
 /**
@@ -76,7 +66,7 @@ export function checkHeadlessContainerScope(
  * environment (FOX_HEADLESS, FOX_SAFETY_CONFIG) is fixed when it starts.
  */
 export function headlessContainerScopeWarning(config: SafetyConfig): string | null {
-  if (!getContainerConfig(config).enabled || !isHeadlessBackend()) return null;
+  if (!getContainerConfig(config).enabled || !isHeadlessEnabled()) return null;
   return (
     `Container scope is enabled (container '${config.containerScope.containerName}') ` +
     'but this daemon runs the headless backend, which has no Firefox containers, so every ' +

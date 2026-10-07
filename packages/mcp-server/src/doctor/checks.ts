@@ -17,13 +17,14 @@ import * as fs from 'node:fs';
 import type * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ENV, isRecord, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { ENV, ENV_DEFAULTS, isRecord, LEGACY_ENV } from '@kitsune-mcp/shared';
 
 import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, macMatches, newNonce, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
-import { apiTokenPath, dataDir as kitsuneDataDir, kitsuneHealth } from '@kitsune-mcp/shared/node';
+import { apiTokenPath, dataDir as kitsuneDataDir, kitsuneHealth, type HealthVerdict } from '@kitsune-mcp/shared/node';
 import { DAEMON_SETTING_KEYS, readApiTokenFile, resolveHost, resolveHttpPort } from '../utils/endpoint.js';
+import { resolveFoxEnv } from '../utils/headless-env.js';
 import { MAX_LOG_BYTES } from '../utils/log-file.js';
-import { DEFAULT_CONFIG, SafetyConfigSchema, getAuditLogPath } from '../safety/config.js';
+import { getAuditLogPath, parseSafetyConfig } from '../safety/config.js';
 import { PACKAGE_VERSION, readPackageVersion } from '../version.js';
 
 export type Status = 'OK' | 'WARN' | 'FAIL' | 'SKIP';
@@ -67,7 +68,7 @@ export interface DoctorDeps {
 // ---------------------------------------------------------------------------
 
 /** What answered GET /health (same classes as native-host server-launcher.ts). */
-export type HealthKind = 'down' | 'foreign' | 'incompatible' | 'impostor' | 'unverified' | 'ok';
+export type HealthKind = HealthVerdict['kind'];
 
 export interface DaemonState {
   kind: HealthKind;
@@ -103,8 +104,18 @@ const STOP_DAEMON = 'stop the daemon with `node packages/mcp-server/dist/index.j
 function stopByPid(ctx: DoctorContext): string {
   return `end the process listening on port ${ctx.port} by PID`;
 }
-/** The Native Host's WebSocket reconnect backoff tops out at this (ENV_DEFAULTS.BACKOFF_MAX_MS). */
-const RECONNECT_BACKOFF_MAX_S = 60;
+/** The Native Host's WebSocket reconnect backoff tops out at this. */
+const RECONNECT_BACKOFF_MAX_S = ENV_DEFAULTS.BACKOFF_MAX_MS / 1000;
+const REG_QUERY_TIMEOUT_MS = 5_000;
+/** Starting powershell.exe can take several seconds on a cold machine. */
+const POWERSHELL_PROBE_TIMEOUT_MS = 15_000;
+/** How much of the end of a log the doctor reads. */
+const LOG_TAIL_BYTES = 64 * 1024;
+/**
+ * A log is rotated once it passes MAX_LOG_BYTES; one past twice that size
+ * has not been rotated (an old build, or a writer that does not rotate).
+ */
+const UNROTATED_LOG_BYTES = 2 * MAX_LOG_BYTES;
 const NM_HOST_NAME = 'kitsune_mcp';
 const CLAUDE_SERVER_NAME = 'kitsune-mcp';
 
@@ -121,7 +132,7 @@ function readJsonFile(file: string): { value?: unknown; error?: string } {
   try {
     text = fs.readFileSync(file, 'utf-8');
   } catch (err: unknown) {
-    return { error: (err as NodeJS.ErrnoException).code ?? String(err) };
+    return { error: err instanceof Error && 'code' in err && typeof err.code === 'string' ? err.code : String(err) };
   }
   try {
     return { value: JSON.parse(text.replace(/^\uFEFF/, '')) };
@@ -299,6 +310,25 @@ function daemonSetting(ctx: DoctorContext, key: string): string | undefined {
   return typeof v === 'string' ? v : '';
 }
 
+/**
+ * A setting as the daemon reads it (resolveFoxEnv: FOX_* or else the legacy
+ * name, blank = unset), from the running daemon's settings when they were
+ * read, else from the environment a session would start it with.
+ */
+function daemonSettingValue(
+  ctx: DoctorContext,
+  foxKey: string,
+  legacyKey: string,
+): { value: string | undefined; fromDaemon: boolean } {
+  const settings = ctx.daemon.info?.['settings'];
+  if (isRecord(settings)) {
+    const env: Record<string, string> = {};
+    for (const key of [foxKey, legacyKey]) env[key] = daemonSetting(ctx, key) ?? '';
+    return { value: resolveFoxEnv(env, foxKey, legacyKey), fromDaemon: true };
+  }
+  return { value: resolveFoxEnv(sessionEnv(ctx), foxKey, legacyKey), fromDaemon: false };
+}
+
 /** Environment a relay started by Claude Code would have: this shell's, plus the registration's `env`. */
 function sessionEnv(ctx: DoctorContext): Record<string, string | undefined> {
   const entry = ctx.claude.entries.find((e) => e.scope === 'local') ??
@@ -403,7 +433,7 @@ export function findNmRegistrations(deps: DoctorDeps): NmRegistrations {
   if (platform === 'win32') {
     for (const hive of ['HKCU', 'HKLM']) {
       const key = `${hive}\\Software\\Mozilla\\NativeMessagingHosts\\${NM_HOST_NAME}`;
-      const r = deps.run('reg', ['query', key, '/ve'], 5_000);
+      const r = deps.run('reg', ['query', key, '/ve'], REG_QUERY_TIMEOUT_MS);
       if (r.error !== undefined && hive === 'HKCU') note = `reg query failed: ${r.error}`;
       if (r.status !== 0) continue;
       const m = /REG_(?:EXPAND_)?SZ[ \t]+(.+?)[ \t]*$/m.exec(r.stdout);
@@ -580,7 +610,7 @@ export function checkPowerShell(ctx: DoctorContext): CheckResult {
   const r = ctx.deps.run(
     'powershell.exe',
     ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '[Console]::Out.Write($ExecutionContext.SessionState.LanguageMode)'],
-    15_000,
+    POWERSHELL_PROBE_TIMEOUT_MS,
   );
   const mode = r.stdout.trim();
   if (r.status === 0 && mode === 'FullLanguage') {
@@ -645,6 +675,10 @@ export function checkDaemon(ctx: DoctorContext): CheckResult {
         return { id, status: 'WARN', detail: `v${version} still starting (headless backend?)${uptime}`, fix: 'wait and run the doctor again' };
       }
       return { id, status: 'OK', detail: `v${version}, protocol ${DAEMON_PROTOCOL_VERSION}, proof verified${uptime}` };
+    }
+    default: {
+      const unhandled: never = kind;
+      throw new Error(`unhandled daemon state ${String(unhandled)}`);
     }
   }
 }
@@ -745,58 +779,24 @@ export function checkBrowsers(ctx: DoctorContext): CheckResult {
   };
 }
 
-/** Same key mapping as safety/config.ts (snake_case in the file, camelCase in the schema). */
-function camelizeSafety(raw: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(raw)) {
-    const camel = key.replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase());
-    if (camel === 'containerScope' && isRecord(value)) {
-      out[camel] = { enabled: value['enabled'], containerName: value['container_name'] ?? value['containerName'] };
-    } else {
-      out[camel] = value;
-    }
-  }
-  return out;
-}
-
-// TODO(WP1): use an exported validator from safety/config.ts instead of repeating its merge rules here.
 export function checkSafetyConfig(ctx: DoctorContext): CheckResult {
   const id = 'safety-config';
-  const fromDaemon = daemonSetting(ctx, ENV.FOX_SAFETY_CONFIG) || daemonSetting(ctx, LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG);
-  const configured = fromDaemon ?? process.env[ENV.FOX_SAFETY_CONFIG] ?? process.env[LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG];
-  const file = configured ? path.resolve(ctx.deps.cwd, configured) : path.join(ctx.dataDir, 'safety.json');
-  const relative = configured !== undefined && configured !== '' && !path.isAbsolute(configured)
+  const { value: configured, fromDaemon } = daemonSettingValue(ctx, ENV.FOX_SAFETY_CONFIG, LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG);
+  const file = configured !== undefined ? path.resolve(ctx.deps.cwd, configured) : path.join(ctx.dataDir, 'safety.json');
+  const relative = configured !== undefined && !path.isAbsolute(configured)
     ? ` (relative ${ENV.FOX_SAFETY_CONFIG} depends on the daemon's working directory)`
     : '';
   if (!fs.existsSync(file)) {
     return { id, status: relative ? 'WARN' : 'OK', detail: `${file} not present (the daemon writes the defaults on first start)${relative}`, ...(relative ? { fix: 'use an absolute path' } : {}) };
   }
-  const broken = 'fix or delete the file: while it does not load, the daemon runs with the built-in defaults';
+  const broken = 'fix or delete the file: while it does not load, the daemon refuses every tool (config_error)';
   const { value, error } = readJsonFile(file);
   if (error !== undefined) return { id, status: 'FAIL', detail: `${file}: ${error}`, fix: broken };
-  if (!isRecord(value)) return { id, status: 'FAIL', detail: `${file}: not a JSON object`, fix: broken };
-  const camel = camelizeSafety(value);
-  const merged = {
-    ...DEFAULT_CONFIG,
-    ...camel,
-    containerScope: { ...DEFAULT_CONFIG.containerScope, ...(isRecord(camel['containerScope']) ? camel['containerScope'] : {}) },
-  };
-  const parsed = SafetyConfigSchema.safeParse(merged);
-  if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
-    return { id, status: 'FAIL', detail: `${file}: ${issues}`, fix: broken };
-  }
-  const known = new Set(Object.keys(SafetyConfigSchema.shape));
-  const unknown = Object.keys(camel).filter((k) => !known.has(k));
-  if (unknown.length > 0 || relative) {
-    return {
-      id,
-      status: 'WARN',
-      detail: `${file}: ${unknown.length > 0 ? `ignored keys ${unknown.join(', ')}` : 'valid'}${relative}`,
-      fix: relative ? 'use an absolute path' : 'remove or correct the ignored keys (typo?)',
-    };
-  }
-  return { id, status: 'OK', detail: `${file} valid${fromDaemon !== undefined ? ' (path used by the running daemon)' : ''}` };
+  // The daemon's own validator (safety/config.ts): unknown keys are errors there too.
+  const parsed = parseSafetyConfig(value);
+  if (!parsed.ok) return { id, status: 'FAIL', detail: `${file}: ${parsed.error}`, fix: broken };
+  if (relative) return { id, status: 'WARN', detail: `${file}: valid${relative}`, fix: 'use an absolute path' };
+  return { id, status: 'OK', detail: `${file} valid${fromDaemon ? ' (path used by the running daemon)' : ''}` };
 }
 
 /**
@@ -806,12 +806,10 @@ export function checkSafetyConfig(ctx: DoctorContext): CheckResult {
  */
 export function checkScreenshots(ctx: DoctorContext): CheckResult {
   const id = 'screenshots';
-  const fromDaemon = daemonSetting(ctx, ENV.FOX_SCREENSHOTS_DIR) || daemonSetting(ctx, LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR);
-  const session = sessionEnv(ctx);
-  const configured = fromDaemon ?? session[ENV.FOX_SCREENSHOTS_DIR] ?? session[LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR];
+  const { value: configured, fromDaemon } = daemonSettingValue(ctx, ENV.FOX_SCREENSHOTS_DIR, LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR);
   const defaultDir = path.join(ctx.dataDir, 'screenshots');
-  const whose = fromDaemon !== undefined ? 'the running daemon' : 'this session';
-  if (!configured) {
+  const whose = fromDaemon ? 'the running daemon' : 'this session';
+  if (configured === undefined) {
     const exists = fs.existsSync(defaultDir) ? 'exists' : 'not created yet';
     return { id, status: 'OK', detail: `default ${defaultDir} (${exists}) for both the daemon and the Native Host` };
   }
@@ -832,7 +830,7 @@ export function checkScreenshots(ctx: DoctorContext): CheckResult {
 }
 
 /** Last lines of a file (at most `bytes`), '' when unreadable. */
-function tail(file: string, bytes = 64 * 1024): string {
+function tail(file: string, bytes = LOG_TAIL_BYTES): string {
   let fd: number | undefined;
   try {
     fd = fs.openSync(file, 'r');
@@ -864,7 +862,7 @@ export function checkLogs(ctx: DoctorContext): CheckResult {
     const st = statOrUndefined(file);
     if (st === undefined) continue;
     sizes.push(`${path.basename(file)} ${formatBytes(st.size)}`);
-    if (!file.endsWith('.jsonl') && st.size > 2 * MAX_LOG_BYTES) oversized.push(path.basename(file));
+    if (!file.endsWith('.jsonl') && st.size > UNROTATED_LOG_BYTES) oversized.push(path.basename(file));
   }
   const detail = `${logsDir}: ${sizes.length > 0 ? sizes.join(', ') : 'no log files yet'}`;
 

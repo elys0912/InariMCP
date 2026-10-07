@@ -4,7 +4,7 @@ import { logStamp, stampLines } from '@kitsune-mcp/shared/node';
 export { MAX_LOG_BYTES, logStamp, rotateIfLarge, stampLines } from '@kitsune-mcp/shared/node';
 
 /** Encodings whose string spells out bytes (decoded to text before stamping). */
-const BYTE_STRING_ENCODINGS: ReadonlySet<string> = new Set(['hex', 'base64', 'base64url']);
+const BYTE_STRING_ENCODINGS: ReadonlySet<BufferEncoding> = new Set<BufferEncoding>(['hex', 'base64', 'base64url']);
 
 /**
  * Prefix every line the process writes to stderr with a timestamp and the

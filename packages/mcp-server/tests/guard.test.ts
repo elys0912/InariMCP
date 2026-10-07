@@ -146,10 +146,74 @@ describe('loadConfig (2.B2)', () => {
     expect(cfg.blockedUrlPatterns).toEqual(['blocked.test']);
   });
 
+  // R2-B S-1: an unknown key used to be dropped, so the setting the user meant
+  // to tighten did not apply (fail-open).
+  it.each([
+    ['a misspelt key', '{ "readonly": true }', 'readonly'],
+    ['a key that does not exist', '{ "allow_scripts": false }', 'allow_scripts'],
+    ['an unknown key in container_scope', '{ "container_scope": { "enable": true } }', 'enable'],
+    ['a __proto__ key', '{ "__proto__": { "read_only": true } }', '__proto__'],
+  ])('reports %s as configError, naming it', (_label, content, key) => {
+    const cfg = load(content);
+    expect(cfg.configError).toContain(key);
+    expect(new SafetyGuard({ ...cfg, auditLog: false }).check('fox_screenshot', {})?.safetyDecision)
+      .toBe('config_error');
+  });
+
+  it('names a wrong value by its key in the file', () => {
+    expect(load('{ "max_actions_per_minute": "many" }').configError).toContain('max_actions_per_minute:');
+    expect(load('{ "container_scope": { "container_name": "" } }').configError).toContain('container_scope.container_name:');
+  });
+
+  it('accepts the camelCase spelling of a key as before', () => {
+    const cfg = load('{ "readOnly": true, "container_scope": { "containerName": "Work" } }');
+    expect(cfg.configError).toBeUndefined();
+    expect(cfg.readOnly).toBe(true);
+    expect(cfg.containerScope.containerName).toBe('Work');
+  });
+
+  // R2-B S-2: a partial container_scope keeps the defaults for the rest
+  // (it used to be a config_error: `enabled: Required`).
+  it.each([
+    ['container_name only', '{ "container_scope": { "container_name": "Foo" } }', { enabled: false, containerName: 'Foo' }],
+    ['enabled only', '{ "container_scope": { "enabled": true } }', { enabled: true, containerName: DEFAULT_CONFIG.containerScope.containerName }],
+    ['empty', '{ "container_scope": {} }', DEFAULT_CONFIG.containerScope],
+  ])('a partial container_scope (%s) takes the defaults for the rest', (_label, content, scope) => {
+    const cfg = load(content);
+    expect(cfg.configError).toBeUndefined();
+    expect(cfg.containerScope).toEqual(scope);
+  });
+
+  it('reads a file with a leading BOM', () => {
+    const cfg = load('﻿{ "read_only": true }');
+    expect(cfg.configError).toBeUndefined();
+    expect(cfg.readOnly).toBe(true);
+  });
+
   it('writes the defaults when the file is missing', () => {
     const cfg = load(null);
     expect(cfg.configError).toBeUndefined();
     expect(fs.existsSync(path.join(dir, 'safety.json'))).toBe(true);
+    // The file it writes passes the strict schema when read back.
+    const again = load(null);
+    expect(again.configError).toBeUndefined();
+    expect({ ...again }).toEqual({ ...DEFAULT_CONFIG });
+  });
+
+  // R2-B L-5: a blank FOX_SAFETY_CONFIG is unset, as for every other daemon
+  // setting, so the legacy name is read.
+  it('a blank FOX_SAFETY_CONFIG falls through to CLAUDE_BROWSER_SAFETY_CONFIG', () => {
+    const file = path.join(dir, 'legacy.json');
+    fs.writeFileSync(file, '{ "read_only": true }');
+    vi.stubEnv('HOME', dir);
+    vi.stubEnv('USERPROFILE', dir);
+    vi.stubEnv('FOX_SAFETY_CONFIG', '  ');
+    vi.stubEnv('CLAUDE_BROWSER_SAFETY_CONFIG', file);
+    vi.stubEnv('FOX_READ_ONLY', '');
+    vi.stubEnv('FOX_ALLOW_SCRIPTS', '');
+    const cfg = loadConfig();
+    expect(cfg.configError).toBeUndefined();
+    expect(cfg.readOnly).toBe(true);
   });
 
   // Windows ignores the mode bits (see the WP2 note on 0o600 / 0o700).
