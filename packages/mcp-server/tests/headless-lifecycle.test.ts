@@ -42,6 +42,14 @@ describe('HeadlessBrowser lifecycle', () => {
     expect(launch).toHaveBeenCalledWith(expect.objectContaining({ headless: true, timeout: 4321 }));
   });
 
+  it('uses the Firefox of Playwright when FOX_EXECUTABLE is blank', async () => {
+    vi.stubEnv('FOX_EXECUTABLE', '  ');
+    vi.stubEnv('CLAUDE_BROWSER_EXECUTABLE', '');
+    fakeBrowser();
+    await new HeadlessBrowser().start();
+    expect(launch.mock.calls[0]?.[0]).not.toHaveProperty('executablePath');
+  });
+
   it('is ready after start() and not ready after stop()', async () => {
     const { close } = fakeBrowser();
     const browser = new HeadlessBrowser();

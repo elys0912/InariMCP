@@ -117,7 +117,7 @@ describe('headless _guardedFill (Playwright)', () => {
     `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><html><body>${body}</body></html>`)}`;
 
   async function load(body: string): Promise<void> {
-    const r = await browser.execute('navigate', undefined, { url: PAGE(body) });
+    const r = await browser.execute('navigate', undefined, { url: PAGE(body), newTab: false });
     expect(r['success']).toBe(true);
   }
 

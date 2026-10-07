@@ -1,22 +1,35 @@
 import type { Browser, BrowserContext, Page, Dialog } from 'playwright';
+import { z } from 'zod';
 import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
-import { headlessStartupTimeoutMs } from '../utils/headless-env.js';
-import { argTimeout, ignoredParamWarnings } from './helpers.js';
-import { headlessRoute, type TabHost } from './actions.js';
+import { headlessStartupTimeoutMs, resolveFoxEnv } from '../utils/headless-env.js';
+import { ignoredParamWarnings, parseArgs } from './helpers.js';
+import { headlessRoute, NO_TAB_ERROR, type TabHost } from './actions.js';
 import {
   ARM_TTL_MS,
   DIALOG_GRACE_MS,
   DIALOG_MESSAGE_PREVIEW_CHARS,
-  HANDLE_DIALOG_DEFAULT_MS,
   VIEWPORT,
 } from './limits.js';
 import { stderrLogger } from '@kitsune-mcp/shared/node';
+import { currentCommandContext, type CommandContext } from '../connection/manager.js';
 
 // ---------------------------------------------------------------------------
 // HeadlessBrowser
 // ---------------------------------------------------------------------------
 
 const log = stderrLogger('Headless');
+
+const NOT_STARTED_ERROR = 'Headless browser not started';
+
+const NOT_RUN_ERROR =
+  'Not run: the command timed out or was cancelled while it waited for an earlier headless command';
+
+/** fox_handle_dialog's arguments as the tool schema delivers them (helpers.ts parseArgs). */
+const handleDialogArgs = z.object({
+  action: z.enum(['accept', 'dismiss']),
+  promptText: z.string().optional(),
+  timeout: z.number(),
+});
 
 interface DialogEvent {
   type: string;
@@ -26,11 +39,20 @@ interface DialogEvent {
   auto: boolean;
 }
 
+/** How a fox_handle_dialog wait ended without a dialog. */
+type WaitEnd = 'timeout' | 'closed' | 'superseded' | 'cancelled';
+
+interface DialogWaiter {
+  deliver: (d: Dialog) => void;
+  /** End the wait without a dialog. */
+  end: (why: Exclude<WaitEnd, 'timeout'>) => void;
+}
+
 export class HeadlessBrowser {
   // Dialogs are tracked per tab outside the execute() lock: a fox_handle_dialog
   // waiting for a dialog must not block the click that opens it.
   private _pendingDialog = new Map<number, Dialog>();
-  private _dialogWaiters = new Map<number, { deliver: (d: Dialog) => void; cancel: () => void }>();
+  private _dialogWaiters = new Map<number, DialogWaiter>();
   private _armed = new Map<number, { action: 'accept' | 'dismiss'; promptText?: string; until: number }>();
   private _dialogEvents = new Map<number, DialogEvent[]>();
   private _browser: Browser | null = null;
@@ -41,34 +63,31 @@ export class HeadlessBrowser {
   private _activeTabId: number | null = null;
   private _lockChain: Promise<void> = Promise.resolve();
 
-  /** The tab state the action handlers of actions.ts see. */
-  private readonly _host: TabHost = (() => {
-    const self = this;
-    return {
-      get context() { return self._context; },
-      get activeTabId() { return self._activeTabId; },
-      get tabs() { return self._tabs; },
-      adoptTab(page: Page): number {
-        self._page = page;
-        return self._registerTab(page);
-      },
-      activateTab(tabId: number): Page {
-        self._activeTabId = tabId;
-        self._page = self._tabs.get(tabId)!;
-        return self._page;
-      },
-    };
-  })();
+  /** The tab state the action handlers of actions.ts see (arrow functions: `this` is this browser). */
+  private readonly _host: TabHost = {
+    context: () => {
+      if (!this._context) throw new Error(NOT_STARTED_ERROR);
+      return this._context;
+    },
+    activeTabId: () => this._activeTabId,
+    tabs: () => this._tabs,
+    adoptTab: (page) => {
+      this._page = page;
+      return this._registerTab(page);
+    },
+    activateTab: (tabId, page) => {
+      this._activeTabId = tabId;
+      this._page = page;
+    },
+  };
 
   // -----------------------------------------------------------------------
   // Lifecycle
   // -----------------------------------------------------------------------
 
   async start(): Promise<void> {
-    const executablePath =
-      process.env[ENV.FOX_EXECUTABLE] ??
-      process.env[LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE] ??
-      undefined;
+    // A blank value counts as unset: Playwright's own Firefox is used.
+    const executablePath = resolveFoxEnv(process.env, ENV.FOX_EXECUTABLE, LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE);
 
     const timeout = headlessStartupTimeoutMs();
 
@@ -87,7 +106,7 @@ export class HeadlessBrowser {
     this._browser = await firefox.launch({
       headless: true,
       timeout,
-      ...(executablePath ? { executablePath } : {}),
+      ...(executablePath !== undefined ? { executablePath } : {}),
     });
 
     this._context = await this._browser.newContext({
@@ -109,7 +128,7 @@ export class HeadlessBrowser {
     this._tabs.clear();
     this._activeTabId = null;
     this._pendingDialog.clear();
-    for (const w of this._dialogWaiters.values()) w.cancel();
+    for (const w of this._dialogWaiters.values()) w.end('closed');
     this._dialogWaiters.clear();
     this._armed.clear();
     this._dialogEvents.clear();
@@ -117,8 +136,9 @@ export class HeadlessBrowser {
     log('stopped');
   }
 
+  /** Started and not stopped (also while no tab is open). */
   isReady(): boolean {
-    return this._page !== null;
+    return this._context !== null;
   }
 
   // -----------------------------------------------------------------------
@@ -137,7 +157,7 @@ export class HeadlessBrowser {
   private _forgetTab(tabId: number): void {
     this._tabs.delete(tabId);
     this._pendingDialog.delete(tabId);
-    this._dialogWaiters.get(tabId)?.cancel();
+    this._dialogWaiters.get(tabId)?.end('closed');
     this._dialogWaiters.delete(tabId);
     this._armed.delete(tabId);
     this._dialogEvents.delete(tabId);
@@ -150,29 +170,41 @@ export class HeadlessBrowser {
     }
   }
 
-  private async _getPage(tabId?: number): Promise<Page> {
-    if (tabId !== undefined) {
-      const page = this._tabs.get(tabId);
-      if (!page) throw new Error(`No headless tab with id ${tabId}`);
-      return page;
-    }
-    if (!this._page) throw new Error('Headless browser not started');
-    return this._page;
+  /**
+   * The page of `tabId`, or of the active tab when undefined; null when no
+   * tab is open (the last one was closed).
+   */
+  private _targetPage(tabId: number | undefined): Page | null {
+    if (this._context === null) throw new Error(NOT_STARTED_ERROR);
+    if (tabId === undefined) return this._page;
+    const page = this._tabs.get(tabId);
+    if (!page) throw new Error(`No headless tab with id ${tabId}`);
+    return page;
   }
 
   // -----------------------------------------------------------------------
   // Execute (serialised via promise-chain lock)
   // -----------------------------------------------------------------------
 
+  /**
+   * Run one action. `ctx` is the deadline and cancellation of the command
+   * (connection/manager.ts); by default the one of the command being sent.
+   * An action whose command was given up while it waited for the lock is
+   * not run: the caller has already been told it failed and may send it
+   * again.
+   */
   async execute(
     action: string,
     tabId: number | undefined,
     args: Record<string, unknown>,
+    ctx: CommandContext | undefined = currentCommandContext(),
   ): Promise<Record<string, unknown>> {
+    const deadline = ctx?.deadline ?? Infinity;
+    const signal = ctx?.signal;
     const route = headlessRoute(action);
     // Not serialised: it waits for a dialog that a queued action may be about to open.
     if (route.kind === 'unlocked') {
-      return this._finish(action, tabId ?? this._activeTabId, args, await this._run(action, () => this._handleDialog(tabId, args)));
+      return this._finish(action, tabId ?? this._activeTabId, args, await this._run(action, () => this._handleDialog(tabId, args, signal)));
     }
 
     let release!: () => void;
@@ -181,15 +213,23 @@ export class HeadlessBrowser {
     this._lockChain = gate;
     await prev;
     try {
+      if (signal?.aborted === true || Date.now() >= deadline) {
+        return { success: false, error: NOT_RUN_ERROR };
+      }
       // The tab this action targets, fixed before it can change the active tab.
       const target = tabId ?? this._activeTabId;
-      return this._finish(action, target, args, await this._run(action, async () => {
-        const page = await this._getPage(tabId);
+      const result = await this._run(action, async () => {
+        const page = this._targetPage(tabId);
+        const base = { tabId, args, host: this._host, deadline, signal };
+        if (route.kind === 'dispatch' && !route.needsPage) return route.run({ ...base, page });
+        if (page === null) throw new Error(NO_TAB_ERROR);
         if (route.kind === 'unsupported') {
           return { success: false, error: `Unsupported headless action: ${action}` };
         }
-        return route.run({ page, tabId, args, host: this._host });
-      }));
+        return route.run({ ...base, page });
+      });
+      if (route.kind === 'dispatch' && route.needsPage) this._reportTab(result, target);
+      return this._finish(action, target, args, result);
     } finally {
       release();
     }
@@ -208,6 +248,21 @@ export class HeadlessBrowser {
   }
 
   /**
+   * Name the tab a successful action ran on: its id and the URL it is on
+   * now (a click or a script may have navigated it), as the Extension adds
+   * `url`. The guard (safety/guard.ts noteUrl / checkReachedUrl) records and
+   * checks them. Values the action set itself are kept; a tab the action
+   * closed is not reported.
+   */
+  private _reportTab(result: Record<string, unknown>, id: number | null): void {
+    if (result['success'] !== true || id === null) return;
+    const page = this._tabs.get(id);
+    if (!page) return;
+    if (typeof result['url'] !== 'string') result['url'] = page.url();
+    if (typeof result['tabId'] !== 'number') result['tabId'] = id;
+  }
+
+  /**
    * Add what the caller should know to a result: parameters that were ignored,
    * and dialogs that were handled (or auto-dismissed) on this tab meanwhile.
    * A failed result only carries text, so its warnings are appended to `error`.
@@ -219,7 +274,9 @@ export class HeadlessBrowser {
     result: Record<string, unknown>,
   ): Record<string, unknown> {
     const warnings = [
-      ...(Array.isArray(result['warnings']) ? (result['warnings'] as string[]) : []),
+      ...(Array.isArray(result['warnings'])
+        ? result['warnings'].filter((w): w is string => typeof w === 'string')
+        : []),
       ...ignoredParamWarnings(action, args),
     ];
     const drain = id !== null && action !== 'handle_dialog';
@@ -304,14 +361,13 @@ export class HeadlessBrowser {
   private async _handleDialog(
     tabId: number | undefined,
     args: Record<string, unknown>,
+    signal: AbortSignal | undefined,
   ): Promise<Record<string, unknown>> {
     const id = tabId ?? this._activeTabId;
     if (id === null || !this._tabs.has(id)) {
       return { success: false, error: `No headless tab with id ${tabId ?? 'active'}` };
     }
-    const action = args['action'] === 'accept' ? 'accept' : 'dismiss';
-    const promptText = args['promptText'] as string | undefined;
-    const timeout = argTimeout(args, HANDLE_DIALOG_DEFAULT_MS);
+    const { action, promptText, timeout } = parseArgs(handleDialogArgs, args, 'handle_dialog');
 
     const settle = async (d: Dialog): Promise<Record<string, unknown>> => {
       const info = await this._settle(d, action, promptText);
@@ -324,20 +380,34 @@ export class HeadlessBrowser {
       return settle(pending);
     }
 
-    const dialog = await new Promise<Dialog | null>((resolve) => {
-      const waiter = {
-        deliver: (d: Dialog): void => { clearTimeout(timer); resolve(d); },
-        // the tab was closed or the browser stopped
-        cancel: (): void => { clearTimeout(timer); resolve(null); },
-      };
-      const timer = setTimeout(() => {
+    // A later fox_handle_dialog on the same tab replaces this one: the
+    // earlier wait ends without arming, so it cannot accept a later,
+    // unrelated dialog.
+    this._dialogWaiters.get(id)?.end('superseded');
+    const outcome = await new Promise<Dialog | WaitEnd>((resolve) => {
+      const finish = (v: Dialog | WaitEnd): void => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', onAbort);
         if (this._dialogWaiters.get(id) === waiter) this._dialogWaiters.delete(id);
-        resolve(null);
-      }, timeout);
+        resolve(v);
+      };
+      const waiter: DialogWaiter = { deliver: finish, end: finish };
+      const onAbort = (): void => { finish('cancelled'); };
+      const timer = setTimeout(() => { finish('timeout'); }, timeout);
       this._dialogWaiters.set(id, waiter);
+      if (signal?.aborted === true) finish('cancelled');
+      else signal?.addEventListener('abort', onAbort, { once: true });
     });
-    if (dialog) return settle(dialog);
-    if (!this._tabs.has(id)) return { success: false, error: `Tab ${id} was closed while waiting for a dialog` };
+    if (typeof outcome !== 'string') return settle(outcome);
+    if (outcome === 'closed' || !this._tabs.has(id)) {
+      return { success: false, error: `Tab ${id} was closed while waiting for a dialog` };
+    }
+    if (outcome === 'superseded') {
+      return { success: false, error: 'Replaced by a later fox_handle_dialog on the same tab; nothing was armed' };
+    }
+    if (outcome === 'cancelled') {
+      return { success: false, error: 'Cancelled: the caller gave up on fox_handle_dialog; nothing was armed' };
+    }
 
     this._armed.set(id, {
       action,
