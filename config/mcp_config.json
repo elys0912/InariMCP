@@ -2,9 +2,9 @@
   "mcpServers": {
     "kitsune-mcp": {
       "command": "node",
-      "args": ["packages/mcp-server/dist/index.js"],
+      "args": ["<INSTALL_PATH>/packages/mcp-server/dist/index.js"],
       "env": {
-        "FOX_PORT": "3456"
+        "FOX_CAPS": "core,logs"
       }
     }
   }

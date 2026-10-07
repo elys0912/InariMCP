@@ -13,6 +13,9 @@
  * The daemon inherits the Native Host's environment (FOX_* settings) through
  * PowerShell. Paths go through environment variables, never through the
  * command line, so no quoting is involved.
+ *
+ * PowerShell can be unavailable (blocked by policy): outside-job.ts tries it
+ * first and falls back to PowerShell-free routes.
  */
 
 import { spawn } from 'node:child_process';
@@ -52,7 +55,9 @@ public static class KitsuneBreakaway {
     IntPtr size, IntPtr previous, IntPtr returnSize);
   [DllImport("kernel32.dll")] static extern void DeleteProcThreadAttributeList(IntPtr list);
 
-  const uint FILE_APPEND_DATA = 0x4, SYNCHRONIZE = 0x100000, OPEN_ALWAYS = 4;
+  const uint FILE_APPEND_DATA = 0x4, SYNCHRONIZE = 0x100000, OPEN_ALWAYS = 4,
+    FILE_SHARE_READ_WRITE = 3, FILE_ATTRIBUTE_NORMAL = 0x80;
+  const int STARTF_USESTDHANDLES = 0x100;   // STARTUPINFO.dwFlags is an int here
   const uint CREATE_NEW_PROCESS_GROUP = 0x200, EXTENDED_STARTUPINFO_PRESENT = 0x80000,
     CREATE_BREAKAWAY_FROM_JOB = 0x01000000, CREATE_NO_WINDOW = 0x08000000;
   static readonly IntPtr PROC_THREAD_ATTRIBUTE_HANDLE_LIST = new IntPtr(0x20002);
@@ -61,12 +66,13 @@ public static class KitsuneBreakaway {
     var sa = new SECURITY_ATTRIBUTES();
     sa.nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES));
     sa.bInheritHandle = true;
-    IntPtr log = CreateFile(logPath, FILE_APPEND_DATA | SYNCHRONIZE, 3, ref sa, OPEN_ALWAYS, 0x80, IntPtr.Zero);
+    IntPtr log = CreateFile(logPath, FILE_APPEND_DATA | SYNCHRONIZE, FILE_SHARE_READ_WRITE, ref sa, OPEN_ALWAYS,
+      FILE_ATTRIBUTE_NORMAL, IntPtr.Zero);
     if (log == new IntPtr(-1)) log = IntPtr.Zero;   // logging is best-effort
 
     var si = new STARTUPINFOEX();
     si.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
-    si.StartupInfo.dwFlags = 0x100;   // STARTF_USESTDHANDLES: stdin/stdout none, stderr → log
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;   // stdin/stdout none, stderr → log
     si.StartupInfo.hStdError = log;
     uint flags = CREATE_BREAKAWAY_FROM_JOB | CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP;
 
@@ -106,6 +112,8 @@ public static class KitsuneBreakaway {
 
 /** PowerShell compiles the C# first, which takes a second or two. */
 const BREAKAWAY_TIMEOUT_MS = 20_000;
+/** Lines of PowerShell's stderr quoted in the error. */
+const STDERR_DETAIL_LINES = 3;
 
 /**
  * Start `node <entry> --daemon` outside the current job object.
@@ -113,7 +121,7 @@ const BREAKAWAY_TIMEOUT_MS = 20_000;
  * fails (e.g. a job that does not allow breakaway), so the caller can fall
  * back to a plain detached spawn.
  */
-export function spawnDaemonBreakaway(entry: string, logPath: string): Promise<number> {
+export function spawnDaemonBreakaway(entry: string, logPath: string, cwd?: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const encoded = Buffer.from(SCRIPT, 'utf16le').toString('base64');
     const ps = spawn(
@@ -124,6 +132,8 @@ export function spawnDaemonBreakaway(entry: string, logPath: string): Promise<nu
         // so 'close' comes when PowerShell exits, not when the daemon does.
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
+        // CreateProcess gets a null cwd, so the daemon inherits PowerShell's.
+        ...(cwd !== undefined ? { cwd } : {}),
         env: {
           ...process.env,
           KITSUNE_DAEMON_NODE: process.execPath,
@@ -135,8 +145,12 @@ export function spawnDaemonBreakaway(entry: string, logPath: string): Promise<nu
 
     let stdout = '';
     let stderr = '';
-    ps.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-    ps.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    // Decode as a stream so a multi-byte character split across chunks
+    // (localized PowerShell errors) stays intact.
+    ps.stdout.setEncoding('utf8');
+    ps.stderr.setEncoding('utf8');
+    ps.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    ps.stderr.on('data', (chunk: string) => { stderr += chunk; });
 
     const timer = setTimeout(() => {
       ps.kill();
@@ -153,7 +167,7 @@ export function spawnDaemonBreakaway(entry: string, logPath: string): Promise<nu
       if (code === 0 && Number.isInteger(pid) && pid > 0) {
         resolve(pid);
       } else {
-        const detail = stderr.trim().split(/\r?\n/).slice(0, 3).join(' ');
+        const detail = stderr.trim().split(/\r?\n/).slice(0, STDERR_DETAIL_LINES).join(' ');
         reject(new Error(`exit code ${code ?? 'null'}${detail ? `: ${detail}` : ''}`));
       }
     });

@@ -1,0 +1,952 @@
+[
+  {
+    "id": "screenshot/default",
+    "tool": "fox_screenshot",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "screenshot/full_page",
+    "tool": "fox_screenshot",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "screenshot/all_tabs",
+    "tool": "fox_screenshot",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "screenshot/scroll_capture",
+    "tool": "fox_screenshot",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "snapshot/default",
+    "tool": "fox_snapshot",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "snapshot/options",
+    "tool": "fox_snapshot",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "get_elements/default",
+    "tool": "fox_get_elements",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "get_elements/options",
+    "tool": "fox_get_elements",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "get_text/default",
+    "tool": "fox_get_text",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "get_text/options",
+    "tool": "fox_get_text",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "find_text/default",
+    "tool": "fox_find_text",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "find_text/options",
+    "tool": "fox_find_text",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "get_page_info/default",
+    "tool": "fox_get_page_info",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "get_page_info/tab",
+    "tool": "fox_get_page_info",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "get_tabs/default",
+    "tool": "fox_get_tabs",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "get_tabs/options",
+    "tool": "fox_get_tabs",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "get_tabs/invalid_regex",
+    "tool": "fox_get_tabs",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "navigate/default",
+    "tool": "fox_navigate",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "navigate/goto_new_tab",
+    "tool": "fox_navigate",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "navigate/back",
+    "tool": "fox_navigate",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "navigate/forward",
+    "tool": "fox_navigate",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "navigate/refresh",
+    "tool": "fox_navigate",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "navigate/hard_refresh",
+    "tool": "fox_navigate",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "navigate/protected",
+    "tool": "fox_navigate",
+    "default": "confirmation_required",
+    "readOnly": "read_only",
+    "scriptsOff": "confirmation_required",
+    "protectedTab": "confirmation_required",
+    "blockedTab": "confirmation_required",
+    "guardOff": null
+  },
+  {
+    "id": "navigate/blocked",
+    "tool": "fox_navigate",
+    "default": "blocked_url",
+    "readOnly": "blocked_url",
+    "scriptsOff": "blocked_url",
+    "protectedTab": "blocked_url",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "click/selector",
+    "tool": "fox_click",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "click/text",
+    "tool": "fox_click",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "click/xy",
+    "tool": "fox_click",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "click/xpath",
+    "tool": "fox_click",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "type/selector",
+    "tool": "fox_type",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "type/placeholder",
+    "tool": "fox_type",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "type/name",
+    "tool": "fox_type",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "type/id",
+    "tool": "fox_type",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "type/password_selector",
+    "tool": "fox_type",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "press_key/default",
+    "tool": "fox_press_key",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "press_key/options",
+    "tool": "fox_press_key",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "press_key/locators",
+    "tool": "fox_press_key",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "set_value/default",
+    "tool": "fox_set_value",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "set_value/tab",
+    "tool": "fox_set_value",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "select_option/value",
+    "tool": "fox_select_option",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "select_option/text",
+    "tool": "fox_select_option",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "select_option/index",
+    "tool": "fox_select_option",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "hover/default",
+    "tool": "fox_hover",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "scroll/default",
+    "tool": "fox_scroll",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "scroll/direction",
+    "tool": "fox_scroll",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "scroll/to_element",
+    "tool": "fox_scroll",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "scroll/container",
+    "tool": "fox_scroll",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "highlight/default",
+    "tool": "fox_highlight",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "highlight/options",
+    "tool": "fox_highlight",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "create_tab/default",
+    "tool": "fox_create_tab",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "create_tab/url",
+    "tool": "fox_create_tab",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "create_tab/protected",
+    "tool": "fox_create_tab",
+    "default": "confirmation_required",
+    "readOnly": "read_only",
+    "scriptsOff": "confirmation_required",
+    "protectedTab": "confirmation_required",
+    "blockedTab": "confirmation_required",
+    "guardOff": null
+  },
+  {
+    "id": "close_tab/default",
+    "tool": "fox_close_tab",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "switch_tab/default",
+    "tool": "fox_switch_tab",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "wait_for_element/default",
+    "tool": "fox_wait_for_element",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "wait_for_element/options",
+    "tool": "fox_wait_for_element",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "wait_for_network_idle/default",
+    "tool": "fox_wait_for_network_idle",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "wait_for_network_idle/options",
+    "tool": "fox_wait_for_network_idle",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "wait_for_navigation/default",
+    "tool": "fox_wait_for_navigation",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "wait_for_navigation/options",
+    "tool": "fox_wait_for_navigation",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "wait_for_url/url",
+    "tool": "fox_wait_for_url",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "wait_for_url/pattern",
+    "tool": "fox_wait_for_url",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "wait_for_url/protected",
+    "tool": "fox_wait_for_url",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "start_logging/default",
+    "tool": "fox_start_logging",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "start_logging/options",
+    "tool": "fox_start_logging",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "stop_logging/default",
+    "tool": "fox_stop_logging",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "get_console_logs/default",
+    "tool": "fox_get_console_logs",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "get_console_logs/options",
+    "tool": "fox_get_console_logs",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "get_network_logs/default",
+    "tool": "fox_get_network_logs",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "get_network_logs/options",
+    "tool": "fox_get_network_logs",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "clear_logs/default",
+    "tool": "fox_clear_logs",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "clear_logs/options",
+    "tool": "fox_clear_logs",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "execute_script/default",
+    "tool": "fox_execute_script",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": "scripts_disabled",
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "execute_script/tab",
+    "tool": "fox_execute_script",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": "scripts_disabled",
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "eval_chain/default",
+    "tool": "fox_eval_chain",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": "scripts_disabled",
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "inject_observer/default",
+    "tool": "fox_inject_observer",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": "scripts_disabled",
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "inject_observer/options",
+    "tool": "fox_inject_observer",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": "scripts_disabled",
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "remove_observer/default",
+    "tool": "fox_remove_observer",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": "scripts_disabled",
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "run_workflow/default",
+    "tool": "fox_run_workflow",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "audit_page/default",
+    "tool": "fox_audit_page",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "audit_page/options",
+    "tool": "fox_audit_page",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "wait_and_act/default",
+    "tool": "fox_wait_and_act",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": "scripts_disabled",
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "wait_and_act/options",
+    "tool": "fox_wait_and_act",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": "scripts_disabled",
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "handle_dialog/accept",
+    "tool": "fox_handle_dialog",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "handle_dialog/dismiss",
+    "tool": "fox_handle_dialog",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "handle_dialog/prompt",
+    "tool": "fox_handle_dialog",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "request_approval/default",
+    "tool": "fox_request_approval",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "request_approval/options",
+    "tool": "fox_request_approval",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "detect_captcha/default",
+    "tool": "fox_detect_captcha",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "detect_captcha/options",
+    "tool": "fox_detect_captcha",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "list_containers/default",
+    "tool": "fox_list_containers",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "open_in_container/name",
+    "tool": "fox_open_in_container",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "open_in_container/cookie_store",
+    "tool": "fox_open_in_container",
+    "default": null,
+    "readOnly": "read_only",
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "open_in_container/blocked",
+    "tool": "fox_open_in_container",
+    "default": "blocked_url",
+    "readOnly": "blocked_url",
+    "scriptsOff": "blocked_url",
+    "protectedTab": "blocked_url",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
+    "id": "safety_status/default",
+    "tool": "fox_safety_status",
+    "default": null,
+    "readOnly": null,
+    "scriptsOff": null,
+    "protectedTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  }
+]

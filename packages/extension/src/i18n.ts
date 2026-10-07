@@ -4,11 +4,11 @@
 // by default). Only text people read in the browser is localized; errors
 // returned to the MCP client stay in English.
 //
-// Loading: classic script, loaded before background.js (manifest.json) and
-// popup.js (popup.html). The content script has its own copy of this helper,
-// because it is also injected on its own (early logging injection).
+// Imported by the background modules, popup.ts and the content script
+// (content/captcha.ts). Keep it without top-level side effects: content.js
+// runs its imports on every injection, before its __fox_injected guard.
 
 /** Localized message, or the key itself when it is missing. */
-function t(key: string, substitutions?: string | string[]): string {
+export function t(key: string, substitutions?: string | string[]): string {
   return browser.i18n.getMessage(key, substitutions) || key;
 }

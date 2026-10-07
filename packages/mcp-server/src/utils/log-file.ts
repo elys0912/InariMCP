@@ -1,25 +1,47 @@
-import * as fs from 'node:fs';
+import { logStamp, stampLines } from '@kitsune-mcp/shared/node';
 
-/** Rotate once a log file grows beyond this (5 MB), like native-host.log. */
-export const MAX_LOG_BYTES = 5 * 1_048_576;
+// Rotation and line stamps are shared with the Native Host.
+export { MAX_LOG_BYTES, logStamp, rotateIfLarge, stampLines } from '@kitsune-mcp/shared/node';
+
+/** Encodings whose string spells out bytes (decoded to text before stamping). */
+const BYTE_STRING_ENCODINGS: ReadonlySet<BufferEncoding> = new Set<BufferEncoding>(['hex', 'base64', 'base64url']);
+
+type WriteCallback = (err?: Error | null) => void;
 
 /**
- * When `filePath` is larger than MAX_LOG_BYTES, rename it to `<file>.old`
- * (replacing an older one) so the next open starts a new file. Same scheme
- * as the Native Host's own log (native-host/src/logger.ts).
- *
- * Best-effort: a missing file is fine, and any other failure (e.g. another
- * process holds the file open on Windows) leaves the file as it is — the
- * next call tries again. Never throws.
+ * Both overloads of stream.write — (chunk, cb?) and (chunk, encoding?, cb?) —
+ * in one signature, so a replacement can be assigned without a cast.
  */
-export function rotateLogIfLarge(filePath: string): void {
-  try {
-    if (fs.statSync(filePath).size <= MAX_LOG_BYTES) return;
-    const old = `${filePath}.old`;
-    // rename replaces an existing .old on POSIX; on Windows remove it first.
-    fs.rmSync(old, { force: true });
-    fs.renameSync(filePath, old);
-  } catch {
-    // ENOENT, or the file is in use — keep appending
-  }
+type StreamWrite = (
+  chunk: string | Uint8Array,
+  encodingOrCb?: BufferEncoding | WriteCallback,
+  cb?: WriteCallback,
+) => boolean;
+
+/**
+ * Prefix every line the process writes to stderr with a timestamp and the
+ * PID. Used by the daemon, whose stderr is ~/.kitsune-mcp/logs/daemon.log:
+ * every module logs with process.stderr.write, so the stream is wrapped once
+ * instead of changing each logger.
+ */
+export function installStderrTimestamps(
+  stream: NodeJS.WriteStream = process.stderr,
+  stamp: () => string = () => logStamp(),
+): void {
+  let atLineStart = true;
+  const original = stream.write.bind(stream);
+  const write: StreamWrite = (chunk, encodingOrCb, cb) => {
+    // Only a binary-to-text encoding makes the string stand for bytes; with
+    // a text encoding (latin1, utf16le, …) the string is already the text.
+    const text =
+      typeof chunk === 'string'
+        ? typeof encodingOrCb === 'string' && BYTE_STRING_ENCODINGS.has(encodingOrCb)
+          ? Buffer.from(chunk, encodingOrCb).toString('utf-8')
+          : chunk
+        : Buffer.from(chunk).toString('utf-8');
+    const stamped = stampLines(text, atLineStart, stamp());
+    atLineStart = stamped.atLineStart;
+    return original(stamped.text, typeof encodingOrCb === 'function' ? encodingOrCb : cb);
+  };
+  stream.write = write;
 }

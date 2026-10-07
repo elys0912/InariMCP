@@ -8,6 +8,9 @@
  *   - nothing listens (2 checks in a row) → the daemon is really gone
  *     (crashed, or exited after its idle timeout while Firefox was closed):
  *     start a new one, with exponential backoff and at most 10 attempts.
+ *     The count goes back to 0 only when a usable daemon answers /health
+ *     (ours or one a relay started); after 10 failures the monitor stops
+ *     starting daemons.
  *
  * Division of labour with ws-client.ts:
  *  - HealthMonitor starts the daemon when it is missing.
@@ -18,18 +21,30 @@
  */
 
 import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { isUsable } from '@kitsune-mcp/shared/node';
 import type { ServerLauncher } from './server-launcher.js';
 import { log } from './logger.js';
+
+/** What HealthMonitor needs from ServerLauncher. */
+export type MonitoredLauncher = Pick<
+  ServerLauncher,
+  | 'probeHealth'
+  | 'checkHealth'
+  | 'isPortInUse'
+  | 'getRestartAttempts'
+  | 'getBackoffDelay'
+  | 'start'
+>;
 
 export class HealthMonitor {
   private timer: ReturnType<typeof setInterval> | null = null;
   /** Consecutive checks that found the port free (no daemon process). */
   private consecutiveMissing = 0;
   private checking = false;
-  private readonly launcher: ServerLauncher;
+  private readonly launcher: MonitoredLauncher;
   private readonly onRestart: (() => void) | undefined;
 
-  constructor(launcher: ServerLauncher, onRestart?: () => void) {
+  constructor(launcher: MonitoredLauncher, onRestart?: () => void) {
     this.launcher = launcher;
     this.onRestart = onRestart;
   }
@@ -52,62 +67,79 @@ export class HealthMonitor {
     log('health monitor stopped');
   }
 
-  private async check(): Promise<void> {
+  /**
+   * One health check. Never rejects: a failure is logged and the next tick
+   * tries again (it runs from setInterval, where a rejection would be an
+   * unhandled one).
+   */
+  async check(): Promise<void> {
     if (this.checking) return;
     this.checking = true;
 
     try {
-      // Reset backoff counter if the daemon has been stable long enough
-      this.launcher.resetBackoff();
-
-      if (await this.launcher.checkHealth()) {
-        if (this.consecutiveMissing > 0) {
-          log('daemon is back');
-        }
-        this.consecutiveMissing = 0;
-        return;
-      }
-
-      if (await this.launcher.isPortInUse()) {
-        // Alive but not answering in time: wait, never kill.
-        this.consecutiveMissing = 0;
-        log('health check failed but the port is in use — daemon busy, leaving it alone');
-        return;
-      }
-
-      this.consecutiveMissing++;
-      log(`daemon not running (${this.consecutiveMissing} consecutive check(s))`);
-
-      if (this.consecutiveMissing < ENV_DEFAULTS.HEALTH_CHECK_MAX_FAILURES) return;
-
-      if (this.launcher.getRestartAttempts() >= ENV_DEFAULTS.MAX_RESTART_ATTEMPTS) {
-        log('max start attempts reached — manual intervention required');
-        return;
-      }
-
-      const delay = this.launcher.getBackoffDelay();
-      if (delay > 0 && this.launcher.getRestartAttempts() > 0) {
-        log(`backoff delay: ${delay}ms`);
-        await new Promise<void>((resolve) => setTimeout(resolve, delay));
-      }
-
-      // Someone else (a relay) may have started it during the delay.
-      if ((await this.launcher.checkHealth()) || (await this.launcher.isPortInUse())) {
-        log('daemon appeared meanwhile — not starting another');
-        this.consecutiveMissing = 0;
-        this.onRestart?.();
-        return;
-      }
-
-      log('starting daemon');
-      if (await this.launcher.start()) {
-        this.consecutiveMissing = 0;
-        this.onRestart?.();
-      } else {
-        log('failed to start daemon');
-      }
+      await this.checkOnce();
+    } catch (err: unknown) {
+      log(`health check failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       this.checking = false;
+    }
+  }
+
+  private async checkOnce(): Promise<void> {
+    const verdict = await this.launcher.probeHealth();
+    if (isUsable(verdict)) {
+      if (this.consecutiveMissing > 0) {
+        log('daemon is back');
+      }
+      this.consecutiveMissing = 0;
+      return;
+    }
+    if (verdict.kind !== 'down') {
+      // Something that is not a usable daemon holds the port (an older
+      // daemon, an impostor, another program; probeHealth logged which).
+      // Starting a daemon could not bind the port: wait.
+      this.consecutiveMissing = 0;
+      return;
+    }
+
+    if (await this.launcher.isPortInUse()) {
+      // Alive but not answering in time: wait, never kill.
+      this.consecutiveMissing = 0;
+      log('health check failed but the port is in use — daemon busy, leaving it alone');
+      return;
+    }
+
+    this.consecutiveMissing++;
+    log(`daemon not running (${this.consecutiveMissing} consecutive check(s))`);
+
+    if (this.consecutiveMissing < ENV_DEFAULTS.HEALTH_CHECK_MAX_FAILURES) return;
+
+    if (this.launcher.getRestartAttempts() >= ENV_DEFAULTS.MAX_RESTART_ATTEMPTS) {
+      log('max start attempts reached — manual intervention required');
+      return;
+    }
+
+    const delay = this.launcher.getBackoffDelay();
+    if (delay > 0 && this.launcher.getRestartAttempts() > 0) {
+      log(`backoff delay: ${delay}ms`);
+      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+    }
+
+    // Someone else (a relay) may have started it during the delay.
+    if ((await this.launcher.checkHealth()) || (await this.launcher.isPortInUse())) {
+      log('daemon appeared meanwhile — not starting another');
+      this.consecutiveMissing = 0;
+      this.onRestart?.();
+      return;
+    }
+
+    log('starting daemon');
+    // Count missing checks afresh from this attempt on, whatever its outcome.
+    this.consecutiveMissing = 0;
+    if (await this.launcher.start()) {
+      this.onRestart?.();
+    } else {
+      log('failed to start daemon');
     }
   }
 }

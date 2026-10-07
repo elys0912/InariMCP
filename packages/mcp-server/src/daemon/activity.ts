@@ -17,9 +17,17 @@ import { ENV } from '@kitsune-mcp/shared';
 export const RELAY_HEARTBEAT_MS = 30_000;
 /** A relay not seen for this long is considered gone. */
 export const RELAY_TTL_MS = 3 * RELAY_HEARTBEAT_MS;
+/**
+ * How long a graceful stop waits for running tool calls (POST /daemon/shutdown
+ * without force; daemon/main.ts). Here, next to the other timings relays
+ * rely on: relay/daemon-client.ts derives its wait for a stopping daemon from it.
+ */
+export const SHUTDOWN_DRAIN_MS = 10_000;
 
 const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000;
 const IDLE_CHECK_INTERVAL_MS = 30_000;
+/** Shortest check interval (a very short idle timeout must not spin the timer). */
+const IDLE_CHECK_MIN_MS = 1_000;
 
 export function resolveIdleTimeoutMs(): number {
   const raw = process.env[ENV.FOX_DAEMON_IDLE_TIMEOUT];
@@ -33,6 +41,7 @@ export function resolveIdleTimeoutMs(): number {
 export class DaemonActivity {
   private readonly relays = new Map<string, number>();
   private inFlight = 0;
+  private readonly idleWaiters: Array<() => void> = [];
   private idleSince: number | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -47,6 +56,35 @@ export class DaemonActivity {
 
   endCall(): void {
     this.inFlight = Math.max(0, this.inFlight - 1);
+    if (this.inFlight === 0) {
+      const waiters = this.idleWaiters.splice(0);
+      for (const w of waiters) w();
+    }
+  }
+
+  /** Tool calls (and popup approvals) currently running. */
+  get inFlightCalls(): number {
+    return this.inFlight;
+  }
+
+  /**
+   * Resolves true as soon as no call is in flight, false when `timeoutMs`
+   * passed first (graceful shutdown: let running commands finish).
+   */
+  waitForIdle(timeoutMs: number): Promise<boolean> {
+    if (this.inFlight === 0) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        const i = this.idleWaiters.indexOf(onIdle);
+        if (i >= 0) this.idleWaiters.splice(i, 1);
+        resolve(false);
+      }, timeoutMs);
+      const onIdle = (): void => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      this.idleWaiters.push(onIdle);
+    });
   }
 
   /** Relays seen within RELAY_TTL_MS. Expired entries are dropped. */
@@ -61,9 +99,9 @@ export class DaemonActivity {
    * Start the idle watchdog.
    * @param nativeHostCount current number of Native Host WS connections
    * @param onIdle          called once when the idle timeout has elapsed
+   * @param idleTimeoutMs   0 disables the watchdog (default: FOX_DAEMON_IDLE_TIMEOUT)
    */
-  start(nativeHostCount: () => number, onIdle: () => void): void {
-    const idleTimeoutMs = resolveIdleTimeoutMs();
+  start(nativeHostCount: () => number, onIdle: () => void, idleTimeoutMs: number = resolveIdleTimeoutMs()): void {
     if (idleTimeoutMs === 0 || this.timer !== null) return;
 
     this.idleSince = Date.now();
@@ -83,7 +121,9 @@ export class DaemonActivity {
         this.stop();
         onIdle();
       }
-    }, Math.min(IDLE_CHECK_INTERVAL_MS, Math.max(1_000, idleTimeoutMs / 2)));
+      // Checked every half timeout (at most every 30 s): an idle period is
+      // noticed at most half a timeout late.
+    }, Math.min(IDLE_CHECK_INTERVAL_MS, Math.max(IDLE_CHECK_MIN_MS, idleTimeoutMs / 2)));
     this.timer.unref();
   }
 

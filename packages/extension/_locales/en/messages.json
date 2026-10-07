@@ -28,9 +28,9 @@
 
   "setupHostMissingTitle": { "message": "Setup needed" },
   "setupHostMissingText": {
-    "message": "Firefox cannot find the KitsuneMCP native host. Run the installer in your KitsuneMCP folder (a clone of the repository):"
+    "message": "Firefox cannot find the KitsuneMCP native host. Build KitsuneMCP and run its installer in your KitsuneMCP folder (a clone of the repository):"
   },
-  "setupHostMissingNote": { "message": "Then press Recheck." },
+  "setupHostMissingNote": { "message": "Then press Recheck. Flatpak Firefox: see the installation guide (re-running the installer alone does not help there)." },
   "setupHostErrorTitle": { "message": "Native host failed" },
   "setupHostErrorText": {
     "message": "The native host is registered but did not work ($1). Re-running the installer fixes the usual cause, a Node.js that was upgraded or moved:",
@@ -38,7 +38,7 @@
   },
   "setupHostOutdatedTitle": { "message": "Native host is out of date" },
   "setupHostOutdatedText": {
-    "message": "Browser tools still work, but your KitsuneMCP folder is older than this extension. Pull the latest version there and re-run the installer (it also rebuilds and updates the native host):"
+    "message": "Browser tools still work, but your KitsuneMCP folder is older than this extension. Pull the latest version there, rebuild it and re-run the installer (it updates the native host):"
   },
   "setupHostOutdatedNote": { "message": "Then restart Firefox." },
   "setupDetails": {
@@ -75,22 +75,27 @@
   "badgeHostOutdated": { "message": "KitsuneMCP: native host is out of date" },
   "badgeDaemonDown": { "message": "KitsuneMCP: MCP server not responding" },
   "badgeNoSession": { "message": "KitsuneMCP: no Claude Code session" },
+  "badgeApprovalPending": {
+    "message": "KitsuneMCP: $1 approval request(s) waiting for you",
+    "description": "$1 = number of pending requests"
+  },
 
   "menuScreenshot": { "message": "Take Screenshot for KitsuneMCP" },
   "menuInspect": { "message": "Inspect Element for KitsuneMCP" },
 
   "notifyApprovalTitle": { "message": "Claude requests approval" },
   "notifyApprovalDefault": { "message": "Claude wants to perform an action" },
+  "notifyApprovalProtected": {
+    "message": "$1 on $2 needs your approval. Click the KitsuneMCP toolbar button to approve or deny.",
+    "description": "$1 = tool name, $2 = site hostname"
+  },
+  "notifyApprovalQuestion": {
+    "message": "$1 — answer with the KitsuneMCP toolbar button.",
+    "description": "$1 = question written by Claude (not translated)"
+  },
   "notifyCaptchaTitle": { "message": "Captcha needs solving" },
   "notifyCaptchaMessage": { "message": "Claude paused on a captcha and needs you to solve it." },
 
-  "bannerApprovalTitle": {
-    "message": "⚠️ KitsuneMCP requests approval: $1",
-    "description": "$1 = what the agent wants to do (as sent by Claude, not translated)"
-  },
-  "bannerApprovalDefault": { "message": "Perform an action" },
-  "bannerApprove": { "message": "Approve" },
-  "bannerDeny": { "message": "Deny" },
   "bannerCaptchaTitle": {
     "message": "🧩 Please solve the captcha ($1), then it continues automatically.",
     "description": "$1 = captcha types, e.g. recaptcha, hcaptcha"
@@ -99,5 +104,26 @@
     "message": "KitsuneMCP paused and is waiting for you. Click Done if it does not continue on its own."
   },
   "bannerDone": { "message": "Done" },
-  "bannerCancel": { "message": "Cancel" }
+  "bannerCancel": { "message": "Cancel" },
+
+  "popupApprovalsTitle": { "message": "Approval requests" },
+  "approvalProtectedTitle": { "message": "Action on a protected site" },
+  "approvalMessageTitle": { "message": "Question from Claude" },
+  "approvalTool": { "message": "Tool" },
+  "approvalSite": { "message": "Site" },
+  "approvalPage": { "message": "Page" },
+  "approvalPattern": { "message": "Matched rule" },
+  "approvalArgs": { "message": "Arguments" },
+  "approvalProtectedNote": {
+    "message": "Approve only if you asked for this. It allows this one call and nothing else. $1 s left.",
+    "description": "$1 = seconds left"
+  },
+  "approvalMessageNote": {
+    "message": "Your answer goes back to Claude; it does not unlock protected sites. $1 s left.",
+    "description": "$1 = seconds left"
+  },
+  "approvalMore": { "message": "$1 more request(s) waiting", "description": "$1 = number of other pending requests" },
+  "approvalApprove": { "message": "Approve" },
+  "approvalDeny": { "message": "Deny" },
+  "toastApprovalGone": { "message": "This request is no longer pending" }
 }

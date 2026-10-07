@@ -1,14 +1,13 @@
 {
   "manifest_version": 2,
   "name": "KitsuneMCP",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "author": "elys0912",
   "homepage_url": "https://github.com/elys0912/KitsuneMCP",
 
   "permissions": [
-    "activeTab",
     "tabs",
     "nativeMessaging",
     "notifications",
@@ -21,7 +20,7 @@
   ],
 
   "background": {
-    "scripts": ["dist/i18n.js", "dist/action-map.js", "dist/background.js"],
+    "scripts": ["dist/background.js"],
     "persistent": true
   },
 
@@ -61,9 +60,5 @@
         "required": ["none"]
       }
     }
-  },
-
-  "web_accessible_resources": [
-    "icons/*"
-  ]
+  }
 }

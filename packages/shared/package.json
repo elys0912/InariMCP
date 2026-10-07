@@ -1,6 +1,6 @@
 {
   "name": "@kitsune-mcp/shared",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "author": "elys0912",
@@ -15,6 +15,22 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node/index.d.ts",
+      "default": "./dist/node/index.js"
+    },
+    "./action-names": {
+      "types": "./dist/action-names.d.ts",
+      "default": "./dist/action-names.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
   "scripts": {
     "build": "tsc -b",
     "clean": "rimraf --glob dist \"*.tsbuildinfo\""

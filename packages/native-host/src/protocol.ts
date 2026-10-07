@@ -15,7 +15,7 @@
  * NOT confused with EOF, so the host process keeps running.
  */
 
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord } from '@kitsune-mcp/shared';
 import { log } from './logger.js';
 
 const MAX_OUTGOING_SIZE = ENV_DEFAULTS.NATIVE_MSG_MAX_SIZE;
@@ -51,12 +51,12 @@ function readExact(n: number): Promise<Buffer | null> {
     }
 
     function tryRead(): void {
-      const chunk = stdin.read(n) as Buffer | null;
-      if (chunk !== null) {
-        cleanup();
-        resolve(chunk);
-        return;
-      }
+      const chunk: unknown = stdin.read(n);
+      if (chunk === null) return;
+      cleanup();
+      // stdin has no encoding set, so a chunk is a Buffer; anything else
+      // (a string after setEncoding) cannot be a Native Messaging frame.
+      resolve(Buffer.isBuffer(chunk) ? chunk : null);
     }
 
     function onReadable(): void {
@@ -156,13 +156,13 @@ export async function readMessage(): Promise<ReadResult> {
       : { kind: 'skipped', reason };
   }
 
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+  if (!isRecord(parsed)) {
     const reason = 'incoming message is not a JSON object';
     log(reason);
     return { kind: 'skipped', reason };
   }
 
-  return { kind: 'message', message: parsed as Record<string, unknown> };
+  return { kind: 'message', message: parsed };
 }
 
 /**

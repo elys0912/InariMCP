@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getAuditLogPath } from './config.js';
 import { maskSensitiveArgs } from './sanitizer.js';
-import { rotateLogIfLarge } from '../utils/log-file.js';
+import { rotateIfLarge } from '../utils/log-file.js';
 
 export type AuditDecision =
   | 'allowed'
@@ -16,7 +16,18 @@ export type AuditDecision =
   | 'scripts_disabled'
   | 'confirmation_required'
   | 'observed_on_protected_domain'
-  | 'out_of_scope';
+  | 'out_of_scope'
+  /** A human approved / declined a protected-site action (tools/approval-flow.ts). */
+  | 'approval_granted'
+  | 'approval_denied'
+  | 'invalid_url'
+  | 'blocked_after_navigation'
+  | 'config_error'
+  /**
+   * The browser ran the call the guard allowed (its `allowed` line comes
+   * first) and it failed: an ordinary error, not a safety decision.
+   */
+  | 'browser_error';
 
 export interface AuditEntry {
   ts: string;
@@ -25,6 +36,8 @@ export interface AuditEntry {
   url: string | null;
   transport: string | null;
   args: Record<string, unknown>;
+  /** The deprecated tool name the call was made with (WP13 legacy aliases). */
+  legacyTool?: string;
 }
 
 export function audit(
@@ -33,6 +46,7 @@ export function audit(
   targetUrl: string | null,
   decision: AuditDecision,
   transport?: string,
+  legacyTool?: string,
 ): void {
   const entry: AuditEntry = {
     ts: new Date().toISOString(),
@@ -41,6 +55,7 @@ export function audit(
     url: targetUrl,
     transport: transport ?? null,
     args: maskSensitiveArgs(args),
+    ...(legacyTool !== undefined ? { legacyTool } : {}),
   };
 
   const logPath = getAuditLogPath();
@@ -48,7 +63,7 @@ export function audit(
   try {
     const dir = path.dirname(logPath);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-    rotateLogIfLarge(logPath);
+    rotateIfLarge(logPath);
     fs.appendFileSync(logPath, JSON.stringify(entry) + '\n', { mode: 0o600 });
   } catch (e) {
     process.stderr.write(

@@ -2,8 +2,13 @@
  * KitsuneMCP - Popup Script
  */
 
-// SetupState is declared in background.ts: the extension's scripts are
-// classic scripts, type-checked in one shared global scope.
+import { t } from '../i18n';
+import { APPROVAL_MESSAGE, type ApprovalView } from '../approval';
+import { TOP_FRAME_ID } from '../background/constants';
+import type { ContentRequest } from '../content/types';
+import type { SetupState } from '../types/setup';
+import { setupStateOfReply, setupStateOfFailure } from './setup-status';
+
 interface StatusResponse {
   success: boolean;
   connected?: boolean;
@@ -56,7 +61,9 @@ interface SetupGuide {
 const LOG_DIR = '~/.kitsune-mcp/logs';
 
 function installerCommand(os: string): string {
-  return os === 'win' ? 'npm run install:windows' : 'npm run install:unix';
+  return os === 'win'
+    ? 'npm ci; npm run build; npm run setup'
+    : 'npm ci && npm run build && npm run setup';
 }
 
 function guideFor(state: SetupState, os: string): SetupGuide | null {
@@ -81,8 +88,8 @@ function guideFor(state: SetupState, os: string): SetupGuide | null {
       return {
         title: t('setupHostOutdatedTitle'),
         text: t('setupHostOutdatedText'),
-        // Re-running the installer also runs npm install / build and
-        // rewrites the Native Host. Windows PowerShell 5.1 has no &&.
+        // Pull, rebuild, and let the installer (scripts/install.mjs, which
+        // does not build) rewrite the Native Host. Windows PowerShell 5.1 has no &&.
         command: `git pull${os === 'win' ? ';' : ' &&'} ${installerCommand(os)}`,
         note: t('setupHostOutdatedNote'),
         notice: true,
@@ -138,8 +145,16 @@ function renderSetup(state: SetupState, os: string): void {
         state.relays === 1 ? t('statusConnected') : t('statusConnectedN', String(state.relays)),
       );
       break;
-    default:
+    case 'hostMissing':
+    case 'hostError':
+    case 'daemonDown':
       updateStatus('disconnected', t('statusSetupNeeded'));
+      break;
+    default: {
+      // Every kind is handled above: a new one must be added here.
+      const unhandled: never = state;
+      void unhandled;
+    }
   }
 
   if ('serverUrl' in state && state.serverUrl) {
@@ -166,10 +181,10 @@ async function queryStatus(recheck: boolean): Promise<SetupState> {
       target: 'background',
       action: 'status',
       data: { recheck },
-    }) as StatusResponse;
-    return result?.setup ?? { kind: 'connecting' };
-  } catch {
-    return { kind: 'connecting' };
+    }) as StatusResponse | undefined;
+    return setupStateOfReply(result);
+  } catch (error: unknown) {
+    return setupStateOfFailure(error);
   }
 }
 
@@ -190,6 +205,9 @@ async function refreshStatus(os: string, recheck: boolean): Promise<void> {
   renderSetup(state, os);
 }
 
+/** How long a toast stays. */
+const TOAST_MS = 3_000;
+
 function showToast(message: string, type: ToastType = 'info'): void {
   const existing = document.querySelector('.toast');
   if (existing) existing.remove();
@@ -199,7 +217,171 @@ function showToast(message: string, type: ToastType = 'info'): void {
   toast.textContent = message;
   document.body.appendChild(toast);
 
-  setTimeout(() => toast.remove(), 3000);
+  setTimeout(() => toast.remove(), TOAST_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Approval requests
+// ---------------------------------------------------------------------------
+//
+// The background keeps approval requests (request_approval commands) until
+// they are answered here. Pages and content scripts cannot reach this popup,
+// so a decision made here is the human's. ApprovalView / APPROVAL_MESSAGE:
+// approval.ts.
+
+interface ApprovalListResponse {
+  success: boolean;
+  approvals?: ApprovalView[];
+}
+
+const APPROVAL_POLL_MS = 1_000;
+const MS_PER_SECOND = 1_000;
+
+/** Whole seconds until the background stops waiting for `view` (0 once past). */
+function secondsLeft(view: ApprovalView): string {
+  return String(Math.max(0, Math.round((view.deadline - Date.now()) / MS_PER_SECOND)));
+}
+
+/** The countdown line under a request. */
+function approvalNoteText(view: ApprovalView): string {
+  return view.kind === 'protected_action'
+    ? t('approvalProtectedNote', secondsLeft(view))
+    : t('approvalMessageNote', secondsLeft(view));
+}
+
+function approvalRow(label: string, value: string, mono = false): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'approval-row';
+  const key = document.createElement('span');
+  key.className = 'approval-key';
+  key.textContent = label;
+  const val = document.createElement(mono ? 'pre' : 'span');
+  val.className = mono ? 'approval-value mono' : 'approval-value';
+  val.textContent = value;
+  row.append(key, val);
+  return row;
+}
+
+function approvalCard(view: ApprovalView, onDecide: (id: string, approved: boolean) => void): HTMLElement {
+  const card = document.createElement('div');
+  card.className = `approval-card ${view.kind}`;
+
+  const title = document.createElement('p');
+  title.className = 'approval-title';
+  title.textContent = view.kind === 'protected_action' ? t('approvalProtectedTitle') : t('approvalMessageTitle');
+  card.appendChild(title);
+
+  if (view.kind === 'protected_action') {
+    card.appendChild(approvalRow(t('approvalSite'), view.host ?? ''));
+    card.appendChild(approvalRow(t('approvalTool'), view.toolName ?? ''));
+    if (view.url) card.appendChild(approvalRow(t('approvalPage'), view.url));
+    if (view.matchedPattern) card.appendChild(approvalRow(t('approvalPattern'), view.matchedPattern));
+    if (view.summary) card.appendChild(approvalRow(t('approvalArgs'), view.summary, true));
+  } else {
+    const message = document.createElement('p');
+    message.className = 'approval-message';
+    message.textContent = view.message || t('notifyApprovalDefault');
+    card.appendChild(message);
+    if (view.detail) {
+      const detail = document.createElement('p');
+      detail.className = 'approval-detail';
+      detail.textContent = view.detail;
+      card.appendChild(detail);
+    }
+  }
+
+  const note = document.createElement('p');
+  note.className = 'approval-note';
+  note.textContent = approvalNoteText(view);
+  card.appendChild(note);
+
+  const buttons = document.createElement('div');
+  buttons.className = 'approval-buttons';
+  const approve = document.createElement('button');
+  approve.className = 'btn-approve';
+  approve.textContent = t('approvalApprove');
+  approve.addEventListener('click', () => onDecide(view.id, true));
+  const deny = document.createElement('button');
+  deny.className = 'btn-deny';
+  deny.textContent = t('approvalDeny');
+  deny.addEventListener('click', () => onDecide(view.id, false));
+  buttons.append(deny, approve);
+  card.appendChild(buttons);
+  return card;
+}
+
+/**
+ * Buttons of a newly shown request stay disabled this long, so a click
+ * meant for the previous request (or made while the card changes) cannot
+ * land on a different one.
+ */
+const APPROVAL_ARM_DELAY_MS = 800;
+
+/** The request on screen, since when, and how many others are queued. */
+let shownApproval: { id: string; more: number; shownAt: number } | null = null;
+
+/**
+ * Show the oldest pending request (one at a time: the buttons never move
+ * under the cursor), with a count of the others. The card is rebuilt only
+ * when the request on screen changes; otherwise just the countdown updates.
+ */
+async function refreshApprovals(): Promise<void> {
+  let approvals: ApprovalView[] = [];
+  try {
+    const reply = await browser.runtime.sendMessage({ type: APPROVAL_MESSAGE.LIST }) as ApprovalListResponse;
+    approvals = reply?.success && Array.isArray(reply.approvals) ? reply.approvals : [];
+  } catch {
+    approvals = [];
+  }
+
+  const list = document.getElementById('approval-list');
+  setHidden('approvals', approvals.length === 0);
+  if (!list) return;
+  const view = approvals[0];
+  if (!view) {
+    shownApproval = null;
+    list.replaceChildren();
+    return;
+  }
+
+  const more = approvals.length - 1;
+  if (shownApproval?.id === view.id && shownApproval.more === more) {
+    const note = list.querySelector('.approval-note');
+    if (note) note.textContent = approvalNoteText(view);
+    return;
+  }
+
+  const shownAt = shownApproval?.id === view.id ? shownApproval.shownAt : Date.now();
+  shownApproval = { id: view.id, more, shownAt };
+  const card = approvalCard(view, (id, approved) => { void decide(id, approved); });
+  const armIn = shownAt + APPROVAL_ARM_DELAY_MS - Date.now();
+  if (armIn > 0) {
+    const buttons = card.querySelectorAll('button');
+    buttons.forEach((b) => { b.disabled = true; });
+    setTimeout(() => buttons.forEach((b) => { b.disabled = false; }), armIn);
+  }
+  const children: HTMLElement[] = [card];
+  if (more > 0) {
+    const queued = document.createElement('p');
+    queued.className = 'approval-queued';
+    queued.textContent = t('approvalMore', String(more));
+    children.push(queued);
+  }
+  list.replaceChildren(...children);
+}
+
+async function decide(id: string, approved: boolean): Promise<void> {
+  try {
+    const reply = await browser.runtime.sendMessage({
+      type: APPROVAL_MESSAGE.DECIDE,
+      id,
+      approved,
+    }) as { success?: boolean; error?: string };
+    if (!reply?.success) showToast(reply?.error || t('toastApprovalGone'), 'warning');
+  } catch (error: unknown) {
+    showToast(error instanceof Error ? error.message : t('toastUnknownError'), 'error');
+  }
+  await refreshApprovals();
 }
 
 /** Fill every [data-i18n] element with its localized message. */
@@ -211,90 +393,100 @@ function localizePage(): void {
   });
 }
 
+/** The active tab's title and URL at the top of the popup. */
+function showCurrentTab(tab: browser.tabs.Tab): void {
+  const titleEl = document.querySelector('.tab-title');
+  const urlEl = document.querySelector('.tab-url');
+  if (titleEl) titleEl.textContent = tab.title || t('popupUntitled');
+  if (urlEl) urlEl.textContent = tab.url || '-';
+}
+
+/** Screenshot button: capture through the background and download the image. */
+function setupScreenshotButton(): void {
+  document.getElementById('btn-screenshot')?.addEventListener('click', async () => {
+    try {
+      const result = await browser.runtime.sendMessage({
+        target: 'background',
+        action: 'screenshot',
+      }) as ScreenshotResponse;
+
+      if (result.success && result.imageData) {
+        showToast(t('toastScreenshotCaptured'), 'success');
+        const link = document.createElement('a');
+        link.href = result.imageData;
+        link.download = `screenshot-${Date.now()}.png`;
+        link.click();
+      } else {
+        showToast(result.error || t('toastScreenshotFailed'), 'error');
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : t('toastUnknownError');
+      showToast(msg, 'error');
+    }
+  });
+}
+
+/** Page info button: copy the page info of `tab` (top frame) to the clipboard. */
+function setupPageInfoButton(tab: browser.tabs.Tab): void {
+  document.getElementById('btn-pageinfo')?.addEventListener('click', async () => {
+    try {
+      const result = await browser.tabs.sendMessage(
+        tab.id,
+        { action: 'getPageInfo' } satisfies ContentRequest,
+        { frameId: TOP_FRAME_ID },
+      ) as PageInfoResponse;
+
+      console.log('Page Info:', result);
+      const count = result.interactiveElements?.length ?? 0;
+      showToast(t('toastFoundElements', String(count)), 'success');
+
+      await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+      showToast(t('toastPageInfoCopied'), 'success');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : t('toastUnknownError');
+      showToast(msg, 'error');
+    }
+  });
+}
+
+/** Copy button of the setup command. */
+function setupCopyCommandButton(): void {
+  document.getElementById('btn-copy-command')?.addEventListener('click', async () => {
+    const command = document.getElementById('setup-command-text')?.textContent ?? '';
+    try {
+      await navigator.clipboard.writeText(command);
+      showToast(t('toastCopied'), 'success');
+    } catch {
+      showToast(t('toastCopyFailed'), 'error');
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   localizePage();
   const os = await browser.runtime.getPlatformInfo().then(info => info.os, () => '');
 
-  const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+  // A failed query only leaves the tab line empty: the buttons and the
+  // approval poll below must still be set up.
+  const tabs = await browser.tabs
+    .query({ active: true, currentWindow: true })
+    .catch((): browser.tabs.Tab[] => []);
   const currentTab = tabs[0];
 
-  if (currentTab) {
-    const titleEl = document.querySelector('.tab-title');
-    const urlEl = document.querySelector('.tab-url');
-    if (titleEl) titleEl.textContent = currentTab.title || t('popupUntitled');
-    if (urlEl) urlEl.textContent = currentTab.url || '-';
-  }
-
-  // Screenshot button
-  const btnScreenshot = document.getElementById('btn-screenshot');
-  if (btnScreenshot) {
-    btnScreenshot.addEventListener('click', async () => {
-      try {
-        const result = await browser.runtime.sendMessage({
-          target: 'background',
-          action: 'screenshot',
-        }) as ScreenshotResponse;
-
-        if (result.success && result.imageData) {
-          showToast(t('toastScreenshotCaptured'), 'success');
-          const link = document.createElement('a');
-          link.href = result.imageData;
-          link.download = `screenshot-${Date.now()}.png`;
-          link.click();
-        } else {
-          showToast(result.error || t('toastScreenshotFailed'), 'error');
-        }
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : t('toastUnknownError');
-        showToast(msg, 'error');
-      }
-    });
-  }
-
-  // Page info button
-  const btnPageinfo = document.getElementById('btn-pageinfo');
-  if (btnPageinfo && currentTab) {
-    btnPageinfo.addEventListener('click', async () => {
-      try {
-        const result = await browser.tabs.sendMessage(currentTab.id, {
-          action: 'getPageInfo',
-        }) as PageInfoResponse;
-
-        console.log('Page Info:', result);
-        const count = result.interactiveElements?.length ?? 0;
-        showToast(t('toastFoundElements', String(count)), 'success');
-
-        await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
-        showToast(t('toastPageInfoCopied'), 'success');
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : t('toastUnknownError');
-        showToast(msg, 'error');
-      }
-    });
-  }
-
-  // Recheck button (retries the native host right away, e.g. after
-  // running the installer)
-  const btnTestConnection = document.getElementById('btn-test-connection');
-  if (btnTestConnection) {
-    btnTestConnection.addEventListener('click', () => {
-      void refreshStatus(os, true);
-    });
-  }
-
-  // Copy the setup command
-  const btnCopyCommand = document.getElementById('btn-copy-command');
-  if (btnCopyCommand) {
-    btnCopyCommand.addEventListener('click', async () => {
-      const command = document.getElementById('setup-command-text')?.textContent ?? '';
-      try {
-        await navigator.clipboard.writeText(command);
-        showToast(t('toastCopied'), 'success');
-      } catch {
-        showToast(t('toastCopyFailed'), 'error');
-      }
-    });
-  }
+  if (currentTab) showCurrentTab(currentTab);
+  setupScreenshotButton();
+  if (currentTab) setupPageInfoButton(currentTab);
+  // Recheck button: retries the native host right away (e.g. after running
+  // the installer).
+  document.getElementById('btn-test-connection')?.addEventListener('click', () => {
+    void refreshStatus(os, true);
+  });
+  setupCopyCommandButton();
 
   void refreshStatus(os, false);
+
+  // Pending approval requests: shown first, refreshed while the popup is open
+  // (new requests arrive, others time out).
+  void refreshApprovals();
+  setInterval(() => { void refreshApprovals(); }, APPROVAL_POLL_MS);
 });

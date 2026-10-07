@@ -1,0 +1,43 @@
+{
+  // Type check of the tests only (`npm run typecheck`, not `npm run build`).
+  // Vitest runs the tests as ES modules and resolves imports like a bundler,
+  // so this uses `bundler` resolution instead of the packages' Node16: under
+  // Node16 the tests (no "type": "module") would be CommonJS and could not
+  // use import.meta or import a `.ts` file.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // tests/contract imports some Extension sources by their `.ts` name.
+    "allowImportingTsExtensions": true,
+    // tests/scripts imports scripts/*.mjs: types are inferred from the JS
+    // (and its JSDoc); the scripts themselves are not checked.
+    "allowJs": true,
+    "checkJs": false,
+    "types": ["node"],
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // Same as the resolve.alias of vitest.config.mts: the shared sources, so
+    // no build is needed.
+    "paths": {
+      "@kitsune-mcp/shared": ["./packages/shared/src/index.ts"],
+      "@kitsune-mcp/shared/node": ["./packages/shared/src/node/index.ts"],
+      "@kitsune-mcp/shared/action-names": ["./packages/shared/src/action-names.ts"]
+    }
+  },
+  // Directories only (new test files are picked up without editing this),
+  // plus one declaration file of the Extension.
+  "include": [
+    // The Extension's browser.* / exportFunction declarations, for the
+    // background/*.ts and content/*.ts modules tests/contract imports.
+    "packages/extension/src/types/browser.d.ts",
+    "packages/*/tests",
+    "tests/contract",
+    "tests/e2e",
+    "tests/scripts",
+    "tests/setup"
+  ]
+}

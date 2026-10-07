@@ -106,10 +106,6 @@ declare namespace browser {
     }
 
     function captureTab(tabId: number, options?: ImageDetails): Promise<string>;
-    function captureVisibleTab(
-      windowId: number,
-      options?: { format?: string; quality?: number },
-    ): Promise<string>;
     function executeScript(
       tabId: number,
       details: { code?: string; file?: string; runAt?: string; frameId?: number },
@@ -126,6 +122,9 @@ declare namespace browser {
     };
     const onRemoved: {
       addListener(
+        callback: (tabId: number, removeInfo: { windowId: number; isWindowClosing: boolean }) => void,
+      ): void;
+      removeListener(
         callback: (tabId: number, removeInfo: { windowId: number; isWindowClosing: boolean }) => void,
       ): void;
     };
@@ -172,15 +171,21 @@ declare namespace browser {
     function setBadgeText(details: { text: string | null; tabId?: number }): Promise<void>;
     function setBadgeBackgroundColor(details: { color: string; tabId?: number }): Promise<void>;
     function setTitle(details: { title: string | null; tabId?: number }): Promise<void>;
+    /** Firefox may refuse it outside a user action. */
+    const openPopup: (() => Promise<void>) | undefined;
   }
 
   namespace notifications {
-    function create(options: {
+    interface NotificationOptions {
       type: string;
       title: string;
       message: string;
       iconUrl?: string;
-    }): Promise<string>;
+    }
+    function create(options: NotificationOptions): Promise<string>;
+    function create(notificationId: string, options: NotificationOptions): Promise<string>;
+    const clear: ((notificationId: string) => Promise<boolean>) | undefined;
+    const onClicked: { addListener(callback: (notificationId: string) => void): void } | undefined;
   }
 
   interface ContextualIdentity {
@@ -240,7 +245,7 @@ declare namespace browser {
     const onClicked: {
       addListener(
         callback: (
-          info: { menuItemId: string; pageX?: number; pageY?: number },
+          info: { menuItemId: string; frameId?: number },
           tab: tabs.Tab,
         ) => void,
       ): void;
@@ -266,4 +271,6 @@ declare function exportFunction<F extends (...args: never[]) => unknown>(
 interface Window {
   /** Firefox content scripts: the page's own objects (Xray waived). */
   readonly wrappedJSObject?: Window & typeof globalThis;
+  /** Set by content.ts once its listeners are registered in this document. */
+  __fox_injected?: boolean;
 }

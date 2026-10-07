@@ -1,4 +1,4 @@
-import { ENV } from '@kitsune-mcp/shared';
+import { isHeadlessEnabled } from '../utils/headless-env.js';
 import type { SafetyConfig } from './config.js';
 
 export interface ContainerScope {
@@ -41,11 +41,6 @@ export function getContainerConfig(
   };
 }
 
-/** Whether the MCP Server runs the headless (Playwright) backend. */
-function isHeadlessBackend(): boolean {
-  return Boolean(process.env[ENV.FOX_HEADLESS]);
-}
-
 /**
  * Server-side part of Layer 0.
  *
@@ -59,16 +54,24 @@ function isHeadlessBackend(): boolean {
 export function checkHeadlessContainerScope(
   config: SafetyConfig,
 ): ContainerDenial | null {
-  if (!getContainerConfig(config).enabled || !isHeadlessBackend()) {
-    return null;
-  }
-  return {
-    success: false,
-    safetyDecision: 'out_of_scope',
-    error:
-      `Container scope is enabled (container '${config.containerScope.containerName}') ` +
-      'but the headless backend has no Firefox containers, so every command is ' +
-      'refused. Use the Extension backend, or set container_scope.enabled to false ' +
-      'in safety.json.',
-  };
+  const why = headlessContainerScopeWarning(config);
+  if (why === null) return null;
+  return { success: false, safetyDecision: 'out_of_scope', error: `${why} fox_safety_status still works.` };
+}
+
+/**
+ * Why (and how to get out of) the refusal above, or null when it does not
+ * apply. Refusal stays the rule — ignoring the scope would be fail-open — so
+ * the way out is a separate safety.json for the headless daemon: the daemon's
+ * environment (FOX_HEADLESS, FOX_SAFETY_CONFIG) is fixed when it starts.
+ */
+export function headlessContainerScopeWarning(config: SafetyConfig): string | null {
+  if (!getContainerConfig(config).enabled || !isHeadlessEnabled()) return null;
+  return (
+    `Container scope is enabled (container '${config.containerScope.containerName}') ` +
+    'but this daemon runs the headless backend, which has no Firefox containers, so every ' +
+    'browser command is refused. Either use the Extension backend, or start the headless ' +
+    'daemon with its own safety.json that sets container_scope.enabled to false ' +
+    '(point FOX_SAFETY_CONFIG at it and restart the daemon).'
+  );
 }
