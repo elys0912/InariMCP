@@ -41,51 +41,34 @@ describe('tool sets derived from the schemas', () => {
     ]);
   });
 
-  it.each(['fox_switch_tab', 'fox_detect_captcha', 'fox_hover', 'fox_scroll', 'fox_highlight'])(
-    'lets %s through in read-only mode',
-    (tool) => {
-      expect(guard({ readOnly: true }).check(tool, { tabId: 1 })).toBeNull();
-    },
-  );
-
-  it.each(['fox_click', 'fox_type', 'fox_navigate', 'fox_close_tab', 'fox_run_workflow'])(
-    'refuses %s in read-only mode',
-    (tool) => {
-      expect(guard({ readOnly: true }).check(tool, {})?.safetyDecision).toBe('read_only');
-    },
-  );
+  // The decision per tool is recorded in tests/golden/guard-decisions.json
+  // (readOnly column); this states the rule behind it.
+  it('read-only mode lets exactly the observation tools through and refuses every other tool', () => {
+    const g = guard({ readOnly: true });
+    for (const name of Object.keys(TOOL_SCHEMAS)) {
+      const expected = OBSERVE_TOOLS.has(name) ? null : 'read_only';
+      expect(g.check(name, {})?.safetyDecision ?? null, name).toBe(expected);
+    }
+  });
 });
 
+// The annotations per tool are recorded in tests/golden/tools-list-legacy.json
+// (and tests/contract/public-tools.test.ts for the public tools); these are the
+// rules that tie them to the guard, so an MCP client can rely on them.
 describe('toolAnnotations', () => {
-  const ann = (name: string) => toolAnnotations(TOOL_SCHEMAS[name]!);
+  const annotated = Object.values(TOOL_SCHEMAS).map((def) => [def.name, toolAnnotations(def)] as const);
 
-  it.each(['fox_hover', 'fox_scroll', 'fox_highlight', 'fox_switch_tab'])(
-    '%s is neither read-only nor destructive',
-    (tool) => {
-      expect(ann(tool)).toEqual({ readOnlyHint: false, destructiveHint: false });
-    },
-  );
+  it('a read-only tool is let through in read-only mode', () => {
+    for (const [name, { readOnlyHint }] of annotated) {
+      if (readOnlyHint) expect(OBSERVE_TOOLS.has(name), name).toBe(true);
+    }
+  });
 
-  it.each(['fox_screenshot', 'fox_get_text', 'fox_wait_for_url', 'fox_get_console_logs',
-    'fox_get_network_logs', 'fox_detect_captcha', 'fox_safety_status'])(
-    '%s is read-only',
-    (tool) => {
-      expect(ann(tool)).toEqual({ readOnlyHint: true, destructiveHint: false });
-    },
-  );
-
-  it.each(['fox_click', 'fox_type', 'fox_navigate', 'fox_close_tab', 'fox_execute_script'])(
-    '%s is destructive',
-    (tool) => {
-      expect(ann(tool)).toEqual({ readOnlyHint: false, destructiveHint: true });
-    },
-  );
-
-  it.each(['fox_create_tab', 'fox_open_in_container', 'fox_start_logging', 'fox_remove_observer',
-    'fox_request_approval'])(
-    '%s changes state without being destructive',
-    (tool) => {
-      expect(ann(tool)).toEqual({ readOnlyHint: false, destructiveHint: false });
-    },
-  );
+  it('a destructive tool is not read-only and is refused in read-only mode', () => {
+    for (const [name, { readOnlyHint, destructiveHint }] of annotated) {
+      if (!destructiveHint) continue;
+      expect(readOnlyHint, name).toBe(false);
+      expect(OBSERVE_TOOLS.has(name), name).toBe(false);
+    }
+  });
 });

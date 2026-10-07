@@ -178,13 +178,9 @@ function daemonLike(serverToken: string): http.RequestListener {
   };
 }
 
+// A daemon that proves the token is trusted: tests/contract/daemon-host-auth.test.ts
+// checks that against the real http-bridge.
 describe('ServerLauncher probes', () => {
-  it('trusts a daemon that proves the token', async () => {
-    const launcher = launcherFor(await serve(daemonLike(TOKEN)));
-    expect((await launcher.probeHealth()).kind).toBe('ok');
-    expect(await launcher.checkHealth()).toBe(true);
-  });
-
   it('reports an impostor after re-reading the token once', async () => {
     let reads = 0;
     const launcher = launcherFor(await serve(daemonLike('e'.repeat(64))), () => { reads++; return TOKEN; });

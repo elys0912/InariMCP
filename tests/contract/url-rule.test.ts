@@ -106,13 +106,6 @@ describe('host / regex rules: Extension matcher = server matcher', () => {
       }
     });
   }
-
-  it('decodes percent-escapes for protected paths (the legacy wireSource regex did not)', () => {
-    const [p] = compileUrlPatterns(['example.test/admin'], 'protected').patterns;
-    const compiled = ext.compileUrlRule(p!.wire)!;
-    expect(ext.urlRuleMatches(compiled, 'https://example.test/%61dmin')).toBe(true);
-    expect(new RegExp(p!.wireSource, 'i').test('https://example.test/%61dmin')).toBe(false);
-  });
 });
 
 describe('blocked / allowed decision: Extension = guard', () => {

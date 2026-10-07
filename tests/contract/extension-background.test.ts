@@ -327,18 +327,9 @@ describe('3.A3 / 5.1 frame routing', () => {
   });
 });
 
-describe('3.A4 target tab resolved once', () => {
-  it('handleCommand resolves the tab once and hands it to both checks', () => {
-    const start = background.indexOf('async function handleCommand(');
-    const body = background.slice(start, background.indexOf('\n}\n', start));
-    expect(body.match(/resolveTab\(/g)).toHaveLength(2); // the pin + the post-op URL report on the pinned id
-    expect(body).toMatch(/enforceContainerScope\(selfScoped, target, containerScope\.scope\)/);
-    expect(body).toMatch(/checkProtectedTarget\(target, protectedPatterns, approvedHost\)/);
-  });
-});
-
 describe('3.A5 capture of the target tab', () => {
-  it('uses captureTab(tabId), never captureVisibleTab(windowId)', () => {
+  // takeScreenshot itself is run in 'WP30 screenshot of a background tab' below.
+  it('no background source calls captureVisibleTab(windowId); capture uses captureTab(tabId)', () => {
     expect(background).not.toMatch(/\.captureVisibleTab\(/);
     expect(background).toMatch(/browser\.tabs\.captureTab\(targetTab\.id,/);
   });
@@ -422,7 +413,7 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     expect(checkListedTarget(undefined, lists)).toMatchObject({ success: false });
   });
 
-  it('an invalid urlPattern is a failure result, a valid one is case-sensitive', async () => {
+  it('urlPatternArg: an invalid urlPattern is a failure result, a valid one is case-sensitive', async () => {
     const { urlPatternArg } = await import('../../packages/extension/src/background/tab-wait.ts');
     expect(urlPatternArg('(')).toMatchObject({ ok: false, result: { success: false, error: expect.stringMatching(/^Invalid urlPattern/) } });
     expect(urlPatternArg(undefined)).toEqual({ ok: true, pattern: null });

@@ -49,9 +49,10 @@ describe('host patterns', () => {
     expect(sub('https://example.test/')).toBe(false);
   });
 
-  it('an allowed path matches as written, at a segment boundary', () => {
+  it('an allowed path matches as written (case-sensitive, no decoding), at a segment boundary', () => {
     const p = matcher('example.test/admin', 'allowed');
     expect(p('https://example.test/admin')).toBe(true);
+    expect(p('https://example.test/ADMIN')).toBe(false);
     expect(p('https://example.test/admin/users?x=1')).toBe(true);
     expect(p('https://example.test/administrator')).toBe(false);
     expect(p('https://example.test/%61dmin')).toBe(false);
@@ -78,11 +79,6 @@ describe('host patterns', () => {
     for (const list of ['blocked', 'allowed', 'protected'] as const) {
       expect(compileUrlPatterns(['blocked.test/a*b'], list).issues[0]?.fatal).toBe(true);
     }
-  });
-
-  it('paths compare case-insensitively except in the allowlist', () => {
-    expect(matcher('example.test/admin', 'blocked')('https://example.test/ADMIN')).toBe(true);
-    expect(matcher('example.test/admin', 'allowed')('https://example.test/ADMIN')).toBe(false);
   });
 
   it('a scheme restricts the match', () => {
@@ -266,26 +262,24 @@ describe('DEFAULT_CONFIG protectedUrlPatterns', () => {
 });
 
 describe('wireSource vs test() for percent-encoded paths', () => {
-  it('test() decodes the path, the legacy regex matches it as written', () => {
+  // What test() gives for the same paths (all true, /%61dmin included) is in
+  // 'host patterns' above.
+  it('the legacy regex agrees with test() on plain spellings but matches percent escapes as written', () => {
     const [p] = compileUrlPatterns(['example.test/admin'], 'blocked').patterns;
     const re = new RegExp(p!.wireSource, 'i');
-    // Both agree on the spellings a regex can express.
     for (const path of ['/admin', '/ADMIN', '//admin', '/admin/x', '/administrator']) {
       expect(re.test(`https://example.test${path}`), path).toBe(true);
-      expect(p!.test(`https://example.test${path}`), path).toBe(true);
     }
     // Percent escapes: only test() decodes them, so the Extension build that
     // still uses wireSource lets /%61dmin through. The rule sent next to it
     // (`wire`, matched like test() — tests/contract/url-rule.test.ts) does not.
-    expect(p!.test('https://example.test/%61dmin')).toBe(true);
     expect(re.test('https://example.test/%61dmin')).toBe(false);
     expect(p!.wire).toMatchObject({ kind: 'host', path: '/admin', pathMatch: 'loose' });
   });
 
-  it('an allowlist entry refuses the encoded spelling on both sides', () => {
+  it('the legacy regex of an allowlist entry refuses the encoded spelling, as test() does', () => {
     const [p] = compileUrlPatterns(['example.test/admin'], 'allowed').patterns;
     const re = new RegExp(p!.wireSource, 'i');
-    expect(p!.test('https://example.test/%61dmin')).toBe(false);
     expect(re.test('https://example.test/%61dmin')).toBe(false);
   });
 });

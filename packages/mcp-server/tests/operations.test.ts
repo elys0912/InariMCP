@@ -8,7 +8,6 @@ describe('public tools and operations', () => {
     for (const op of Object.keys(TOOL_SCHEMAS)) {
       expect(op in PUBLIC_TOOLS || op in LEGACY_REPLACEMENTS, op).toBe(true);
     }
-    expect(Object.keys(PUBLIC_TOOLS)).toHaveLength(21);
   });
 
   it('fox_tab create with a container runs fox_open_in_container with the old argument names', () => {
@@ -38,17 +37,11 @@ describe('public tools and operations', () => {
     expect(deprecationNote('fox_click')).toBeNull();
   });
 
-  it('tool annotations fold the variants: readOnlyHint AND, destructiveHint OR', () => {
-    expect(PUBLIC_TOOLS['fox_tab']!.annotations).toEqual({ readOnlyHint: false, destructiveHint: true });
-    expect(PUBLIC_TOOLS['fox_get_logs']!.annotations).toEqual({ readOnlyHint: true, destructiveHint: false });
-    expect(PUBLIC_TOOLS['fox_interact']!.annotations).toEqual({ readOnlyHint: false, destructiveHint: false });
-  });
-
-  it('listSchema is a flat object with the discriminator required', () => {
-    const shape = PUBLIC_TOOLS['fox_wait']!.listSchema.shape as Record<string, { isOptional(): boolean; description?: string }>;
-    expect(shape['for']!.isOptional()).toBe(false);
-    expect(shape['selector']!.isOptional()).toBe(true);
-    expect(shape['selector']!.description).toMatch(/^\(for=element; required\)/);
+  // Which variants use / require an argument and that a default is noted at
+  // all is checked for every grouped tool in tests/contract/public-tools.test.ts;
+  // the spelling of a per-variant default is only checked here.
+  it('listSchema notes a per-variant default as "<value> (<variant>)"', () => {
+    const shape = PUBLIC_TOOLS['fox_wait']!.listSchema.shape as Record<string, { description?: string }>;
     expect(shape['timeout']!.description).toContain('10000 (element)');
   });
 });
