@@ -361,6 +361,62 @@ describe('type without selector: password guard follows the focus (WP30)', () =>
   //   limitation of headless/focus.ts).
 });
 
+describe('press_key: password guard (H-1)', () => {
+  const PW = '<input id="pw" type="password"><input id="t" type="text">';
+
+  async function valueOf(id: string): Promise<unknown> {
+    return (await browser.execute('execute_script', undefined, { script: `document.getElementById("${id}").value` }))['result'];
+  }
+
+  const press = (key: string, extra: Record<string, unknown> = {}): Promise<Result> =>
+    browser.execute('press_key', undefined,
+      { key, ctrl: false, shift: false, alt: false, meta: false, allowPassword: false, ...extra });
+
+  real('refuses a character key on a password field given by selector or focused', async () => {
+    await load(PW);
+    for (const extra of [{ selector: '#pw' }, {}]) {
+      const r = await press('a', extra);
+      expect(r['success']).toBe(false);
+      expect(String(r['error'])).toMatch(/password field/);
+    }
+    for (const key of ['KeyA', 'Space', 'Backspace']) {
+      expect((await press(key, { selector: '#pw' }))['success']).toBe(false);
+    }
+    expect((await press('v', { selector: '#pw', ctrl: true }))['success']).toBe(false);
+    expect(await valueOf('pw')).toBe('');
+  });
+
+  real('allows keys that do not edit, other fields, and allowPassword', async () => {
+    await load(PW);
+    expect(await press('Tab', { selector: '#pw' })).toMatchObject({ success: true, key: 'Tab', pressed: 'Tab' });
+    expect((await press('a', { selector: '#t' }))['success']).toBe(true);
+    expect(await valueOf('t')).toBe('a');
+    expect((await press('b', { selector: '#pw', allowPassword: true }))['success']).toBe(true);
+    expect(await valueOf('pw')).toBe('b');
+  });
+});
+
+describe('password fields of an XHTML document (H-5)', () => {
+  const XHTML = (body: string): string =>
+    `data:application/xhtml+xml;charset=utf-8,${encodeURIComponent(
+      `<html xmlns="http://www.w3.org/1999/xhtml"><body>${body}</body></html>`,
+    )}`;
+
+  real('are refused although tagName is lower case there', async () => {
+    const nav = await browser.execute('navigate', undefined,
+      { url: XHTML('<input id="pw" type="password"/><label id="l" for="pw">pw</label>'), newTab: false });
+    expect(nav['success']).toBe(true);
+    for (const selector of ['#pw', '#l']) {
+      const r = await browser.execute('type', undefined, { selector, text: 'secret', clear: false });
+      expect(String(r['error'])).toMatch(/password field/);
+    }
+    await browser.execute('execute_script', undefined, { script: 'document.getElementById("pw").focus()' });
+    const focused = await browser.execute('type', undefined, { text: 'secret', clear: false });
+    expect(String(focused['error'])).toMatch(/password field/);
+    expect(await browser.execute('get_value', undefined, { selector: '#pw' })).toMatchObject({ value: '[MASKED]' });
+  });
+});
+
 describe('commands given up while waiting for the lock (Q-2)', () => {
   const TITLE = "document.title = 'ran'";
 

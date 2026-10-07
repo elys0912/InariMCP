@@ -9,20 +9,20 @@ import {
 import { invalidRegexArgument } from '../src/tools/handlers.js';
 import { readExtensionTree } from '../../../tests/contract/helpers/extension-source.js';
 
-function fakeElement(tagName: string, type: string, autocomplete: string | null = null): Element {
-  return { tagName, type, getAttribute: () => autocomplete } as unknown as Element;
+function fakeElement(localName: string, type: string, autocomplete: string | null = null): Element {
+  return { localName, type, getAttribute: () => autocomplete } as unknown as Element;
 }
 
 describe('isPasswordElement', () => {
   it.each([
-    ['password input', fakeElement('INPUT', 'password'), true],
-    ['current-password', fakeElement('INPUT', 'text', 'current-password'), true],
-    ['new-password', fakeElement('INPUT', 'text', 'new-password'), true],
-    ['text input', fakeElement('INPUT', 'text', 'username'), false],
-    ['textarea', fakeElement('TEXTAREA', 'textarea'), false],
+    ['password input', fakeElement('input', 'password'), true],
+    ['current-password', fakeElement('input', 'text', 'current-password'), true],
+    ['new-password', fakeElement('input', 'text', 'new-password'), true],
+    ['text input', fakeElement('input', 'text', 'username'), false],
+    ['textarea', fakeElement('textarea', 'textarea'), false],
     ['nothing focused', null, false],
-    ['label of a password input', { tagName: 'LABEL', control: fakeElement('INPUT', 'password') } as unknown as Element, true],
-    ['label without control', { tagName: 'LABEL', control: null } as unknown as Element, false],
+    ['label of a password input', { localName: 'label', control: fakeElement('input', 'password') } as unknown as Element, true],
+    ['label without control', { localName: 'label', control: null } as unknown as Element, false],
   ])('%s → %s', (_label, el, expected) => {
     expect(isPasswordElement(el)).toBe(expected);
   });
@@ -42,6 +42,8 @@ describe('passwordSelectorRefusal', () => {
   it('allows other locators, other tools, and everything when allowed', () => {
     expect(passwordSelectorRefusal('fox_type', { selector: '#user' }, false)).toBeNull();
     expect(passwordSelectorRefusal('fox_click', { selector: 'input[type=password]' }, false)).toBeNull();
+    // Enter or Tab on a password field stays allowed: the backend judges the key.
+    expect(passwordSelectorRefusal('fox_press_key', { selector: 'input[type=password]' }, false)).toBeNull();
     expect(passwordSelectorRefusal('fox_type', { selector: 'input[type=password]' }, true)).toBeNull();
   });
 });
@@ -54,6 +56,12 @@ describe('applyPasswordPolicy', () => {
     const data2: Record<string, unknown> = {};
     applyPasswordPolicy('fox_set_value', data2, true);
     expect(data2['allowPassword']).toBe(true);
+  });
+
+  it('sets it on fox_press_key too: headless key presses are real input (H-1)', () => {
+    const data: Record<string, unknown> = { allowPassword: true };
+    applyPasswordPolicy('fox_press_key', data, false);
+    expect(data['allowPassword']).toBe(false);
   });
 
   it('leaves other tools alone', () => {

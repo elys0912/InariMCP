@@ -615,6 +615,20 @@ const pressKeyArgs = z.object({
   selector: z.string().optional(),
 });
 
+/**
+ * Keys that leave a field's value as it is: press_key may send them to a
+ * password field. Every other key is refused there (headless key presses
+ * are real input): characters, also by Playwright's code names (KeyA,
+ * Digit1, Space), editing keys (Backspace, Delete) and shortcuts that edit
+ * (Control+V), including a key string that names its own modifiers.
+ */
+const NON_EDITING_KEYS: ReadonlySet<string> = new Set([
+  'Enter', 'Tab', 'Escape',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'Home', 'End', 'PageUp', 'PageDown',
+  'Shift', 'Control', 'Alt', 'Meta',
+]);
+
 const pressKey: ActionHandler = async ({ page, args }) => {
   const { key, ctrl, shift, alt, meta, selector } = parseArgs(pressKeyArgs, args, 'press_key');
   if (!key) return { success: false, error: 'press_key requires key' };
@@ -624,9 +638,17 @@ const pressKey: ActionHandler = async ({ page, args }) => {
   if (alt) mods.push('Alt');
   if (meta) mods.push('Meta');
   const combo = [...mods, key].join('+');
-  if (selector) await page.focus(selector, { timeout: ELEMENT_TIMEOUT_MS });
+  const edits = !NON_EDITING_KEYS.has(key);
+  if (selector) {
+    const target = await page.waitForSelector(selector, { state: 'attached', timeout: ELEMENT_TIMEOUT_MS });
+    if (edits) refusePassword(await target.evaluate(isPasswordElement), args);
+    await target.focus();
+  } else if (edits && args['allowPassword'] !== true) {
+    refusePassword(await focusedIsPassword(page.mainFrame()), args);
+  }
   await page.keyboard.press(combo);
-  return { success: true, key: combo };
+  // `pressed` as on the Extension (the key without modifiers); `key` is the combination sent.
+  return { success: true, key: combo, pressed: key };
 };
 
 // --- get_text ---
