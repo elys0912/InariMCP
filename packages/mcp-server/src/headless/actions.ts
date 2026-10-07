@@ -37,26 +37,44 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 // ---------------------------------------------------------------------------
-// Captcha detection JS — mirrors the extension's content-script heuristics
+// Captcha detection — the same heuristics as the Extension's content script
+// (content/captcha.ts detectCaptcha); tests/headless-helpers.test.ts checks
+// that every string below appears there.
 // ---------------------------------------------------------------------------
 
-const CAPTCHA_DETECT_JS = `(function() {
-  const widgets = [];
-  const tokened = (name) => {
-    const el = document.querySelector('textarea[name="'+name+'"], input[name="'+name+'"]');
-    return !!(el && el.value && el.value.length > 0);
+/** Selectors and response-token field names of the captcha detection. */
+export const CAPTCHA_SELECTORS = {
+  recaptcha: '.g-recaptcha, iframe[src*="recaptcha"], #g-recaptcha-response',
+  recaptchaChecked: '.recaptcha-checkbox-checked',
+  recaptchaToken: 'g-recaptcha-response',
+  hcaptcha: '.h-captcha, iframe[src*="hcaptcha"], textarea[name="h-captcha-response"]',
+  hcaptchaToken: 'h-captcha-response',
+  turnstile: '.cf-turnstile, iframe[src*="challenges.cloudflare.com"], input[name="cf-turnstile-response"]',
+  turnstileToken: 'cf-turnstile-response',
+  generic: 'img[src*="captcha" i], input[name*="captcha" i], [id*="captcha" i], [class*="captcha" i]',
+} as const;
+
+interface CaptchaWidget {
+  type: 'recaptcha' | 'hcaptcha' | 'turnstile' | 'generic';
+  /** Whether its response token is filled in; null when it cannot be told (generic). */
+  solved: boolean | null;
+}
+
+/** Captcha widgets on the page. Self-contained (runs in the page). */
+function detectCaptcha(s: typeof CAPTCHA_SELECTORS): { present: boolean; widgets: CaptchaWidget[] } {
+  const widgets: CaptchaWidget[] = [];
+  const tokened = (name: string): boolean => {
+    const el = document.querySelector(`textarea[name="${CSS.escape(name)}"], input[name="${CSS.escape(name)}"]`);
+    return (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) && el.value.length > 0;
   };
-  if (document.querySelector('.g-recaptcha, iframe[src*="recaptcha"], #g-recaptcha-response'))
-    widgets.push({type:'recaptcha', solved: tokened('g-recaptcha-response') || !!document.querySelector('.recaptcha-checkbox-checked')});
-  if (document.querySelector('.h-captcha, iframe[src*="hcaptcha"], textarea[name="h-captcha-response"]'))
-    widgets.push({type:'hcaptcha', solved: tokened('h-captcha-response')});
-  if (document.querySelector('.cf-turnstile, iframe[src*="challenges.cloudflare.com"], input[name="cf-turnstile-response"]'))
-    widgets.push({type:'turnstile', solved: tokened('cf-turnstile-response')});
-  if (widgets.length === 0 &&
-      document.querySelector('img[src*="captcha" i], input[name*="captcha" i], [id*="captcha" i], [class*="captcha" i]'))
-    widgets.push({type:'generic', solved: null});
-  return {present: widgets.length > 0, widgets: widgets};
-})()`;
+  if (document.querySelector(s.recaptcha)) {
+    widgets.push({ type: 'recaptcha', solved: tokened(s.recaptchaToken) || document.querySelector(s.recaptchaChecked) !== null });
+  }
+  if (document.querySelector(s.hcaptcha)) widgets.push({ type: 'hcaptcha', solved: tokened(s.hcaptchaToken) });
+  if (document.querySelector(s.turnstile)) widgets.push({ type: 'turnstile', solved: tokened(s.turnstileToken) });
+  if (widgets.length === 0 && document.querySelector(s.generic)) widgets.push({ type: 'generic', solved: null });
+  return { present: widgets.length > 0, widgets };
+}
 
 // ---------------------------------------------------------------------------
 // Table types
@@ -98,19 +116,33 @@ type Result = Record<string, unknown>;
 type ActionHandler = (c: ActionContext) => Promise<Result>;
 type TablessHandler = (c: TablessContext) => Promise<Result>;
 
+/** The dialog handling of HeadlessBrowser (backend.ts), which keeps the dialog state. */
+export interface DialogHost {
+  handleDialog(tabId: number | undefined, args: Record<string, unknown>, signal: AbortSignal | undefined): Promise<Result>;
+}
+
+interface UnlockedContext {
+  tabId: number | undefined;
+  args: Record<string, unknown>;
+  signal: AbortSignal | undefined;
+  dialogs: DialogHost;
+}
+
+type UnlockedHandler = (c: UnlockedContext) => Promise<Result>;
+
 /**
  * - dispatch: run under execute()'s lock. With needsPage, on the page of the
  *   target tab, and the result names that tab (url, tabId); without, also
  *   when no tab is open (tab list, new tabs).
- * - unlocked: execute() runs it itself outside the lock (handle_dialog: it
- *   waits for a dialog that a queued action may be about to open)
+ * - unlocked: run outside the lock (handle_dialog: it waits for a dialog
+ *   that a queued action may be about to open)
  * - unsupported: answered with "Unsupported headless action" (after the
  *   target tab was resolved, like a dispatch action)
  */
 type HeadlessRoute =
   | { kind: 'dispatch'; needsPage: true; run: ActionHandler }
   | { kind: 'dispatch'; needsPage: false; run: TablessHandler }
-  | { kind: 'unlocked' }
+  | { kind: 'unlocked'; run: UnlockedHandler }
   | { kind: 'unsupported' };
 
 /** The error of an action on "the active tab" while no tab is open (the last one was closed). */
@@ -936,15 +968,13 @@ const solveCaptchaArgs = z.object({ detectOnly: z.boolean().optional() });
 
 const solveCaptcha: ActionHandler = async ({ page, args }) => {
   const { detectOnly } = parseArgs(solveCaptchaArgs, args, 'solve_captcha');
-  const raw = await page.evaluate(CAPTCHA_DETECT_JS);
-  const detection = isRecord(raw) ? raw : {};
+  const detection = await page.evaluate(detectCaptcha, CAPTCHA_SELECTORS);
   if (detectOnly === true) {
     return { success: true, ...detection };
   }
-  const widgets = Array.isArray(detection['widgets']) ? detection['widgets'].filter(isRecord) : [];
-  const present = detection['present'] === true;
-  const tokened = widgets.filter((w) => w['solved'] !== null);
-  if (tokened.length > 0 && tokened.every((w) => w['solved'] === true)) {
+  const { widgets, present } = detection;
+  const tokened = widgets.filter((w) => w.solved !== null);
+  if (tokened.length > 0 && tokened.every((w) => w.solved === true)) {
     return {
       success: true,
       present: true,
@@ -1088,7 +1118,7 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   // --- P3-3 ---
   snapshot: dispatch(snapshot),
   find_text: dispatch(findText),
-  handle_dialog: { kind: 'unlocked' },
+  handle_dialog: { kind: 'unlocked', run: (c) => c.dialogs.handleDialog(c.tabId, c.args, c.signal) },
   list_containers: tabless(containersUnsupported),
   open_in_container: tabless(containersUnsupported),
   wait_for_navigation: dispatch(waitForNavigation),

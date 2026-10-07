@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { AnyZodObject, ZodTypeAny } from 'zod';
 import { countOccurrences, filterAriaSnapshot, ignoredParamWarnings, parseArgs } from '../src/headless/helpers.js';
+import { CAPTCHA_SELECTORS } from '../src/headless/actions.js';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
+import { readExtensionSource } from '../../../tests/contract/helpers/extension-source.js';
 import { HEADLESS_COMMAND_TIMEOUT_MS } from '../src/connection/manager.js';
 import {
   ELEMENT_TIMEOUT_MS,
@@ -190,6 +192,15 @@ describe('HEADLESS_IGNORED against the tool schemas', () => {
       }
     }
     expect(checked).toBeGreaterThan(10);
+  });
+});
+
+describe('captcha detection: the same strings as the Extension (H-12)', () => {
+  it('every selector and token name of CAPTCHA_SELECTORS appears in content/captcha.ts', () => {
+    const extension = readExtensionSource('content/captcha.ts');
+    for (const [name, value] of Object.entries(CAPTCHA_SELECTORS)) {
+      expect(extension, name).toContain(value);
+    }
   });
 });
 
