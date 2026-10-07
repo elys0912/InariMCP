@@ -477,7 +477,6 @@ describe('extension: approval request handling', () => {
 });
 
 describe('extension: approval UI is outside the page', () => {
-  const background = readExtensionTree('background');
   const content = readExtensionTree('content');
   const popup = readExtensionSource('popup/popup.ts');
 
@@ -491,19 +490,17 @@ describe('extension: approval UI is outside the page', () => {
     expect(names).toEqual(expect.arrayContaining(['status', 'requestApproval', 'cancelHumanWait']));
   });
 
-  it('decisions are accepted only from the toolbar popup (extension page, not a tab)', () => {
-    expect(background).toMatch(
-      /msg\.type === APPROVAL_MESSAGE\.LIST \|\| msg\.type === APPROVAL_MESSAGE\.DECIDE\)[\s\S]{0,400}!isExtensionPage\(sender\) \|\| \(msg\.type === APPROVAL_MESSAGE\.DECIDE && sender\.tab\)/,
-    );
-    // The popup uses the shared constants, not its own literals.
+  // Who may list or decide approvals is checked on the listeners themselves
+  // (extension-background.test.ts, 'E-4 runtime.onMessage sender checks').
+  it('the popup uses the shared message types, not its own literals', () => {
     expect(popup).toContain('APPROVAL_MESSAGE.LIST');
     expect(popup).toContain('APPROVAL_MESSAGE.DECIDE');
     expect(popup).not.toContain('kitsune:approvals:');
   });
 
-  it('approval.ts is bundled into background.js and popup.js (imported, not loaded separately)', () => {
-    expect(background).toMatch(/^import \{[^}]*\bAPPROVAL_MESSAGE\b[^}]*\} from "\.\.?\/approval";$/m);
-    expect(readExtensionSource('popup/popup.ts')).toMatch(/^import \{[^}]*\bAPPROVAL_MESSAGE\b[^}]*\} from '\.\.\/approval';$/m);
+  it('popup.html loads only the popup bundle', () => {
+    // approval.ts is not loaded on its own: background.js and popup.js
+    // bundle it through their imports (scripts/build-extension.mjs).
     // manifest.json loads one background bundle: extension-background.test.ts.
     const html = readExtensionSource('popup/popup.html');
     expect([...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1])).toEqual(['popup.js']);

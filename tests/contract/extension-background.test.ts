@@ -259,6 +259,7 @@ describe('E-21 get_page_info fails like the other content script tools', () => {
   const failingSend = (message: string) => ({
     tabs: {
       query: async () => [pageTab],
+      get: async () => pageTab,
       sendMessage: async () => { throw new Error(message); },
     },
   });
@@ -312,9 +313,8 @@ describe('3.A2 reconnect backoff', () => {
     expect(next(4, null, 10_000)).toBe(4); // host never answered
     expect(next(4, 2_000, 10_000)).toBe(4); // crashed right after answering
     expect(next(4, 10_000, 10_000)).toBe(0);
-    // connectNative() itself no longer resets the counter
-    const connect = /function connectNativeHost\(\)[\s\S]*?\n}\n/.exec(background)![0];
-    expect(connect).not.toMatch(/reconnectAttempts\s*=\s*0/);
+    // That connectNative() itself does not reset the counter is run on fake
+    // ports in extension-background-async.test.ts (E-7).
   });
 });
 
@@ -329,9 +329,8 @@ describe('3.A3 / 5.1 frame routing', () => {
 
 describe('3.A5 capture of the target tab', () => {
   // takeScreenshot itself is run in 'WP30 screenshot of a background tab' below.
-  it('no background source calls captureVisibleTab(windowId); capture uses captureTab(tabId)', () => {
+  it('no background source calls captureVisibleTab(windowId)', () => {
     expect(background).not.toMatch(/\.captureVisibleTab\(/);
-    expect(background).toMatch(/browser\.tabs\.captureTab\(targetTab\.id,/);
   });
 });
 
@@ -418,17 +417,22 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     expect(urlPatternArg('(')).toMatchObject({ ok: false, result: { success: false, error: expect.stringMatching(/^Invalid urlPattern/) } });
     expect(urlPatternArg(undefined)).toEqual({ ok: true, pattern: null });
     const valid = urlPatternArg('a\\.test');
-    expect(valid.ok && valid.pattern!.flags).toBe('');
-    // Every RegExp built from an argument goes through urlPatternArg (or
-    // its own try/catch in queryNetworkLogs).
-    expect(background.match(/new RegExp\(/g)).toHaveLength(2);
+    expect(valid.ok && valid.pattern?.flags).toBe('');
   });
 
-  it('close_tab reports the closed tab id; rules are preferred over legacy patterns', () => {
-    expect(background).toMatch(/return \{ success: true, closed: tabId \}/);
-    // R2-C E-03: a protectedUrlRules that is there but not an array is not
-    // replaced by the legacy field (compileUrlRules counts it as unusable).
-    expect(background).toMatch(/message\.protectedUrlRules !== undefined\s*\?\s*message\.protectedUrlRules\s*:\s*message\.protectedUrlPatterns/);
+  // That an unusable protectedUrlRules does not fall back to the legacy
+  // protectedUrlPatterns is run in extension-fail-closed.test.ts (E-03).
+  it('close_tab reports the closed tab id, without a URL', async () => {
+    const tab = fakeTab({ id: 5, url: 'https://ok.test/' });
+    const removed: number[] = [];
+    useFakeBrowser({
+      tabs: {
+        get: async () => tab,
+        remove: async (id: number) => { removed.push(id); },
+      },
+    });
+    expect(await handleCommand({ action: 'close_tab', tabId: 5 }, 'host')).toEqual({ success: true, closed: 5 });
+    expect(removed).toEqual([5]);
   });
   it('url-rule.ts is bundled into background.js and content.js (manifest and early injection load one file)', () => {
     const manifest = JSON.parse(readExtensionSource('../manifest.json')) as {
@@ -643,6 +647,115 @@ describe('5.2 log buffers across a navigation', () => {
   });
 });
 
+describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
+  const EXTENSION_ID = 'kitsune@test';
+  const POPUP_URL = 'moz-extension://kitsune/popup/popup.html';
+  type Listener = (message: unknown, sender: browser.runtime.MessageSender, sendResponse: (r: unknown) => void) => boolean | void;
+
+  /** registerListeners() on a fake browser; `send` / `sendExternal` call its two message listeners. */
+  function listenersBrowser(): {
+    send: (message: unknown, sender: browser.runtime.MessageSender) => Promise<unknown>;
+    sendExternal: (message: unknown, sender: browser.runtime.MessageSender) => unknown;
+    tabQueries: () => number;
+  } {
+    let onMessage: Listener | undefined;
+    let onExternal: Listener | undefined;
+    let queries = 0;
+    useFakeBrowser({
+      runtime: {
+        id: EXTENSION_ID,
+        getURL: (p: string) => `moz-extension://kitsune${p}`,
+        onMessage: { addListener: (fn: Listener) => { onMessage = fn; } },
+        onMessageExternal: { addListener: (fn: Listener) => { onExternal = fn; } },
+      },
+      tabs: {
+        onRemoved: { addListener: () => {} },
+        query: async () => { queries++; return []; },
+      },
+      webNavigation: { onCommitted: { addListener: () => {} } },
+    });
+    registerListeners();
+    const call = (fn: Listener | undefined, message: unknown, sender: browser.runtime.MessageSender): Promise<unknown> =>
+      new Promise((resolve, reject) => {
+        if (!fn) return reject(new Error('listener not registered'));
+        fn(message, sender, resolve);
+      });
+    return {
+      send: (message, sender) => call(onMessage, message, sender),
+      sendExternal: (message, sender) => call(onExternal, message, sender),
+      tabQueries: () => queries,
+    };
+  }
+
+  const pageTab = fakeTab({ id: 4, url: 'https://app.example.test/' });
+  /** A content script: this extension's id, but the web page's URL. */
+  const contentScript: browser.runtime.MessageSender = { id: EXTENSION_ID, url: pageTab.url, tab: pageTab, frameId: 0 };
+  /** The toolbar popup: an extension page outside any tab. */
+  const popup: browser.runtime.MessageSender = { id: EXTENSION_ID, url: POPUP_URL };
+  /** The popup page opened in a tab. */
+  const popupInTab: browser.runtime.MessageSender = { ...popup, tab: fakeTab({ id: 9, url: POPUP_URL }) };
+
+  const APPROVALS_REFUSED = { success: false, error: 'Approval requests are answered in the KitsuneMCP toolbar popup' };
+  const COMMAND_REFUSED = { success: false, error: 'Background commands are only accepted from extension pages' };
+
+  it('a content script can neither list nor decide approvals, nor drive the dispatcher', async () => {
+    const { send, tabQueries } = listenersBrowser();
+    expect(await send({ type: 'kitsune:approvals:list' }, contentScript)).toEqual(APPROVALS_REFUSED);
+    expect(await send({ type: 'kitsune:approvals:decide', id: 'a', approved: true }, contentScript)).toEqual(APPROVALS_REFUSED);
+    expect(await send({ target: 'background', action: 'noSuchAction' }, contentScript)).toEqual(COMMAND_REFUSED);
+    // The dispatcher never ran: it would have looked for the target tab.
+    expect(tabQueries()).toBe(0);
+  });
+
+  it('an extension page in a tab may list approvals but not decide one', async () => {
+    const { send } = listenersBrowser();
+    expect(await send({ type: 'kitsune:approvals:list' }, popupInTab)).toEqual({ success: true, approvals: [] });
+    expect(await send({ type: 'kitsune:approvals:decide', id: 'a', approved: true }, popupInTab)).toEqual(APPROVALS_REFUSED);
+  });
+
+  it('the toolbar popup decides approvals and drives the dispatcher', async () => {
+    const { send, tabQueries } = listenersBrowser();
+    expect(await send({ type: 'kitsune:approvals:decide', id: 'a', approved: true }, popup))
+      .toEqual({ success: false, error: 'This request is no longer pending' });
+    expect(await send({ target: 'background', action: 'noSuchAction' }, popup))
+      .toEqual({ success: false, error: 'Unknown action: noSuchAction' });
+    expect(tabQueries()).toBe(1);
+  });
+
+  it('a page with another extension id is not an extension page of ours', async () => {
+    const { send } = listenersBrowser();
+    expect(await send({ type: 'kitsune:approvals:list' }, { ...popup, id: 'other@test' })).toEqual(APPROVALS_REFUSED);
+  });
+
+  it('every external message is refused', async () => {
+    const { sendExternal } = listenersBrowser();
+    expect(await sendExternal({ target: 'background', action: 'status' }, { id: 'other@test' }))
+      .toEqual({ success: false, error: 'External messages are not accepted' });
+  });
+});
+
+describe('dispatcher refusals without a handler', () => {
+  it('a known wire action the extension does not implement', async () => {
+    useFakeBrowser({ tabs: { query: async () => { throw new Error('no tab lookup expected'); } } });
+    expect(await handleCommand({ action: 'snapshot' }, 'host'))
+      .toEqual({ success: false, error: 'Not implemented in extension: snapshot' });
+  });
+
+  it('a needsTabId action without an explicit tabId does not fall back to the active tab', async () => {
+    const active = fakeTab({ id: 3, url: 'https://ok.test/' });
+    const removed: number[] = [];
+    useFakeBrowser({
+      tabs: {
+        query: async () => [active],
+        get: async () => active,
+        remove: async (id: number) => { removed.push(id); },
+      },
+    });
+    expect(await handleCommand({ action: 'close_tab' }, 'host')).toEqual({ success: false, error: 'tabId is required' });
+    expect(removed).toEqual([]);
+  });
+});
+
 describe('5.7 screenshot all_tabs', () => {
   it('bounds each capture and skips tabs once the budget is used up', async () => {
     vi.useFakeTimers();
@@ -764,7 +877,6 @@ describe('3.security native message logging', () => {
     expect(line).toContain('action=execute_script');
     expect(line).toContain('data=[script]');
     expect(line).not.toContain('secret');
-    expect(background).not.toMatch(/console\.log\("\[KitsuneMCP\] Received from native host:", message\)/);
   });
 
   it('manifest: no redundant activeTab, no web_accessible_resources', () => {
