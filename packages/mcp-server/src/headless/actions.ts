@@ -768,9 +768,10 @@ const pressKey: ActionHandler = async ({ page, args }) => {
     const target = await page.waitForSelector(selector, { state: 'attached', timeout: ELEMENT_TIMEOUT_MS });
     if (edits) refusePassword(await target.evaluate(isPasswordElement), args);
     await target.focus();
-  } else if (edits && args['allowPassword'] !== true) {
-    refusePassword(await focusedIsPassword(page.mainFrame()), args);
   }
+  // The key goes to whatever has focus now: a selector that cannot take focus
+  // (a div) leaves the previously focused element, maybe a password field.
+  if (edits) refusePassword(await focusedIsPassword(page.mainFrame()), args);
   await page.keyboard.press(combo);
   // `pressed` as on the Extension (the key without modifiers); `key` is the combination sent.
   return { success: true, key: combo, pressed: key };

@@ -672,6 +672,15 @@ describe('press_key: password guard (H-1)', () => {
     expect(await valueOf('pw')).toBe('');
   });
 
+  real('refuses when the selector cannot take focus and a password field keeps it', async () => {
+    await load(`${PW}<div id="d">x</div>`);
+    await browser.execute('execute_script', undefined, { script: 'document.getElementById("pw").focus()' });
+    const r = await press('a', { selector: '#d' });
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toMatch(/password field/);
+    expect(await valueOf('pw')).toBe('');
+  });
+
   real('allows keys that do not edit, other fields, and allowPassword', async () => {
     await load(PW);
     expect(await press('Tab', { selector: '#pw' })).toMatchObject({ success: true, key: 'Tab', pressed: 'Tab' });
