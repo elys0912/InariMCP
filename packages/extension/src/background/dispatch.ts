@@ -5,7 +5,7 @@
 // (action-table.ts).
 
 import { errorMessage } from "../error-message";
-import { describeAction, UNKNOWN_ACTION, type ActionDescriptor } from "./action-table";
+import { describeAction, UNKNOWN_ACTION, type ActionContext, type ActionDescriptor } from "./action-table";
 import { parseContainerScope, enforceContainerScope, outOfScope } from "./container-scope";
 import { postToHost } from "./native-connection";
 import { resolveTab } from "./tab-target";
@@ -21,23 +21,45 @@ import { resolveWireAction, toWireResponse } from "./wire";
 export type CommandSource = "host" | "page";
 
 export async function handleCommand(message: NativeMessage, source: CommandSource): Promise<CommandResult> {
+  const checked = await checkCommand(message, source);
+  const result = checked.kind === "refused" ? checked.result : await runChecked(checked);
+  postWireResponse(message, result);
+  return result;
+}
+
+/** A command that passed every check: what its handler runs with. */
+interface CheckedCommand {
+  kind: "checked";
+  /** Its row of the action table (undefined: a message without an action). */
+  entry: ActionDescriptor | undefined;
+  context: ActionContext;
+}
+
+/** A command refused before its handler ran. */
+interface RefusedCommand {
+  kind: "refused";
+  result: CommandResult;
+}
+
+const refused = (result: CommandResult): RefusedCommand => ({ kind: "refused", result });
+
+/**
+ * Every check before the handler: the action name, the container scope, the
+ * URL rules attached by the MCP Server, the blocked / allowed lists and the
+ * protected domains.
+ */
+async function checkCommand(message: NativeMessage, source: CommandSource): Promise<CheckedCommand | RefusedCommand> {
   const { data } = message;
-  let tabId = message.tabId;
-  let result: CommandResult = { success: false };
 
   // Normalize the wire action name (snake_case) to the internal name once,
   // before any check, so every check and the handler see the same row of
   // the action table.
   const resolved = resolveWireAction(message.action, source === "host");
   if (resolved.kind === "notImplemented") {
-    result = { success: false, error: `Not implemented in extension: ${resolved.wireName}` };
-    postWireResponse(message, result);
-    return result;
+    return refused({ success: false, error: `Not implemented in extension: ${resolved.wireName}` });
   }
   if (resolved.kind === "unknown") {
-    result = { success: false, error: `Unknown action: ${resolved.wireName}` };
-    postWireResponse(message, result);
-    return result;
+    return refused({ success: false, error: `Unknown action: ${resolved.wireName}` });
   }
   // fox_navigate with newTab opens the URL in a fresh tab. Route it as
   // createTab so the scope check treats it like fox_create_tab: the new tab
@@ -55,18 +77,18 @@ export async function handleCommand(message: NativeMessage, source: CommandSourc
   // Resolve the target tab of a single-tab action ONCE (explicit tabId, else
   // the active tab of the current window) and pin its id: the container
   // scope check, the protected-domain check, the handler and the URL report
-  // below then all see the same tab, even if the active tab changes
-  // meanwhile. Undefined when it cannot be resolved -- the checks then fail
-  // closed and the handler reports the missing tab.
+  // then all see the same tab, even if the active tab changes meanwhile.
+  // Undefined when it cannot be resolved -- the checks then fail closed and
+  // the handler reports the missing tab.
   let target: browser.tabs.Tab | undefined;
   if (singleTab) {
     try {
-      target = await resolveTab(tabId);
+      target = await resolveTab(message.tabId);
     } catch {
       target = undefined;
     }
-    if (target) tabId = target.id;
   }
+  const tabId = target ? target.id : message.tabId;
 
   // Container scope check (Layer 0). The MCP Server attaches
   // `containerScope` to every command when container_scope.enabled is true.
@@ -74,38 +96,31 @@ export async function handleCommand(message: NativeMessage, source: CommandSourc
   // below.
   const containerScope = parseContainerScope(message.containerScope);
   if (containerScope.kind === "invalid") {
-    result = {
+    return refused({
       success: false,
       safetyDecision: "config_error",
       error:
         "Refused: the container scope attached by the MCP Server could not be used " +
         "(Extension and MCP Server versions may not match).",
-    };
-    postWireResponse(message, result);
-    return result;
+    });
   }
   let scope: ScopeFilter | null = null;
   if (containerScope.kind === "scope") {
     const selfScoped = entry !== undefined && entry.scope !== "tab";
     const decision = await enforceContainerScope(selfScoped, target, containerScope.scope);
-    if (!decision.allowed) {
-      result = outOfScope(decision.error);
-      postWireResponse(message, result);
-      return result;
-    }
+    if (!decision.allowed) return refused(outOfScope(decision.error));
     scope = decision.scope;
   }
+
   const policy = parseUrlPolicy(message);
   if (policy.invalid > 0) {
-    result = {
+    return refused({
       success: false,
       safetyDecision: "config_error",
       error:
         `Refused: ${policy.invalid} URL pattern(s) attached by the MCP Server could not be used ` +
         "(Extension and MCP Server versions may not match).",
-    };
-    postWireResponse(message, result);
-    return result;
+    });
   }
   const protectedPatterns = policy.protectedRules;
   const urlLists = policy.lists;
@@ -118,11 +133,7 @@ export async function handleCommand(message: NativeMessage, source: CommandSourc
   // actions skip such tabs themselves. A human approval does not lift this.
   if (hasUrlLists(urlLists) && singleTab) {
     const refusal = checkListedTarget(target, urlLists);
-    if (refusal) {
-      result = refusal;
-      postWireResponse(message, result);
-      return result;
-    }
+    if (refusal) return refused(refusal);
   }
 
   // Protected-domain check against the real URL of the target tab (not the
@@ -136,31 +147,37 @@ export async function handleCommand(message: NativeMessage, source: CommandSourc
   // target to check.
   if (protectedPatterns.length > 0 && entry?.protectedCheck === "upfront") {
     const refusal = checkProtectedTarget(target, protectedPatterns, approvedHost);
-    if (refusal) {
-      result = refusal;
-      postWireResponse(message, result);
-      return result;
-    }
+    if (refusal) return refused(refusal);
   }
 
+  return {
+    kind: "checked",
+    entry,
+    context: {
+      action,
+      message,
+      data,
+      tabId,
+      target,
+      scope,
+      protectedPatterns,
+      urlLists,
+      approvedHost,
+      navigateInNewTab,
+    },
+  };
+}
+
+/** Run the handler of a checked command, then report the tab's URL. */
+async function runChecked({ entry, context }: CheckedCommand): Promise<CommandResult> {
   const descriptor = entry ?? UNKNOWN_ACTION;
+  const missingTabId =
+    descriptor.scope === "tab" &&
+    descriptor.needsTabId === true &&
+    (context.tabId === undefined || context.message.tabId === undefined);
+  let result: CommandResult;
   try {
-    if (descriptor.scope === "tab" && descriptor.needsTabId && (tabId === undefined || message.tabId === undefined)) {
-      result = { success: false, error: "tabId is required" };
-    } else {
-      result = await descriptor.handler({
-        action,
-        message,
-        data,
-        tabId,
-        target,
-        scope,
-        protectedPatterns,
-        urlLists,
-        approvedHost,
-        navigateInNewTab,
-      });
-    }
+    result = missingTabId ? { success: false, error: "tabId is required" } : await descriptor.handler(context);
   } catch (error) {
     result = { success: false, error: errorMessage(error) };
   }
@@ -175,7 +192,7 @@ export async function handleCommand(message: NativeMessage, source: CommandSourc
     entry.skipUrlReport !== true
   ) {
     try {
-      const tab = await resolveTab(tabId);
+      const tab = await resolveTab(context.tabId);
       if (tab && tab.url) {
         result = { ...result, url: tab.url };
       }
@@ -183,9 +200,6 @@ export async function handleCommand(message: NativeMessage, source: CommandSourc
       // Tab vanished -- report the result without a URL
     }
   }
-
-  postWireResponse(message, result);
-
   return result;
 }
 
