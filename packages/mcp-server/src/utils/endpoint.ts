@@ -27,7 +27,7 @@ export {
 /** HTTP header a relay uses to identify itself to the daemon (audit log, idle tracking). */
 export const RELAY_ID_HEADER = 'x-kitsune-relay';
 
-/** Relay IDs: 1-32 characters of A-Z, a-z, 0-9, `_` and `-` (relays send random hex); anything else is ignored. */
+/** Relay IDs: 1-32 characters of A-Z, a-z, 0-9, `_` and `-` (relays send shortId()); anything else is ignored. */
 export function isValidRelayId(value: string): boolean {
   return /^[A-Za-z0-9_-]{1,32}$/.test(value);
 }

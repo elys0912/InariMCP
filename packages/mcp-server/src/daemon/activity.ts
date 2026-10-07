@@ -17,6 +17,12 @@ import { ENV } from '@kitsune-mcp/shared';
 export const RELAY_HEARTBEAT_MS = 30_000;
 /** A relay not seen for this long is considered gone. */
 export const RELAY_TTL_MS = 3 * RELAY_HEARTBEAT_MS;
+/**
+ * How long a graceful stop waits for running tool calls (POST /daemon/shutdown
+ * without force; daemon/main.ts). Here, next to the other timings relays
+ * rely on: relay/daemon-client.ts derives its wait for a stopping daemon from it.
+ */
+export const SHUTDOWN_DRAIN_MS = 10_000;
 
 const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000;
 const IDLE_CHECK_INTERVAL_MS = 30_000;

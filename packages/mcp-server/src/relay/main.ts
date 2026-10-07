@@ -13,11 +13,10 @@
  * stdout carries JSON-RPC only; every log line goes to stderr.
  */
 
-import * as crypto from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import { ENV } from '@kitsune-mcp/shared';
+import { ENV, shortId } from '@kitsune-mcp/shared';
 import { registerTools } from '../tools/registry.js';
 import { DaemonClient } from './daemon-client.js';
 import { callWithApproval, canElicit } from './approval.js';
@@ -35,7 +34,7 @@ const PRECHECK_TIMEOUT_MS = 400;
 const log = stderrLogger('relay');
 
 export async function runRelay(): Promise<void> {
-  const relayId = crypto.randomBytes(4).toString('hex');
+  const relayId = shortId();
   const client = new DaemonClient(relayId);
 
   // Answer initialize at once: starting a daemon can take many seconds. Only a

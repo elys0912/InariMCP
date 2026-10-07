@@ -10,6 +10,7 @@
 
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { errorResult } from './daemon-client.js';
+import { ALWAYS_REGISTERED as SAFETY_STATUS_TOOL } from '../tools/registry.js';
 
 /** The part of DaemonClient the handler uses (replaceable in tests). */
 export interface RelayClient {
@@ -87,7 +88,7 @@ export function createRelayHandlers(
       const result = await invoke(toolName, args, extra.signal);
       if (result.isError) return result;
 
-      if (toolName === 'fox_safety_status') {
+      if (toolName === SAFETY_STATUS_TOOL) {
         // Re-check on every status call: the daemon may have been restarted
         // by another session since this relay started.
         const mismatch = await client.checkSettings();

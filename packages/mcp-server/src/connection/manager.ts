@@ -12,9 +12,8 @@
  *   TypeScript uses Promise + Map<requestId, { resolve, timer, connectionId }>.
  */
 
-import * as crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { BrowserAction, BrowserCommand, BrowserResponse } from '@kitsune-mcp/shared';
+import { shortId, type BrowserAction, type BrowserCommand, type BrowserResponse } from '@kitsune-mcp/shared';
 
 // ---------------------------------------------------------------------------
 // Call context (client abort)
@@ -189,7 +188,7 @@ export class BrowserConnectionManager {
    * Host keeps requestIds for up to 10 minutes (its inFlight map), so IDs
    * must not repeat when the daemon restarts and counts from 1 again.
    */
-  readonly bootId = crypto.randomBytes(4).toString('hex');
+  readonly bootId = shortId();
 
   // -----------------------------------------------------------------------
   // Connection lifecycle

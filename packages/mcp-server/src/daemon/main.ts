@@ -40,15 +40,13 @@ import {
   effectiveDaemonSettings,
   snapshotDaemonSettings,
 } from '../utils/endpoint.js';
-import { DaemonActivity, resolveIdleTimeoutMs } from './activity.js';
+import { DaemonActivity, SHUTDOWN_DRAIN_MS, resolveIdleTimeoutMs } from './activity.js';
 import { PACKAGE_VERSION } from '../version.js';
 import { stderrLogger } from '@kitsune-mcp/shared/node';
 import { probeExistingDaemon } from './probe.js';
 
 const log = stderrLogger('daemon');
 
-/** How long a graceful stop waits for running tool calls (POST /daemon/shutdown without force). */
-export const SHUTDOWN_DRAIN_MS = 10_000;
 /** WebSocket close code sent to the Native Hosts on shutdown (RFC 6455 "Going Away"). */
 const WS_GOING_AWAY = 1001;
 
@@ -189,6 +187,39 @@ async function startHeadless(): Promise<void> {
   }, 'headless');
 }
 
+/**
+ * The HTTP port (the singleton lock) is taken: say by whom, and exit — 0
+ * when it is another healthy KitsuneMCP daemon of ours, 1 otherwise.
+ */
+async function exitForOccupiedPort(host: string, httpPort: number, apiToken: string): Promise<never> {
+  const occupant = await probeExistingDaemon(host, httpPort, apiToken);
+  if (occupant.kind === 'ok') {
+    log(`another KitsuneMCP daemon already owns ${host}:${httpPort} — exiting`);
+    process.exit(0);
+  }
+  if (occupant.kind === 'impostor') {
+    log(
+      `port ${host}:${httpPort} answers as a KitsuneMCP daemon but cannot prove it holds ` +
+      'this user\'s API token (a daemon started before the token file was replaced, ' +
+      'another user\'s daemon, or a program impersonating it). ' +
+      `Stop it, or set ${ENV.FOX_HTTP_PORT} (and ${ENV.FOX_WS_PORT}) to free ports.`,
+    );
+    process.exit(1);
+  }
+  if (occupant.kind === 'incompatible') {
+    log(
+      `port ${host}:${httpPort} is owned by a KitsuneMCP daemon of another protocol ` +
+      `(${String(occupant.protocol)}${occupant.version ? `, v${occupant.version}` : ''}): stop it and retry.`,
+    );
+    process.exit(1);
+  }
+  log(
+    `port ${host}:${httpPort} is in use by another program. ` +
+    `Set ${ENV.FOX_HTTP_PORT} (and ${ENV.FOX_WS_PORT}) to free ports.`,
+  );
+  process.exit(1);
+}
+
 export async function runDaemon(): Promise<void> {
   const connectionManager = getConnectionManager();
   const host = resolveHost();
@@ -291,34 +322,7 @@ export async function runDaemon(): Promise<void> {
       },
     });
   } catch (err: unknown) {
-    if (isAddrInUse(err)) {
-      const occupant = await probeExistingDaemon(host, httpPort, apiToken);
-      if (occupant.kind === 'ok') {
-        log(`another KitsuneMCP daemon already owns ${host}:${httpPort} — exiting`);
-        process.exit(0);
-      }
-      if (occupant.kind === 'impostor') {
-        log(
-          `port ${host}:${httpPort} answers as a KitsuneMCP daemon but cannot prove it holds ` +
-          'this user\'s API token (a daemon started before the token file was replaced, ' +
-          'another user\'s daemon, or a program impersonating it). ' +
-          `Stop it, or set ${ENV.FOX_HTTP_PORT} (and ${ENV.FOX_WS_PORT}) to free ports.`,
-        );
-        process.exit(1);
-      }
-      if (occupant.kind === 'incompatible') {
-        log(
-          `port ${host}:${httpPort} is owned by a KitsuneMCP daemon of another protocol ` +
-          `(${String(occupant.protocol)}${occupant.version ? `, v${occupant.version}` : ''}): stop it and retry.`,
-        );
-        process.exit(1);
-      }
-      log(
-        `port ${host}:${httpPort} is in use by another program. ` +
-        `Set ${ENV.FOX_HTTP_PORT} (and ${ENV.FOX_WS_PORT}) to free ports.`,
-      );
-      process.exit(1);
-    }
+    if (isAddrInUse(err)) await exitForOccupiedPort(host, httpPort, apiToken);
     throw err;
   }
 
