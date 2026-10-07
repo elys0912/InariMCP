@@ -146,8 +146,22 @@ const foxGetTabsSchema = z.object({
 // Act tools (state-changing)
 // =========================================================================
 
+/** fox_navigate actions; only goto takes a `url`. */
+export const NAVIGATE_ACTIONS = ['goto', 'back', 'forward', 'refresh', 'hard_refresh'] as const;
+export type NavigateAction = (typeof NAVIGATE_ACTIONS)[number];
+
+/**
+ * Whether fox_navigate goes to its `url` argument: only for goto, the
+ * default action. back / forward / refresh / hard_refresh act on the tab
+ * as it is. The single rule behind the call schema below and the guard's
+ * targetUrlOf() (safety/guard.ts).
+ */
+export function navigateGoesToUrl(action: unknown): boolean {
+  return (action ?? 'goto') === 'goto';
+}
+
 const foxNavigateSchema = z.object({
-  action: z.enum(['goto', 'back', 'forward', 'refresh', 'hard_refresh'])
+  action: z.enum(NAVIGATE_ACTIONS)
     .optional()
     .default('goto')
     .describe('Navigation action type'),
