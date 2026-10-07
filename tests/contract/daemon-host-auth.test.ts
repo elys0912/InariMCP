@@ -87,6 +87,7 @@ describe('HTTP: daemon http-bridge ⇔ Native Host server-launcher', () => {
     const port = await httpBridge(TOKEN);
     const launcher = new ServerLauncher({ host: '127.0.0.1', httpPort: port, wsPort: 1, readToken: () => TOKEN });
     expect((await launcher.probeHealth()).kind).toBe('ok');
+    expect(await launcher.checkHealth()).toBe(true);
     expect(await launcher.fetchDaemonInfo()).toMatchObject({ relays: 0 });
   });
 
