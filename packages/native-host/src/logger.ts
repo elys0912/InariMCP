@@ -5,7 +5,7 @@
  * can see. Every line is therefore written to stderr (as before) and also
  * appended to a log file:
  *
- *   FOX_NATIVE_HOST_LOG unset / empty → ~/.kitsune-mcp/logs/native-host.log
+ *   FOX_NATIVE_HOST_LOG unset / blank → ~/.kitsune-mcp/logs/native-host.log
  *   FOX_NATIVE_HOST_LOG=0 | off | false | no | none → file logging disabled
  *   FOX_NATIVE_HOST_LOG=<path>        → that file
  *
@@ -26,7 +26,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ENV } from '@kitsune-mcp/shared';
-import { MAX_LOG_BYTES, nativeHostLogPath, rotateIfLarge as rotateFile } from '@kitsune-mcp/shared/node';
+import {
+  MAX_LOG_BYTES,
+  PRIVATE_DIR_MODE,
+  PRIVATE_FILE_MODE,
+  logStamp,
+  nativeHostLogPath,
+  rotateIfLarge as rotateFile,
+} from '@kitsune-mcp/shared/node';
 
 const PREFIX = '[KitsuneMCP:NativeHost]';
 export { MAX_LOG_BYTES };
@@ -66,7 +73,7 @@ function stderrNote(msg: string): void {
 
 function tighten(filePath: string): void {
   try {
-    fs.chmodSync(filePath, 0o600);
+    fs.chmodSync(filePath, PRIVATE_FILE_MODE);
   } catch {
     // Non-POSIX filesystems
   }
@@ -88,9 +95,9 @@ export function rotateIfLarge(filePath: string, copyTruncate = false): boolean {
 
 function openSink(filePath: string): FileSink | null {
   try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+    fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: PRIVATE_DIR_MODE });
     rotateIfLarge(filePath);
-    const fd = fs.openSync(filePath, 'a', 0o600);
+    const fd = fs.openSync(filePath, 'a', PRIVATE_FILE_MODE);
     tighten(filePath);
     const size = fs.fstatSync(fd).size;
     // Still too large: the rotation failed, so do not retry on every line.
@@ -150,7 +157,7 @@ export function log(msg: string): void {
   } catch {
     // stderr closed
   }
-  writeToFile(`${new Date().toISOString()} [${process.pid}] ${line}`);
+  writeToFile(`${logStamp()}${line}`);
 }
 
 /** Forget the open file and any retry delay (tests). */

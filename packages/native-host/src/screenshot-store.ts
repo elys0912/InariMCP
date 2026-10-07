@@ -28,7 +28,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { ENV, LEGACY_ENV, isRecord, shortId } from '@kitsune-mcp/shared';
-import { defaultScreenshotsDir } from '@kitsune-mcp/shared/node';
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, defaultScreenshotsDir } from '@kitsune-mcp/shared/node';
 
 /** Image types accepted in a screenshot data URL. */
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const;
@@ -43,7 +43,7 @@ const EXT_BY_MIME: Record<ImageMime, string> = {
 const DATA_URL_RE = new RegExp(`^data:(${IMAGE_MIMES.join('|')});base64,`, 'i');
 
 function isImageMime(value: string): value is ImageMime {
-  return (IMAGE_MIMES as readonly string[]).includes(value);
+  return IMAGE_MIMES.some((mime) => mime === value);
 }
 
 /**
@@ -59,12 +59,18 @@ export function getScreenshotsDir(env: NodeJS.ProcessEnv = process.env): string 
   return defaultScreenshotsDir();
 }
 
-/** Names produced by uniqueStem() + saveScreenshot()'s suffix. */
+/**
+ * Names produced by uniqueStem() + saveScreenshot()'s suffix. shortId() now
+ * gives exactly 6 characters; 1-5 are still accepted for files written by
+ * earlier versions, whose shortId() could be shorter.
+ */
 const GENERATED_NAME_RE = /^screenshot_\d{13}_[a-z0-9]{1,6}(?:_tab\d+|_\d+)?\.(?:png|jpg|webp)$/;
 const DEFAULT_RETENTION_DAYS = 30;
 const MS_PER_DAY = 86_400_000;
 /** Longest stem kept from a caller-chosen filename. */
 const MAX_STEM_LENGTH = 120;
+/** Longest part of an unsupported data URL header quoted in the error. */
+const MAX_HEAD_IN_ERROR = 60;
 
 export function retentionDays(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env[ENV.FOX_SCREENSHOT_RETENTION_DAYS]?.trim();
@@ -155,7 +161,7 @@ export function saveScreenshotFile(
   if (match === null && imageData.startsWith('data:')) {
     // Another MIME type (or not base64): decoding the whole string as base64
     // would write a broken file and report success.
-    const head = imageData.split(',', 1)[0]!.slice(0, 60);
+    const head = (imageData.split(',', 1)[0] ?? '').slice(0, MAX_HEAD_IN_ERROR);
     throw new Error(`unsupported screenshot data URL (${head}); expected PNG, JPEG or WebP as base64`);
   }
   const mime = match?.[1]?.toLowerCase();
@@ -168,7 +174,7 @@ export function saveScreenshotFile(
   }
 
   const dir = getScreenshotsDir();
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
 
   const name = sanitizeFilename(filename, ext, suffix);
   const filePath = path.resolve(dir, name);
@@ -177,10 +183,10 @@ export function saveScreenshotFile(
   }
 
   const overwritten = fs.existsSync(filePath);
-  fs.writeFileSync(filePath, bytes, { mode: 0o600 });
+  fs.writeFileSync(filePath, bytes, { mode: PRIVATE_FILE_MODE });
   // `mode` only applies on creation; tighten an overwritten file too.
   try {
-    fs.chmodSync(filePath, 0o600);
+    fs.chmodSync(filePath, PRIVATE_FILE_MODE);
   } catch {
     // Non-POSIX filesystems
   }

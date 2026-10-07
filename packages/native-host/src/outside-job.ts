@@ -20,6 +20,7 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ENV_PREFIX, LEGACY_ENV, shortId } from '@kitsune-mcp/shared';
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from '@kitsune-mcp/shared/node';
 import { spawnDaemonBreakaway } from './breakaway.js';
 
 /** What to start outside the job. */
@@ -59,6 +60,8 @@ const TRAMPOLINE_WAIT_MS = 10_000;
 const POLL_MS = 100;
 /** Time limit of each cscript / schtasks command. */
 const RUN_TIMEOUT_MS = 20_000;
+/** Lines of a failed command's output quoted in the error. */
+const OUTPUT_DETAIL_LINES = 2;
 
 /**
  * Read the spec, start the daemon, then delete the spec (= "started"). When
@@ -120,11 +123,11 @@ export function taskXml(command: string, args: string[]): string {
 
 /** Write the trampoline and the spec; returns their paths. */
 function prepare(spec: DaemonSpec, deps: OutsideJobDeps): { tramp: string; specPath: string } {
-  deps.fs.mkdirSync(deps.dir, { recursive: true, mode: 0o700 });
+  deps.fs.mkdirSync(deps.dir, { recursive: true, mode: PRIVATE_DIR_MODE });
   const tramp = path.join(deps.dir, `trampoline-${deps.id}.js`);
   const specPath = path.join(deps.dir, `spec-${deps.id}.json`);
   deps.fs.writeFileSync(tramp, TRAMPOLINE_JS);
-  deps.fs.writeFileSync(specPath, JSON.stringify(spec), { mode: 0o600 });
+  deps.fs.writeFileSync(specPath, JSON.stringify(spec), { mode: PRIVATE_FILE_MODE });
   return { tramp, specPath };
 }
 
@@ -144,7 +147,7 @@ async function waitConsumed(specPath: string, deps: OutsideJobDeps): Promise<voi
 }
 
 function failure(what: string, r: RunResult): Error {
-  const detail = (r.stderr || r.stdout).trim().split(/\r?\n/).slice(0, 2).join(' ');
+  const detail = (r.stderr || r.stdout).trim().split(/\r?\n/).slice(0, OUTPUT_DETAIL_LINES).join(' ');
   return new Error(`${what} failed (exit code ${r.code ?? 'null'}${detail ? `: ${detail}` : ''})`);
 }
 
@@ -202,7 +205,9 @@ export const schtasksStrategy: Strategy = {
 export const powershellStrategy: Strategy = {
   name: 'powershell',
   async start(spec) {
-    await spawnDaemonBreakaway(spec.args[0] ?? '', spec.log, spec.cwd);
+    const entry = spec.args[0];
+    if (entry === undefined) throw new Error('daemon entry missing');
+    await spawnDaemonBreakaway(entry, spec.log, spec.cwd);
   },
 };
 

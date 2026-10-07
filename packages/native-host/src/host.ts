@@ -4,7 +4,7 @@
  * starting the daemon or the WebSocket connection).
  */
 
-import { isRecord, parseHostMessage, type HostLocalAction, type HostLocalMessage } from '@kitsune-mcp/shared';
+import { MS_PER_SECOND, isRecord, parseHostMessage, type HostLocalAction, type HostLocalMessage } from '@kitsune-mcp/shared';
 import { readMessage, sendMessage } from './protocol.js';
 import { serverEntryPath, type DaemonInfo, type ServerLauncher } from './server-launcher.js';
 import type { ServerCommand, ServerConnection } from './ws-client.js';
@@ -138,7 +138,7 @@ export function processMessage(
       action: 'pong',
       pong: true,
       success: true,
-      timestamp: Date.now() / 1000,
+      timestamp: Date.now() / MS_PER_SECOND,
     });
     return;
   }
