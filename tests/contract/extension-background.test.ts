@@ -206,7 +206,7 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
       action: 'get_page_info',
       ...scopeMessage,
       protectedUrlRules: [hostRule('bank.example.test')],
-    });
+    }, 'host');
     expect(result).toMatchObject({ success: true, tab: { id: 1 }, url: agentTab.url });
     expect(sent).toEqual([{ tabId: 1, frameId: 0 }]);
     // The active tab is asked for once; the URL report goes to the pinned id.
@@ -219,7 +219,7 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
       action: 'click',
       ...scopeMessage,
       protectedUrlRules: [hostRule('bank.example.test')],
-    });
+    }, 'host');
     expect(result).toMatchObject({
       success: false,
       safetyDecision: 'confirmation_required',
@@ -231,7 +231,7 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
 
   it('refuses a pinned tab outside the container scope before any handler runs', async () => {
     const { sent } = dispatcherBrowser([outsideTab, agentTab]);
-    const result = await handleCommand({ action: 'click', ...scopeMessage });
+    const result = await handleCommand({ action: 'click', ...scopeMessage }, 'host');
     expect(result).toMatchObject({ success: false, safetyDecision: 'out_of_scope' });
     expect(result.error).toMatch(/outside the container scope/);
     expect(sent).toEqual([]);
@@ -250,7 +250,31 @@ describe('WP38 no active tab: a failure result, not a TypeError', () => {
     const { getPageInfo, executeScript } = await import('../../packages/extension/src/background/page-actions.ts');
     expect(await getPageInfo(undefined)).toEqual({ success: false, error: 'No target tab' });
     expect(await executeScript(undefined, { script: '1' })).toEqual({ success: false, error: 'No target tab' });
-    expect(await handleCommand({ action: 'get_page_info' })).toEqual({ success: false, error: 'No target tab' });
+    expect(await handleCommand({ action: 'get_page_info' }, 'host')).toEqual({ success: false, error: 'No target tab' });
+  });
+});
+
+describe('E-21 get_page_info fails like the other content script tools', () => {
+  const pageTab = { id: 1, url: 'https://app.example.test/', title: 'App' };
+  const failingSend = (message: string) => ({
+    tabs: {
+      query: async () => [pageTab],
+      sendMessage: async () => { throw new Error(message); },
+    },
+  });
+
+  it('no content script: the same explanation as get_elements', async () => {
+    useFakeBrowser(failingSend('Could not establish connection. Receiving end does not exist.'));
+    const { getPageInfo, getElements } = await import('../../packages/extension/src/background/page-actions.ts');
+    const pageInfo = await getPageInfo(undefined);
+    expect(pageInfo).toMatchObject({ success: false, error: expect.stringMatching(/^KitsuneMCP cannot reach this page/) });
+    expect(pageInfo).toEqual(await getElements(undefined, {}));
+  });
+
+  it('any other failure keeps its own text', async () => {
+    useFakeBrowser(failingSend('Message manager disconnected'));
+    const { getPageInfo } = await import('../../packages/extension/src/background/page-actions.ts');
+    expect(await getPageInfo(undefined)).toEqual({ success: false, error: 'Message manager disconnected' });
   });
 });
 
@@ -442,7 +466,7 @@ describe('WP5b URL rules and urlPattern arguments', () => {
       action: 'click',
       // 42 is not a rule: an unusable entry must not silently narrow the policy.
       protectedUrlRules: [hostRule('bank.test'), 42],
-    });
+    }, 'host');
     expect(result).toMatchObject({ success: false, safetyDecision: 'config_error' });
     expect(result.error).toMatch(/1 URL pattern\(s\)/);
   });
@@ -460,7 +484,7 @@ describe('WP5b URL rules and urlPattern arguments', () => {
       action: 'click',
       blockedUrlRules: [hostRule('bank.test')],
       protectedUrlRules: [hostRule('bank.test')],
-    });
+    }, 'host');
     expect(result).toMatchObject({ success: false, safetyDecision: 'blocked_url' });
   });
 
@@ -479,10 +503,10 @@ describe('WP5b URL rules and urlPattern arguments', () => {
       },
     });
     const blockedUrlRules = [hostRule('blocked.test')];
-    expect(await handleCommand({ action: 'screenshot_all_tabs', blockedUrlRules }))
+    expect(await handleCommand({ action: 'screenshot_all_tabs', blockedUrlRules }, 'host'))
       .toMatchObject({ success: true, count: 1, failed: 0, excludedBlocked: 1, excludedProtected: 0 });
     expect(captured).toEqual([1]);
-    expect(await handleCommand({ action: 'reload_all', blockedUrlRules }))
+    expect(await handleCommand({ action: 'reload_all', blockedUrlRules }, 'host'))
       .toMatchObject({ success: true, reloadedCount: 1, excludedBlocked: 1, excludedProtected: 0 });
     expect(reloaded).toEqual([1]);
   });
@@ -497,7 +521,7 @@ describe('WP5b URL rules and urlPattern arguments', () => {
       },
     });
     for (const action of ['screenshot_all_tabs', 'reload_all']) {
-      const result = await handleCommand({ action });
+      const result = await handleCommand({ action }, 'host');
       expect(result, action).toMatchObject({ success: true, excludedBlocked: 0, excludedProtected: 0 });
       expect(result, action).not.toHaveProperty('excludedBlockedReason');
       expect(result, action).not.toHaveProperty('excludedReason');

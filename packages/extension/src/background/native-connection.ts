@@ -4,7 +4,7 @@
 // set by background.ts (setConnectionHooks), so this module imports none of
 // the modules above it.
 
-import { TIMEOUTS } from "./constants";
+import { LIMITS, RECONNECT_BACKOFF_FACTOR, TIMEOUTS } from "./constants";
 import { clipText } from "../text-clip";
 import type { NativeMessage } from "./types";
 
@@ -69,7 +69,7 @@ export function setConnectionHooks(next: ConnectionHooks): void {
 
 function getReconnectDelay(): number {
   return Math.min(
-    INITIAL_RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts),
+    INITIAL_RECONNECT_DELAY * Math.pow(RECONNECT_BACKOFF_FACTOR, reconnectAttempts),
     MAX_RECONNECT_DELAY,
   );
 }
@@ -94,11 +94,11 @@ function scheduleReconnect(): void {
     console.error(
       `[KitsuneMCP] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`,
     );
-    // Reset after 60 s to allow a fresh cycle
+    // Reset after a while to allow a fresh cycle
     setTimeout(() => {
       reconnectAttempts = 0;
       connectNativeHost();
-    }, 60_000);
+    }, TIMEOUTS.RECONNECT_RESTART);
     return;
   }
 
@@ -210,17 +210,17 @@ export function describeNativeMessage(raw: unknown): string {
   if (typeof raw !== "object" || raw === null) return `(${typeof raw})`;
   const m = raw as Record<string, unknown>;
   const parts: string[] = [];
-  if (typeof m.action === "string") parts.push(`action=${clipText(m.action, 64)}`);
+  if (typeof m.action === "string") parts.push(`action=${clipText(m.action, LIMITS.NATIVE_SUMMARY_TEXT)}`);
   if (typeof m.requestId === "string" || typeof m.requestId === "number") {
-    parts.push(`requestId=${clipText(String(m.requestId), 64)}`);
+    parts.push(`requestId=${clipText(String(m.requestId), LIMITS.NATIVE_SUMMARY_TEXT)}`);
   }
   if (typeof m.success === "boolean") parts.push(`success=${m.success}`);
   const keys = Object.keys(m).filter((k) => k !== "action" && k !== "requestId" && k !== "success");
-  if (keys.length > 0) parts.push(`keys=[${keys.slice(0, 20).join(",")}]`);
+  if (keys.length > 0) parts.push(`keys=[${keys.slice(0, LIMITS.NATIVE_SUMMARY_KEYS).join(",")}]`);
   const data = m.data;
   if (typeof data === "object" && data !== null && !Array.isArray(data)) {
     const dataKeys = Object.keys(data);
-    if (dataKeys.length > 0) parts.push(`data=[${dataKeys.slice(0, 20).join(",")}]`);
+    if (dataKeys.length > 0) parts.push(`data=[${dataKeys.slice(0, LIMITS.NATIVE_SUMMARY_KEYS).join(",")}]`);
   }
   return parts.join(" ");
 }
@@ -266,9 +266,11 @@ export function sendToNativeHost(
 /**
  * Posting failed on `port` (it is broken): stop using it, fail its requests
  * and report the loss as handleDisconnect would, since its own onDisconnect
- * is no longer listened to. The caller retries on a new port.
+ * is no longer listened to. The caller then retries on a new port, or, out
+ * of retries, schedules the reconnect handleDisconnect would have. True when
+ * `port` was the current port.
  */
-function dropFailedPort(port: browser.runtime.Port): void {
+function dropFailedPort(port: browser.runtime.Port): boolean {
   const wasCurrent = port === nativePort;
   if (wasCurrent) {
     nativePort = null;
@@ -279,6 +281,7 @@ function dropFailedPort(port: browser.runtime.Port): void {
   releasePort(port);
   rejectPending(port, "Native host disconnected - reconnecting...");
   if (wasCurrent) hooks.onDisconnected();
+  return wasCurrent;
 }
 
 function sendAttempt(message: NativeMessage, timeoutMs: number, retryCount: number): Promise<unknown> {
@@ -329,11 +332,15 @@ function sendAttempt(message: NativeMessage, timeoutMs: number, retryCount: numb
         pendingRequests.delete(requestId);
         clearTimeout(timeoutId);
 
+        const wasCurrent = dropFailedPort(port);
         if (retryCount < MAX_SEND_RETRIES) {
           console.log("[KitsuneMCP] Send failed, reconnecting and retrying...");
-          dropFailedPort(port);
           retry();
         } else {
+          // Out of retries: the broken port is dropped all the same (kept, it
+          // would stay current until an onDisconnect that may never come), and
+          // the connection comes back on the usual backoff.
+          if (wasCurrent) scheduleReconnect();
           reject(error);
         }
       }

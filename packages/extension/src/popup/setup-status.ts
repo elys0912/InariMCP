@@ -10,9 +10,7 @@ import type { SetupState } from '../types/setup';
 export function setupStateOfReply(reply: unknown): SetupState {
   if (typeof reply !== 'object' || reply === null) return { kind: 'connecting' };
   const r = reply as { success?: unknown; setup?: unknown; error?: unknown };
-  if (typeof r.setup === 'object' && r.setup !== null && typeof (r.setup as { kind?: unknown }).kind === 'string') {
-    return r.setup as SetupState;
-  }
+  if (isSetupState(r.setup)) return r.setup;
   if (r.success === false) {
     return {
       kind: 'hostError',
@@ -20,6 +18,15 @@ export function setupStateOfReply(reply: unknown): SetupState {
     };
   }
   return { kind: 'connecting' };
+}
+
+/**
+ * A setup state as the background sends it: an object with a string `kind`.
+ * Only the kind's type is checked, not its value -- the reply comes from the
+ * background of the same build (background/setup-badge.ts getSetupState).
+ */
+function isSetupState(value: unknown): value is SetupState {
+  return typeof value === 'object' && value !== null && typeof (value as { kind?: unknown }).kind === 'string';
 }
 
 /**

@@ -4,7 +4,7 @@
 // the sink handed over when they are installed (ensurePageHooks).
 
 import { compileUrlRules, findUrlRule, type CompiledUrlRule } from "../url-rule";
-import { LOG_RECORD_MESSAGE, LOGGING_STATE_QUERY } from "./constants";
+import { LOG_ENTRY_LIMIT, LOG_RECORD_MESSAGE, LOGGING_STATE_QUERY } from "./constants";
 import { maskHeaders } from "./mask";
 import {
   installPageHooks,
@@ -47,7 +47,6 @@ function shouldRecord(): boolean {
 // batches (scheduleLogFlush); flushLogs / stopLogging hand over the rest.
 let consoleLogs: ConsoleLogEntry[] = [];
 let networkLogs: NetworkLogEntry[] = [];
-const MAX_LOG_ENTRIES = 500;
 /** Longest a recorded entry waits before it is sent to the background. */
 const LOG_FLUSH_DELAY_MS = 250;
 
@@ -59,7 +58,7 @@ let loggingControlVersion = 0;
 
 function pushConsoleLog(entry: ConsoleLogEntry): void {
   consoleLogs.push(entry);
-  if (consoleLogs.length > MAX_LOG_ENTRIES) {
+  if (consoleLogs.length > LOG_ENTRY_LIMIT) {
     consoleLogs.shift();
   }
   scheduleLogFlush();
@@ -113,7 +112,7 @@ function pushNetworkLog(entry: NetworkLogEntry): void {
   if (safe.requestHeaders) safe.requestHeaders = maskHeaders(safe.requestHeaders);
   if (safe.responseHeaders) safe.responseHeaders = maskHeaders(safe.responseHeaders);
   networkLogs.push(safe);
-  if (networkLogs.length > MAX_LOG_ENTRIES) {
+  if (networkLogs.length > LOG_ENTRY_LIMIT) {
     networkLogs.shift();
   }
   scheduleLogFlush();

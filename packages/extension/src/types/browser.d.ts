@@ -271,4 +271,6 @@ declare function exportFunction<F extends (...args: never[]) => unknown>(
 interface Window {
   /** Firefox content scripts: the page's own objects (Xray waived). */
   readonly wrappedJSObject?: Window & typeof globalThis;
+  /** Set by content.ts once its listeners are registered in this document. */
+  __fox_injected?: boolean;
 }

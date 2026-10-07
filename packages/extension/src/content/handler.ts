@@ -23,27 +23,7 @@ import {
 } from "./inspect";
 import { startLogging, stopLogging, flushLogs, clearLogs } from "./log-store";
 import { cancelHumanWait } from "./overlay";
-import type {
-  ContentMessage,
-  ClickOptions,
-  TypeOptions,
-  ScrollOptions,
-  HighlightOptions,
-  WaitOptions,
-  WaitForChangeOptions,
-  NetworkIdleOptions,
-  ObserveOptions,
-  ScrollCaptureOptions,
-  ClickAndWaitOptions,
-  FindElementOptions,
-  SetValueOptions,
-  SelectOptionOptions,
-  PressKeyOptions,
-  TextOptions,
-  CaptchaOptions,
-  LoggingOptions,
-  ClearLogsOptions,
-} from "./types";
+import type { ContentMessage } from "./types";
 import {
   waitForElement,
   waitForChange,
@@ -58,60 +38,64 @@ export async function handleMessage(
 ): Promise<Record<string, unknown>> {
   switch (message.action) {
     case "click":
-      return performClick(message as unknown as ClickOptions);
+      return performClick(message);
     case "type":
-      return performType(message as unknown as TypeOptions);
+      return performType(message);
     case "scroll":
-      return performScroll(message as unknown as ScrollOptions);
+      return performScroll(message);
     case "getPageInfo":
       return getPageInfo();
     case "getElements":
-      return getElements(message as unknown as { selector?: string; limit?: number });
+      return getElements(message);
     case "highlight":
-      return highlightElement(message as unknown as HighlightOptions);
+      return highlightElement(message);
     case "waitForElement":
-      return waitForElement(message as unknown as WaitOptions);
+      return waitForElement(message);
     case "waitForChange":
-      return waitForChange(message as unknown as WaitForChangeOptions);
+      return waitForChange(message);
     case "waitForNetworkIdle":
-      return waitForNetworkIdle(message as unknown as NetworkIdleOptions);
+      return waitForNetworkIdle(message);
     case "observeElement":
-      return observeElement(message as unknown as ObserveOptions);
+      return observeElement(message);
     case "stopObserving":
-      return stopObserving(message as unknown as { observerId: string });
+      return stopObserving(message);
     case "scrollAndCapture":
-      return scrollAndCapture(message as unknown as ScrollCaptureOptions);
+      return scrollAndCapture(message);
     case "clickAndWait":
-      return clickAndWait(message as unknown as ClickAndWaitOptions);
+      return clickAndWait(message);
     case "captureFullPage":
       return captureFullPage();
     case "inspectElement":
       return inspectElement();
     case "getValue":
-      return getValue(message as unknown as FindElementOptions);
+      return getValue(message);
     case "setValue":
-      return setValue(message as unknown as SetValueOptions);
+      return setValue(message);
     case "hover":
-      return hoverElement(message as unknown as FindElementOptions);
+      return hoverElement(message);
     case "selectOption":
-      return selectOption(message as unknown as SelectOptionOptions);
+      return selectOption(message);
     case "pressKey":
-      return pressKey(message as unknown as PressKeyOptions);
+      return pressKey(message);
     case "getText":
-      return getText(message as unknown as TextOptions);
+      return getText(message);
     case "solveCaptcha":
-      return solveCaptcha(message as unknown as CaptchaOptions);
+      return solveCaptcha(message);
     case "cancelHumanWait":
       return cancelHumanWait();
     case "startLogging":
-      return startLogging(message as unknown as LoggingOptions);
+      return startLogging(message);
     case "stopLogging":
       return stopLogging();
     case "flushLogs":
       return flushLogs();
     case "clearLogs":
-      return clearLogs(message as unknown as ClearLogsOptions);
-    default:
-      throw new Error(`Unknown action: ${message.action}`);
+      return clearLogs(message);
+    default: {
+      // Reached by a message whose action is not a ContentAction (content.ts
+      // takes any runtime message as a ContentMessage).
+      const unhandled: never = message;
+      throw new Error(`Unknown action: ${(unhandled as { action: unknown }).action}`);
+    }
   }
 }

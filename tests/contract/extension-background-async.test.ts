@@ -164,6 +164,32 @@ describe('native connection: a replaced port (E-02, E-24)', () => {
     expect(ports.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('a post failing on every retry still drops the last port and reconnects (R3 #7)', async () => {
+    const { mod, ports, hooks } = await loadNativeConnection();
+    mod.connectNativeHost();
+    answerLast(ports[0]!);
+    ports[0]!.failPost = true;
+    const pending = mod.sendToNativeHost({ action: 'status' }).then(() => 'resolved', (e: Error) => e.message);
+    // Each retry opens a new port (after the retry delay); it breaks before
+    // the request is posted on it (the connect settle time).
+    const RETRIES = 3;
+    for (let i = 1; i <= RETRIES; i++) {
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(ports).toHaveLength(i + 1);
+      ports[i]!.failPost = true;
+      await vi.advanceTimersByTimeAsync(500);
+    }
+    expect(await pending).toBe('Attempt to postMessage on disconnected port');
+    const last = ports[RETRIES]!;
+    expect(last.disconnected).toBe(true);
+    expect(last.onDisconnect.size()).toBe(0);
+    expect(mod.hostStatus().portOpen).toBe(false);
+    expect(hooks.onDisconnected).toHaveBeenCalledTimes(RETRIES + 1);
+    // The reconnect is scheduled without waiting for an onDisconnect.
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(ports.length).toBeGreaterThan(RETRIES + 1);
+  });
+
   it('timeoutMs bounds how long a posted request stays pending', async () => {
     const { mod, ports } = await loadNativeConnection();
     mod.connectNativeHost();
@@ -432,6 +458,7 @@ describe('clipping never splits a surrogate pair (E-17)', () => {
     expect(clipText(`ab${FOX}`, 3)).toBe('ab');
     expect(clipText(`ab${FOX}`, 4)).toBe(`ab${FOX}`);
     expect(clipText('abcdef', 3)).toBe('abc');
+    expect(clipText('abc', 5)).toBe('abc');
     expect(clipText('abc', 0)).toBe('');
   });
 

@@ -30,12 +30,13 @@
 // passed to installPageHooks (log-store.ts), and it imports nothing from
 // log-store.ts.
 
-import { truncateText } from "./dom";
+import { clipText } from "../text-clip";
+import { LIMITS, LOG_TEXT_LIMIT } from "./constants";
 import type { ConsoleLogEntry, NetworkLogEntry } from "./types";
 
 /** Console message length kept per argument / per entry. */
 const MAX_CONSOLE_ARG_CHARS = 2000;
-const MAX_CONSOLE_MESSAGE_CHARS = 5000;
+const MAX_CONSOLE_MESSAGE_CHARS = LOG_TEXT_LIMIT;
 
 // In-flight page requests (fetch + XHR) seen by the page hooks; used by
 // waitForNetworkIdle. A count only -- no request content.
@@ -179,7 +180,7 @@ function describeFetch(input: unknown, init: unknown): NetworkLogEntry {
     const fromInit = readHeaders(opts.headers);
     if (fromInit) requestHeaders = fromInit;
     if (opts.body !== undefined && opts.body !== null) {
-      requestBody = truncateText(safeString(opts.body), 1000);
+      requestBody = clipText(safeString(opts.body), LIMITS.REQUEST_BODY);
     }
   }
 
@@ -217,12 +218,12 @@ async function recordFetchResponse(
         const text = await clone.text();
         if (contentType.includes("application/json")) {
           try {
-            entry.responseBody = truncateText(JSON.stringify(JSON.parse(text), null, 2), 5000);
+            entry.responseBody = clipText(JSON.stringify(JSON.parse(text), null, 2), LOG_TEXT_LIMIT);
           } catch {
-            entry.responseBody = truncateText(text, 5000);
+            entry.responseBody = clipText(text, LOG_TEXT_LIMIT);
           }
         } else {
-          entry.responseBody = truncateText(text, 5000);
+          entry.responseBody = clipText(text, LOG_TEXT_LIMIT);
         }
       } catch {
         entry.responseBody = "[Could not read response]";
@@ -378,7 +379,7 @@ function installXhrHooks(pageWin: Window & typeof globalThis, sink: PageHookSink
           entry.startTime = new Date().toISOString();
           entry.requestBody =
             args[0] !== undefined && args[0] !== null
-              ? truncateText(safeString(args[0]), 1000)
+              ? clipText(safeString(args[0]), LIMITS.REQUEST_BODY)
               : null;
 
           xhr.addEventListener("load", () => {
@@ -387,7 +388,7 @@ function installXhrHooks(pageWin: Window & typeof globalThis, sink: PageHookSink
             entry.statusText = xhr.statusText;
             entry.duration = Date.now() - startTime;
             try {
-              entry.responseBody = truncateText(xhr.responseText, 5000);
+              entry.responseBody = clipText(xhr.responseText, LOG_TEXT_LIMIT);
             } catch {
               // responseType other than "" / "text"
               entry.responseBody = "[Could not read response]";
@@ -437,9 +438,9 @@ function installConsoleHooks(pageWin: Window & typeof globalThis, sink: PageHook
           sink.pushConsoleLog({
             level: method,
             timestamp: new Date().toISOString(),
-            message: truncateText(
+            message: clipText(
               args
-                .map((arg) => truncateText(stringifyArg(arg), MAX_CONSOLE_ARG_CHARS))
+                .map((arg) => clipText(stringifyArg(arg), MAX_CONSOLE_ARG_CHARS))
                 .join(" "),
               MAX_CONSOLE_MESSAGE_CHARS,
             ),

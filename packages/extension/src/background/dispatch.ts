@@ -19,7 +19,7 @@ import { resolveWireAction, toWireResponse } from "./wire";
  */
 export type CommandSource = "host" | "page";
 
-export async function handleCommand(message: NativeMessage, source: CommandSource = "page"): Promise<CommandResult> {
+export async function handleCommand(message: NativeMessage, source: CommandSource): Promise<CommandResult> {
   const { data } = message;
   let tabId = message.tabId;
   let result: CommandResult = { success: false };

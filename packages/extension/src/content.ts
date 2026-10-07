@@ -20,8 +20,8 @@ import type { ContentMessage } from "./content/types";
   "use strict";
 
   // Prevent multiple injections
-  if ((window as unknown as Record<string, unknown>).__fox_injected) return;
-  (window as unknown as Record<string, unknown>).__fox_injected = true;
+  if (window.__fox_injected) return;
+  window.__fox_injected = true;
   recordScriptStart();
 
   // ---------------------------------------------------------------------------

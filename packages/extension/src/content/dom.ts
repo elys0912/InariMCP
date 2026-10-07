@@ -1,31 +1,35 @@
 // DOM helpers: element location, locators, selectors / XPath, element info,
 // and the password field guard.
 
+import { clipText } from "../text-clip";
+import { LIMITS } from "./constants";
 import type { FindElementOptions, ElementInfo } from "./types";
-
-/**
- * `s` cut to at most `max` UTF-16 code units, never between the two halves
- * of a surrogate pair (a character that does not fit is dropped whole).
- */
-export function truncateText(s: string, max: number): string {
-  if (s.length <= max) return s;
-  if (max <= 0) return "";
-  const last = s.charCodeAt(max - 1);
-  return s.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max);
-}
 
 /** An element's `value` as a truncated string (null when it has none). */
 export function truncatedValue(value: unknown, max: number): string | null {
-  return value === undefined || value === null ? null : truncateText(String(value), max);
+  return value === undefined || value === null ? null : clipText(String(value), max);
 }
 
 export function isTextInput(el: Element): el is HTMLInputElement | HTMLTextAreaElement {
   return el.tagName === "INPUT" || el.tagName === "TEXTAREA";
 }
 
+// Element kinds by tag name (as the checks they replace; no instanceof).
+export function isInputElement(el: Element): el is HTMLInputElement {
+  return el.tagName === "INPUT";
+}
+
+export function isButtonElement(el: Element): el is HTMLButtonElement {
+  return el.tagName === "BUTTON";
+}
+
+export function isSelectElement(el: Element): el is HTMLSelectElement {
+  return el.tagName === "SELECT";
+}
+
 export function isPasswordField(element: Element): boolean {
-  if (element.tagName !== "INPUT") return false;
-  const input = element as HTMLInputElement;
+  if (!isInputElement(element)) return false;
+  const input = element;
   return (
     input.type === "password" ||
     input.getAttribute("autocomplete") === "current-password" ||
@@ -135,7 +139,7 @@ function findByText(text: string): Element | null {
   );
   let firstVisible: Element | null = null;
   let first: Element | null = null;
-  for (let i = 0; i < Math.min(matches.snapshotLength, 50); i++) {
+  for (let i = 0; i < Math.min(matches.snapshotLength, LIMITS.TEXT_MATCHES); i++) {
     const el = matches.snapshotItem(i) as Element;
     first ??= el;
     if (!isVisible(el)) continue;
@@ -250,7 +254,7 @@ export function generateSelector(element: Element): string {
         .filter((c) => c && !/^[0-9]/.test(c));
       if (classes.length > 0) {
         selector +=
-          "." + classes.slice(0, 2).map((c) => CSS.escape(c)).join(".");
+          "." + classes.slice(0, LIMITS.SELECTOR_CLASSES).map((c) => CSS.escape(c)).join(".");
       }
     }
 
@@ -311,8 +315,8 @@ export function getElementInfo(element: Element): ElementInfo {
     classes: Array.from(element.classList),
     name: htmlEl.name || null,
     type: htmlEl.type || null,
-    text: truncateText(element.textContent?.trim() ?? "", 200) || null,
-    value: isPassword ? "[MASKED]" : truncatedValue(htmlEl.value, 200),
+    text: clipText(element.textContent?.trim() ?? "", LIMITS.ELEMENT_TEXT) || null,
+    value: isPassword ? "[MASKED]" : truncatedValue(htmlEl.value, LIMITS.ELEMENT_TEXT),
     href: (element as HTMLAnchorElement).href || null,
     src: (element as HTMLImageElement).src || null,
     placeholder: htmlEl.placeholder || null,

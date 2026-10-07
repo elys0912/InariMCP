@@ -40,6 +40,7 @@
 //   skipUrlReport   (tab only) no URL report after the call (the tab is gone).
 //   handler         runs the action (inside handleCommand's try / catch).
 
+import type { ContentAction } from "../content/types";
 import type { CompiledUrlRule } from "../url-rule";
 import { requestApproval } from "./approvals";
 import { listContainers, openInContainer } from "./container-scope";
@@ -129,7 +130,19 @@ export type ActionDescriptor = TabActionDescriptor | SelfScopedActionDescriptor 
  * Content-script-forwarded actions. Every command goes to the top frame
  * (sendToContentScript's default), never to whichever frame answers first.
  */
-const toContentScript: ActionHandler = (c) => sendToContentScript(c.tabId, { action: c.action, ...c.data });
+function toContentScript(action: ContentAction): ActionHandler {
+  return (c) => sendToContentScript(c.tabId, { ...c.data, action });
+}
+
+/**
+ * The command's data as the options type of a handler: the one place the
+ * table narrows `data`. Not checked here -- the MCP Server validates each
+ * operation's arguments (operation schemas), and handlers read them
+ * defensively.
+ */
+function optionsOf<T>(c: ActionContext): T {
+  return c.data as T;
+}
 
 /** status (popup): host connection and setup state. */
 async function status(c: ActionContext): Promise<CommandResult> {
@@ -149,53 +162,53 @@ async function status(c: ActionContext): Promise<CommandResult> {
 
 const ACTIONS = {
   // --- Page interaction ---
-  screenshot: { scope: "tab", protectedCheck: "upfront", handler: (c) => takeScreenshot(c.tabId, c.data as ScreenshotOptions) },
+  screenshot: { scope: "tab", protectedCheck: "upfront", handler: (c) => takeScreenshot(c.tabId, optionsOf<ScreenshotOptions>(c)) },
   click: { scope: "tab", protectedCheck: "upfront", handler: (c) => performClick(c.tabId, c.data) },
   type: { scope: "tab", protectedCheck: "upfront", handler: (c) => performType(c.tabId, c.data) },
   scroll: { scope: "tab", protectedCheck: "upfront", handler: (c) => performScroll(c.tabId, c.data) },
-  navigate: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateTo(c.tabId, c.data as { url: string }) },
+  navigate: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateTo(c.tabId, optionsOf<{ url: string }>(c)) },
   getPageInfo: { scope: "tab", protectedCheck: "upfront", handler: (c) => getPageInfo(c.tabId) },
   getElements: { scope: "tab", protectedCheck: "upfront", handler: (c) => getElements(c.tabId, c.data) },
-  executeScript: { scope: "tab", protectedCheck: "upfront", handler: (c) => executeScript(c.tabId, c.data as { script: string }) },
+  executeScript: { scope: "tab", protectedCheck: "upfront", handler: (c) => executeScript(c.tabId, optionsOf<{ script: string }>(c)) },
   highlight: { scope: "tab", protectedCheck: "upfront", handler: (c) => highlightElement(c.tabId, c.data) },
   waitForElement: { scope: "tab", protectedCheck: "upfront", handler: (c) => waitForElement(c.tabId, c.data) },
 
   // --- Tab management ---
-  getTabs: { scope: "self", protectedCheck: "none", handler: (c) => getAllTabs(c.data as GetAllTabsOptions, c.scope) },
+  getTabs: { scope: "self", protectedCheck: "none", handler: (c) => getAllTabs(optionsOf<GetAllTabsOptions>(c), c.scope) },
   createTab: {
     scope: "self",
     protectedCheck: "none",
     handler: (c) =>
       c.navigateInNewTab
-        ? navigateNewTab(c.data as { url: string; waitForLoad?: boolean }, c.scope)
-        : createNewTab(c.data as { url?: string; active?: boolean }, c.scope),
+        ? navigateNewTab(optionsOf<{ url: string; waitForLoad?: boolean }>(c), c.scope)
+        : createNewTab(optionsOf<{ url?: string; active?: boolean }>(c), c.scope),
   },
   closeTab: { scope: "tab", protectedCheck: "upfront", needsTabId: true, skipUrlReport: true, handler: (c) => closeTab(c.tabId!) },
   focusTab: { scope: "tab", protectedCheck: "upfront", needsTabId: true, handler: (c) => focusTab(c.tabId!) },
   getTabInfo: { scope: "tab", protectedCheck: "upfront", needsTabId: true, handler: (c) => getTabInfo(c.tabId!) },
-  findTabs: { scope: "self", protectedCheck: "none", handler: (c) => findTabs(c.data as FindTabsOptions, c.scope) },
+  findTabs: { scope: "self", protectedCheck: "none", handler: (c) => findTabs(optionsOf<FindTabsOptions>(c), c.scope) },
   screenshotAllTabs: {
     scope: "self",
     protectedCheck: "handler",
-    handler: (c) => screenshotAllTabs(c.data as ScreenshotOptions, c.scope, c.protectedPatterns, c.urlLists),
+    handler: (c) => screenshotAllTabs(optionsOf<ScreenshotOptions>(c), c.scope, c.protectedPatterns, c.urlLists),
   },
 
   // --- Reload / navigation ---
-  refresh: { scope: "tab", protectedCheck: "upfront", handler: (c) => refreshTab(c.tabId, c.data as RefreshOptions) },
+  refresh: { scope: "tab", protectedCheck: "upfront", handler: (c) => refreshTab(c.tabId, optionsOf<RefreshOptions>(c)) },
   hardRefresh: {
     scope: "tab",
     protectedCheck: "upfront",
-    handler: (c) => refreshTab(c.tabId, { ...(c.data as RefreshOptions), bypassCache: true }),
+    handler: (c) => refreshTab(c.tabId, { ...optionsOf<RefreshOptions>(c), bypassCache: true }),
   },
   reloadAll: {
     scope: "self",
     protectedCheck: "handler",
-    handler: (c) => reloadAllTabs(c.data as ReloadAllOptions, c.scope, c.protectedPatterns, c.urlLists),
+    handler: (c) => reloadAllTabs(optionsOf<ReloadAllOptions>(c), c.scope, c.protectedPatterns, c.urlLists),
   },
   reloadByUrl: {
     scope: "self",
     protectedCheck: "handler",
-    handler: (c) => reloadTabsByUrl(c.data as ReloadByUrlOptions, c.scope, c.protectedPatterns, c.urlLists),
+    handler: (c) => reloadTabsByUrl(optionsOf<ReloadByUrlOptions>(c), c.scope, c.protectedPatterns, c.urlLists),
   },
   goBack: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateHistory(c.tabId, "back") },
   goForward: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateHistory(c.tabId, "forward") },
@@ -208,23 +221,23 @@ const ACTIONS = {
   solveCaptcha: {
     scope: "tab",
     protectedCheck: "upfront",
-    handler: (c) => trackHumanWait(c.message.requestId, c.tabId, (id) => solveCaptcha(id, c.data as { detectOnly?: boolean })),
+    handler: (c) => trackHumanWait(c.message.requestId, c.tabId, (id) => solveCaptcha(id, optionsOf<{ detectOnly?: boolean }>(c))),
   },
   cancelHumanWait: { scope: "noTab", protectedCheck: "none", handler: (c) => cancelHumanWait(c.data) },
 
   // --- Content script (form / input, wait / observe, text) ---
-  getValue: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  setValue: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  selectOption: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  hover: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  waitForChange: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  observeElement: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  stopObserving: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  scrollAndCapture: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  clickAndWait: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  pressKey: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  getText: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
-  waitForNetworkIdle: { scope: "tab", protectedCheck: "upfront", handler: toContentScript },
+  getValue: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("getValue") },
+  setValue: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("setValue") },
+  selectOption: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("selectOption") },
+  hover: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("hover") },
+  waitForChange: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("waitForChange") },
+  observeElement: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("observeElement") },
+  stopObserving: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("stopObserving") },
+  scrollAndCapture: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("scrollAndCapture") },
+  clickAndWait: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("clickAndWait") },
+  pressKey: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("pressKey") },
+  getText: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("getText") },
+  waitForNetworkIdle: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("waitForNetworkIdle") },
 
   // --- Tab waits ---
   waitForNavigation: { scope: "tab", protectedCheck: "upfront", handler: (c) => waitForNavigation(c.tabId, c.data) },
@@ -256,7 +269,7 @@ const ACTIONS = {
     protectedCheck: "none",
     handler: (c) =>
       openInContainer(
-        c.data as { url: string; containerName?: string; cookieStoreId?: string; color?: string; icon?: string; active?: boolean },
+        optionsOf<{ url: string; containerName?: string; cookieStoreId?: string; color?: string; icon?: string; active?: boolean }>(c),
         c.scope,
       ),
   },

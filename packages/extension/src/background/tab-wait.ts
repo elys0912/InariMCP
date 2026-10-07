@@ -1,6 +1,6 @@
 // Tab URL filters and waits for loads / navigations / URLs (L1).
 
-import { TIMEOUTS } from "./constants";
+import { TIMEOUTS, TOP_FRAME_ID } from "./constants";
 import { resolveTab, noTargetTab } from "./tab-target";
 import type { CommandResult } from "./types";
 
@@ -169,7 +169,7 @@ export async function waitForNavigation(
 
   const url = await new Promise<string | null>((resolve) => {
     const listener = (details: browser.webNavigation.NavigationDetails): void => {
-      if (details.tabId !== targetId || details.frameId !== 0) return;
+      if (details.tabId !== targetId || details.frameId !== TOP_FRAME_ID) return;
       if (pattern && !pattern.test(details.url)) return;
       finish(details.url);
     };
@@ -216,7 +216,7 @@ export async function waitForUrl(
   const tab = await resolveTab(tabId);
   if (!tab) return noTargetTab();
   const targetId = tab.id;
-  const timeoutMs = positiveOr(data.timeout, 15_000);
+  const timeoutMs = positiveOr(data.timeout, TIMEOUTS.WAIT_FOR_URL);
 
   const reached = await new Promise<browser.tabs.Tab | null>((resolve) => {
     let done = false;

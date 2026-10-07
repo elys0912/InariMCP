@@ -24,6 +24,7 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **拡張機能は、使えない安全メタデータの付いたコマンドを拒否する**: MCP Serverが付けたコンテナスコープやURLルールの項目（protected / blocked / allowed）が不正な形（配列でない、コンテナ名が空など）のとき、その検査を飛ばして実行するのをやめ、`config_error`で拒否する。拡張機能とMCP Serverの版が合っていないときにだけ起きるので、両方を更新すること（3bb171d、f1db501）
 - **パスに`?`や`#`を含むURLパターンは設定エラーにする**: パターンはURLのパスだけと比べるので、`example.com/a?x=1`や`example.com/a#top`は何にも一致せず、`blocked_url_patterns` / `protected_url_patterns`に書いても警告なしで何も止めなかった。このようなパターン（`%3F` / `%23`を含むものも）は、どのリストでもエラーになる。クエリやフラグメントを外すか、`re:`で書くこと（f1db501）
 - **Native Hostから届くコマンドはwire上のaction名に限る**: Native Messaging経由で内部のaction名が届いたら`Unknown action`を返す（拡張機能自身のポップアップは引き続き内部名を使う）（d32eefb）
+- **コマンドのデータが拡張機能の検査したactionを置き換えられない**: 拡張機能はページへのメッセージを、検査したactionを最後に置いて組み立てる。コマンドの引数に`action`キーがあっても、実行するページ側のコマンドは変わらない（469b88e）
 
 ### 互換性のない変更
 
@@ -97,6 +98,8 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **拡張機能のポップアップと承認**: バックグラウンドが応答しないとき、ポップアップは「Connecting...」のままにせず理由付きのエラーを表示する。現在のタブを読めなくてもボタンと承認一覧は動く。承認した操作は、末尾にドットを付けて書いたホスト（`example.com.`）でも受け付ける。承認要求・通知・ログの長い文字列は絵文字を割らずに切り詰める（bd09818）
 - **`fox_interact`の`highlight`は新しい強調表示を残す**: 前の強調表示の消去タイマーが、後の強調表示を早く消さなくなった（コンテキストメニューの「要素を調べる」も同じ）。拡張機能のcaptcha待ちバナーは、同じタブで新しいバナーに置き換わるとすぐに終わり（`superseded: true`）、captchaのトークンが入って閉じたバナーを`cancel_human_wait`が取り消したと報告しなくなった（a59434a）
 - **拡張機能のコマンドは不明な値を拒否し、ログに残す範囲を広げた**: `fox_interact`の`scroll`は不明な`direction`で`scrolled: true`を返さず失敗する。拡張機能の変化待ちは、`selector`が何にも一致しないとき（ページ全体を監視せず）と`changeType`が不明なときに失敗する。自動生成する`fox_inject_observer`のIDは同じミリ秒内でも重ならない（重なると先の監視を置き換えていた）。ネットワークログは中断（`error: "Aborted"`）とタイムアウト（`error: "Timeout"`）で終わったXHRも記録する。長さの上限で切る文字列（要素のテキストと値、`fox_get_text`、コンソールとネットワークのログ）は絵文字などBMP外の文字を途中で割らない。数値の値を持つ要素（`<li value>`）で要素一覧が失敗しなくなった（eb227e7）
+- **拡張機能: `fox_read`の`mode: "info"`は届かないページを説明する（エラー文の変更）**: 拡張機能のcontent scriptがないページでは、Firefox自身の`Could not establish connection. Receiving end does not exist.`で失敗していた。ほかのページ操作ツールと同じ`KitsuneMCP cannot reach this page: Firefox does not let extensions into it (JSON viewer, about: pages, addons.mozilla.org, other extensions' pages), or it was opened before KitsuneMCP was installed or updated (reload the tab). Tab-level tools such as fox_screenshot and fox_tabs still work.`で失敗するようにした。それ以外の失敗の文は変わらない（e330de3）
+- **拡張機能: 再試行をすべて失敗した送信が壊れた接続を残さない**: Native Hostへの送信が最後の再試行でも失敗したとき、壊れた接続を閉じ、通常の間隔で再接続する（来ないかもしれない切断通知まで使い続けていた）。自動生成する`fox_inject_observer`のIDは`obs_<時刻>_<番号>`になった（末尾の乱数をやめた。ページ内では番号で重ならない）（14d75ee、725bdda）
 - **空の設定とトークンファイル**: 空の`FOX_HOST`は未設定として扱い、空の`FOX_HTTP_PORT` / `FOX_WS_PORT`は旧名の`CLAUDE_BROWSER_*`を使う。空または読めない`~/.kitsune-mcp/api_token`は上書きしなくなり、削除を求めるメッセージを出してdaemonが終了する（5cf492a）
 - **Native Hostの再起動回数の上限が実際の上限になった**: daemonの起動に10回失敗すると、確認のたびに起動し直すのではなく、使えるdaemonが現れるまで起動しない。PNG・JPEG・WebP以外のMIMEタイプのスクリーンショットの`data:` URLは拒否する（b82e98d）
 - **アンインストーラとインストーラの表示**: 読めないか壊れた`~/.claude.json` / `.mcp.json`は「未登録」ではなく問題として報告し（終了コード1）、別のチェックアウトを指すFirefoxの登録は警告を出す。`--help`と`--manual`の出力のパスは引用符で囲み、インストーラと`--help`が示すdaemonの確認コマンド（`curl`での/health、ポートの確認）は設定したホストとポートを使う。`cmd`に渡すことになるパスに`%`があれば拒否する（d04e56a）
@@ -110,3 +113,4 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **`docs/development.ja.md`**: ビルド、作業の流れ、`@kitsune-mcp/shared`の入口、テストの構成（[development.ja.md](./development.ja.md)）（9f342ae）
 - **ツール統合のためのgoldenファイル**: `tests/golden/`に、各ツール呼び出しのBrowserCommandと安全ガードの判定、セッションの`tools/list`（既定と`FOX_CAPS=legacy`）を記録する。意図した変更なら`UPDATE_GOLDEN=1 npx vitest run <テストファイル>`で作り直す。`node scripts/tools-list-size.mjs`は両方のツール一覧の大きさを表示する（e2d711b、93054cc、59dee5c）
 - **e2eのスモークテストは署名付きのリクエストを使う**: `X-API-Key`を送らなくなり、HTTPのエラーやJSONでない応答はテストの失敗になる（724b23b）
+- **拡張機能の内部整理（WP-D）**: 既定値・上限・待ち時間を2つの`constants.ts`に名前付きで置いた（値は同じ）。型ガードで型アサーション（`as`）を149から88に減らした。content scriptへ送るaction名をunion型にして網羅を検査し、両側で共有するメッセージ種別とログの上限を`src/wire-messages.ts`に置いた。スクリーンショットと人の操作待ちは解決済みのタブを使う。要素の走査は上限で止まる。文字列の切り詰めはバックグラウンド・ポップアップ・content scriptとも1つの関数（`src/text-clip.ts`の`clipText`）で行う。`handleCommand`は呼び出し元（`"host"` / `"page"`）を既定値なしで受け取る（469b88e、c278604、1c6439d、725bdda）
