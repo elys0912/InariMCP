@@ -1,23 +1,13 @@
 // DOM helpers: element location, locators, selectors / XPath, element info,
 // and the password field guard.
 
+import { clipText } from "../text-clip";
 import { LIMITS } from "./constants";
 import type { FindElementOptions, ElementInfo } from "./types";
 
-/**
- * `s` cut to at most `max` UTF-16 code units, never between the two halves
- * of a surrogate pair (a character that does not fit is dropped whole).
- */
-export function truncateText(s: string, max: number): string {
-  if (s.length <= max) return s;
-  if (max <= 0) return "";
-  const last = s.charCodeAt(max - 1);
-  return s.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max);
-}
-
 /** An element's `value` as a truncated string (null when it has none). */
 export function truncatedValue(value: unknown, max: number): string | null {
-  return value === undefined || value === null ? null : truncateText(String(value), max);
+  return value === undefined || value === null ? null : clipText(String(value), max);
 }
 
 export function isTextInput(el: Element): el is HTMLInputElement | HTMLTextAreaElement {
@@ -325,7 +315,7 @@ export function getElementInfo(element: Element): ElementInfo {
     classes: Array.from(element.classList),
     name: htmlEl.name || null,
     type: htmlEl.type || null,
-    text: truncateText(element.textContent?.trim() ?? "", LIMITS.ELEMENT_TEXT) || null,
+    text: clipText(element.textContent?.trim() ?? "", LIMITS.ELEMENT_TEXT) || null,
     value: isPassword ? "[MASKED]" : truncatedValue(htmlEl.value, LIMITS.ELEMENT_TEXT),
     href: (element as HTMLAnchorElement).href || null,
     src: (element as HTMLImageElement).src || null,

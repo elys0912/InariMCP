@@ -192,14 +192,11 @@ export function observeElement(
   }
 
   // Date.now() alone repeats within a millisecond, and a repeated id
-  // silently replaces the earlier observer.
-  const observerId =
-    options.observerId ||
-    `obs_${Date.now()}_${++observerSeq}_${Math.random().toString(36).slice(2, 8)}`;
+  // silently replaces the earlier observer: the page-wide counter keeps
+  // generated ids unique (the map of observers is per page too).
+  const observerId = options.observerId || `obs_${Date.now()}_${++observerSeq}`;
 
-  if (activeObservers.has(observerId)) {
-    activeObservers.get(observerId)!.observer.disconnect();
-  }
+  activeObservers.get(observerId)?.observer.disconnect();
 
   const changes: MutationChange[] = [];
 

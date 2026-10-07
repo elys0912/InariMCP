@@ -76,7 +76,7 @@ export function registerListeners(): void {
         handleCommand({
           ...msg,
           tabId: sender.tab?.id,
-        } as NativeMessage).then(sendResponse, (error: unknown) => {
+        } as NativeMessage, "page").then(sendResponse, (error: unknown) => {
           // handleCommand answers its own failures; this keeps the popup
           // from waiting forever should it ever throw.
           sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) });

@@ -639,14 +639,11 @@ describe('WP44 highlight and overlay banner timers (E-05, E-06, A-07)', () => {
 });
 
 describe('WP44 content input checks, observer ids, XHR log and truncation (E-12, E-13, A-06, E-15, E-17)', () => {
-  it('E-17 truncateText never splits a surrogate pair', async () => {
+  // The cut itself (clipText in text-clip.ts) is tested once, in extension-background-async.test.ts.
+  it('E-17 truncatedValue stringifies a value and keeps a missing one null', async () => {
     const dom = await import('../../packages/extension/src/content/dom.ts');
-    expect(dom.truncateText('abc', 5)).toBe('abc');
-    expect(dom.truncateText('abc', 2)).toBe('ab');
-    expect(dom.truncateText('a\u{1F600}b', 2)).toBe('a'); // the emoji does not fit whole
-    expect(dom.truncateText('a\u{1F600}b', 3)).toBe('a\u{1F600}');
-    expect(dom.truncateText('abc', 0)).toBe('');
     expect(dom.truncatedValue(3, 10)).toBe('3');
+    expect(dom.truncatedValue(12345, 3)).toBe('123');
     expect(dom.truncatedValue(undefined, 10)).toBeNull();
     expect(dom.truncatedValue(null, 10)).toBeNull();
   });

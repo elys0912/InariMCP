@@ -432,6 +432,7 @@ describe('clipping never splits a surrogate pair (E-17)', () => {
     expect(clipText(`ab${FOX}`, 3)).toBe('ab');
     expect(clipText(`ab${FOX}`, 4)).toBe(`ab${FOX}`);
     expect(clipText('abcdef', 3)).toBe('abc');
+    expect(clipText('abc', 5)).toBe('abc');
     expect(clipText('abc', 0)).toBe('');
   });
 

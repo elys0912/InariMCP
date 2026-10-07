@@ -1,5 +1,5 @@
-// Cutting strings to a length limit (pure; bundled into the background and
-// the popup).
+// Cutting strings to a length limit (pure; bundled into the background, the
+// popup and the content script).
 
 /**
  * `text` cut to at most `max` UTF-16 code units, never between the two

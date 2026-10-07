@@ -1,6 +1,7 @@
 // Observation and display: page info, element lists, highlight, scroll
 // snapshots, full-page dimensions, inspect element, values and text.
 
+import { clipText } from "../text-clip";
 import { DEFAULTS, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
 import {
   isPasswordField,
@@ -13,7 +14,6 @@ import {
   notFoundError,
   isTextInput,
   isSelectElement,
-  truncateText,
   truncatedValue,
 } from "./dom";
 import type {
@@ -42,7 +42,7 @@ export function getPageInfo(): Record<string, unknown> {
         type: htmlEl.type || null,
         id: el.id || null,
         name: htmlEl.name || null,
-        text: truncateText(el.textContent?.trim() ?? "", LIMITS.PAGE_INFO_TEXT) || null,
+        text: clipText(el.textContent?.trim() ?? "", LIMITS.PAGE_INFO_TEXT) || null,
         href: (el as HTMLAnchorElement).href || null,
         value: isPasswordField(el) ? "[MASKED]" : truncatedValue(htmlEl.value, LIMITS.PAGE_INFO_TEXT),
         placeholder: htmlEl.placeholder || null,
@@ -92,7 +92,7 @@ export function getPageInfo(): Record<string, unknown> {
       .slice(0, LIMITS.HEADINGS)
       .map((h) => ({
         level: parseInt(h.tagName[1]),
-        text: truncateText(h.textContent?.trim() ?? "", LIMITS.HEADING_TEXT),
+        text: clipText(h.textContent?.trim() ?? "", LIMITS.HEADING_TEXT),
       })),
   };
 }
@@ -201,7 +201,7 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
     ) {
       elements.push({
         tag: el.tagName.toLowerCase(),
-        text: truncateText(el.textContent?.trim() ?? "", LIMITS.SNAPSHOT_TEXT) || null,
+        text: clipText(el.textContent?.trim() ?? "", LIMITS.SNAPSHOT_TEXT) || null,
         selector: generateSelector(el),
         position: {
           x: Math.round(rect.left + rect.width / 2),
@@ -352,7 +352,7 @@ export function getText(
     (element as HTMLElement).innerText || element.textContent || "";
 
   return {
-    text: truncateText(text, maxLength),
+    text: clipText(text, maxLength),
     truncated: text.length > maxLength,
     totalLength: text.length,
     url: window.location.href,

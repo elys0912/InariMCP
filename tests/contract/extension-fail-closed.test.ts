@@ -55,7 +55,7 @@ describe('E-01 / A-02 containerScope', () => {
     ['a non-string name', { containerName: 7 }],
   ])('%s is refused as config_error before the handler runs', async (_label, containerScope) => {
     installBrowser();
-    const result = await handleCommand({ action: 'get_page_info', containerScope });
+    const result = await handleCommand({ action: 'get_page_info', containerScope }, 'host');
     expect(result).toMatchObject({ success: false, safetyDecision: 'config_error' });
     expect(result.error).toMatch(/container scope/);
     expect(sent).toEqual([]);
@@ -63,15 +63,15 @@ describe('E-01 / A-02 containerScope', () => {
 
   it('absent: no scope check, the handler runs', async () => {
     installBrowser();
-    expect(await handleCommand({ action: 'get_page_info' })).toMatchObject({ success: true });
+    expect(await handleCommand({ action: 'get_page_info' }, 'host')).toMatchObject({ success: true });
     expect(sent).toHaveLength(1);
   });
 
   it('a usable scope is still enforced', async () => {
     installBrowser();
-    expect(await handleCommand({ action: 'get_page_info', containerScope: { containerName: 'agent' } }))
+    expect(await handleCommand({ action: 'get_page_info', containerScope: { containerName: 'agent' } }, 'host'))
       .toMatchObject({ success: true });
-    expect(await handleCommand({ action: 'get_page_info', containerScope: { containerName: 'other' } }))
+    expect(await handleCommand({ action: 'get_page_info', containerScope: { containerName: 'other' } }, 'host'))
       .toMatchObject({ success: false, safetyDecision: 'out_of_scope' });
   });
 
@@ -88,7 +88,7 @@ describe('E-03 URL rule fields that are not arrays', () => {
   for (const field of ['protectedUrlRules', 'blockedUrlRules', 'allowedUrlRules', 'protectedUrlPatterns']) {
     it.each(NOT_ARRAYS)(`${field} as %s is refused as config_error`, async (_label, value) => {
       installBrowser();
-      const result = await handleCommand({ action: 'get_page_info', [field]: value });
+      const result = await handleCommand({ action: 'get_page_info', [field]: value }, 'host');
       expect(result).toMatchObject({ success: false, safetyDecision: 'config_error' });
       expect(sent).toEqual([]);
     });
@@ -100,15 +100,15 @@ describe('E-03 URL rule fields that are not arrays', () => {
       action: 'get_page_info',
       protectedUrlRules: 'bank.test',
       protectedUrlPatterns: ['bank\\.test'],
-    });
+    }, 'host');
     expect(result).toMatchObject({ success: false, safetyDecision: 'config_error' });
   });
 
   it('the legacy protectedUrlPatterns alone (older servers) still works', async () => {
     installBrowser();
-    expect(await handleCommand({ action: 'get_page_info', protectedUrlPatterns: ['app\\.example\\.test'] }))
+    expect(await handleCommand({ action: 'get_page_info', protectedUrlPatterns: ['app\\.example\\.test'] }, 'host'))
       .toMatchObject({ success: false, safetyDecision: 'confirmation_required' });
-    expect(await handleCommand({ action: 'get_page_info', protectedUrlPatterns: ['bank\\.test'] }))
+    expect(await handleCommand({ action: 'get_page_info', protectedUrlPatterns: ['bank\\.test'] }, 'host'))
       .toMatchObject({ success: true });
   });
 });
@@ -116,7 +116,7 @@ describe('E-03 URL rule fields that are not arrays', () => {
 describe('A-01 a host rule path with a query or fragment', () => {
   it.each(['protectedUrlRules', 'blockedUrlRules', 'allowedUrlRules'])('in %s is refused as config_error', async (field) => {
     installBrowser();
-    const result = await handleCommand({ action: 'get_page_info', [field]: [hostRule('app.example.test', '/page?x=1')] });
+    const result = await handleCommand({ action: 'get_page_info', [field]: [hostRule('app.example.test', '/page?x=1')] }, 'host');
     expect(result).toMatchObject({ success: false, safetyDecision: 'config_error' });
     expect(result.error).toMatch(/1 URL pattern\(s\)/);
     expect(sent).toEqual([]);
