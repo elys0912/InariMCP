@@ -28,6 +28,10 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **コマンドのデータが拡張機能の検査したactionを置き換えられない**: 拡張機能はページへのメッセージを、検査したactionを最後に置いて組み立てる。コマンドの引数に`action`キーがあっても、実行するページ側のコマンドは変わらない（469b88e）
 - **安全チェックがタブをより多くの場合に追跡する**: 結果にタブを示さない呼び出し（ヘッドレスモード）の後も、それまでに分かっていたタブIDを保つので、そのタブIDを指定した後の呼び出しは実際に表示しているページで確認される。結果のトップレベルで`tabId`を返す場合もそれに従う。拡張機能が拒否した`fox_tab` `close`（保護サイト）でサーバがタブを忘れることはなくなり、拡張機能自身の拒否ではタブの位置を記録する（1452cf8）
 - **ページ由来のエラー文が承認要求を装えない**: ブラウザ側で失敗した結果の本文は`Browser error: `で始まるので、それ自体がJSONのエラーメッセージを中継が承認要求として読むことはない（7758f23）
+- **`safety.json`の設定エラーを他の拒否より先に返す**: 設定エラーの状態でも、パスワード欄や不正な`urlPattern`の呼び出しはその理由で先に拒否され、`denied`と記録されていた。今後は他の呼び出しと同じく`config_error`として拒否し、そのとおり記録する
+- **拡張機能が未知の理由で拒否したとき、黙って`denied`にしない**: daemonはその理由を示す行を`daemon.log`に出し、`denied`として拒否する。拡張機能からの`config_error`（使えない安全メタデータ）は`denied`ではなく`config_error`と記録する
+- **ヘッドレスの`fox_press_key`もパスワードガードに従う**: ヘッドレスではキー入力が実際の入力になるため、パスワード欄に1文字ずつ入力できた。パスワード欄（`selector`で指定した要素、なければフォーカス中の要素。iframeとshadow rootの中も含む）では、Enter・Tab・Escape・矢印キー・Home / End・PageUp / PageDown・修飾キー単独以外のキーを、`allow_password_typing`が有効でない限り`fox_type`と同じ文言で拒否する。拡張機能の合成キーイベントは文字を入力しないので影響しない
+- **XHTML文書でのパスワード判定**: 要素名が小文字になる`application/xhtml+xml`のページでも、拡張機能とヘッドレスモードがパスワード欄を判定する（ヘッドレスでは`<label>`の対象と、フォーカス中の要素を探すときにたどるiframeも）。これまでは見落としていた
 
 ### 互換性のない変更
 
@@ -45,6 +49,10 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **41個のツールを21個にまとめ、セッションは新しい名前を一覧にする**: 以前のツール名を書いたプロンプトや設定は、新しい名前にするか`FOX_CAPS=legacy`にする必要がある。以前の名前は呼び出せば引き続き動く。[ツール名の統合（41 → 21）](#ツール名の統合41--21)を参照（59dee5c、00bca2b）
 - **`fox_navigate`の`url`は`goto`でだけ受け付ける**: `url`の無い`goto`（既定のアクション）と、`url`付きの`back`・`forward`・`refresh`・`hard_refresh`は拒否する。後者の`url`は使われないのに、安全チェックがそれを移動先とみなし、呼び出しが操作するタブを確認していなかった。それらの呼び出しから`url`を外すこと（7758f23）
 - **数値引数に下限を付けた**: `limit`・`maxLength`・`pollIntervalMs`・`fox_evaluate` `wait_and_act`の`timeout`・`duration`・`maxScrolls`・`scrollStep`は1以上、`amount`・`idleTime`・`delay`・`fox_set_value` `select`のoptionの`index`は0以上。それより小さい値は不正な引数として拒否する（7758f23）
+- **ブラウザ側で失敗した結果は`Browser error: `で始まり、監査ログには`browser_error`と記録する**: ツールの結果や監査ログを読むプログラムが以前の本文や`denied`の行を前提にしていたら、更新が必要。セキュリティ（`Browser error: `）と修正（1回の呼び出しに1行）を参照
+- **ヘッドレスの`fox_type`は`selector`があるとき、拡張機能と同じく追記する**: 欄の現在の内容の後ろに加える。置き換えるには`clear: true`を渡す（`clear`の警告は`selector`がないときだけ出す）
+- **ヘッドレスの`fox_read`（`mode: "text"`）は`totalLength`と`title`を返す**: キー`total_length`はなくなった（拡張機能と同じ）
+- **ヘッドレスの`fox_interact`（`action: "scroll"`）は`direction`がなければ動かさない**: これまでは下へスクロールしていた。拡張機能と同じく`scrolled: true`と位置を返す。一致しない`selector`はウィンドウを、一致しない`toElement`は`direction`の処理へ進み（どちらも警告付き）、失敗しなくなった
 
 ### ツール名の統合（41 → 21）
 
@@ -86,6 +94,7 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **`playwright`を任意の依存にした**: 中継と拡張機能経路のdaemonは`playwright`が無くても起動する。`FOX_HEADLESS`のdaemonは、無ければ導入方法を含むメッセージを出して終了する。`npm run build`には引き続き必要（1cf3974、2e9ab03）
 - **E2Eのスモークテスト**: `npm run test:e2e`は一時的なホームディレクトリと空きポートで、中継 → daemon → ヘッドレスFirefoxをMCP経由で動かす。`npm run e2e:extension`は拡張機能がFirefoxに読み込まれるかを確かめる（2bd20a0）
 - **`@kitsune-mcp/shared/node`**: daemon・中継・Native HostのNode.js向けの処理（パス、接続先、トークン、`/health`、ログ、daemonの起動、版、HMAC）を1つのサブパスにまとめた。パッケージのルートはブラウザでも使えるまま（9896141）
+- **`GET /mcp/tools`が安全分類をリストでも返す**: 各ツールに`classifications`（例: `["act", "interact"]`）を足した。`|`でつないだ`classification`はそのまま
 
 ### 修正
 
@@ -109,17 +118,34 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **拡張機能のコマンドは不明な値を拒否し、ログに残す範囲を広げた**: `fox_interact`の`scroll`は不明な`direction`で`scrolled: true`を返さず失敗する。拡張機能の変化待ちは、`selector`が何にも一致しないとき（ページ全体を監視せず）と`changeType`が不明なときに失敗する。自動生成する`fox_inject_observer`のIDは同じミリ秒内でも重ならない（重なると先の監視を置き換えていた）。ネットワークログは中断（`error: "Aborted"`）とタイムアウト（`error: "Timeout"`）で終わったXHRも記録する。長さの上限で切る文字列（要素のテキストと値、`fox_get_text`、コンソールとネットワークのログ）は絵文字などBMP外の文字を途中で割らない。数値の値を持つ要素（`<li value>`）で要素一覧が失敗しなくなった（eb227e7）
 - **拡張機能: `fox_read`の`mode: "info"`は届かないページを説明する（エラー文の変更）**: 拡張機能のcontent scriptがないページでは、Firefox自身の`Could not establish connection. Receiving end does not exist.`で失敗していた。ほかのページ操作ツールと同じ`KitsuneMCP cannot reach this page: Firefox does not let extensions into it (JSON viewer, about: pages, addons.mozilla.org, other extensions' pages), or it was opened before KitsuneMCP was installed or updated (reload the tab). Tab-level tools such as fox_screenshot and fox_tabs still work.`で失敗するようにした。それ以外の失敗の文は変わらない（e330de3）
 - **拡張機能: 再試行をすべて失敗した送信が壊れた接続を残さない**: Native Hostへの送信が最後の再試行でも失敗したとき、壊れた接続を閉じ、通常の間隔で再接続する（来ないかもしれない切断通知まで使い続けていた）。自動生成する`fox_inject_observer`のIDは`obs_<時刻>_<番号>`になった（末尾の乱数をやめた。ページ内では番号で重ならない）（14d75ee、725bdda）
-- **空の設定とトークンファイル**: 空の`FOX_HOST`は未設定として扱い、空の`FOX_HTTP_PORT` / `FOX_WS_PORT`は旧名の`CLAUDE_BROWSER_*`を使う。空または読めない`~/.kitsune-mcp/api_token`は上書きしなくなり、削除を求めるメッセージを出してdaemonが終了する（5cf492a）
+- **空のトークンファイル**: 空または読めない`~/.kitsune-mcp/api_token`は上書きしなくなり、削除を求めるメッセージを出してdaemonが終了する（5cf492a）
 - **Native Hostの再起動回数の上限が実際の上限になった**: daemonの起動に10回失敗すると、確認のたびに起動し直すのではなく、使えるdaemonが現れるまで起動しない。PNG・JPEG・WebP以外のMIMEタイプのスクリーンショットの`data:` URLは拒否する（b82e98d）
 - **アンインストーラとインストーラの表示**: 読めないか壊れた`~/.claude.json` / `.mcp.json`は「未登録」ではなく問題として報告し（終了コード1）、別のチェックアウトを指すFirefoxの登録は警告を出す。`--help`と`--manual`の出力のパスは引用符で囲み、インストーラと`--help`が示すdaemonの確認コマンド（`curl`での/health、ポートの確認）は設定したホストとポートを使う。`cmd`に渡すことになるパスに`%`があれば拒否する（d04e56a）
-- **監査ログは1回の呼び出しに1行、`audit_log: false`なら書かない**: これまで実行した呼び出しは2行（安全チェックの`allowed`と、ブラウザの応答後にもう1行）記録され、`audit_log: false`でも書かれていた。ブラウザ側で失敗した呼び出しは`denied`と記録されていた。今後は安全チェックの行だけを残し、ブラウザ側の失敗には`browser_error`の行を足す。`allowed_by_human`は承認が確認を実際に解除したときだけ記録する。パスワード欄と不正な`urlPattern`は安全チェックの前に拒否するので、レート制限に数えず`allowed`の行も残さない（パスワード欄の拒否は`denied`と記録）。以前のツール名による呼び出しは、新しいツールの引数（モードのキーと改名した引数）で記録する（1452cf8、7758f23）
-- **役に立たなかった承認トークンを知らせる**: 承認トークン付きの呼び出しがなお確認を要するとき（別のサイト向けのトークンなど）、結果にトークンを受け付けなかったと書く（7758f23）
+- **監査ログは1回の呼び出しに1行、`audit_log: false`なら書かない**: これまで実行した呼び出しは2行（安全チェックの`allowed`と、ブラウザの応答後にもう1行）記録され、`audit_log: false`でも書かれていた。ブラウザ側で失敗した呼び出しは`denied`と記録されていた。今後は安全チェックの行だけを残し、ブラウザ側の失敗には`browser_error`の行を足す。`allowed_by_human`は承認が確認を実際に解除したときだけ記録する。パスワード欄と不正な`urlPattern`は安全チェックの前に拒否するので、レート制限に数えず`allowed`の行も残さない（パスワード欄の拒否は`denied`と記録）。以前のツール名による呼び出しは、新しいツール名で呼んだときと同じく、新しいツールが解釈した引数（モードのキー、改名した引数、既定値）で記録する（1452cf8、7758f23）
+- **役に立たなかった承認トークンを知らせる**: 承認トークン付きの呼び出しがなお確認を要するとき（別のサイト向けのトークンなど）、結果にトークンを受け付けなかったことと、再試行すると改めて人に確認することを書く（7758f23）
 - **`fox_safety_status`は読んだ設定ファイルを示す**: `configFile`はdaemonが読み込んだファイルの絶対パス。空白だけの`FOX_SAFETY_CONFIG`はここでも未設定として扱う（1452cf8）
 - **`fox_handle_dialog`の説明から「どの`FOX_CAPS`プロファイルにも無い」を外した**: 公開ツールは既定の一覧にある。`FOX_CAPS=legacy`では従来の説明のまま（7758f23）
+- **`newTab`と`tabId`を指定した`fox_navigate`で、新しいページを指定したタブのURLとして記録しなくなった**: 安全チェックは新しいタブのURLを`tabId`のタブのURLとして覚えていたため、そのタブへの後続の呼び出しを別のページで判定していた
+- **安全チェックの拒否の詳細に必ずレイヤーを入れる**: `details.layer`を安全チェックのすべての拒否に入れる（これまでは拡張機能による拒否だけだった）。設定エラーにはレイヤーがない
+- **ヘッドレスのバックエンドを、さらに多くのツールで拡張機能に揃えた**: `fox_set_value`は`<select>`の値を設定する（valueの後に`input`と`change`）。`fox_find`（`by: "text"`）はページのテキスト中の出現回数を数え、`caseSensitive`と`entireWord`を反映し、引用符やバックスラッシュをそのままの文字として扱い、空のqueryを拒否する。`fox_find`（`by: "selector"`）は`count`（一致した総数）を返し、50までの`limit`を守る。`fox_get_value`は`<label>`など入力欄以外の要素をそのテキストとして、`<select>`を選択中のvalueとして返す。`fox_select_option`のtext指定は前後の空白を除いた一致も認める。`fox_interact`の`highlight`は`duration`の間だけ枠を表示する。`fox_wait`の`for: "element"`は`visible: false`を、`for: "navigation"`は`waitUntil`を反映する。`fox_press_key`は`pressed`も返す
+- **ヘッドレスの待機は呼び出し元が諦めたら終わる**: `fox_wait`（element・network idle・navigation・URL）は呼び出し元の期限で打ち切り、キャンセルされたらすぐに終える。次のコマンドが待機自身のtimeoutまで待たされなくなった
+- **ヘッドレスの`fox_wait_and_act`が失敗の理由を示す**: 条件が満たされなかったとき、条件が最後に投げたエラーを添え、`timeoutMs`より前に呼び出し元の期限で打ち切った場合はそう書く
+- **`FOX_*`の設定値は前後の空白を除いて読む**: たとえば末尾に空白や改行がある`FOX_EXECUTABLE`は、それを除いたパスとして使う
+- **空、または空白だけの`FOX_HOST` / `FOX_HTTP_PORT` / `FOX_WS_PORT`を未設定として扱う**: daemon・中継・Native Host・インストーラ / アンインストーラは、空の値と空白だけの値を未設定とし（旧名`CLAUDE_BROWSER_*`、次に既定値を使う）、設定された値は前後の空白を除いて使う。ほかの`FOX_*`変数と同じ扱いになる。以前は`FOX_HOST=' '`がそのままアドレスになり、daemonが待ち受けできず、Native Hostも接続できなかった。空白だけのポートで「ignoring … not a port number」の警告も出なくなった。インストーラとアンインストーラは`CLAUDE_CONFIG_DIR`・`XDG_CONFIG_HOME`・`ComSpec`・`PATH`・`PATHEXT`も同じ規則で読む
+- **アンインストーラのdaemon判定を他と揃えた**: `/health`の応答は`status: "ok"`があるときだけKitsuneMCPのdaemonとみなす（中継とNative Hostと同じ判定）
+- **インストーラ / アンインストーラの出力エラー**: 標準出力への書き込みエラーのうちパイプが閉じた場合以外は、スタックトレースではなく1行で報告して終了コード1で終わる
+- **書き出せないツール応答には500を返す**: daemonがツールや承認の結果をJSONにできないとき、要求は応答のないまま中継のタイムアウトまで残っていた（エラーも処理されていなかった）。今後はHTTP 500で理由を返し、`daemon.log`に記録する
+- **`--doctor`はdaemonの設定を中継と同じ方法で比べる**: `settings`の項目は変数の値をそのまま比べていたため、`FOX_READ_ONLY=true`と`1`、旧名`CLAUDE_BROWSER_*`と`FOX_*`の違いが、中継では同じ扱いなのにWARNになっていた。中継と同じ規則で実効値を比べ、WARNの文面も中継の警告と同じ形（`FOX_READ_ONLY: this session 'on', daemon 'off'`）になる
+- **ヘッドレスの起動待ちを延ばすと中継も長く待つ**: 中継がdaemonの応答を待つ時間は最長のコマンドタイムアウトに固定の60秒を足したもので、`FOX_HEADLESS_STARTUP_TIMEOUT`を45秒より長くすると足りなくなることがあった。上乗せ分をその起動待ち＋15秒（既定では60秒のまま）にした
+- **メッセージに実際のファイルの場所を示す**: 中継の「APIトークンが無い」「daemonを使えない」というメッセージと`--doctor`の`logs`の項目は、`api_token`とログの場所を固定の`~/.kitsune-mcp/...`ではなくデータディレクトリから組み立てる。中継のメッセージに示す要求サイズの上限はdaemonの値（バイト数）になる
+- **拡張機能の`fox_scroll`の結果**: `amount: 0`は既定の300 pxでなく0ピクセルスクロールする。`position`はスクロール後に実測した`{ x, y }`を常に返す。`top`（以前は常に`{ 0, 0 }`）、`bottom`（以前は文字列`"bottom"`）、`toElement`（以前は返さなかった）も同じ。`selector`や`toElement`に一致する要素がない場合と、`direction`を指定しない場合の動作は変えていない
+- **テキストの変更を待つ**: `wait_for_change`の`changeType: "text"`がテキストノードの変更を検出するようになった。以前は必ずタイムアウトしていた
+- **拡張機能の`fox_observer`（`inject`）がテキストの変更を記録する**: 監視する要素の中のテキストノードが変わると監視の処理が失敗し、その変更と同じ回にまとめて届いた変更が失われていた。今後はテキストの親要素のセレクタで記録する
+- **Native Hostとの接続状態**: Native Hostへの送信に失敗したとき、ホストが切断したときと同じく、その理由をポップアップ（`status`）に示し、安定していた接続の後なら再接続の間隔を最初からやり直す。Native Hostから不正な形のメッセージが届いたら、応答やコマンドとして扱わずに捨てる
 
 ### 開発者向け
 
-- **daemon・中継・通信部分のコードを挙動を変えずに整理した**: HTTPとWebSocketの要求処理と中継のツール呼び出しを名前の付いた関数に分け、生成するIDは`@kitsune-mcp/shared`の`shortId()`を使う（監査ログの中継ID `relay:<id>`は16進8桁から36進最大6文字になる）。daemonと中継が共有する時間は1つの定数から求める（c50e375、d81a565）
+- **daemon・中継・通信部分のコードを挙動を変えずに整理した**: HTTPとWebSocketの要求処理と中継のツール呼び出しを名前の付いた関数に分け、生成するIDは`@kitsune-mcp/shared`の`shortId()`を使う（監査ログの中継ID `relay:<id>`は16進8桁から36進6文字になる。生成するスクリーンショット名とジョブオブジェクト外起動の作業ファイル名も同じ固定長で、以前の版が作ったIDの短いスクリーンショットも保持期限で削除される）。daemonと中継が共有する時間は1つの定数から求める（c50e375、d81a565）
 - **拡張機能をesbuildでbundleする**: ソースはES moduleになり、`npm run build`が`dist/background.js`、`dist/content.js`、`dist/popup/popup.js`を書き出す。bundleにzodや`@kitsune-mcp/shared/node`が入るとビルドが失敗する。`npm run build`の後に`packages/extension/manifest.json`を読み込む（0e3376e、156600f）
 - **Vitest**: `npm test`は単体・契約・インストーラのテストを、テストファイルごとに一時的なホームディレクトリで実行する。開発にはNode.js 22.12以降（または24）が必要（1925170、146fc2d）
 - **`npm run typecheck`はテストも型検査する**: 拡張機能の型検査（`typecheck`スクリプトを持つworkspaceは拡張機能だけ）のあと、`npm run typecheck:tests`（`tsc -p tsconfig.test.json`。対象は`packages/*/tests`と`tests/`）を実行する。`npm run lint:ext`は`web-ext lint`を実行する（f93909a、156e11d）
@@ -128,3 +154,8 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **ツール統合のためのgoldenファイル**: `tests/golden/`に、各ツール呼び出しのBrowserCommandと安全ガードの判定、セッションの`tools/list`（既定と`FOX_CAPS=legacy`）を記録する。意図した変更なら`UPDATE_GOLDEN=1 npx vitest run <テストファイル>`で作り直す。`node scripts/tools-list-size.mjs`は両方のツール一覧の大きさを表示する（e2d711b、93054cc、59dee5c）
 - **e2eのスモークテストは署名付きのリクエストを使う**: `X-API-Key`を送らなくなり、HTTPのエラーやJSONでない応答はテストの失敗になる（724b23b）
 - **拡張機能の内部整理（WP-D）**: 既定値・上限・待ち時間を2つの`constants.ts`に名前付きで置いた（値は同じ）。型ガードで型アサーション（`as`）を149から88に減らした。content scriptへ送るaction名をunion型にして網羅を検査し、両側で共有するメッセージ種別とログの上限を`src/wire-messages.ts`に置いた。スクリーンショットと人の操作待ちは解決済みのタブを使う。要素の走査は上限で止まる。文字列の切り詰めはバックグラウンド・ポップアップ・content scriptとも1つの関数（`src/text-clip.ts`の`clipText`）で行う。`handleCommand`は呼び出し元（`"host"` / `"page"`）を既定値なしで受け取る（469b88e、c278604、1c6439d、725bdda）
+- **拡張機能のコードを動作を変えずに整理した**: 捕捉した例外のメッセージは`errorMessage()`で読む。非nullアサーションと不要な型アサーションを外した（`as` 92 → 48、`!` 12 → 0）。ディスパッチャとruntimeメッセージのリスナーを名前の付いた段階に分けた。content scriptへ転送するだけだったbackgroundの6関数はaction tableの行にした。テストのためにaction mapと承認の関数を`globalThis`へ公開するのをやめた。承認の一覧・決定とディスパッチャの呼び出しを誰に許すかは、リスナーそのものを動かして検査する
+- **ツール名を型にし、ツール呼び出しの処理を分けた**: ツール名と操作名を型にした（`OperationName`、`PublicToolName`、`ProfileName`）。`TAB_INDEPENDENT_TOOLS`は`ToolDefinition.tabIndependent`から導出し、`ToolDefinition.inputSchema`は`z.AnyZodObject`にした。拡張機能の`safetyDecision`の値は`@kitsune-mcp/shared`の`BROWSER_SAFETY_DECISIONS`。`handlers.ts`のツール呼び出しを`refuseArguments()`、`buildCommand()`、`browserRefusalToResult()`、`finishResult()`に分けた
+- **Native Hostとscriptsのコードを挙動を変えずに整理した**: Native Hostのdaemon起動を名前の付いた手順（ログの準備、Firefoxのジョブオブジェクト外での起動、通常の起動）に分け、アンインストーラのプロセス停止とデータディレクトリの手順、インストーラのClaude Codeの手順も分けた。ファイルモード・再試行回数・時間の単位は名前付き定数にし、Native Hostのログ行の接頭辞は`@kitsune-mcp/shared`のものを使う
+- **daemon・中継・通信部分のコードを挙動を変えずにさらに整理した**: `runDaemon`を名前の付いた段階に分け（`buildShutdownSteps`、`occupiedPortExit`。終了処理はテストから差し替えられる）、中継の起動時チェックを`precheckDaemon`にした。`DaemonClient.request`はオプションのオブジェクトを受け取り、`settingsMismatch()`を廃止した（`checkSettings()`は残る）。接続管理の待ち要求の処理とWebSocketの認証前のバイト上限を別の関数にし、エラーの文字列化を`errorMessage()`の1つにまとめた
+- **テスト**: `trampoline.test.ts`はテスト用daemonの作業ディレクトリをテストごとの一時ディレクトリから分け、その削除がプロセスの終了時刻に左右されないようにした（高負荷時のWindowsでのEPERM）。`loadConfig`のテストを`config.test.ts`へ、共有の`parsePort` / `evaluateHealth`のテストを`packages/shared/tests`へ移した。空白のエンドポイント変数、`stopDaemonGracefully`、`resolveLogPath`、`logStamp` / `stderrLogger` / `readPackageVersion`、不正な`/mcp/call`応答、書き出せない応答、`/browser/command`と生のアクション、不正なJSON、`GET /mcp/tools`と`/screenshots`、署名拒否の後のトークン読み直し、`--stop-daemon`の失敗経路、中継の起動時チェック、doctorの実効値による比較、非推奨の注記、スクリーンショットのMIMEタイプ、承認できない確認、ポップアップの取り消し・失敗、`resolveOperation()`のエラーのテストを追加した

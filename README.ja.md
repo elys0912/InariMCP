@@ -288,9 +288,9 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 | 変数 | 既定値 | 読むプロセス | 説明 |
 |---|---|---|---|
-| `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host、アンインストーラ | HTTP/WSサーバーのアドレス。ループバック以外なら警告を出す。空の値は未設定として扱う。旧名: `CLAUDE_BROWSER_HOST` |
-| `FOX_HTTP_PORT` | `8765` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空なら旧名を使う。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
-| `FOX_WS_PORT` | `8766` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空なら旧名を使う。旧名: `CLAUDE_BROWSER_WS_PORT` |
+| `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host、アンインストーラ | HTTP/WSサーバーのアドレス。ループバック以外なら警告を出す。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HOST` |
+| `FOX_HTTP_PORT` | `8765` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
+| `FOX_WS_PORT` | `8766` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_WS_PORT` |
 | `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。`legacy`を指定すると、代わりに以前のツール名を一覧にする（[ツール名の移行](#ツール名の移行)を参照）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、スクリプト禁止、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
 | `FOX_HEADLESS` | 未設定 | daemon | `1` / `true` / `yes`でヘッドレスPlaywrightバックエンドを使う。それ以外は無効（`on`など認識できない値は警告をログに出す）。旧名: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない）。旧名: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |

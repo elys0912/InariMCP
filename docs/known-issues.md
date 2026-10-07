@@ -48,19 +48,19 @@ Limitations and caveats known in the current version of KitsuneMCP (v0.1.x).
 - **Many arguments are ignored** (the result lists them in `warnings`):
   - `fox_navigate`: `waitForLoad` (always waits for `domcontentloaded`), `bypassCache` (`refresh` is a normal reload)
   - `fox_click`: only `selector` or `x` + `y` (no `xpath`, `text`, `doubleClick`, `rightClick`)
-  - `fox_type`: only `selector` and `text` (with `selector` the existing content is replaced, without it the focused element receives the text; `clear`, `pressEnter`, `delay`, `placeholder`, `name`, `id` are ignored)
+  - `fox_type`: only `selector`, `text` and `clear` (with `selector` the text is appended to the existing content, or replaces it with `clear: true`; without `selector` the focused element receives the text and `clear` is ignored; `pressEnter`, `delay`, `placeholder`, `name`, `id` are ignored)
   - `fox_screenshot`: `saveToFile` (always saved to a file), `timeout` (the time budget of `all_tabs`, which headless does not support)
   - `fox_press_key`: `xpath`, `text`, `id` (use `selector`)
   - `fox_read` `mode: "info"`: returns the URL and title only
-  - `fox_find` `by: "selector"`: `limit` is ignored (at most 50, tag / text / position only)
-  - `fox_find` `by: "text"`: returns the count only (`caseSensitive`, `entireWord`, `includeRectData` ignored)
+  - `fox_find` `by: "selector"`: a `limit` above 50 is capped at 50 (`count` is still every match); tag / text / position only
+  - `fox_find` `by: "text"`: returns the count of occurrences in the text of the top document only (no iframes); `includeRectData` ignored
   - `fox_tabs` `what: "tabs"`: `urlPattern`, `includeFavicon` and `limit` ignored (id, URL, title and active only)
   - `fox_tab` `action: "create"`: `active` ignored (the new tab always becomes active)
-  - `fox_interact` `action: "highlight"`: `duration`, `label` ignored (red outline for 2 s)
-  - `fox_wait` `for: "element"`: `visible: false` is ignored (waits until visible)
+  - `fox_interact` `action: "highlight"`: `label` ignored (red outline for `duration`)
   - `fox_wait` `for: "network_idle"`: `idleTime` ignored
-  - `fox_wait` `for: "navigation"`: `waitUntil`, `urlPattern` ignored
+  - `fox_wait` `for: "navigation"`: `urlPattern` ignored (any navigation ends the wait; `waitUntil` is honoured)
   - `fox_observer`: `observerId` is ignored (one observer per page). `action: "remove"` returns only the number of changes
+- **`fox_press_key` on a password field refuses most keys**: headless key presses are real input, so on a password field (the `selector` element, else the focused one) only keys that leave the value unchanged are sent — Enter, Tab, Escape, the arrow keys, Home / End, PageUp / PageDown and modifier keys alone. Any other key is refused like `fox_type`, unless `allow_password_typing` is on
 - **Dialogs nobody expected are dismissed**: a dialog (alert / confirm / prompt) that no `fox_handle_dialog` is waiting for is dismissed after 2 seconds and reported in the next result on that tab. To accept one, call `fox_handle_dialog` before the action that opens it; when no dialog comes within its `timeout`, it stays armed for the next dialog on that tab for 30 seconds
 
 ## Log capture
