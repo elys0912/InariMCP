@@ -30,6 +30,12 @@ export const SELECT_OPTION_TIMEOUT_MS = 5_000;
  */
 export const SCRIPT_TIMEOUT_MS = 30_000;
 
+/**
+ * wait_for_* (element, network idle, navigation, url): how long after the
+ * Playwright wait's own timeout it is given up (bounded by the deadline as well).
+ */
+export const WAIT_GIVE_UP_SLACK_MS = 1_000;
+
 // --- Values in place of an unusable argument ---
 // The other arguments are used as the tool schemas deliver them (helpers.ts
 // parseArgs); these two schema fields allow zero and negative numbers. Both

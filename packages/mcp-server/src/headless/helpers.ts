@@ -138,7 +138,6 @@ export const HEADLESS_IGNORED: Readonly<Partial<Record<BrowserAction, readonly I
   create_tab: [{ key: 'active', def: true, note: 'the new tab always becomes active' }],
   wait_for_network_idle: [{ key: 'idleTime', def: 500, note: 'fixed by the browser engine' }],
   wait_for_navigation: [
-    { key: 'waitUntil', def: 'load', note: 'not applied' },
     { key: 'urlPattern', note: "any navigation ends the wait; use fox_wait with for='url'" },
   ],
   inject_observer: [{ key: 'observerId', note: 'one observer per page' }],

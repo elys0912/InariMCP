@@ -31,6 +31,7 @@ import {
   WAIT_AND_ACT_DEFAULT_MS,
   WAIT_AND_ACT_POLL_MIN_MS,
   WAIT_AND_ACT_POLL_MS,
+  WAIT_GIVE_UP_SLACK_MS,
 } from './limits.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -160,6 +161,19 @@ function bounded<T>(work: Promise<T>, bound: Bound, ms: number, what: string): P
 /** page.evaluate(script), bounded by SCRIPT_TIMEOUT_MS and `bound`. */
 function evaluateScript(page: Page, script: string, bound: Bound, what = 'The script'): Promise<unknown> {
   return bounded(page.evaluate(script), bound, SCRIPT_TIMEOUT_MS, what);
+}
+
+/**
+ * A Playwright wait of up to `timeout` ms, cut to `bound.deadline` and given
+ * up when `bound.signal` aborts, so a cancelled wait frees execute()'s lock
+ * at once (the Playwright wait itself runs on until its own timeout).
+ * `wait` gets the timeout to pass to Playwright: at least 1 ms, since
+ * Playwright reads 0 as "no timeout".
+ */
+function boundedWait<T>(bound: Bound, timeout: number, what: string, wait: (ms: number) => Promise<T>): Promise<T> {
+  const ms = Math.max(1, Math.min(timeout, bound.deadline - Date.now()));
+  // Playwright's own timeout error (it names what was awaited) comes first.
+  return bounded(wait(ms), bound, ms + WAIT_GIVE_UP_SLACK_MS, what);
 }
 
 // ---------------------------------------------------------------------------
@@ -508,16 +522,18 @@ const executeScript: ActionHandler = async (c) => {
 // --- wait_for_element ---
 const waitForElementArgs = selectorArgs.merge(timeoutArgs).extend({ visible: z.boolean() });
 
-const waitForElement: ActionHandler = async ({ page, args }) => {
-  const { selector, timeout, visible } = parseArgs(waitForElementArgs, args, 'wait_for_element');
-  await page.waitForSelector(selector, { timeout, state: visible ? 'visible' : 'attached' });
+const waitForElement: ActionHandler = async (c) => {
+  const { selector, timeout, visible } = parseArgs(waitForElementArgs, c.args, 'wait_for_element');
+  await boundedWait(c, timeout, 'wait_for_element', (ms) =>
+    c.page.waitForSelector(selector, { timeout: ms, state: visible ? 'visible' : 'attached' }));
   return { success: true };
 };
 
 // --- wait_for_network_idle ---
-const waitForNetworkIdle: ActionHandler = async ({ page, args }) => {
-  const { timeout } = parseArgs(timeoutArgs, args, 'wait_for_network_idle');
-  await page.waitForLoadState('networkidle', { timeout });
+const waitForNetworkIdle: ActionHandler = async (c) => {
+  const { timeout } = parseArgs(timeoutArgs, c.args, 'wait_for_network_idle');
+  await boundedWait(c, timeout, 'wait_for_network_idle', (ms) =>
+    c.page.waitForLoadState('networkidle', { timeout: ms }));
   return { success: true };
 };
 
@@ -823,12 +839,17 @@ const waitAndAct: ActionHandler = async (c) => {
   // Measured time, not the sum of the poll intervals: a slow condition
   // counts, and the loop ends whatever the interval is.
   const polling: Bound = { deadline: Math.min(startedAt + timeoutMs, c.deadline), signal: c.signal };
+  // The last error of the condition, reported when it is never met (a
+  // condition that cannot run fails the same way as one that stays false).
+  let lastError: string | null = null;
   for (;;) {
     let ready = false;
     try {
       ready = Boolean(await evaluateScript(page, a.condition, polling, 'The condition'));
-    } catch {
+      lastError = null;
+    } catch (e) {
       // the condition threw or hung: keep polling
+      lastError = e instanceof Error ? e.message : String(e);
     }
     if (ready) {
       // Run once: a failing action is reported, not retried.
@@ -842,7 +863,11 @@ const waitAndAct: ActionHandler = async (c) => {
     if (left <= 0) break;
     await new Promise((r) => setTimeout(r, Math.min(pollMs, left)));
   }
-  return { success: false, error: `Condition not met within ${timeoutMs}ms` };
+  // The caller's deadline may have ended the wait before timeoutMs.
+  const waited = polling.deadline - startedAt;
+  const why = waited < timeoutMs ? ` (the caller's deadline, before timeoutMs ${timeoutMs}ms)` : '';
+  const last = lastError !== null ? `; last condition error: ${lastError}` : '';
+  return { success: false, error: `Condition not met within ${waited}ms${why}${last}` };
 };
 
 // --- inject_observer ---
@@ -941,9 +966,18 @@ const solveCaptcha: ActionHandler = async ({ page, args }) => {
 };
 
 // --- wait_for_navigation ---
-const waitForNavigation: ActionHandler = async ({ page, args }) => {
-  const { timeout } = parseArgs(timeoutArgs, args, 'wait_for_navigation');
-  await page.waitForNavigation({ timeout });
+const waitForNavigationArgs = timeoutArgs.extend({ waitUntil: z.enum(['load', 'domcontentloaded']) });
+
+const waitForNavigation: ActionHandler = async (c) => {
+  const { page } = c;
+  const { timeout, waitUntil } = parseArgs(waitForNavigationArgs, c.args, 'wait_for_navigation');
+  // The next navigation of the main frame (page.waitForNavigation is
+  // deprecated), then its load state; both within one timeout.
+  await boundedWait(c, timeout, 'wait_for_navigation', async (ms) => {
+    const end = Date.now() + ms;
+    await page.waitForEvent('framenavigated', { predicate: (f) => f === page.mainFrame(), timeout: ms });
+    await page.waitForLoadState(waitUntil, { timeout: Math.max(1, end - Date.now()) });
+  });
   return { success: true, url: page.url(), title: await page.title() };
 };
 
@@ -953,9 +987,10 @@ const waitForUrlArgs = timeoutArgs.extend({
   urlPattern: z.string().optional(),
 });
 
-const waitForUrl: ActionHandler = async ({ page, args }) => {
+const waitForUrl: ActionHandler = async (c) => {
+  const { page } = c;
   // Schema: url = exact URL, urlPattern = regex (same as the extension).
-  const { url, urlPattern, timeout } = parseArgs(waitForUrlArgs, args, 'wait_for_url');
+  const { url, urlPattern, timeout } = parseArgs(waitForUrlArgs, c.args, 'wait_for_url');
   // A plain string would be read as a glob ('?' and '*' in query
   // strings), so compare the exact URL with a predicate instead.
   const target = url ? (u: URL): boolean => u.href === url
@@ -964,7 +999,7 @@ const waitForUrl: ActionHandler = async ({ page, args }) => {
   if (target === null) {
     return { success: false, error: 'Must provide url or urlPattern' };
   }
-  await page.waitForURL(target, { timeout });
+  await boundedWait(c, timeout, 'wait_for_url', (ms) => page.waitForURL(target, { timeout: ms }));
   return { success: true, url: page.url() };
 };
 

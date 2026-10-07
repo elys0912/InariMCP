@@ -269,6 +269,43 @@ describe('reading the page (H-3, H-7, H-8, H-15)', () => {
   });
 });
 
+describe('history and waits (H-13)', () => {
+  // A wait holds the lock, so the navigation it waits for is started by a
+  // timer in the page before the wait is sent.
+  const later = (js: string): Promise<Result> =>
+    browser.execute('execute_script', undefined, { script: `setTimeout(() => { ${js} }, 300); 1` });
+
+  real('wait_for_navigation ends at the next navigation and names the new page', async () => {
+    await load('<p>first</p>');
+    const next = PAGE('<title>second</title><p>second</p>');
+    await later(`location.href = ${JSON.stringify(next)}`);
+    const r = await browser.execute('wait_for_navigation', undefined, { timeout: 10_000, waitUntil: 'load' });
+    expect(r).toMatchObject({ success: true, url: next, title: 'second' });
+  });
+
+  real('wait_for_url matches an exact URL with ? and * literally', async () => {
+    await load('<p>x</p>');
+    const url = (await browser.execute('get_page_info', undefined, {}))['url'] as string;
+    const target = `${url}#a?b=*`;
+    await later(`location.hash = ${JSON.stringify('#a?b=*')}`);
+    const r = await browser.execute('wait_for_url', undefined, { url: target, timeout: 10_000 });
+    expect(r).toMatchObject({ success: true });
+    expect(decodeURIComponent(String(r['url']))).toBe(decodeURIComponent(target));
+  });
+
+  real('wait_for_network_idle, refresh, go_back and go_forward', async () => {
+    await load('<p>one</p>');
+    expect((await browser.execute('wait_for_network_idle', undefined, { timeout: 10_000 }))['success']).toBe(true);
+    expect((await browser.execute('refresh', undefined, {}))['success']).toBe(true);
+    await load('<p>two</p>');
+    const back = await browser.execute('go_back', undefined, {});
+    expect(back['success']).toBe(true);
+    expect(decodeURIComponent(String(back['url']))).toContain('one');
+    const forward = await browser.execute('go_forward', undefined, {});
+    expect(decodeURIComponent(String(forward['url']))).toContain('two');
+  });
+});
+
 describe('direct execute() calls the tool schemas would refuse (H-24, H-25)', () => {
   real('close_tab without tabId closes nothing; navigate with an empty url fails', async () => {
     await load('<p>x</p>');
@@ -564,6 +601,27 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
     expect(info['title']).not.toBe('ran');
   });
 
+  real('a cancelled wait_for_* ends at once and frees the lock (H-4)', async () => {
+    await load('<p>x</p>');
+    const waits: Array<[string, Record<string, unknown>]> = [
+      ['wait_for_element', { selector: '#never', timeout: 20_000, visible: true }],
+      ['wait_for_url', { url: 'https://never.example.test/', timeout: 20_000 }],
+      ['wait_for_navigation', { timeout: 20_000, waitUntil: 'load' }],
+    ];
+    for (const [action, args] of waits) {
+      const abort = new AbortController();
+      const started = Date.now();
+      const running = browser.execute(action, undefined, args, { deadline: Infinity, signal: abort.signal });
+      await new Promise((r) => setTimeout(r, 200));
+      abort.abort();
+      const r = await running;
+      expect(r['success'], action).toBe(false);
+      expect(String(r['error']), action).toContain('cancelled');
+      expect((await browser.execute('get_page_info', undefined, {}))['success'], action).toBe(true);
+      expect(Date.now() - started, action).toBeLessThan(5_000);
+    }
+  }, 40_000);
+
   real('a command still awaited runs after the one before it', async () => {
     await load('<p>x</p>');
     const hold = busy();
@@ -589,6 +647,23 @@ describe('waits and page scripts end on their own (R-1, L-1, R-8)', () => {
       expect(Date.now() - started).toBeLessThan(5_000);
     }
     expect((await browser.execute('get_page_info', undefined, {}))['success']).toBe(true);
+  });
+
+  real('wait_and_act names the last error of a condition that cannot run (H-9)', async () => {
+    await load('<p>x</p>');
+    const r = await browser.execute('wait_and_act', undefined,
+      { condition: 'noSuchName.value', actionScript: '1', pollIntervalMs: 50, timeoutMs: 300 });
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain('last condition error');
+    expect(String(r['error'])).toContain('noSuchName');
+  });
+
+  real('wait_and_act ended by the caller\'s deadline says so (H-9)', async () => {
+    await load('<p>x</p>');
+    const r = await browser.execute('wait_and_act', undefined,
+      { condition: 'false', actionScript: '1', pollIntervalMs: 50, timeoutMs: 10_000 }, ctx(300));
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain("caller's deadline");
   });
 
   real('wait_and_act reports the measured elapsed_ms', async () => {
