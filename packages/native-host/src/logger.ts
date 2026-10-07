@@ -6,7 +6,7 @@
  * appended to a log file:
  *
  *   FOX_NATIVE_HOST_LOG unset / empty → ~/.kitsune-mcp/logs/native-host.log
- *   FOX_NATIVE_HOST_LOG=0 | off | false | none → file logging disabled
+ *   FOX_NATIVE_HOST_LOG=0 | off | false | no | none → file logging disabled
  *   FOX_NATIVE_HOST_LOG=<path>        → that file
  *
  * Hardening / housekeeping:

@@ -55,7 +55,9 @@ public static class KitsuneBreakaway {
     IntPtr size, IntPtr previous, IntPtr returnSize);
   [DllImport("kernel32.dll")] static extern void DeleteProcThreadAttributeList(IntPtr list);
 
-  const uint FILE_APPEND_DATA = 0x4, SYNCHRONIZE = 0x100000, OPEN_ALWAYS = 4;
+  const uint FILE_APPEND_DATA = 0x4, SYNCHRONIZE = 0x100000, OPEN_ALWAYS = 4,
+    FILE_SHARE_READ_WRITE = 3, FILE_ATTRIBUTE_NORMAL = 0x80;
+  const int STARTF_USESTDHANDLES = 0x100;   // STARTUPINFO.dwFlags is an int here
   const uint CREATE_NEW_PROCESS_GROUP = 0x200, EXTENDED_STARTUPINFO_PRESENT = 0x80000,
     CREATE_BREAKAWAY_FROM_JOB = 0x01000000, CREATE_NO_WINDOW = 0x08000000;
   static readonly IntPtr PROC_THREAD_ATTRIBUTE_HANDLE_LIST = new IntPtr(0x20002);
@@ -64,12 +66,13 @@ public static class KitsuneBreakaway {
     var sa = new SECURITY_ATTRIBUTES();
     sa.nLength = Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES));
     sa.bInheritHandle = true;
-    IntPtr log = CreateFile(logPath, FILE_APPEND_DATA | SYNCHRONIZE, 3, ref sa, OPEN_ALWAYS, 0x80, IntPtr.Zero);
+    IntPtr log = CreateFile(logPath, FILE_APPEND_DATA | SYNCHRONIZE, FILE_SHARE_READ_WRITE, ref sa, OPEN_ALWAYS,
+      FILE_ATTRIBUTE_NORMAL, IntPtr.Zero);
     if (log == new IntPtr(-1)) log = IntPtr.Zero;   // logging is best-effort
 
     var si = new STARTUPINFOEX();
     si.StartupInfo.cb = Marshal.SizeOf(typeof(STARTUPINFOEX));
-    si.StartupInfo.dwFlags = 0x100;   // STARTF_USESTDHANDLES: stdin/stdout none, stderr → log
+    si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;   // stdin/stdout none, stderr → log
     si.StartupInfo.hStdError = log;
     uint flags = CREATE_BREAKAWAY_FROM_JOB | CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP;
 
@@ -140,8 +143,12 @@ export function spawnDaemonBreakaway(entry: string, logPath: string, cwd?: strin
 
     let stdout = '';
     let stderr = '';
-    ps.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString(); });
-    ps.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+    // Decode as a stream so a multi-byte character split across chunks
+    // (localized PowerShell errors) stays intact.
+    ps.stdout.setEncoding('utf8');
+    ps.stderr.setEncoding('utf8');
+    ps.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    ps.stderr.on('data', (chunk: string) => { stderr += chunk; });
 
     const timer = setTimeout(() => {
       ps.kill();

@@ -25,6 +25,29 @@ import {
 
 export const REPO_ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
+// Time limits (ms) and sizes used here and by install.mjs / uninstall.mjs.
+/** Short helper commands: reg.exe, ps, `node --version`. */
+export const CMD_TIMEOUT_MS = 20_000;
+/** Process listing through cscript / wmic (WMI can be slow). */
+const PROCESS_LIST_TIMEOUT_MS = 30_000;
+/** Default of runSync; `claude mcp add / remove`. */
+export const PROGRAM_TIMEOUT_MS = 120_000;
+/** `npm install` / `npm run build` (--build). */
+export const NPM_TIMEOUT_MS = 1_800_000;
+/** Default of httpGet / httpPost. */
+const HTTP_TIMEOUT_MS = 3_000;
+/** Larger daemon answers are dropped. */
+const MAX_RESPONSE_BYTES = 1_048_576;
+/** stopProcess: polling interval, and how long to wait after SIGKILL. */
+const PROCESS_POLL_MS = 100;
+const KILL_WAIT_MS = 2_000;
+/** stopDaemonGracefully: POST /daemon/shutdown waits for running calls to finish. */
+const SHUTDOWN_REQUEST_TIMEOUT_MS = 15_000;
+/** stopDaemonGracefully: /health polls until the port goes quiet, for at least SHUTDOWN_MIN_WAIT_MS. */
+const SHUTDOWN_POLL_MS = 200;
+const SHUTDOWN_MIN_WAIT_MS = 2_000;
+const HEALTH_POLL_TIMEOUT_MS = 1_000;
+
 // ---------------------------------------------------------------------------
 // Dependencies
 // ---------------------------------------------------------------------------
@@ -36,7 +59,7 @@ export function runSync(file, args, opts = {}) {
     stdio: opts.inherit ? 'inherit' : 'pipe',
     windowsHide: true,
     windowsVerbatimArguments: Boolean(opts.verbatim),
-    timeout: opts.timeoutMs ?? 120_000,
+    timeout: opts.timeoutMs ?? PROGRAM_TIMEOUT_MS,
     shell: false,
   });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '', error: r.error };
@@ -103,11 +126,16 @@ export function exists(fsApi, p) {
   }
 }
 
+/**
+ * File content, or null when the file does not exist. Any other error
+ * (EACCES, EISDIR …) is thrown: "unreadable" must not pass for "absent".
+ */
 export function readTextOrNull(fsApi, p) {
   try {
     return fsApi.readFileSync(p, 'utf8');
-  } catch {
-    return null;
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return null;
+    throw err;
   }
 }
 
@@ -246,18 +274,18 @@ export function npmInvocation(deps) {
 // ---------------------------------------------------------------------------
 
 export function regQueryDefault(deps, key, parse) {
-  const r = deps.run('reg.exe', ['query', key, '/ve'], { timeoutMs: 20_000 });
+  const r = deps.run('reg.exe', ['query', key, '/ve'], { timeoutMs: CMD_TIMEOUT_MS });
   if (r.error) return { ok: false, error: r.error.message };
   if (r.status !== 0) return { ok: true, value: null };
   return { ok: true, value: parse(r.stdout) };
 }
 
 export function regSetDefault(deps, key, value) {
-  return deps.run('reg.exe', ['add', key, '/ve', '/t', 'REG_SZ', '/d', value, '/f'], { timeoutMs: 20_000 });
+  return deps.run('reg.exe', ['add', key, '/ve', '/t', 'REG_SZ', '/d', value, '/f'], { timeoutMs: CMD_TIMEOUT_MS });
 }
 
 export function regDeleteKey(deps, key) {
-  return deps.run('reg.exe', ['delete', key, '/f'], { timeoutMs: 20_000 });
+  return deps.run('reg.exe', ['delete', key, '/f'], { timeoutMs: CMD_TIMEOUT_MS });
 }
 
 // ---------------------------------------------------------------------------
@@ -276,25 +304,30 @@ const WMI_QUERY_JS = [
  */
 export function listNodeProcesses(deps) {
   if (deps.platform !== 'win32') {
-    const r = deps.run('ps', ['-A', '-ww', '-o', 'pid=', '-o', 'args='], { timeoutMs: 20_000 });
+    const r = deps.run('ps', ['-A', '-ww', '-o', 'pid=', '-o', 'args='], { timeoutMs: CMD_TIMEOUT_MS });
     if (r.error || r.status !== 0) return null;
     return parsePsOutput(r.stdout); // filtered by entry path in classifyProcesses
   }
   const script = path.join(os.tmpdir(), `kitsune-ps-${process.pid}-${crypto.randomBytes(4).toString('hex')}.js`);
+  let created = false;
   try {
-    deps.fs.writeFileSync(script, WMI_QUERY_JS);
-    const r = deps.run('cscript.exe', ['//NoLogo', '//U', '//E:jscript', script], { encoding: 'buffer', timeoutMs: 30_000 });
+    // 'wx': never run a script someone else planted under the predictable name.
+    deps.fs.writeFileSync(script, WMI_QUERY_JS, { flag: 'wx' });
+    created = true;
+    const r = deps.run('cscript.exe', ['//NoLogo', '//U', '//E:jscript', script], { encoding: 'buffer', timeoutMs: PROCESS_LIST_TIMEOUT_MS });
     if (!r.error && r.status === 0) return parseTabOutput(Buffer.from(r.stdout).toString('utf16le'));
   } catch {
     // fall through to wmic
   } finally {
-    try {
-      deps.fs.unlinkSync(script);
-    } catch {
-      // ignore
+    if (created) {
+      try {
+        deps.fs.unlinkSync(script);
+      } catch {
+        // ignore
+      }
     }
   }
-  const w = deps.run('wmic.exe', ['process', 'where', "name='node.exe'", 'get', 'ProcessId,CommandLine', '/format:csv'], { timeoutMs: 30_000 });
+  const w = deps.run('wmic.exe', ['process', 'where', "name='node.exe'", 'get', 'ProcessId,CommandLine', '/format:csv'], { timeoutMs: PROCESS_LIST_TIMEOUT_MS });
   if (w.error || w.status !== 0) return null;
   const out = [];
   for (const line of String(w.stdout).split(/\r?\n/)) {
@@ -318,7 +351,7 @@ export async function stopProcess(deps, pid, graceMs) {
     if (err && err.code === 'ESRCH') return 'gone';
     return 'failed';
   }
-  const step = 100;
+  const step = PROCESS_POLL_MS;
   for (let waited = 0; waited < graceMs; waited += step) {
     if (!deps.isAlive(pid)) return 'stopped';
     await deps.sleep(step);
@@ -330,7 +363,7 @@ export async function stopProcess(deps, pid, graceMs) {
     if (err && err.code === 'ESRCH') return 'stopped';
     return 'failed';
   }
-  for (let waited = 0; waited < 2000; waited += step) {
+  for (let waited = 0; waited < KILL_WAIT_MS; waited += step) {
     if (!deps.isAlive(pid)) return 'killed';
     await deps.sleep(step);
   }
@@ -355,7 +388,7 @@ export function httpPost(opts) {
   return httpRequest({ ...opts, method: 'POST' });
 }
 
-function httpRequest({ host, port, urlPath, method, headers = {}, body, timeoutMs = 3000 }) {
+function httpRequest({ host, port, urlPath, method, headers = {}, body, timeoutMs = HTTP_TIMEOUT_MS }) {
   return new Promise((resolve) => {
     const agent = new http.Agent({ keepAlive: false });
     const done = (value) => {
@@ -370,7 +403,7 @@ function httpRequest({ host, port, urlPath, method, headers = {}, body, timeoutM
       let size = 0;
       res.on('data', (c) => {
         size += c.length;
-        if (size > 1_048_576) req.destroy(new Error('response too large'));
+        if (size > MAX_RESPONSE_BYTES) req.destroy(new Error('response too large'));
         else chunks.push(c);
       });
       res.on('end', () => done({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }));
@@ -393,17 +426,18 @@ function httpRequest({ host, port, urlPath, method, headers = {}, body, timeoutM
 export async function stopDaemonGracefully(deps, endpoint, token, graceMs) {
   const body = JSON.stringify({ force: false });
   const signed = signPost(token, '/daemon/shutdown', body);
-  const res = await deps.httpPost({ ...endpoint, urlPath: '/daemon/shutdown', headers: signed.headers, body, timeoutMs: 15_000 });
+  const res = await deps.httpPost({ ...endpoint, urlPath: '/daemon/shutdown', headers: signed.headers, body, timeoutMs: SHUTDOWN_REQUEST_TIMEOUT_MS });
   if (!res) return 'unanswered';
   if (res.status !== 200 || !responseSignatureValid(token, signed.nonce, res.status, res.body, res.headers[AUTH_HEADER.signature])) {
     return 'refused';
   }
-  const step = 200;
-  for (let waited = 0; waited <= Math.max(graceMs, 2_000); waited += step) {
-    if (!(await deps.httpGet({ ...endpoint, urlPath: '/health', timeoutMs: 1_000 }))) return 'stopped';
-    await deps.sleep(step);
+  // By the clock: each GET may itself take up to HEALTH_POLL_TIMEOUT_MS.
+  const deadline = Date.now() + Math.max(graceMs, SHUTDOWN_MIN_WAIT_MS);
+  for (;;) {
+    if (!(await deps.httpGet({ ...endpoint, urlPath: '/health', timeoutMs: HEALTH_POLL_TIMEOUT_MS }))) return 'stopped';
+    if (Date.now() >= deadline) return 'still-running';
+    await deps.sleep(SHUTDOWN_POLL_MS);
   }
-  return 'still-running';
 }
 
 /**

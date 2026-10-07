@@ -27,10 +27,21 @@ export const MIN_NODE_MAJOR = 18;
 export const CLAUDE_SCOPES = ['user', 'local', 'project'];
 export const DEFAULT_HTTP_PORT = 8765;
 export const DEFAULT_HTTP_HOST = '127.0.0.1';
+/** Highest TCP port number (same as MAX_PORT of @kitsune-mcp/shared). */
+export const MAX_PORT = 65_535;
 /** Per-user registration Firefox reads on Windows (every edition). */
 export const WIN_REG_KEY = `HKCU\\Software\\Mozilla\\NativeMessagingHosts\\${HOST_NAME}`;
 /** Flatpak application IDs of Firefox builds (Flathub publishes Release only). */
 export const FLATPAK_FIREFOX_IDS = ['org.mozilla.firefox'];
+
+/**
+ * `table[key]`; throws for a key the table does not list, so a new value
+ * cannot silently get another value's text.
+ */
+export function lookup(table, key, what) {
+  if (!Object.hasOwn(table, key)) throw new Error(`unknown ${what}: ${String(key)}`);
+  return table[key];
+}
 
 /** path.win32 or path.posix, so results do not depend on the machine running the tests. */
 export function pathApi(platform) {
@@ -338,7 +349,8 @@ export function claudeRemoveArgs(scope) {
 /** A command line for display (double quotes where needed). */
 export function formatCommand(file, args, platform) {
   const q = (a) => {
-    if (a !== '' && /^[A-Za-z0-9_@%+=:,./\\-]+$/.test(a)) return a;
+    // No `%` here: cmd.exe expands %NAME% in a pasted line, quoted or not.
+    if (a !== '' && /^[A-Za-z0-9_@+=:,./\\-]+$/.test(a)) return a;
     return platform === 'win32' ? `"${a}"` : shellQuote(a);
   };
   return [file, ...args].map(q).join(' ');
@@ -352,6 +364,8 @@ export function commandInvocation(file, args, platform, env) {
   if (platform === 'win32' && /\.(cmd|bat)$/i.test(file)) {
     const all = [file, ...args];
     if (all.some((a) => /["\r\n]/.test(a))) throw new Error(`cannot pass an argument with a quote to ${file}`);
+    // cmd /c expands %NAME% even inside the double quotes.
+    if (all.some((a) => a.includes('%'))) throw new Error(`cannot pass an argument with a % to ${file}`);
     const line = all.map((a) => `"${a}"`).join(' ');
     return { file: env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], verbatim: true };
   }
@@ -401,14 +415,32 @@ export function isWsl({ platform, env, procVersion }) {
   return Boolean(env.WSL_DISTRO_NAME || env.WSL_INTEROP) || /microsoft/i.test(procVersion ?? '');
 }
 
+/** `host` without surrounding blanks and IPv6 brackets. */
+function bareHost(host) {
+  return host.trim().replace(/^\[(.*)\]$/, '$1');
+}
+
+/**
+ * Same rule as isLoopbackHost of @kitsune-mcp/shared/node (127.0.0.0/8, ::1,
+ * localhost, ::ffff:127.0.0.1); tests/scripts checks both agree.
+ */
+export function isLoopbackHost(host) {
+  const h = bareHost(host).toLowerCase();
+  return h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h) || h === '::ffff:127.0.0.1';
+}
+
+/** The first value that is set and not empty (same rule as the shared endpoint resolution). */
+function firstNonEmpty(...values) {
+  return values.find((v) => v !== undefined && v !== '');
+}
+
 /** Same port resolution as the daemon (FOX_HTTP_PORT, legacy CLAUDE_BROWSER_HTTP_PORT). */
 export function httpEndpoint(env) {
-  const raw = env.FOX_HTTP_PORT ?? env.CLAUDE_BROWSER_HTTP_PORT;
+  const raw = firstNonEmpty(env.FOX_HTTP_PORT, env.CLAUDE_BROWSER_HTTP_PORT);
   const n = Number(raw);
-  const port = raw && Number.isInteger(n) && n > 0 && n < 65536 ? n : DEFAULT_HTTP_PORT;
-  const host = env.FOX_HOST ?? env.CLAUDE_BROWSER_HOST ?? DEFAULT_HTTP_HOST;
-  const loopback = /^(localhost|::1|127(\.\d{1,3}){3})$/i.test(host.replace(/^\[(.*)\]$/, '$1'));
-  return { host: loopback ? host.replace(/^\[(.*)\]$/, '$1') : DEFAULT_HTTP_HOST, port };
+  const port = raw && Number.isInteger(n) && n > 0 && n <= MAX_PORT ? n : DEFAULT_HTTP_PORT;
+  const host = firstNonEmpty(env.FOX_HOST, env.CLAUDE_BROWSER_HOST) ?? DEFAULT_HTTP_HOST;
+  return { host: isLoopbackHost(host) ? bareHost(host) : DEFAULT_HTTP_HOST, port };
 }
 
 /**

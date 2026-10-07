@@ -1,7 +1,10 @@
 import * as http from 'node:http';
 import * as net from 'node:net';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
 import { ServerLauncher, daemonEnvNote } from '../src/server-launcher.js';
 import {
   AUTH_HEADER,
@@ -207,5 +210,68 @@ describe('ServerLauncher probes', () => {
 
     const forged = await serve(daemonLike('e'.repeat(64)));
     expect(await launcherFor(forged).fetchDaemonInfo()).toBeNull();
+  });
+});
+
+describe('ServerLauncher start counter (H-B1)', () => {
+  const held: net.Server[] = [];
+  afterEach(async () => {
+    vi.useRealTimers();
+    for (const s of held.splice(0)) await new Promise<void>((resolve) => s.close(() => resolve()));
+  });
+
+  /** A free HTTP port (nothing answers /health) and a WS port held by another program. */
+  async function wsPortTaken(httpPort?: number): Promise<ServerLauncher> {
+    const ws = await listen();
+    held.push(ws);
+    let port = httpPort;
+    if (port === undefined) {
+      const tmp = await listen();
+      port = (tmp.address() as net.AddressInfo).port;
+      await new Promise<void>((resolve) => tmp.close(() => resolve()));
+    }
+    return new ServerLauncher({
+      host: '127.0.0.1',
+      httpPort: port,
+      wsPort: (ws.address() as net.AddressInfo).port,
+      readToken: () => TOKEN,
+      serverEntry: process.execPath, // exists; never spawned while the WS port is taken
+    });
+  }
+
+  it('counts a start refused for a taken WS port, and time alone does not reset it', async () => {
+    const launcher = await wsPortTaken();
+    expect(await launcher.start()).toBe(false);
+    expect(launcher.getRestartAttempts()).toBe(1);
+
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 60 * 60_000);
+    expect((await launcher.probeHealth()).kind).toBe('down');
+    expect(await launcher.start()).toBe(false);
+    expect(launcher.getRestartAttempts()).toBe(2);
+  });
+
+  it('stops at MAX_RESTART_ATTEMPTS', async () => {
+    const launcher = await wsPortTaken();
+    for (let i = 0; i < ENV_DEFAULTS.MAX_RESTART_ATTEMPTS + 2; i++) await launcher.start();
+    expect(launcher.getRestartAttempts()).toBe(ENV_DEFAULTS.MAX_RESTART_ATTEMPTS);
+  });
+
+  it('goes back to 0 when a usable daemon answers /health', async () => {
+    const launcher = await wsPortTaken(await serve(daemonLike(TOKEN)));
+    await launcher.start();
+    await launcher.start();
+    expect(launcher.getRestartAttempts()).toBe(2);
+    expect((await launcher.probeHealth()).kind).toBe('ok');
+    expect(launcher.getRestartAttempts()).toBe(0);
+  });
+
+  it('gives up at once when the server entry point is missing', async () => {
+    const launcher = new ServerLauncher({
+      host: '127.0.0.1', httpPort: 1, wsPort: 1, readToken: () => TOKEN,
+      serverEntry: path.join(os.tmpdir(), 'kitsune-no-such-entry', 'index.js'),
+    });
+    expect(await launcher.start()).toBe(false);
+    expect(launcher.getRestartAttempts()).toBe(ENV_DEFAULTS.MAX_RESTART_ATTEMPTS);
   });
 });

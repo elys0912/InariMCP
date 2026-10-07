@@ -74,6 +74,18 @@ describe('externalizeScreenshots', () => {
     expect(fs.readdirSync(dir)).toHaveLength(0);
   });
 
+  it('fails on a data URL of another MIME type instead of saving it as base64 (H-D1)', () => {
+    const log = vi.fn();
+    const gif = Buffer.from('GIF89a\x01\x00\x01\x00', 'latin1').toString('base64');
+    const response: Record<string, unknown> = {
+      requestId: '1', success: true, data: { imageData: `data:image/gif;base64,${gif}` },
+    };
+    externalizeScreenshots(response, undefined, log);
+    expect(response['success']).toBe(false);
+    expect(response['error']).toMatch(/unsupported screenshot data URL \(data:image\/gif;base64\)/);
+    expect(fs.readdirSync(dir)).toHaveLength(0);
+  });
+
   it('handles all_tabs entries: _tab<id> / _<index> suffixes, per-entry imageError', () => {
     const response: Record<string, unknown> = {
       requestId: '1',

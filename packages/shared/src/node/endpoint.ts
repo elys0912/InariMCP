@@ -6,11 +6,12 @@
  *   FOX_HTTP_PORT / CLAUDE_BROWSER_HTTP_PORT  default 8765
  *   FOX_WS_PORT   / CLAUDE_BROWSER_WS_PORT    default 8766
  *
+ * An empty value counts as unset (the legacy name, then the default, apply).
  * A port must be an integer in 1..65535; anything else falls back to the
  * default (reported through `onInvalid` when given).
  */
 
-import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '../constants.js';
+import { ENV, ENV_DEFAULTS, LEGACY_ENV, MAX_PORT } from '../constants.js';
 
 type Env = Record<string, string | undefined>;
 
@@ -19,12 +20,25 @@ export type InvalidPortHandler = (name: string, raw: string, fallback: number) =
 
 function portOf(raw: string): number | undefined {
   const n = Number(raw);
-  return Number.isInteger(n) && n > 0 && n < 65536 ? n : undefined;
+  return Number.isInteger(n) && n > 0 && n <= MAX_PORT ? n : undefined;
 }
 
 export function parsePort(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw === '') return fallback;
   return portOf(raw) ?? fallback;
+}
+
+/**
+ * The first of `names` that is set to a non-empty value. An empty value
+ * counts as unset, so `FOX_HOST=` falls through to the legacy name and then
+ * to the default (it must not become `''`, which binds every interface).
+ */
+function pick(env: Env, ...names: string[]): { name: string; raw: string } | undefined {
+  for (const name of names) {
+    const raw = env[name];
+    if (raw !== undefined && raw !== '') return { name, raw };
+  }
+  return undefined;
 }
 
 function resolvePortVar(
@@ -34,16 +48,15 @@ function resolvePortVar(
   env: Env,
   onInvalid: InvalidPortHandler | undefined,
 ): number {
-  const name = env[fox] !== undefined ? fox : legacy;
-  const raw = env[name];
-  if (raw === undefined || raw === '') return fallback;
-  const port = portOf(raw);
-  if (port === undefined) onInvalid?.(name, raw, fallback);
+  const found = pick(env, fox, legacy);
+  if (found === undefined) return fallback;
+  const port = portOf(found.raw);
+  if (port === undefined) onInvalid?.(found.name, found.raw, fallback);
   return port ?? fallback;
 }
 
 export function resolveHost(env: Env = process.env): string {
-  return env[ENV.FOX_HOST] ?? env[LEGACY_ENV.CLAUDE_BROWSER_HOST] ?? ENV_DEFAULTS.FOX_HOST;
+  return pick(env, ENV.FOX_HOST, LEGACY_ENV.CLAUDE_BROWSER_HOST)?.raw ?? ENV_DEFAULTS.FOX_HOST;
 }
 
 export function resolveHttpPort(onInvalid?: InvalidPortHandler, env: Env = process.env): number {

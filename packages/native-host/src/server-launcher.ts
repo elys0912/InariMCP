@@ -21,7 +21,7 @@ import * as net from 'node:net';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ENV, ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV, ENV_DEFAULTS, isRecord, MAX_PORT } from '@kitsune-mcp/shared';
 import {
   AUTH_HEADER,
   DAEMON_PROTOCOL_VERSION,
@@ -46,7 +46,7 @@ import { daemonEnvFrom, defaultDeps, startOutsideJob, sweepRunDir } from './outs
 
 /** A port variable is set but unusable: say so, the default applies. */
 const reportInvalidPort: InvalidPortHandler = (name, raw, fallback) => {
-  log(`ignoring ${name}='${raw}' (not a port number 1-65535) — using ${fallback}`);
+  log(`ignoring ${name}='${raw}' (not a port number 1-${MAX_PORT}) — using ${fallback}`);
 };
 
 /** Version of the mcp-server package next to us, i.e. of a daemon we would start. */
@@ -81,6 +81,15 @@ function daemonCwd(): string {
 
 /** How long start() waits for a daemon it spawned to answer /health. */
 const STARTUP_WAIT_MS = 15_000;
+/** Interval of the /health polls while waiting for it. */
+const HEALTH_POLL_MS = 200;
+/** After /health answers: checks for the WS port, WS_BIND_RETRY_MS apart (the bridge may bind later). */
+const WS_BIND_CHECKS = 5;
+const WS_BIND_RETRY_MS = 500;
+/** TCP connect timeout of isPortInUse() (no answer = something is there). */
+const PORT_PROBE_TIMEOUT_MS = 1_000;
+/** Timeout of GET /health and GET /daemon/info. */
+const HTTP_PROBE_TIMEOUT_MS = 3_000;
 
 /** The daemon / MCP server entry point, relative to this package. */
 export function serverEntryPath(): string {
@@ -101,10 +110,17 @@ export class ServerLauncher {
   readonly host: string;
   private cachedApiToken: string | undefined;
 
+  /**
+   * Start attempts since a usable daemon last answered /health. Capped at
+   * MAX_RESTART_ATTEMPTS: only a usable daemon (ours or one a relay started)
+   * resets it, not the passing of time.
+   */
   private restartAttempts = 0;
-  private lastStableTime = Date.now();
   /** Last problem that was logged, so repeated checks do not flood the log. */
   private lastReported: string | undefined;
+  /** Same for GET /daemon/info. */
+  private lastInfoProblem: string | undefined;
+  private readonly serverEntry: string;
   private readonly expectedVersion = installedDaemonVersion();
 
   private readonly readTokenFile: () => string | undefined;
@@ -115,11 +131,13 @@ export class ServerLauncher {
     httpPort?: number;
     wsPort?: number;
     readToken?: () => string | undefined;
+    serverEntry?: string;
   } = {}) {
     this.host = options.host ?? resolveHost();
     this.httpPort = options.httpPort ?? resolveHttpPort(reportInvalidPort);
     this.wsPort = options.wsPort ?? resolveWsPort(reportInvalidPort);
     this.readTokenFile = options.readToken ?? (() => readApiTokenFile());
+    this.serverEntry = options.serverEntry ?? serverEntryPath();
     this.cachedApiToken = this.readTokenFile();
   }
 
@@ -151,10 +169,12 @@ export class ServerLauncher {
       return false;
     }
 
-    const serverEntry = serverEntryPath();
+    const serverEntry = this.serverEntry;
 
     if (!fs.existsSync(serverEntry)) {
-      log(`MCP server entry not found: ${serverEntry}`);
+      // Retrying cannot help until the package is built / reinstalled.
+      this.restartAttempts = ENV_DEFAULTS.MAX_RESTART_ATTEMPTS;
+      log(`MCP server entry not found: ${serverEntry} — not retrying`);
       return false;
     }
 
@@ -199,9 +219,8 @@ export class ServerLauncher {
         },
         defaultDeps(path.join(daemonCwd(), 'run')),
       );
-      if (!('errors' in result)) {
+      if (result.ok) {
         this.restartAttempts++;
-        this.lastStableTime = Date.now();
         log(`started daemon outside the job object via ${result.via} (attempt #${this.restartAttempts})`);
         return this.waitUntilHealthy();
       }
@@ -211,6 +230,8 @@ export class ServerLauncher {
       );
     }
 
+    // A spawn that throws counts as an attempt too.
+    this.restartAttempts++;
     try {
       const pid = spawnDetachedDaemon({
         entry: serverEntry,
@@ -218,12 +239,10 @@ export class ServerLauncher {
         cwd: daemonCwd(),
         onError: (err) => log(`daemon spawn error: ${err.message}`),
       });
-      this.restartAttempts++;
-      this.lastStableTime = Date.now();
       log(`started daemon (PID: ${pid ?? 'unknown'}, attempt #${this.restartAttempts})`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      log(`failed to start daemon: ${msg}`);
+      log(`failed to start daemon (attempt #${this.restartAttempts}): ${msg}`);
       return false;
     }
 
@@ -234,14 +253,13 @@ export class ServerLauncher {
   private async waitUntilHealthy(): Promise<boolean> {
     const deadline = Date.now() + STARTUP_WAIT_MS;
     while (Date.now() < deadline) {
-      await this.sleep(200);
+      await this.sleep(HEALTH_POLL_MS);
       if (await this.checkHealth()) {
-        log('daemon is now available');
-        this.restartAttempts = 0;
+        log('daemon is now available'); // checkHealth() reset the start counter
         // The WS bridge may bind a moment after the HTTP server.
         let wsUp = false;
-        for (let i = 0; i < 5 && !wsUp; i++) {
-          if (i > 0) await this.sleep(500);
+        for (let i = 0; i < WS_BIND_CHECKS && !wsUp; i++) {
+          if (i > 0) await this.sleep(WS_BIND_RETRY_MS);
           wsUp = await this.isPortInUse(this.wsPort);
         }
         if (!wsUp) {
@@ -290,7 +308,7 @@ export class ServerLauncher {
   isPortInUse(port: number = this.httpPort): Promise<boolean> {
     return new Promise((resolve) => {
       const sock = new net.Socket();
-      sock.setTimeout(1_000);
+      sock.setTimeout(PORT_PROBE_TIMEOUT_MS);
 
       sock.on('connect', () => {
         sock.destroy();
@@ -320,7 +338,8 @@ export class ServerLauncher {
   /**
    * GET /health with a fresh nonce and classify the answer. A failed proof
    * is retried once with the token re-read from disk (it may have been
-   * regenerated). Problems are logged when they change.
+   * regenerated). Problems are logged when they change. A usable daemon,
+   * whoever started it, resets the start counter.
    */
   async probeHealth(): Promise<HealthVerdict> {
     let verdict = await this.requestHealth();
@@ -329,6 +348,7 @@ export class ServerLauncher {
       verdict = await this.requestHealth();
     }
     this.report(verdict);
+    if (isUsable(verdict)) this.restartAttempts = 0;
     return verdict;
   }
 
@@ -363,6 +383,10 @@ export class ServerLauncher {
         break;
       case 'down':
         break;
+      default: {
+        const unhandled: never = verdict;
+        throw new Error(`unhandled health verdict ${JSON.stringify(unhandled)}`);
+      }
     }
     if (line !== undefined && line !== this.lastReported) log(line);
     this.lastReported = line;
@@ -378,12 +402,13 @@ export class ServerLauncher {
           port: this.httpPort,
           path: '/health',
           method: 'GET',
-          timeout: 3_000,
+          timeout: HTTP_PROBE_TIMEOUT_MS,
           headers: { [AUTH_HEADER.nonce]: nonce },
         },
         (res) => {
           let body = '';
-          res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+          res.setEncoding('utf8');
+          res.on('data', (chunk: string) => { body += chunk; });
           res.on('end', () => resolve(evaluateHealth(res.statusCode, body, token, nonce)));
           res.on('error', () => resolve({ kind: 'down' }));
         },
@@ -416,7 +441,7 @@ export class ServerLauncher {
           port: this.httpPort,
           path: '/daemon/info',
           method: 'GET',
-          timeout: 3_000,
+          timeout: HTTP_PROBE_TIMEOUT_MS,
           headers: signed.headers,
         },
         (res) => {
@@ -430,6 +455,7 @@ export class ServerLauncher {
               this.reloadApiToken();
             }
             if (res.statusCode !== 200) {
+              this.reportInfo(`GET /daemon/info: HTTP ${String(res.statusCode)} — daemon info not shown`);
               resolve(null);
               return;
             }
@@ -439,15 +465,19 @@ export class ServerLauncher {
               return;
             }
             try {
-              const parsed = JSON.parse(raw.toString('utf-8')) as Record<string, unknown>;
-              const relays = parsed['relays'];
+              const parsed: unknown = JSON.parse(raw.toString('utf-8'));
+              const info: Record<string, unknown> = isRecord(parsed) ? parsed : {};
+              const relays = info['relays'];
               if (typeof relays !== 'number') {
+                this.reportInfo('GET /daemon/info: "relays" is not a number — daemon info not shown');
                 resolve(null);
                 return;
               }
-              const version = parsed['version'];
+              const version = info['version'];
+              this.reportInfo(undefined);
               resolve({ relays, ...(typeof version === 'string' ? { version } : {}) });
             } catch {
+              this.reportInfo('GET /daemon/info: answer is not valid JSON — daemon info not shown');
               resolve(null);
             }
           });
@@ -464,15 +494,10 @@ export class ServerLauncher {
     });
   }
 
-  resetBackoff(): void {
-    const now = Date.now();
-    if (
-      this.restartAttempts > 0 &&
-      now - this.lastStableTime > ENV_DEFAULTS.STABLE_THRESHOLD_MS
-    ) {
-      log('resetting start counter after stability period');
-      this.restartAttempts = 0;
-    }
+  /** Log a /daemon/info problem when it differs from the last one (cf. report()). */
+  private reportInfo(problem: string | undefined): void {
+    if (problem !== undefined && problem !== this.lastInfoProblem) log(problem);
+    this.lastInfoProblem = problem;
   }
 
   getBackoffDelay(): number {

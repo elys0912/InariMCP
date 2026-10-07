@@ -57,6 +57,8 @@ const child = spawn(process.execPath, args, { cwd: root, stdio: ['ignore', 'pipe
 
 let log = '';
 let verdict;
+/** Set once the install message is seen: later output is no longer judged. */
+let installedAt;
 const finish = (ok, why) => {
   if (verdict !== undefined) return;
   verdict = { ok, why };
@@ -72,8 +74,10 @@ const finish = (ok, why) => {
 const onData = (chunk) => {
   const s = chunk.toString();
   log += s;
+  if (installedAt !== undefined) return;
   const installed = /Installed .* as a temporary add-on/.exec(log);
   if (installed) {
+    installedAt = { time: Date.now(), message: installed[0] };
     setTimeout(() => finish(true, installed[0]), SETTLE_MS);
     return;
   }
@@ -82,5 +86,8 @@ const onData = (chunk) => {
 };
 child.stdout.on('data', onData);
 child.stderr.on('data', onData);
-child.on('exit', (code) => finish(false, `web-ext exited (code ${code}) before the add-on was installed`));
+child.on('exit', (code) => {
+  if (installedAt !== undefined) finish(true, `${installedAt.message} (web-ext exited, code ${code})`);
+  else finish(false, `web-ext exited (code ${code}) before the add-on was installed`);
+});
 setTimeout(() => finish(false, `no "temporary add-on" message within ${timeoutMs} ms`), timeoutMs).unref();

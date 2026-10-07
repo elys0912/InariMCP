@@ -2,7 +2,7 @@
  * Starting the daemon outside Firefox's job object, with fallbacks.
  *
  * Order: PowerShell (breakaway.ts, CREATE_BREAKAWAY_FROM_JOB) → WMI → a
- * one-off Task Scheduler task → `via: 'none'` (the caller then starts the
+ * one-off Task Scheduler task → `ok: false` (the caller then starts the
  * daemon inside the job, with a warning).
  *
  * The two PowerShell-free routes start a small Node "trampoline" from a
@@ -19,7 +19,7 @@
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ENV_PREFIX, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { ENV_PREFIX, LEGACY_ENV, shortId } from '@kitsune-mcp/shared';
 import { spawnDaemonBreakaway } from './breakaway.js';
 
 /** What to start outside the job. */
@@ -52,11 +52,13 @@ export interface Strategy {
   start(spec: DaemonSpec, deps: OutsideJobDeps): Promise<void>;
 }
 
-export type OutsideJobResult = { via: string } | { via: 'none'; errors: string[] };
+export type OutsideJobResult = { ok: true; via: string } | { ok: false; errors: string[] };
 
 /** How long a route waits for the trampoline to consume the spec file. */
 const TRAMPOLINE_WAIT_MS = 10_000;
 const POLL_MS = 100;
+/** Time limit of each cscript / schtasks command. */
+const RUN_TIMEOUT_MS = 20_000;
 
 /**
  * Read the spec, start the daemon, then delete the spec (= "started"). When
@@ -156,7 +158,7 @@ export const wmiStrategy: Strategy = {
       const r = await deps.run(
         'cscript.exe',
         ['//B', '//nologo', vbs, process.execPath, tramp, specPath],
-        { timeoutMs: 20_000 },
+        { timeoutMs: RUN_TIMEOUT_MS },
       );
       if (r.code !== 0) throw failure('WMI Win32_Process.Create', r);
       await waitConsumed(specPath, deps);
@@ -179,16 +181,16 @@ export const schtasksStrategy: Strategy = {
     ]));
     let created = false;
     try {
-      const c = await deps.run('schtasks.exe', ['/Create', '/F', '/TN', name, '/XML', xml], { timeoutMs: 20_000 });
+      const c = await deps.run('schtasks.exe', ['/Create', '/F', '/TN', name, '/XML', xml], { timeoutMs: RUN_TIMEOUT_MS });
       if (c.code !== 0) throw failure('schtasks /Create', c);
       created = true;
-      const r = await deps.run('schtasks.exe', ['/Run', '/TN', name], { timeoutMs: 20_000 });
+      const r = await deps.run('schtasks.exe', ['/Run', '/TN', name], { timeoutMs: RUN_TIMEOUT_MS });
       if (r.code !== 0) throw failure('schtasks /Run', r);
       await waitConsumed(specPath, deps);
     } finally {
       // The daemon keeps running when its task is deleted.
       if (created) {
-        await deps.run('schtasks.exe', ['/Delete', '/F', '/TN', name], { timeoutMs: 20_000 })
+        await deps.run('schtasks.exe', ['/Delete', '/F', '/TN', name], { timeoutMs: RUN_TIMEOUT_MS })
           .catch(() => undefined);
       }
       cleanup(deps, xml, tramp, specPath);
@@ -206,7 +208,7 @@ export const powershellStrategy: Strategy = {
 
 /**
  * Start the daemon outside the job object with the first route that works.
- * `{ via: 'none' }` means every route failed; the caller decides what to do.
+ * `{ ok: false }` means every route failed; the caller decides what to do.
  */
 export async function startOutsideJob(
   spec: DaemonSpec,
@@ -217,12 +219,12 @@ export async function startOutsideJob(
   for (const strategy of order) {
     try {
       await strategy.start(spec, deps);
-      return { via: strategy.name };
+      return { ok: true, via: strategy.name };
     } catch (err: unknown) {
       errors.push(`${strategy.name}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  return { via: 'none', errors };
+  return { ok: false, errors };
 }
 
 /** FOX_* settings (and the legacy names) of `env`, for the spec file. */
@@ -237,12 +239,10 @@ export function daemonEnvFrom(env: NodeJS.ProcessEnv): Record<string, string> {
 
 const defaultRunner: Runner = (cmd, args, opts) =>
   new Promise((resolve) => {
-    execFile(cmd, args, { windowsHide: true, timeout: opts?.timeoutMs ?? 20_000 }, (err, stdout, stderr) => {
-      const code = err === null
-        ? 0
-        : typeof (err as NodeJS.ErrnoException).code === 'number'
-          ? ((err as NodeJS.ErrnoException).code as unknown as number)
-          : null;
+    execFile(cmd, args, { windowsHide: true, timeout: opts?.timeoutMs ?? RUN_TIMEOUT_MS }, (err, stdout, stderr) => {
+      // err.code: the exit code (number), or a spawn error such as 'ENOENT' (string)
+      const raw: unknown = err?.code;
+      const code = err === null ? 0 : typeof raw === 'number' ? raw : null;
       resolve({
         code,
         stdout: String(stdout),
@@ -257,6 +257,6 @@ export function defaultDeps(dir: string): OutsideJobDeps {
     fs,
     dir,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-    id: `${process.pid}-${Math.random().toString(36).slice(2, 8)}`,
+    id: `${process.pid}-${shortId()}`,
   };
 }

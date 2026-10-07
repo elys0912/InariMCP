@@ -225,7 +225,7 @@ npm run teardown
 4. このリポジトリの動いているNative Hostのプロセス、続いてdaemon（ポートの相手がKitsuneMCPのdaemonであることを確かめてから。APIトークンがあれば署名付きの`POST /daemon/shutdown`で止め、トークンが無いかそれが失敗したときはSIGTERM、猶予の後にSIGKILL）
 5. `--purge`を付けたときは`~/.kitsune-mcp/`の残り（APIトークン、`safety.json`、ログ、スクリーンショット）。付けなければ残りは一覧を表示するだけで削除しない
 
-KitsuneMCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す。アンインストーラがそれを表示するので、再起動する。リポジトリとFirefoxの拡張機能は変更しない（拡張機能はFirefoxで外す）。
+KitsuneMCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す。アンインストーラがそれを表示するので、再起動する。リポジトリとFirefoxの拡張機能は変更しない（拡張機能はFirefoxで外す）。Claude Codeの設定ファイル（`~/.claude.json`、`.mcp.json`）が読めないか解析できなければ、「未登録」ではなく問題として報告する（終了コード1）。`claude mcp list`で確認すること。Firefoxの登録が別のチェックアウトのNative Hostを指していれば、警告を出したうえでそれも外す。
 
 オプション（npm経由では`--`の後）: `-n`/`--dry-run`、`-y`/`--yes`（Claude Codeの登録も削除する）、`--unregister-claude`、`--keep-claude`、`--no-stop`（何も止めない）、`--grace 秒`（既定5）、`--purge`、`--manual`、`-h`/`--help`。`--stop-daemon`、`--no-stop-daemon`、`--no-unregister-claude`も受け付ける。`npm run uninstall:windows` / `uninstall:unix`は別名として残っている。
 
@@ -271,7 +271,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 |---|---|
 | `packages/shared` | 他の3パッケージで使われる共有のzodスキーマ、アクション名、定数。サブパス`@kitsune-mcp/shared/node`には、Node.jsのプロセス用の共通処理（パス、接続先、APIトークン、`/health`、ログ、daemonの起動、版、HMAC認証）がある。拡張機能はブラウザで使える部分だけをzod抜きでバンドルする（[開発](#開発)を参照）。 |
 | `packages/mcp-server` | 1つの実行ファイルで2つの役割を持つ。既定では薄いstdio中継で、Claude Codeがセッションごとに1つ起動し、`fox_*`ツールの一覧を返して、呼び出しを共有サーバーに転送する。`--daemon`を付けるとその共有サーバーになる。HTTP/WebSocketのポートを持つ唯一のプロセスで、安全ガードを実行し、Native HostへのWebSocket（優先）かヘッドレスPlaywrightバックエンド（上級者向け）にコマンドをディスパッチする。 |
-| `packages/native-host` | 共有サーバーとFirefox拡張機能の間のネイティブメッセージングブリッジ。共有サーバーが動いていなければ起動し、プロセスがいなくなったときだけ起動し直す（応答が遅いだけのサーバーは止めない）。 |
+| `packages/native-host` | 共有サーバーとFirefox拡張機能の間のネイティブメッセージングブリッジ。共有サーバーが動いていなければ起動し、プロセスがいなくなったときだけ起動し直す（応答が遅いだけのサーバーは止めない）。起動に10回失敗すると、使えるサーバー（Claude Codeのセッションが起動したものなど）が現れるまで起動しない。 |
 | `packages/extension` | 実際にクリック・入力・DOM読み取りを行い、承認の要求をツールバーのポップアップに出すFirefox WebExtension（Manifest V2）。esbuildで3つのバンドル（`dist/background.js`、`dist/content.js`、`dist/popup/popup.js`）にビルドする。 |
 
 コマンドフロー: Claude Code → stdio中継 → HTTP → 共有サーバー → 安全ガード → WebSocket → Native Host → Native Messaging → 拡張機能バックグラウンドスクリプト → コンテンツスクリプト → ページDOM、結果は同じ経路を逆にたどって返ってくる。
@@ -288,9 +288,9 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 | 変数 | 既定値 | 読むプロセス | 説明 |
 |---|---|---|---|
-| `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host | HTTP/WSサーバーのアドレス。ループバック以外なら警告を出す。旧名: `CLAUDE_BROWSER_HOST` |
-| `FOX_HTTP_PORT` | `8765` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
-| `FOX_WS_PORT` | `8766` | daemon、Native Host | Native Hostが接続するWebSocketのポート。旧名: `CLAUDE_BROWSER_WS_PORT` |
+| `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host | HTTP/WSサーバーのアドレス。ループバック以外なら警告を出す。空の値は未設定として扱う。旧名: `CLAUDE_BROWSER_HOST` |
+| `FOX_HTTP_PORT` | `8765` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空なら旧名を使う。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
+| `FOX_WS_PORT` | `8766` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空なら旧名を使う。旧名: `CLAUDE_BROWSER_WS_PORT` |
 | `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。`legacy`を指定すると、代わりに以前のツール名を一覧にする（[ツール名の移行](#ツール名の移行)を参照）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、スクリプト禁止、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
 | `FOX_HEADLESS` | 未設定 | daemon | `1` / `true` / `yes`でヘッドレスPlaywrightバックエンドを使う。それ以外は無効（`on`など認識できない値は警告をログに出す）。旧名: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない）。旧名: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |

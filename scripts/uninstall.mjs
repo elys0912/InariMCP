@@ -15,15 +15,29 @@
 import {
   CLAUDE_NAME, UsageError, claudeConfigPath, claudeRemoveArgs, classifyProcesses, dataPaths,
   findClaudeEntries, formatCommand, httpEndpoint, nmManifestTargets, parseRegDefaultValue,
-  parseUninstallArgs, pathApi, repoPaths,
+  lookup, parseUninstallArgs, pathApi, repoPaths, samePath,
 } from './lib/core.mjs';
 import {
-  confirm, defaultDeps, exists, exitOnBrokenPipe, findClaude, isMain, listNodeProcesses, makeReporter, probeDaemon,
-  readTextOrNull, regDeleteKey, regQueryDefault, removeTreeSafe, runProgram, stopDaemonGracefully, stopProcess,
+  PROGRAM_TIMEOUT_MS, confirm, defaultDeps, exists, exitOnBrokenPipe, findClaude, isMain, listNodeProcesses,
+  makeReporter, probeDaemon, readTextOrNull, regDeleteKey, regQueryDefault, removeTreeSafe, runProgram, stopDaemonGracefully, stopProcess,
 } from './lib/system.mjs';
 import { manualForPlatform, manualMarkdown, uninstallUsage } from './lib/texts.mjs';
 
 class Fatal extends Error {}
+
+/** stopDaemonGracefully() outcomes other than 'stopped' → what is reported before signalling. */
+const SHUTDOWN_OUTCOME_TEXT = {
+  refused: 'was refused (older daemon?)',
+  unanswered: 'got no answer',
+  'still-running': 'did not stop it in time',
+};
+
+/** stopProcess() results other than 'failed' → how the stop is reported. */
+const STOP_RESULT_TEXT = {
+  stopped: 'stopped',
+  killed: 'killed after the grace period',
+  gone: 'already gone',
+};
 
 export async function runUninstall(argv, overrides = {}) {
   const deps = { ...defaultDeps(), ...overrides };
@@ -39,7 +53,9 @@ export async function runUninstall(argv, overrides = {}) {
       r.error(err.message);
       return 1;
     }
-    throw err;
+    // Anything else (an fs error: EACCES, EBUSY …): one line, not a stack trace.
+    r.error(err instanceof Error ? err.message : String(err));
+    return 1;
   } finally {
     deps.closePrompt?.();
   }
@@ -55,7 +71,7 @@ async function uninstall(argv, deps, r) {
 
   if (opts.help) {
     r.raw(uninstallUsage());
-    r.raw(`\nManual alternative (this machine):\n\n${manualForPlatform('uninstall', platform, { repoRoot: repo.repoRoot, nodePath: deps.execPath, dataDir: data.dataDir })}`);
+    r.raw(`\nManual alternative (this machine):\n\n${manualForPlatform('uninstall', platform, { repoRoot: repo.repoRoot, nodePath: deps.execPath, dataDir: data.dataDir, port: httpEndpoint(env).port })}`);
     return 0;
   }
   if (opts.manual) {
@@ -78,27 +94,31 @@ async function uninstall(argv, deps, r) {
         problems++;
       } else if (q.value === null) {
         r.ok(`not registered: ${t.registryKey}`);
-      } else if (dry) {
-        r.plan(`delete ${t.registryKey} (was: ${q.value})`);
       } else {
-        const res = regDeleteKey(deps, t.registryKey);
-        if (res.error || res.status !== 0) {
-          r.warn(`reg.exe delete failed: ${String(res.stderr).trim() || res.error?.message}`);
-          problems++;
+        warnIfForeign(r, t.registryKey, q.value || '(empty)', samePath(q.value, data.winManifestPath, platform));
+        if (dry) {
+          r.plan(`delete ${t.registryKey} (was: ${q.value})`);
         } else {
-          r.ok(`deleted ${t.registryKey} (was: ${q.value})`);
+          const res = regDeleteKey(deps, t.registryKey);
+          if (res.error || res.status !== 0) {
+            r.warn(`reg.exe delete failed: ${String(res.stderr).trim() || res.error?.message}`);
+            problems++;
+          } else {
+            r.ok(`deleted ${t.registryKey} (was: ${q.value})`);
+          }
         }
       }
       continue; // the manifest file goes with ~/.kitsune-mcp/native-host below
     }
     if (!fsx(t.file)) continue;
-    const text = readTextOrNull(deps.fs, t.file);
     let pointsTo = '';
     try {
-      pointsTo = JSON.parse(text ?? '').path ?? '';
+      const parsed = JSON.parse(readTextOrNull(deps.fs, t.file) ?? '');
+      if (parsed && typeof parsed.path === 'string') pointsTo = parsed.path;
     } catch {
-      // unreadable: remove anyway, it has our host name
+      // unreadable or broken: remove anyway, it has our host name
     }
+    if (pointsTo) warnIfForeign(r, t.file, pointsTo, samePath(pointsTo, data.wrapperPath, platform));
     if (dry) r.plan(`delete ${t.file}${pointsTo ? ` (host: ${pointsTo})` : ''}`);
     else {
       try {
@@ -123,7 +143,13 @@ async function uninstall(argv, deps, r) {
   r.step('4. Stopping running processes');
 
   const endpoint = httpEndpoint(env);
-  const token = (readTextOrNull(deps.fs, data.tokenPath) ?? '').trim() || undefined;
+  let token;
+  try {
+    token = (readTextOrNull(deps.fs, data.tokenPath) ?? '').trim() || undefined;
+  } catch (err) {
+    // Without the token the daemon is stopped by signal instead.
+    r.warn(`could not read ${data.tokenPath}: ${err.message}`);
+  }
   const daemon = await probeDaemon(deps, endpoint, token);
   const procs = listNodeProcesses(deps);
   const classes = procs
@@ -146,7 +172,8 @@ async function uninstall(argv, deps, r) {
   // Daemon PIDs: the verified /daemon/info PID, plus daemons of this repository found in the process list.
   const daemonPids = new Set(classes ? classes.daemons.map((d) => d.pid) : []);
   if (daemon.kind === 'kitsune' && daemon.pid) daemonPids.add(daemon.pid);
-  if (daemon.kind === 'kitsune' && !daemon.pid && daemonPids.size === 0) {
+  // Only a problem when we were asked to stop it (--no-stop leaves it running anyway).
+  if (opts.stop && daemon.kind === 'kitsune' && !daemon.pid && daemonPids.size === 0) {
     r.warn('the daemon\'s PID is unknown (not verified and not found in the process list); stop it by hand (see --help).');
     problems++;
   }
@@ -187,7 +214,7 @@ async function uninstall(argv, deps, r) {
             }
             r.info(`daemon answered the stop request but PID ${pid} is still alive — sending a signal`);
           } else {
-            r.info(`POST /daemon/shutdown ${outcome === 'refused' ? 'was refused (older daemon?)' : outcome === 'unanswered' ? 'got no answer' : 'did not stop it in time'} — sending a signal`);
+            r.info(`POST /daemon/shutdown ${lookup(SHUTDOWN_OUTCOME_TEXT, outcome, 'shutdown outcome')} — sending a signal`);
           }
         } else if (kind === 'daemon' && daemonStopped && !deps.isAlive(pid)) {
           r.ok(`daemon PID ${pid}: already gone`);
@@ -198,7 +225,7 @@ async function uninstall(argv, deps, r) {
           r.warn(`could not stop ${kind} PID ${pid}`);
           problems++;
         } else {
-          r.ok(`${kind} PID ${pid}: ${result === 'killed' ? 'killed after the grace period' : result === 'gone' ? 'already gone' : 'stopped'}`);
+          r.ok(`${kind} PID ${pid}: ${lookup(STOP_RESULT_TEXT, result, 'stop result')}`);
         }
       }
       if (!dry && daemon.kind === 'kitsune') {
@@ -220,16 +247,23 @@ async function uninstall(argv, deps, r) {
   if (!fsx(data.dataDir)) r.ok('not present');
   else if (opts.purge) problems += removeDir(deps, r, dry, data.dataDir);
   else {
-    const left = deps.fs.readdirSync(data.dataDir).filter((n) => !(dry && n === 'native-host'));
-    if (left.length === 0) {
-      if (dry) r.plan(`remove the empty directory ${data.dataDir}`);
-      else {
-        deps.fs.rmdirSync(data.dataDir);
-        r.ok('empty — removed');
+    // A daemon restarted by a relay may recreate files meanwhile (ENOTEMPTY),
+    // or the directory may be held (EBUSY / EACCES): report, do not crash.
+    try {
+      const left = deps.fs.readdirSync(data.dataDir).filter((n) => !(dry && n === 'native-host'));
+      if (left.length === 0) {
+        if (dry) r.plan(`remove the empty directory ${data.dataDir}`);
+        else {
+          deps.fs.rmdirSync(data.dataDir);
+          r.ok('empty — removed');
+        }
+      } else {
+        r.info('kept (use --purge to delete it):');
+        for (const n of left) r.info(`  ${n}`);
       }
-    } else {
-      r.info('kept (use --purge to delete it):');
-      for (const n of left) r.info(`  ${n}`);
+    } catch (err) {
+      r.warn(`could not check or remove ${data.dataDir}: ${err.message}`);
+      problems++;
     }
   }
 
@@ -241,6 +275,16 @@ The repository (${repo.repoRoot}) was not modified.
   return dry || problems === 0 ? 0 : 1;
 }
 
+/**
+ * The host name is one slot shared by every checkout: a registration of
+ * another installation is removed as well (SC-C1: decided "warn only"), but
+ * the user is told.
+ */
+function warnIfForeign(r, where, pointsTo, ours) {
+  if (ours) return;
+  r.warn(`${where} points to another installation: ${pointsTo} (not this checkout's host; it is removed as well)`);
+}
+
 /** @returns {number} problems */
 function removeDir(deps, r, dry, dir) {
   if (!exists(deps.fs, dir)) {
@@ -248,8 +292,13 @@ function removeDir(deps, r, dry, dir) {
     return 0;
   }
   if (dry) {
-    r.plan(`delete ${dir} (${deps.fs.readdirSync(dir).join(', ') || 'empty'})`);
-    return 0;
+    try {
+      r.plan(`delete ${dir} (${deps.fs.readdirSync(dir).join(', ') || 'empty'})`);
+      return 0;
+    } catch (err) {
+      r.warn(`could not list ${dir}: ${err.message}`);
+      return 1;
+    }
   }
   try {
     const res = removeTreeSafe(dir, deps.fs);
@@ -270,26 +319,31 @@ function removeDir(deps, r, dry, dir) {
 /** @returns {Promise<number>} problems */
 async function claudeStep(deps, r, opts, { repo, home, env, platform }) {
   const configFile = claudeConfigPath(platform, home, env);
-  let config = null;
-  let projectMcp = null;
-  try {
-    const t = readTextOrNull(deps.fs, configFile);
-    config = t === null ? null : JSON.parse(t);
-  } catch {
-    r.warn(`could not parse ${configFile}`);
-  }
-  try {
-    const t = readTextOrNull(deps.fs, repo.projectMcpJson);
-    projectMcp = t === null ? null : JSON.parse(t);
-  } catch {
-    r.warn(`could not parse ${repo.projectMcpJson}`);
-  }
+  // A file that cannot be read or parsed is not "not registered": its
+  // registration state is unknown, which is a problem (exit code 1).
+  let unknown = 0;
+  const readJson = (file) => {
+    try {
+      const t = readTextOrNull(deps.fs, file);
+      return t === null ? null : JSON.parse(t);
+    } catch (err) {
+      r.warn(`could not read ${file} (${err.message}): registration state unknown`);
+      unknown++;
+      return null;
+    }
+  };
+  const config = readJson(configFile);
+  const projectMcp = readJson(repo.projectMcpJson);
   const { found, otherLocal } = findClaudeEntries({ config, projectMcp, repoRoot: repo.repoRoot, platform });
   if (otherLocal.length > 0) {
     r.info(`'${CLAUDE_NAME}' is also registered with scope local in: ${otherLocal.join(', ')}`);
     r.info(`  remove it there with: claude mcp remove --scope local ${CLAUDE_NAME}`);
   }
   if (found.length === 0) {
+    if (unknown > 0) {
+      r.warn(`check by hand with: claude mcp list (in ${repo.repoRoot})`);
+      return unknown;
+    }
     r.ok(`'${CLAUDE_NAME}' is not registered (user scope, and local / project scope of ${repo.repoRoot})`);
     return 0;
   }
@@ -302,26 +356,26 @@ async function claudeStep(deps, r, opts, { repo, home, env, platform }) {
   else if (opts.claude === 'remove') remove = true;
   else if (opts.dryRun && !opts.yes) {
     r.info(`would ask whether to remove it (default: keep); --unregister-claude removes it: ${manual}`);
-    return 0;
+    return unknown;
   } else remove = await confirm(deps, opts, `Remove '${CLAUDE_NAME}' from Claude Code?`, false);
   if (!remove) {
     r.info(`kept. To remove it: ${manual}`);
-    return 0;
+    return unknown;
   }
 
   const claude = findClaude(deps);
   if (!claude) {
     r.warn(`'claude' was not found in PATH. Remove it by hand: ${manual}`);
-    return 1;
+    return unknown + 1;
   }
-  let problems = 0;
+  let problems = unknown;
   for (const s of scopes) {
     const args = claudeRemoveArgs(s);
     if (opts.dryRun) {
       r.plan(`run ${formatCommand(claude, args, platform)} (in ${repo.repoRoot})`);
       continue;
     }
-    const res = runProgram(deps, claude, args, { cwd: repo.repoRoot, inherit: true, timeoutMs: 120_000 });
+    const res = runProgram(deps, claude, args, { cwd: repo.repoRoot, inherit: true, timeoutMs: PROGRAM_TIMEOUT_MS });
     if (res.status === 0) r.ok(`removed '${CLAUDE_NAME}' (scope ${s})`);
     else {
       r.warn(`claude mcp remove --scope ${s} failed (exit code ${res.status ?? res.error?.message})`);

@@ -225,7 +225,7 @@ npm run teardown
 4. running Native Host processes of this repository, then the daemon (after checking that the process on the port is a KitsuneMCP daemon; over its signed `POST /daemon/shutdown` when the API token is present, else — or when that fails — SIGTERM, then SIGKILL after the grace period),
 5. with `--purge`, the rest of `~/.kitsune-mcp/` (API token, `safety.json`, logs, screenshots); otherwise what is left is listed, not deleted.
 
-Claude Code sessions that still run KitsuneMCP start the daemon again on their next browser tool call; the uninstaller names them — restart them. The repository and the Firefox extension are not touched (remove the extension in Firefox).
+Claude Code sessions that still run KitsuneMCP start the daemon again on their next browser tool call; the uninstaller names them — restart them. The repository and the Firefox extension are not touched (remove the extension in Firefox). A Claude Code configuration file (`~/.claude.json`, `.mcp.json`) that cannot be read or parsed is reported as a problem (exit code 1), not as "not registered"; check with `claude mcp list`. A Firefox registration that points to another checkout's Native Host is reported with a warning and removed as well.
 
 Options (after `--` with npm): `-n`/`--dry-run`, `-y`/`--yes` (also removes the Claude Code registration), `--unregister-claude`, `--keep-claude`, `--no-stop` (stop nothing), `--grace SECONDS` (default 5), `--purge`, `--manual`, `-h`/`--help`. `--stop-daemon`, `--no-stop-daemon` and `--no-unregister-claude` are still accepted, and `npm run uninstall:windows` / `uninstall:unix` remain as aliases.
 
@@ -271,7 +271,7 @@ A monorepo of four TypeScript packages:
 |---|---|
 | `packages/shared` | Shared zod schemas, action names, and constants used by the other three packages. The subpath `@kitsune-mcp/shared/node` holds the helpers of the Node.js processes (paths, endpoint, API token, `/health`, logs, daemon start, version, HMAC authentication); the Extension bundles only the browser-safe part, without zod (see [Development](#development)). |
 | `packages/mcp-server` | Two roles in one executable. By default it is a thin stdio relay: the process Claude Code starts, one per session, which lists the `fox_*` tools and forwards each call to the shared daemon. With `--daemon` it is that shared daemon: the single process that owns the HTTP/WebSocket ports, runs the safety guard, and dispatches commands to the Native Host over WebSocket (preferred) or to the headless Playwright backend (advanced). |
-| `packages/native-host` | A Native Messaging bridge process between the daemon and the Firefox extension. Starts the daemon if none is running and restarts it only if its process is gone (a slow daemon is never killed). |
+| `packages/native-host` | A Native Messaging bridge process between the daemon and the Firefox extension. Starts the daemon if none is running and restarts it only if its process is gone (a slow daemon is never killed). After 10 failed starts it stops trying until a usable daemon appears (for example one a Claude Code session started). |
 | `packages/extension` | The Firefox WebExtension (Manifest V2) that actually clicks, types, and reads the DOM, and shows approval requests in its toolbar popup. Built with esbuild into three bundles (`dist/background.js`, `dist/content.js`, `dist/popup/popup.js`). |
 
 Command flow: Claude Code → stdio relay → HTTP → shared daemon → safety guard → WebSocket → Native Host → Native Messaging → extension background script → content script → page DOM, and the result flows back the same way.
@@ -288,9 +288,9 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 
 | Variable | Default | Read by | Description |
 |---|---|---|---|
-| `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host | Address of the HTTP/WS server. A non-loopback value logs a warning. Legacy: `CLAUDE_BROWSER_HOST` |
-| `FOX_HTTP_PORT` | `8765` | daemon, relay, Native Host, uninstaller | HTTP port (also the daemon's singleton lock). Legacy: `CLAUDE_BROWSER_HTTP_PORT` |
-| `FOX_WS_PORT` | `8766` | daemon, Native Host | WebSocket port the Native Host connects to. Legacy: `CLAUDE_BROWSER_WS_PORT` |
+| `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host | Address of the HTTP/WS server. A non-loopback value logs a warning. An empty value counts as unset. Legacy: `CLAUDE_BROWSER_HOST` |
+| `FOX_HTTP_PORT` | `8765` | daemon, relay, Native Host, uninstaller | HTTP port (also the daemon's singleton lock). When empty, the legacy name is used. Legacy: `CLAUDE_BROWSER_HTTP_PORT` |
+| `FOX_WS_PORT` | `8766` | daemon, Native Host | WebSocket port the Native Host connects to. When empty, the legacy name is used. Legacy: `CLAUDE_BROWSER_WS_PORT` |
 | `FOX_CAPS` | unset (all tools) | relay | Tool profiles, comma-separated (see [below](#fox_caps-profiles)); `legacy` lists the earlier tool names instead (see [Tool name migration](#tool-name-migration)). **Not a safety boundary** — it only trims which tool schemas this session registers, to save context tokens. The daemon accepts every tool from every caller; actual restrictions (read-only, no scripts, URL limits, container scope) come from `safety.json` / the safety guard |
 | `FOX_HEADLESS` | unset | daemon | `1` / `true` / `yes` uses the headless Playwright backend; anything else leaves it off (an unrecognised value such as `on` is logged as a warning). Legacy: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | Launch timeout of the headless Firefox in **milliseconds** (not seconds). Legacy: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |

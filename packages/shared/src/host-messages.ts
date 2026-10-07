@@ -11,6 +11,7 @@
  */
 
 import { z } from 'zod';
+import { formatZodIssues } from './util.js';
 
 export const HostPingSchema = z.object({ action: z.literal('ping') }).passthrough();
 
@@ -31,16 +32,27 @@ export type HostLocalMessage =
   | z.infer<typeof HostStatusSchema>
   | z.infer<typeof HostSaveScreenshotSchema>;
 
-const SCHEMAS: Record<string, z.ZodTypeAny> = {
+export type HostLocalAction = HostLocalMessage['action'];
+
+/** A schema whose output is a host-local message (input: anything). */
+type HostMessageSchema = z.ZodType<HostLocalMessage, z.ZodTypeDef, unknown>;
+
+// satisfies: a missing or an extra action is a compile error
+const SCHEMAS = {
   ping: HostPingSchema,
   status: HostStatusSchema,
   saveScreenshot: HostSaveScreenshotSchema,
   screenshotTaken: HostSaveScreenshotSchema,
-};
+} satisfies Record<HostLocalAction, HostMessageSchema>;
+
+function isHostLocalAction(action: string): action is HostLocalAction {
+  // hasOwn: 'constructor', '__proto__', … must not resolve to Object.prototype members
+  return Object.hasOwn(SCHEMAS, action);
+}
 
 export type ParsedHostMessage =
   | { ok: true; message: HostLocalMessage }
-  | { ok: false; action: string; error: string }
+  | { ok: false; action: HostLocalAction; error: string }
   | { ok: false; action: undefined; error: 'not a host message' };
 
 /**
@@ -48,14 +60,12 @@ export type ParsedHostMessage =
  * the message is not one of the host's own (a response, or unknown).
  */
 export function parseHostMessage(raw: Record<string, unknown>): ParsedHostMessage {
-  const action = typeof raw['action'] === 'string' ? raw['action'] : undefined;
-  // hasOwn: 'constructor', '__proto__', … must not resolve to Object.prototype members
-  const schema = action !== undefined && Object.hasOwn(SCHEMAS, action) ? SCHEMAS[action] : undefined;
-  if (action === undefined || schema === undefined) {
+  const action = raw['action'];
+  if (typeof action !== 'string' || !isHostLocalAction(action)) {
     return { ok: false, action: undefined, error: 'not a host message' };
   }
+  const schema: HostMessageSchema = SCHEMAS[action];
   const result = schema.safeParse(raw);
-  if (result.success) return { ok: true, message: result.data as HostLocalMessage };
-  const issues = result.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
-  return { ok: false, action, error: `invalid ${action} message: ${issues}` };
+  if (result.success) return { ok: true, message: result.data };
+  return { ok: false, action, error: `invalid ${action} message: ${formatZodIssues(result.error.issues)}` };
 }

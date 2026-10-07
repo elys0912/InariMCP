@@ -15,6 +15,11 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+/** Mode of the directories created under ~/.kitsune-mcp (POSIX; ignored on Windows). */
+export const PRIVATE_DIR_MODE = 0o700;
+/** Mode of the files written there (api_token, logs). */
+export const PRIVATE_FILE_MODE = 0o600;
+
 export function dataDir(): string {
   return path.join(os.homedir(), '.kitsune-mcp');
 }

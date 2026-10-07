@@ -5,6 +5,7 @@
  */
 
 import * as fs from 'node:fs';
+import { errnoCode } from '../util.js';
 
 /** Rotate once a log file grows beyond this (5 MB). */
 export const MAX_LOG_BYTES = 5 * 1_048_576;
@@ -46,7 +47,7 @@ export function rotateIfLarge(filePath: string, options: RotateOptions = {}): bo
     }
     return true;
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return true;
+    if (errnoCode(err) === 'ENOENT') return true;
     options.onError?.(err);
     return false;
   }

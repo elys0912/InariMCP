@@ -15,7 +15,7 @@
  * NOT confused with EOF, so the host process keeps running.
  */
 
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord } from '@kitsune-mcp/shared';
 import { log } from './logger.js';
 
 const MAX_OUTGOING_SIZE = ENV_DEFAULTS.NATIVE_MSG_MAX_SIZE;
@@ -156,13 +156,13 @@ export async function readMessage(): Promise<ReadResult> {
       : { kind: 'skipped', reason };
   }
 
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+  if (!isRecord(parsed)) {
     const reason = 'incoming message is not a JSON object';
     log(reason);
     return { kind: 'skipped', reason };
   }
 
-  return { kind: 'message', message: parsed as Record<string, unknown> };
+  return { kind: 'message', message: parsed };
 }
 
 /**
