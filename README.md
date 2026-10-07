@@ -38,7 +38,7 @@ KitsuneMCP is deliberately narrow. If your use case is one of these, you'll be h
 - **Human approval outside the page** — an action on a protected site is approved by you, either in Claude Code's own confirmation dialog (MCP elicitation) or in the KitsuneMCP toolbar popup in Firefox. Nothing inside the page can approve it. See [Human approval for protected sites](#human-approval-for-protected-sites).
 - **Container isolation (opt-in)** — using Firefox's `contextualIdentities`, you can restrict the agent to a dedicated container so your banking/email sessions in other tabs stay invisible to it. This is a Firefox-only capability; Chromium has nothing equivalent.
 - **Headless mode (advanced)** — a Playwright-driven, Firefox-only headless backend for when you don't want the extension path. Many tools and parameters are not supported there (see [Tool availability](#tool-availability)).
-- **Firefox-native APIs** — `browser.find` for token-cheap in-page text search, `tabs.captureTab` for full-page and all-tabs screenshots (a visible-area screenshot of a background tab briefly activates that tab, then switches back).
+- **Firefox-native APIs** — `browser.find` for token-cheap in-page text search, `tabs.captureTab` for screenshots, including full-page and all-tabs ones (a background tab is captured without switching to it; a discarded tab is an error until you switch to it).
 
 ## Quick Start
 
@@ -155,7 +155,7 @@ All under `~/.kitsune-mcp/logs/`:
 
 | File | Written by |
 |---|---|
-| `native-host.log` | the Native Host (override with `FOX_NATIVE_HOST_LOG`, `0`/`off` disables it) |
+| `native-host.log` | the Native Host (override with `FOX_NATIVE_HOST_LOG`; `0` / `off` / `false` / `no` / `none` disables it) |
 | `daemon.log` | the shared daemon's stderr |
 | `audit.jsonl` | the safety guard's audit log (`audit_log` in `safety.json`) |
 
@@ -176,17 +176,17 @@ node packages/mcp-server/dist/index.js [option]
 | `-h`, `--help` | show the usage |
 | `-v`, `--version` | print the version |
 
-`--help` and `--version` print and exit before anything else happens: no daemon is started, no API token or log file is created. An unknown argument (or two modes together) exits with code 2.
+`--help` and `--version` print and exit before anything else happens: no daemon is started, no API token or log file is created. An unknown argument (or two modes together, or `--force` without `--stop-daemon`) exits with code 2.
 
-`--doctor` prints one line per item — `OK`, `WARN`, `FAIL` or `SKIP` — with a fix for each problem, and exits with code 1 when an item FAILs (else 0). A missing `native-messaging` registration is a WARN: the extension route (Firefox) needs it, headless alone does not. The 14 items: `node`, `versions` (all packages and the extension manifest have the same version), `build` (`dist` newer than the sources), `native-messaging` (the Firefox registration and the manifest's name, type, allowed extension and path), `nm-wrapper` (the wrapper points to this checkout and its node exists), `claude` (the Claude Code registration, read from `~/.claude.json` and `.mcp.json`), `powershell` (Windows: whether the Native Host can use it), `daemon` (`/health`: protocol, proof, version), `token`, `settings` (`FOX_*` here vs. the running daemon), `browsers` (connected Native Hosts), `safety-config` (`safety.json` parses and is valid), `screenshots` (`FOX_SCREENSHOTS_DIR`) and `logs` (sizes, Native Host start-up limit). It is read-only: it creates no token, starts no daemon, writes no log, and does not run `claude mcp get` (that would start the server to test it).
+`--doctor` prints one line per item — `OK`, `WARN`, `FAIL` or `SKIP` — with a fix for each problem, and exits with code 1 when an item FAILs (else 0). A missing `native-messaging` registration is a WARN: the extension route (Firefox) needs it, headless alone does not. The 14 items: `node`, `versions` (all packages and the extension manifest have the same version), `build` (`dist` newer than the sources), `native-messaging` (the Firefox registration and the manifest's name, type, allowed extension and path), `nm-wrapper` (the wrapper points to this checkout and its node exists), `claude` (the Claude Code registration, read from `~/.claude.json` — `$CLAUDE_CONFIG_DIR/.claude.json` when `CLAUDE_CONFIG_DIR` is set — and `.mcp.json`), `powershell` (Windows: whether the Native Host can use it), `daemon` (`/health`: protocol, proof, version), `token`, `settings` (`FOX_*` here vs. the running daemon), `browsers` (connected Native Hosts), `safety-config` (`safety.json` parses and is valid), `screenshots` (`FOX_SCREENSHOTS_DIR`) and `logs` (sizes, Native Host start-up limit). It is read-only: it creates no token, starts no daemon, writes no log, and does not run `claude mcp get` (that would start the server to test it).
 
-`--stop-daemon` asks the daemon to stop over a signed `POST /daemon/shutdown` (it needs `~/.kitsune-mcp/api_token`): running tool calls get up to 10 s to finish (`--force`: none), headless Firefox is closed, and the daemon exits. It exits with code 0 when the daemon is gone (or none was running), else 1. Every Claude Code session loses the browser tools until its next call starts a daemon again, and a running Native Host (Firefox with the extension) starts one within about 20 s — quit Firefox first to keep it stopped.
+`--stop-daemon` asks the daemon to stop over a signed `POST /daemon/shutdown` (it needs `~/.kitsune-mcp/api_token`): running tool calls get up to 10 s to finish (`--force`: none), new tool calls are answered with HTTP 503 meanwhile, headless Firefox is closed, and the daemon exits. A daemon from an older version that predates `--stop-daemon` cannot be stopped this way: end its process by PID. `--stop-daemon` exits with code 0 when the daemon is gone (or none was running), else 1. Every Claude Code session loses the browser tools until its next call starts a daemon again, and a running Native Host (Firefox with the extension) starts one within about 20 s — quit Firefox first to keep it stopped.
 
 `scripts/e2e/nm-probe.mjs [manifest.json]` starts the Native Messaging host the way Firefox does (from the installed manifest by default), sends `ping` and `status`, and checks that it reaches the daemon (exit code 0 = pass, 1 = fail, 2 = bad arguments). It starts a daemon if none is running.
 
 ### Headless mode
 
-If you don't want to install the extension, run the daemon with `FOX_HEADLESS=1` and it drives a Playwright-managed Firefox instance directly instead of talking to your real browser:
+If you don't want to install the extension, set `FOX_HEADLESS=1` for the daemon and it drives a Playwright-managed Firefox instance directly instead of talking to your real browser. The relay passes its environment to the daemon it starts, so setting it for the relay (the command Claude Code runs) is enough when no daemon is running yet:
 
 ```bash
 FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
@@ -205,7 +205,7 @@ npm run build
 npm run setup
 ```
 
-Then reload the extension in `about:debugging` (or restart Firefox and load it again) and restart Claude Code. A daemon from the old version keeps running until it is stopped: when the new relay or Native Host reports that the running daemon "speaks protocol …" / "is from another version", stop that daemon process (and restart Firefox if the Native Host started it); a matching one starts on the next tool call.
+Then reload the extension in `about:debugging` (or restart Firefox and load it again) and restart Claude Code. A daemon from the old version keeps running until it is stopped: when the new relay or Native Host reports that the running daemon "speaks protocol …" / "is from another version", stop that daemon process (and restart Firefox if the Native Host started it); a matching one starts on the next tool call. A daemon that predates `--stop-daemon` has to be ended by PID (`--doctor` prints the port to look for); a newer one can be stopped with `node packages/mcp-server/dist/index.js --stop-daemon`.
 
 #### Notes on updating
 
@@ -227,7 +227,7 @@ npm run teardown
 
 Claude Code sessions that still run KitsuneMCP start the daemon again on their next browser tool call; the uninstaller names them — restart them. The repository and the Firefox extension are not touched (remove the extension in Firefox). A Claude Code configuration file (`~/.claude.json`, `.mcp.json`) that cannot be read or parsed is reported as a problem (exit code 1), not as "not registered"; check with `claude mcp list`. A Firefox registration that points to another checkout's Native Host is reported with a warning and removed as well.
 
-Options (after `--` with npm): `-n`/`--dry-run`, `-y`/`--yes` (also removes the Claude Code registration), `--unregister-claude`, `--keep-claude`, `--no-stop` (stop nothing), `--grace SECONDS` (default 5), `--purge`, `--manual`, `-h`/`--help`. `--stop-daemon`, `--no-stop-daemon` and `--no-unregister-claude` are still accepted, and `npm run uninstall:windows` / `uninstall:unix` remain as aliases.
+Options (after `--` with npm): `-n`/`--dry-run`, `-y`/`--yes` (also removes the Claude Code registration), `--unregister-claude`, `--keep-claude`, `--no-stop` (stop nothing), `--grace SECONDS` (0 to 60, default 5; anything else is a usage error), `--purge`, `--manual`, `-h`/`--help`. `--stop-daemon`, `--no-stop-daemon` and `--no-unregister-claude` are still accepted, and `npm run uninstall:windows` / `uninstall:unix` remain as aliases.
 
 ### Manual setup
 
@@ -278,17 +278,17 @@ Command flow: Claude Code → stdio relay → HTTP → shared daemon → safety 
 
 The `claude mcp add` command stays the same: the relay starts the daemon on first use (and the Native Host does the same when Firefox starts first), and the daemon exits by itself after 10 minutes unused (`FOX_DAEMON_IDLE_TIMEOUT`). Because every session gets its own relay and they all share one daemon, you can run several Claude Code sessions at the same time without port conflicts. They share the safety guard state too (rate limit, audit log, the last known URL of each tab).
 
-The relay and the Native Host authenticate the daemon, and the daemon them, with HMAC challenge–response over the API token in `~/.kitsune-mcp/api_token` (the token itself never travels): a program that takes over the port cannot pose as the daemon. `GET /health` needs no authentication; with a nonce it adds a `proof`, and it reports the `protocol` version the relay and Native Host check. The `X-API-Key: <token>` header is still accepted by the HTTP API, for manual debugging only (such answers are not signed). A `FOX_HOST` that is not a loopback address makes the daemon log a warning: the ports are then reachable from other machines.
+The relay and the Native Host authenticate the daemon, and the daemon them, with HMAC challenge–response over the API token in `~/.kitsune-mcp/api_token` (the token itself never travels): a program that takes over the port cannot pose as the daemon. `GET /health` needs no authentication; with a nonce it adds a `proof`, and it reports the `protocol` version the relay and Native Host check. The `X-API-Key: <token>` header is still accepted by the HTTP API, for manual debugging only (such answers are not signed), except by `POST /daemon/shutdown`, which takes signed requests only. A `FOX_HOST` that is not a loopback address makes the daemon log a warning: the ports are then reachable from other machines.
 
 ## Configuration
 
 ### Environment variables
 
-The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSER_*` name (inherited from the fork) still works as a fallback when the `FOX_*` one isn't set. The daemon takes an empty or blank `FOX_HEADLESS`, `FOX_SAFETY_CONFIG`, `FOX_SCREENSHOTS_DIR`, `FOX_READ_ONLY`, `FOX_ALLOW_SCRIPTS` or `FOX_APPROVAL_ELICITATION` as not set.
+The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSER_*` name (inherited from the fork) still works as a fallback when the `FOX_*` one isn't set. The daemon takes an empty or blank `FOX_HEADLESS`, `FOX_HEADLESS_STARTUP_TIMEOUT`, `FOX_EXECUTABLE`, `FOX_SAFETY_CONFIG`, `FOX_SCREENSHOTS_DIR`, `FOX_READ_ONLY`, `FOX_ALLOW_SCRIPTS`, `FOX_APPROVAL_ELICITATION` or `FOX_DAEMON_IDLE_TIMEOUT` as not set (the legacy name where there is one, else the default, applies); the Native Host does the same with `FOX_SCREENSHOTS_DIR`, `FOX_SCREENSHOT_RETENTION_DAYS` and `FOX_NATIVE_HOST_LOG`.
 
 | Variable | Default | Read by | Description |
 |---|---|---|---|
-| `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host | Address of the HTTP/WS server. A non-loopback value logs a warning. An empty value counts as unset. Legacy: `CLAUDE_BROWSER_HOST` |
+| `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host, uninstaller | Address of the HTTP/WS server. A non-loopback value logs a warning. An empty value counts as unset. Legacy: `CLAUDE_BROWSER_HOST` |
 | `FOX_HTTP_PORT` | `8765` | daemon, relay, Native Host, uninstaller | HTTP port (also the daemon's singleton lock). When empty, the legacy name is used. Legacy: `CLAUDE_BROWSER_HTTP_PORT` |
 | `FOX_WS_PORT` | `8766` | daemon, Native Host | WebSocket port the Native Host connects to. When empty, the legacy name is used. Legacy: `CLAUDE_BROWSER_WS_PORT` |
 | `FOX_CAPS` | unset (all tools) | relay | Tool profiles, comma-separated (see [below](#fox_caps-profiles)); `legacy` lists the earlier tool names instead (see [Tool name migration](#tool-name-migration)). **Not a safety boundary** — it only trims which tool schemas this session registers, to save context tokens. The daemon accepts every tool from every caller; actual restrictions (read-only, no scripts, URL limits, container scope) come from `safety.json` / the safety guard |
@@ -296,11 +296,11 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | Launch timeout of the headless Firefox in **milliseconds** (not seconds). Legacy: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | Playwright's Firefox | daemon (headless only) | Path to the Firefox binary Playwright launches. Legacy: `CLAUDE_BROWSER_EXECUTABLE` |
 | `FOX_SCREENSHOTS_DIR` | `~/.kitsune-mcp/screenshots` | Native Host (extension path), daemon (headless path, `GET /screenshots`) | Where screenshots are saved; a relative path is taken from the working directory of the process. Legacy: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
-| `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | At each Native Host start, screenshots it saved under a generated name and older than this many days are deleted (`0` keeps everything). Files saved under a `filename` you chose, and headless screenshots, are never deleted |
+| `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | At each Native Host start, screenshots it saved under a generated name and older than this many days are deleted (`0` keeps everything; a negative or non-numeric value means `30`). Files saved under a `filename` you chose, and headless screenshots, are never deleted |
 | `FOX_READ_ONLY` | unset | daemon | `1` / `true` / `yes` forces read-only mode. Legacy: `CLAUDE_BROWSER_READ_ONLY` |
 | `FOX_ALLOW_SCRIPTS` | unset | daemon | `0` / `false` / `no` / `off` disables the script tools (`fox_evaluate`, `fox_observer`; earlier names `fox_execute_script`, `fox_eval_chain`, `fox_wait_and_act`, `fox_inject_observer`, `fox_remove_observer`). Legacy: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
 | `FOX_SAFETY_CONFIG` | `~/.kitsune-mcp/safety.json` | daemon | Alternate path of the safety policy file. Legacy: `CLAUDE_BROWSER_SAFETY_CONFIG` |
-| `FOX_APPROVAL_ELICITATION` | on | relay, daemon | `0` / `false` / `off` / `no` turns approval through MCP elicitation off: protected-site actions are then always approved in the Firefox popup |
+| `FOX_APPROVAL_ELICITATION` | on | relay, daemon | `0` / `false` / `off` / `no` turns approval through MCP elicitation off: protected-site actions are then always approved in the Firefox popup. The relay and the daemon each read their own environment: a relay with it off never asks through elicitation; a daemon with it off does not take elicitation answers, so a "yes" given there is asked again in the popup |
 | `FOX_DAEMON_IDLE_TIMEOUT` | `600` | daemon | Seconds without a relay, a Native Host or a running call before the daemon exits (`0` = never) |
 | `FOX_NATIVE_HOST_LOG` | `~/.kitsune-mcp/logs/native-host.log` | Native Host | Log file path; `0` / `off` / `false` / `no` / `none` disables file logging |
 
@@ -319,7 +319,7 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 | `wait` | `fox_wait` |
 | `all` | every tool (same as leaving `FOX_CAPS` unset) |
 
-`fox_safety_status` is always registered, and every tool is in at least one profile. Unknown profile names are ignored with a warning on stderr. `legacy` (alone, or with other profiles: `legacy,core`) registers the earlier tool names and their earlier profiles instead; see [Tool name migration](#tool-name-migration).
+`fox_safety_status` is in no profile: it is always registered. Every other tool is in at least one profile. Unknown profile names are ignored with a warning on stderr; when every name given is unknown, only `fox_safety_status` is registered. `legacy` (alone, or with other profiles: `legacy,core`) registers the earlier tool names and their earlier profiles instead; see [Tool name migration](#tool-name-migration).
 
 ### Tool name migration
 
@@ -356,7 +356,7 @@ Unchanged: `fox_screenshot`, `fox_snapshot`, `fox_navigate`, `fox_click`, `fox_t
 
 ### `safety.json`
 
-Auto-generated on first run at `~/.kitsune-mcp/safety.json` (or `FOX_SAFETY_CONFIG`). A key left out of the file, or out of `container_scope`, takes its default; a key not in this table (a typo such as `readonly`) makes the file unusable (see below):
+Auto-generated on first run at `~/.kitsune-mcp/safety.json` (or `FOX_SAFETY_CONFIG`). A key left out of the file, or out of `container_scope`, takes its default; the camelCase spelling of a key (`readOnly`) is accepted too; a key not in this table (a typo such as `readonly`) makes the file unusable (see below):
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -382,18 +382,20 @@ URL patterns are matched against the parsed URL, not the raw string, so `example
 | `https://example.com` | ... over that scheme only |
 | `example.com:8443` | ... on that port only (a URL without a port has its scheme's default: `example.com:443` matches `https://example.com/`) |
 | `[::1]` | an IPv6 address, in brackets |
-| `re:<regex>` | a case-insensitive regex over the normalised URL (`scheme://host[:port]/path?query#hash`, no user name or password) that must match the whole URL: it is always anchored as `^(?:<regex>)$`, so `re:example\.com` does not match `https://example.com.attacker.net/`; end it with `.*` for a prefix (`re:https://example\.com/.*`) |
+| `re:<regex>` | a case-insensitive regex over the normalised URL (`scheme://host[:port]/path?query#hash`, no user name or password) that must match the whole URL: it is always anchored as `^(?:<regex>)$`, so `re:example\.com` does not match `https://example.com.attacker.net/`; end it with `.*` for a prefix (`re:https://example\.com/.*`). In the blocked and protected lists it is also tried on the URL as written (not normalised), so that either form matching is enough |
 
 Host and scheme compare case-insensitively. In `allowed_url_patterns` a path matches as written (at a segment boundary: `/admin` does not cover `/administrator`); in the blocked and protected lists it matches any continuation after decoding `%xx` escapes, collapsing repeated slashes and folding case. Regular expressions from earlier versions keep working where possible: simple ones (`paypal\.com`, `\.gov(/|$)`, `^https://a\.example/`) are read as the equivalent host pattern; any other one keeps its old meaning (anywhere in the URL) in the blocked and protected lists, with a warning, and is an error in the allowed list.
 
-If `safety.json` cannot be used (unreadable, invalid JSON, an unknown key, a wrong type, an unusable URL pattern), the daemon logs the error to stderr (`daemon.log`) and refuses every tool except `fox_safety_status`, which shows the error, until the file is fixed and the daemon restarted. Navigation targets are checked as well: only `http://`, `https://` and `about:blank` are allowed, URLs with a user name or password before the host are refused, and a result whose final URL (after a redirect or a click) is blocked is withheld.
+If `safety.json` cannot be used (unreadable, invalid JSON, an unknown key, a wrong type, an unusable URL pattern), the daemon logs the error to stderr (`daemon.log`) and refuses every tool except `fox_safety_status`, which shows the error, until the file is fixed and the daemon restarted. A URL pattern is unusable when it is empty, an invalid `re:` regex, a host pattern with an invalid port (1–65535) or IPv6 address, `*.` before an IP address, `*` in a path other than a trailing `/*`, `?` / `#` (or `%3F` / `%23`) in a path, an entry of `allowed_url_patterns` that is not a host pattern or `re:`, or an earlier-version regex that does not compile. A dot-less host pattern in the blocked or protected list (`paypal` matches only the host `paypal` and its subdomains) and an earlier-version regex kept as is are used with a warning, shown in `fox_safety_status` (`patternWarnings`). Navigation targets are checked as well: only `http://`, `https://` and `about:blank` are allowed, URLs with a user name or password before the host are refused, and a result whose final URL (after a redirect or a click) is blocked is withheld.
 
 ### Human approval for protected sites
 
 When a tool would act on a URL matching `protected_url_patterns` (and `confirm_protected_actions` is on), the call is not run. The daemon opens a one-time approval request, and your Claude Code session asks you:
 
 1. in Claude Code's own confirmation dialog (MCP elicitation), when the client supports it and `FOX_APPROVAL_ELICITATION` is not turned off;
-2. otherwise in Firefox: the KitsuneMCP toolbar button shows an amber count (plus an OS notification), and you approve or deny in its popup.
+2. otherwise in Firefox: the KitsuneMCP toolbar button shows an amber count (plus an OS notification), and you approve or deny in its popup. The popup is also used when the elicitation request fails (the client does not know the method, a transport error); when the dialog times out, the call ends unapproved.
+
+Tools that change page data need approval: input, navigation, tab changes, scripts. Of the tools that only read, three need it as well: `fox_screenshot` of a single tab (`scope: "all_tabs"` leaves protected tabs out instead), `scope: "scroll_capture"`, and `fox_logging` with `action: "start"` (recording pauses while a logging tab is on a protected site). Other reading tools (`fox_read`, `fox_find`, `fox_tabs`, …), `fox_wait`, and UI-only tools (`fox_interact`, `fox_tab` with `action: "switch"`) run on protected sites without approval. At most 32 approval requests can wait at a time.
 
 An approval covers one call of that tool with exactly those arguments on that host, must be given before the request expires (120 s; the Firefox popup waits at most 60 s), and is carried by a one-time token that only the relay sees (the model never does). Nothing in the page — buttons, `fox_click`, `fox_evaluate` — can approve it. One risk is accepted while elicitation approval is on: the answer reaches the daemon over local HTTP, so a local process that can read `~/.kitsune-mcp/api_token` could approve its own requests. Set `FOX_APPROVAL_ELICITATION=0` to require the Firefox popup (headless mode then cannot approve at all).
 
@@ -401,7 +403,7 @@ An approval covers one call of that tool with exactly those arguments on that ho
 
 ### Whichever side starts the daemon first, its config wins
 
-The daemon isn't started fresh per session — whoever gets there first (your Claude Code relay, or Firefox via the Native Host) starts it, and everyone else just talks to that one running daemon. That matters for env vars: `FOX_READ_ONLY`, `FOX_HEADLESS`, `FOX_ALLOW_SCRIPTS`, `FOX_APPROVAL_ELICITATION`, etc. are only read from the environment of whichever process actually launched the daemon. A daemon started by the Native Host gets Firefox's environment, not that of any Claude Code session. If Firefox starts the daemon first, a later Claude Code session's `FOX_READ_ONLY=1` in its MCP config does nothing — you'll see a warning (at session start and in `fox_safety_status`), but the existing daemon keeps running with its original settings.
+The daemon isn't started fresh per session — whoever gets there first (your Claude Code relay, or Firefox via the Native Host) starts it, and everyone else just talks to that one running daemon. That matters for env vars: `FOX_READ_ONLY`, `FOX_HEADLESS`, `FOX_ALLOW_SCRIPTS`, etc. are only read from the environment of whichever process actually launched the daemon. (`FOX_APPROVAL_ELICITATION` is read on both sides: each relay from its own environment, the daemon from the one it was started with; see [Environment variables](#environment-variables).) A daemon started by the Native Host gets Firefox's environment, not that of any Claude Code session. If Firefox starts the daemon first, a later Claude Code session's `FOX_READ_ONLY=1` in its MCP config does nothing — you'll see a warning (at session start and in `fox_safety_status`), but the existing daemon keeps running with its original settings.
 
 `safety.json` doesn't have this problem: it's read from the same fixed path (`~/.kitsune-mcp/safety.json` by default) no matter which side starts the daemon. If you need `read_only` or similar to reliably take effect, set it in `safety.json` rather than relying on the env var.
 
@@ -468,7 +470,7 @@ End-to-end checks, kept out of `npm test`:
 | Command | What it checks |
 |---|---|
 | `npm run test:e2e` | relay → daemon → headless Firefox over MCP (`tests/e2e/`; needs `npx playwright install firefox`). Uses a temporary home directory and free ports, so a running daemon is not touched |
-| `npm run e2e:extension` | the extension loads into Firefox as a temporary add-on (`scripts/e2e/extension-load.mjs`, `web-ext` with Playwright's Firefox) |
+| `npm run e2e:extension` | the extension loads into Firefox as a temporary add-on (`scripts/e2e/extension-load.mjs`, `web-ext` with Playwright's Firefox; another Firefox with `FOX_E2E_FIREFOX` or a path argument, overall limit `FOX_E2E_TIMEOUT_MS`, default 60000) |
 | `node scripts/e2e/tools-smoke.mjs` | daemon → Native Host → extension in your real Firefox (installer run, extension loaded; needs internet access) |
 | `node scripts/e2e/nm-probe.mjs` | the installed Native Messaging host starts and reaches the daemon |
 
