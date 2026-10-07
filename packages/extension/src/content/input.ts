@@ -20,6 +20,7 @@ import {
 import type {
   ClickOptions,
   TypeOptions,
+  ScrollDirection,
   ScrollOptions,
   SetValueOptions,
   FindElementOptions,
@@ -278,96 +279,80 @@ export async function performType(
   };
 }
 
+/** The scroll position of `element`, else of the window. */
+function scrollPosition(element: Element | null): { x: number; y: number } {
+  return element
+    ? { x: element.scrollLeft, y: element.scrollTop }
+    : { x: window.scrollX, y: window.scrollY };
+}
+
+/** Scroll `element` (else the window) `amount` pixels, or to its top / bottom. */
+function scrollTowards(element: Element | null, direction: ScrollDirection, amount: number): void {
+  const by = (left: number, top: number): void => {
+    if (element) element.scrollBy({ left, top, behavior: "smooth" });
+    else window.scrollBy({ left, top, behavior: "smooth" });
+  };
+  switch (direction) {
+    case "up":
+      by(0, -amount);
+      return;
+    case "down":
+      by(0, amount);
+      return;
+    case "left":
+      by(-amount, 0);
+      return;
+    case "right":
+      by(amount, 0);
+      return;
+    case "top":
+      if (element) element.scrollTop = 0;
+      else window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    case "bottom":
+      if (element) element.scrollTop = element.scrollHeight;
+      else window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+      return;
+    default: {
+      // Reached only by a message that bypassed the server schema.
+      const unknown: never = direction;
+      throw new Error(
+        `Unknown scroll direction: ${JSON.stringify(unknown)} ` +
+          "(expected up, down, left, right, top or bottom)",
+      );
+    }
+  }
+}
+
+/**
+ * fox_scroll. toElement first: scroll that element into view. Else scroll
+ * the element of selector / xpath / id, or the window, by direction.
+ * Kept as the reference behaviour (the headless backend follows it): a
+ * selector that matches nothing scrolls the window, a toElement that matches
+ * nothing falls through to the direction, and without a direction nothing
+ * moves. `position` is always the measured {x, y} after the scroll.
+ */
 export async function performScroll(
   options: ScrollOptions,
 ): Promise<Record<string, unknown>> {
-  // Scroll this element when one is given and found, else the window.
-  let element: Element | null = null;
-
-  if (options.selector || options.xpath || options.id) {
-    element = findElement(options);
-  }
+  const element = options.selector || options.xpath || options.id ? findElement(options) : null;
 
   if (options.toElement) {
     const targetElement = findElement({ selector: options.toElement });
     if (targetElement) {
-      targetElement.scrollIntoView({
-        behavior: options.smooth !== false ? "smooth" : "auto",
-        block: options.block || "center",
-      });
+      targetElement.scrollIntoView({ behavior: "smooth", block: "center" });
       await sleep(DELAYS.SCROLL_TO_ELEMENT);
-      return { scrolled: true, element: getElementInfo(targetElement) };
+      return { scrolled: true, element: getElementInfo(targetElement), position: scrollPosition(null) };
     }
   }
 
   if (options.direction) {
-    const amount = options.amount || DEFAULTS.SCROLL_AMOUNT;
-    let scrollX = 0;
-    let scrollY = 0;
-
-    switch (options.direction) {
-      case "up":
-        scrollY = -amount;
-        break;
-      case "down":
-        scrollY = amount;
-        break;
-      case "left":
-        scrollX = -amount;
-        break;
-      case "right":
-        scrollX = amount;
-        break;
-      case "top":
-        if (element) element.scrollTop = 0;
-        else window.scrollTo({ top: 0, behavior: "smooth" });
-        return { scrolled: true, position: { x: 0, y: 0 } };
-      case "bottom":
-        if (element) element.scrollTop = element.scrollHeight;
-        else
-          window.scrollTo({
-            top: document.body.scrollHeight,
-            behavior: "smooth",
-          });
-        return { scrolled: true, position: "bottom" };
-      default: {
-        // Reached only by a message that bypassed the server schema.
-        const unknown: never = options.direction;
-        throw new Error(
-          `Unknown scroll direction: ${JSON.stringify(unknown)} ` +
-            "(expected up, down, left, right, top or bottom)",
-        );
-      }
-    }
-
-    if (element) {
-      element.scrollBy({ left: scrollX, top: scrollY, behavior: "smooth" });
-    } else {
-      window.scrollBy({ left: scrollX, top: scrollY, behavior: "smooth" });
-    }
-  } else if (options.x !== undefined || options.y !== undefined) {
-    const scrollOpts: ScrollToOptions = {
-      left: options.x || 0,
-      top: options.y || 0,
-      behavior: options.smooth !== false ? "smooth" : "auto",
-    };
-
-    if (element) {
-      element.scrollTo(scrollOpts);
-    } else {
-      window.scrollTo(scrollOpts);
-    }
+    scrollTowards(element, options.direction, options.amount ?? DEFAULTS.SCROLL_AMOUNT);
   }
 
   await sleep(DELAYS.SCROLL_SETTLE);
 
-  return {
-    scrolled: true,
-    position: {
-      x: element ? element.scrollLeft : window.scrollX,
-      y: element ? element.scrollTop : window.scrollY,
-    },
-  };
+  return { scrolled: true, position: scrollPosition(element) };
 }
 
 export function setValue(
