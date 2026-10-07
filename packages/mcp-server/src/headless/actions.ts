@@ -880,8 +880,11 @@ const waitAndAct: ActionHandler = async (c) => {
       ready = Boolean(await evaluateScript(page, a.condition, polling, 'The condition'));
       lastError = null;
     } catch (e) {
-      // the condition threw or hung: keep polling
-      lastError = e instanceof Error ? e.message : String(e);
+      // The condition threw or hung: keep polling. An attempt cut short by
+      // the end of the wait keeps the earlier, more telling error.
+      if (lastError === null || Date.now() < polling.deadline) {
+        lastError = e instanceof Error ? e.message : String(e);
+      }
     }
     if (ready) {
       // Run once: a failing action is reported, not retried.

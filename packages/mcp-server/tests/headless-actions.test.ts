@@ -287,11 +287,12 @@ describe('history and waits (H-13)', () => {
     browser.execute('execute_script', undefined, { script: `setTimeout(() => { ${js} }, 300); 1` });
 
   real('wait_for_navigation ends at the next navigation and names the new page', async () => {
-    await load('<p>first</p>');
-    const next = PAGE('<title>second</title><p>second</p>');
-    await later(`location.href = ${JSON.stringify(next)}`);
+    await load('<title>first</title><p>first</p>');
+    // Firefox blocks a page's own navigation to a data: URL, so the page
+    // goes to about:blank (an empty title) instead.
+    await later(`location.href = 'about:blank'`);
     const r = await browser.execute('wait_for_navigation', undefined, { timeout: 10_000, waitUntil: 'load' });
-    expect(r).toMatchObject({ success: true, url: next, title: 'second' });
+    expect(r).toMatchObject({ success: true, url: 'about:blank', title: '' });
   });
 
   real('wait_for_url matches an exact URL with ? and * literally', async () => {
@@ -656,8 +657,11 @@ describe('press_key: password guard (H-1)', () => {
 
   real('refuses a character key on a password field given by selector or focused', async () => {
     await load(PW);
-    for (const extra of [{ selector: '#pw' }, {}]) {
-      const r = await press('a', extra);
+    const bySelector = await press('a', { selector: '#pw' });
+    // Refused before the field is focused: focus it for the case without selector.
+    await browser.execute('execute_script', undefined, { script: 'document.getElementById("pw").focus()' });
+    const focused = await press('a');
+    for (const r of [bySelector, focused]) {
       expect(r['success']).toBe(false);
       expect(String(r['error'])).toMatch(/password field/);
     }

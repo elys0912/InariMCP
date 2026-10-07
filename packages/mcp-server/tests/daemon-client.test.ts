@@ -5,6 +5,7 @@ import { DaemonClient } from '../src/relay/daemon-client.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { startHttpBridge } from '../src/transport/http-bridge.js';
 import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION } from '@kitsune-mcp/shared/node';
+import { effectiveDaemonSettings, snapshotDaemonSettings } from '../src/utils/endpoint.js';
 import { TOKEN, waitFor } from './helpers/ws.js';
 
 // HOME / USERPROFILE point at a temporary directory: tests/setup/isolate-home.ts
@@ -22,8 +23,12 @@ function portOf(s: http.Server): number {
   return (s.address() as AddressInfo).port;
 }
 
-async function realDaemon(): Promise<number> {
-  const s = await startHttpBridge({ host: '127.0.0.1', port: 0, apiToken: TOKEN, connectionManager: getConnectionManager() });
+/** The HTTP bridge as the daemon runs it; `info` as daemon/main.ts gives it when wanted. */
+async function realDaemon(withInfo = false): Promise<number> {
+  const info = withInfo
+    ? () => ({ settings: snapshotDaemonSettings(), effectiveSettings: effectiveDaemonSettings(process.env) })
+    : undefined;
+  const s = await startHttpBridge({ host: '127.0.0.1', port: 0, apiToken: TOKEN, connectionManager: getConnectionManager(), info });
   servers.push(s);
   return portOf(s);
 }
@@ -48,8 +53,9 @@ async function impostor(protocol: number | 'omit' = DAEMON_PROTOCOL_VERSION): Pr
   return { port: portOf(s), seen };
 }
 
-function client(port: number, token: string | undefined = TOKEN): DaemonClient {
-  return new DaemonClient('test', { host: '127.0.0.1', port, readToken: () => token });
+/** `null`: no token to sign with (`undefined` would take the default). */
+function client(port: number, token: string | null = TOKEN): DaemonClient {
+  return new DaemonClient('test', { host: '127.0.0.1', port, readToken: () => token ?? undefined });
 }
 
 describe('DaemonClient against the real daemon', () => {
@@ -63,8 +69,9 @@ describe('DaemonClient against the real daemon', () => {
   });
 
   it('reads /daemon/info (checkSettings) over a signed request', async () => {
-    const c = client(await realDaemon());
-    await expect(c.checkSettings()).resolves.toEqual(expect.any(Array));
+    const c = client(await realDaemon(true));
+    // Same process, same settings: no difference.
+    await expect(c.checkSettings()).resolves.toEqual([]);
   });
 });
 
@@ -107,7 +114,7 @@ describe('DaemonClient against an impostor', () => {
     const c = client(portOf(s));
     await expect(c.checkSettings()).resolves.toBeNull();
     // Without a token there is nothing to verify with: also unknown.
-    await expect(client(portOf(s), undefined).checkSettings()).resolves.toBeNull();
+    await expect(client(portOf(s), null).checkSettings()).resolves.toBeNull();
   });
 });
 
@@ -218,7 +225,7 @@ describe('DaemonClient.stopDaemon: failures', () => {
   });
 
   it('no token to sign with', async () => {
-    const r = await client(await realDaemon(), undefined).stopDaemon();
+    const r = await client(await realDaemon(), null).stopDaemon();
     expect(r).toMatchObject({ ok: false, stopped: false });
     expect(r.message).toMatch(/no API token at .*api_token/);
   });
