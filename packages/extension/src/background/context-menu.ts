@@ -1,6 +1,7 @@
 // Context menu entries of the page: screenshot, inspect element (L5).
 // Created once by background.ts (registerContextMenus).
 
+import { errorMessage } from "../error-message";
 import type { ContentRequest } from "../content/types";
 import { t } from "../i18n";
 import { TOP_FRAME_ID } from "./constants";
@@ -35,7 +36,7 @@ export function registerContextMenus(): void {
               tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
             });
           } catch (error) {
-            console.warn("[KitsuneMCP] Could not hand the screenshot to the native host:", (error as Error).message);
+            console.warn("[KitsuneMCP] Could not hand the screenshot to the native host:", errorMessage(error));
           }
         });
       } else if (info.menuItemId === "kitsune-inspect") {
@@ -50,7 +51,7 @@ export function registerContextMenus(): void {
           )
           .catch((error: unknown) => {
             // No content script in that frame (e.g. a page extensions cannot enter)
-            console.warn("[KitsuneMCP] Inspect element failed:", (error as Error).message);
+            console.warn("[KitsuneMCP] Inspect element failed:", errorMessage(error));
           });
       }
     },

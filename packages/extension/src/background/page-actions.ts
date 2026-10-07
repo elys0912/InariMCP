@@ -1,6 +1,7 @@
 // Element and page tools: forwarded to the tab's content script, or run on
 // the tab (getPageInfo, executeScript) (L3).
 
+import { errorMessage } from "../error-message";
 import type { ContentRequest } from "../content/types";
 import { TOP_FRAME_ID } from "./constants";
 import { sendToContentScript, resolveTab, noTargetTab, contentScriptFailure } from "./tab-target";
@@ -68,7 +69,7 @@ export async function executeScript(
     });
     return { success: true, result: result[0] };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 

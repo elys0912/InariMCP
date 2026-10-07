@@ -1,5 +1,6 @@
 // refresh / reload_all / reload_by_url (L3).
 
+import { errorMessage } from "../error-message";
 import { findUrlRule, type CompiledUrlRule } from "../url-rule";
 import { isTabInScope } from "./container-scope";
 import { resolveTab, noTargetTab } from "./tab-target";
@@ -51,7 +52,7 @@ export async function refreshTab(
       bypassCache,
     };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 
@@ -101,7 +102,7 @@ export async function reloadMatchingTabs(
           id: tab.id,
           url: tab.url ?? "",
           reloaded: false,
-          error: reason instanceof Error ? reason.message : String(reason),
+          error: errorMessage(reason),
         };
       }
     }),
@@ -154,7 +155,7 @@ export async function reloadAllTabs(
       lists,
     );
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 
@@ -183,6 +184,6 @@ export async function reloadTabsByUrl(
       lists,
     );
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }

@@ -1,6 +1,7 @@
 // Console / network log records: sanitizing and querying a buffer (L0, pure).
 // The per-tab buffers themselves are in logging.ts.
 
+import { errorMessage } from "../error-message";
 import type { CommandResult } from "./types";
 import { clipText } from "../text-clip";
 import { DEFAULTS, LIMITS, LOG_TEXT_LIMIT } from "./constants";
@@ -82,7 +83,7 @@ export function queryNetworkLogs(
     try {
       pattern = new RegExp(options.urlPattern);
     } catch (error) {
-      return { success: false, error: `Invalid urlPattern: ${(error as Error).message}` };
+      return { success: false, error: `Invalid urlPattern: ${errorMessage(error)}` };
     }
     logs = logs.filter((l) => typeof l.url === "string" && pattern.test(l.url));
   }

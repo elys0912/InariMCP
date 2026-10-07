@@ -10,6 +10,7 @@
 // __fox_injected guard below (on every injection), so they must have no
 // top-level side effects.
 
+import { errorMessage } from "./error-message";
 import { handleMessage } from "./content/handler";
 import { rememberContextTarget } from "./content/inspect";
 import { resumeLoggingFromBackground, sendLogBatch } from "./content/log-store";
@@ -39,7 +40,7 @@ import type { ContentMessage } from "./content/types";
         .catch((error: unknown) =>
           sendResponse({
             success: false,
-            error: (error as Error).message,
+            error: errorMessage(error),
           }),
         );
       return true;

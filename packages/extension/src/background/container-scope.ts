@@ -1,6 +1,7 @@
 // Layer 0 container scope: the scope check of handleCommand, and the
 // container tools (L2).
 
+import { errorMessage } from "../error-message";
 import type { ContainerScope, CommandResult, ScopeFilter, ScopeDecision } from "./types";
 
 /** parseContainerScope. */
@@ -79,7 +80,7 @@ export async function enforceContainerScope(
   } catch (error) {
     return {
       allowed: false,
-      error: `Container scope check failed: ${(error as Error).message}`,
+      error: `Container scope check failed: ${errorMessage(error)}`,
     };
   }
   const scope: ScopeFilter = { containerName, cookieStoreId };
@@ -131,7 +132,7 @@ export async function listContainers(
       })),
     };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 
@@ -217,6 +218,6 @@ export async function openInContainer(
       url: data.url || "about:blank",
     };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }

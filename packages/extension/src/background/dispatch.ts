@@ -4,6 +4,7 @@
 // to an action, and its handler, come from the action table
 // (action-table.ts).
 
+import { errorMessage } from "../error-message";
 import { describeAction, UNKNOWN_ACTION, type ActionDescriptor } from "./action-table";
 import { parseContainerScope, enforceContainerScope, outOfScope } from "./container-scope";
 import { postToHost } from "./native-connection";
@@ -161,7 +162,7 @@ export async function handleCommand(message: NativeMessage, source: CommandSourc
       });
     }
   } catch (error) {
-    result = { success: false, error: (error as Error).message };
+    result = { success: false, error: errorMessage(error) };
   }
 
   // Report the target tab's URL after the operation so the server's guard

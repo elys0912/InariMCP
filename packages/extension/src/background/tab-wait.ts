@@ -1,5 +1,6 @@
 // Tab URL filters and waits for loads / navigations / URLs (L1).
 
+import { errorMessage } from "../error-message";
 import { TIMEOUTS, TOP_FRAME_ID } from "./constants";
 import { resolveTab, noTargetTab } from "./tab-target";
 import type { CommandResult } from "./types";
@@ -23,7 +24,7 @@ export function urlPatternArg(source: unknown): UrlPatternArg {
   try {
     return { ok: true, pattern: new RegExp(source) };
   } catch (error) {
-    return { ok: false, result: { success: false, error: `Invalid urlPattern: ${(error as Error).message}` } };
+    return { ok: false, result: { success: false, error: `Invalid urlPattern: ${errorMessage(error)}` } };
   }
 }
 

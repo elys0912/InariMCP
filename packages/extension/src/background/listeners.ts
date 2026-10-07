@@ -1,6 +1,7 @@
 // Runtime / tab / navigation / notification listeners (L5). Registered once
 // by background.ts (registerListeners).
 
+import { errorMessage } from "../error-message";
 import { APPROVAL_MESSAGE } from "../approval";
 import { listApprovals, decideApproval, APPROVAL_NOTIFICATION_PREFIX } from "./approvals";
 import { LOG_RECORD_MESSAGE, TOP_FRAME_ID, LOGGING_STATE_QUERY } from "./constants";
@@ -79,7 +80,7 @@ export function registerListeners(): void {
         } as NativeMessage, "page").then(sendResponse, (error: unknown) => {
           // handleCommand answers its own failures; this keeps the popup
           // from waiting forever should it ever throw.
-          sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) });
+          sendResponse({ success: false, error: errorMessage(error) });
         });
         return true;
       }
@@ -108,7 +109,7 @@ export function registerListeners(): void {
         // a non-web URL). Nothing to resume there.
         console.warn(
           `[KitsuneMCP] Early logging injection failed (tab ${details.tabId}):`,
-          (error as Error).message,
+          errorMessage(error),
         );
       });
   });
