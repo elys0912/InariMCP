@@ -6,13 +6,12 @@
  * limit, native-host/src/protocol.ts only peeks the first 4 KiB of the frame
  * to recover `"requestId":"…"` and fail that request at once instead of
  * letting it time out. That works only if requestId is serialized before the
- * (possibly huge) data.
+ * (possibly huge) data. The recovery from such a frame is checked in
+ * packages/native-host/tests/protocol.test.ts (readMessage); this file checks
+ * that every response starts with requestId.
  */
 
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
-import { readMessage } from '../../packages/native-host/src/protocol.js';
-import { fakeStdin, frame, type FakeStdin } from '../../packages/native-host/tests/helpers/stdio.js';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 type WireResponse = Record<string, unknown>;
 type ToWireResponse = (requestId: number | string, result: Record<string, unknown>) => WireResponse;
@@ -56,20 +55,4 @@ describe('toWireResponse (extension background/wire.ts)', () => {
   it('omits data when nothing is left', () => {
     expect(toWireResponse('1', { success: true })).toEqual({ requestId: '1', success: true });
   });
-});
-
-describe('toWireResponse ⇔ Native Host oversized-frame recovery', () => {
-  let stdin: FakeStdin;
-  beforeEach(() => { stdin = fakeStdin(); });
-  afterEach(() => { stdin.restore(); });
-
-  it('the host recovers requestId from a response over the incoming limit', async () => {
-    const response = toWireResponse('big-7', {
-      success: true,
-      imageData: 'x'.repeat(ENV_DEFAULTS.NATIVE_MSG_MAX_INCOMING_SIZE),
-    });
-    stdin.stream.write(frame(response));
-    const result = await readMessage();
-    expect(result).toMatchObject({ kind: 'skipped', requestId: 'big-7' });
-  }, 60_000);
 });

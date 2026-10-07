@@ -2,7 +2,9 @@
  * Contract: FOX_READ_ONLY (1 / true / yes) and FOX_ALLOW_SCRIPTS (0 / false /
  * no / off), read by safety/config.ts, reach the tool handlers: the guard
  * singleton is built from them, whatever safety.json says. Each case loads the modules afresh (vi.resetModules),
- * since the guard reads its config once per process.
+ * since the guard reads its config once per process. Which spellings count
+ * (case, spaces, other values) is checked on loadConfig in
+ * packages/mcp-server/tests/settings-normalize.test.ts.
  */
 
 import * as fs from 'node:fs';
@@ -71,19 +73,5 @@ describe('environment overrides through the handler path', () => {
     expect((await call('fox_execute_script', { script: '1' })).decision).toBe('scripts_disabled');
     // Not a script tool: refused later for another reason (no browser), not by the guard.
     expect((await call('fox_click', { selector: '#a' })).decision).toBeNull();
-  });
-
-  it('true / yes and false / no / off count too (any case); other values change nothing', async () => {
-    process.env['FOX_READ_ONLY'] = ' Yes ';
-    expect((await call('fox_click', { selector: '#a' })).decision).toBe('read_only');
-    vi.resetModules();
-    process.env['FOX_READ_ONLY'] = 'on';
-    process.env['FOX_ALLOW_SCRIPTS'] = 'OFF';
-    expect((await call('fox_click', { selector: '#a' })).decision).toBeNull();
-    expect((await call('fox_evaluate', { mode: 'script', script: '1' })).decision).toBe('scripts_disabled');
-    vi.resetModules();
-    delete process.env['FOX_READ_ONLY'];
-    process.env['FOX_ALLOW_SCRIPTS'] = 'maybe';
-    expect((await call('fox_evaluate', { mode: 'script', script: '1' })).decision).toBeNull();
   });
 });

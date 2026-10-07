@@ -178,11 +178,8 @@ describe('without approval, protected-site actions are refused', () => {
     const result = await createToolHandler('fox_click')({ selector: '#send' });
     expect(result.isError).toBe(true);
     expect(browser.received.map((c) => c.action)).toEqual(['click']);
-    // Sent as the anchored regex equivalent of the host pattern (safety/url-pattern.ts).
-    const sentPatterns = browser.received[0]!.protectedUrlPatterns!.map((p) => new RegExp(p, 'i'));
-    expect(sentPatterns).toHaveLength(1);
-    expect(sentPatterns[0]!.test(PROTECTED_URL)).toBe(true);
-    expect(sentPatterns[0]!.test(`https://${PROTECTED_HOST}.other.test/`)).toBe(false);
+    // How the Extension matches the sent pattern: safety-metadata.test.ts.
+    expect(browser.received[0]!.protectedUrlPatterns).toHaveLength(1);
     expect(browser.received[0]!.approvedHost).toBeUndefined();
     expect(details(result)['approval']).toMatchObject({ toolName: 'fox_click', host: PROTECTED_HOST });
   });
@@ -506,8 +503,7 @@ describe('extension: approval UI is outside the page', () => {
   it('approval.ts is bundled into background.js and popup.js (imported, not loaded separately)', () => {
     expect(background).toMatch(/^import \{[^}]*\bAPPROVAL_MESSAGE\b[^}]*\} from "\.\.?\/approval";$/m);
     expect(readExtensionSource('popup/popup.ts')).toMatch(/^import \{[^}]*\bAPPROVAL_MESSAGE\b[^}]*\} from '\.\.\/approval';$/m);
-    const manifest = JSON.parse(readExtensionSource('../manifest.json')) as { background: { scripts: string[] } };
-    expect(manifest.background.scripts).toEqual(['dist/background.js']);
+    // manifest.json loads one background bundle: extension-background.test.ts.
     const html = readExtensionSource('popup/popup.html');
     expect([...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1])).toEqual(['popup.js']);
   });
