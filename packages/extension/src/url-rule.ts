@@ -73,6 +73,11 @@ export interface UrlListViolation {
   reason: string;
 }
 
+/** A TCP port number (1-65535). */
+function isPortNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65535;
+}
+
 /** Validate one wire entry; a string is a legacy regex. null if unusable. */
 export function parseUrlRule(raw: unknown): UrlRule | null {
   if (typeof raw === "string") {
@@ -92,16 +97,14 @@ export function parseUrlRule(raw: unknown): UrlRule | null {
     if (typeof r.path === "string" && /[?#]/.test(r.path)) return null;
     if (r.pathMatch !== "strict" && r.pathMatch !== "loose") return null;
     const port = r.port ?? null;
-    if (port !== null && !(Number.isInteger(port) && (port as number) >= 1 && (port as number) <= 65535)) {
-      return null;
-    }
+    if (port !== null && !isPortNumber(port)) return null;
     return {
       kind: "host",
       source: r.source,
       scheme: r.scheme,
       hosts: r.hosts,
       host: r.host,
-      port: port as number | null,
+      port,
       path: r.path,
       pathMatch: r.pathMatch,
     };

@@ -19,7 +19,18 @@ export function formatZodIssues(
   return issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ');
 }
 
-/** Up to 6 random base-36 characters, to keep generated names apart (not a secret). */
+/** Length of shortId(). */
+const SHORT_ID_LENGTH = 6;
+/** Radix of shortId()'s characters (0-9, a-z). */
+const SHORT_ID_RADIX = 36;
+
+/**
+ * Exactly 6 random base-36 characters (0-9, a-z), to keep generated names
+ * apart (not a secret). Built per character: `Math.random().toString(36)`
+ * can be shorter (or empty) for some values.
+ */
 export function shortId(): string {
-  return Math.random().toString(36).slice(2, 8);
+  return Array.from({ length: SHORT_ID_LENGTH }, () =>
+    Math.floor(Math.random() * SHORT_ID_RADIX).toString(SHORT_ID_RADIX),
+  ).join('');
 }

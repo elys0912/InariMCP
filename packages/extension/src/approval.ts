@@ -14,8 +14,8 @@
 //                     Claude. The answer goes back to Claude and unlocks
 //                     nothing.
 //
-// Imported by the background modules and popup.ts (bundled into both). Contract tests
-// load it as a module; it also publishes its helpers on globalThis for them.
+// Imported by the background modules and popup.ts (bundled into both).
+// Contract tests import it as a module.
 
 import { clipText } from "./text-clip";
 
@@ -73,8 +73,10 @@ export function parseApprovalPrompt(
       : defaultTimeoutMs;
 
   if (d.kind === "protected_action") {
-    const str = (k: string): string | null =>
-      typeof d[k] === "string" && d[k] !== "" ? (d[k] as string) : null;
+    const str = (k: string): string | null => {
+      const value = d[k];
+      return typeof value === "string" && value !== "" ? value : null;
+    };
     const approvalId = str("approvalId");
     const toolName = str("toolName");
     const host = str("host");
@@ -138,10 +140,3 @@ export function isApprovedHost(tabUrl: string | undefined, approvedHost: unknown
     return false;
   }
 }
-
-(globalThis as { KITSUNE_APPROVAL?: unknown }).KITSUNE_APPROVAL = {
-  APPROVAL_MESSAGE,
-  parseApprovalPrompt,
-  approvalCommandResult,
-  isApprovedHost,
-};

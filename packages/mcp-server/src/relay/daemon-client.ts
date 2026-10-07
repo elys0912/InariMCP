@@ -18,7 +18,7 @@
  *  - A daemon whose /health reports another `protocol` (an older build
  *    still running) is not used: every call fails with a message telling
  *    the user to stop it. There is no fallback to sending the token.
- *  - heartbeat: GET /health with X-Kitsune-Relay every 30 s, so the daemon
+ *  - heartbeat: GET /health with X-Kitsune-Relay every RELAY_HEARTBEAT_MS, so the daemon
  *    knows this session is alive (idle shutdown, daemon/activity.ts).
  *  - approvals (relay/approval.ts): POST /approval/elicitation and
  *    /approval/browser; a retried call sends `approvalToken` in the
@@ -36,23 +36,24 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { maxCommandTimeoutMs } from '../connection/manager.js';
 import { isApprovalReason, type ApprovalReply } from './approval.js';
 import { RELAY_HEARTBEAT_MS, SHUTDOWN_DRAIN_MS } from '../daemon/activity.js';
+import { HEALTH_PROBE_TIMEOUT_MS } from '../daemon/probe.js';
 import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
-import { daemonLogPath, kitsuneHealth, spawnDetachedDaemon, stderrLogger } from '@kitsune-mcp/shared/node';
+import { apiTokenPath, daemonLogPath, kitsuneHealth, spawnDetachedDaemon, stderrLogger } from '@kitsune-mcp/shared/node';
 import {
+  MAX_REQUEST_BODY_BYTES,
   RELAY_ID_HEADER,
-  daemonSettingsFromInfo,
-  diffDaemonSettings,
-  effectiveDaemonSettings,
+  compareDaemonSettings,
   readApiTokenFile,
   resolveHost,
   resolveHttpPort,
 } from '../utils/endpoint.js';
+import { headlessStartupTimeoutMs } from '../utils/headless-env.js';
+import { errorMessage } from '../utils/errors.js';
 import { isRecord } from '@kitsune-mcp/shared';
 
 /** How long a relay waits for a daemon it started to answer /health. */
 const DAEMON_STARTUP_WAIT_MS = 15_000;
 const HEALTH_POLL_INTERVAL_MS = 200;
-const HEALTH_TIMEOUT_MS = 2_000;
 /** POST /approval/elicitation only records an answer: no browser round trip. */
 const ELICITATION_REPORT_TIMEOUT_MS = 10_000;
 /**
@@ -68,12 +69,20 @@ const SHUTDOWN_STEPS_ALLOWANCE_MS = 10_000;
  * more (to a new daemon).
  */
 const DAEMON_STOP_WAIT_MS = SHUTDOWN_DRAIN_MS + SHUTDOWN_STEPS_ALLOWANCE_MS;
+/** Transport slack on top of the daemon's wait for the headless backend (relayTimeoutMarginMs). */
+export const RELAY_TRANSPORT_SLACK_MS = 15_000;
+
 /**
- * Added on top of the daemon's longest command timeout: covers the daemon's
- * own wait for the headless backend to boot (FOX_HEADLESS_STARTUP_TIMEOUT,
- * default 45 s) plus transport slack.
+ * Added on top of the daemon's longest command timeout: the daemon's own
+ * wait for the headless backend to boot (FOX_HEADLESS_STARTUP_TIMEOUT, read
+ * from `env` as the daemon reads it) plus RELAY_TRANSPORT_SLACK_MS. 60 s with
+ * the default 45 s. `env` is this relay's: the daemon it starts inherits it,
+ * and a running daemon started with another value is reported as a settings
+ * mismatch (FOX_HEADLESS_STARTUP_TIMEOUT is one of DAEMON_SETTINGS).
  */
-export const RELAY_TIMEOUT_MARGIN_MS = 60_000;
+export function relayTimeoutMarginMs(env: NodeJS.ProcessEnv = process.env): number {
+  return headlessStartupTimeoutMs(env) + RELAY_TRANSPORT_SLACK_MS;
+}
 
 const log = stderrLogger('relay');
 
@@ -83,6 +92,16 @@ function sleep(ms: number): Promise<void> {
 
 export function errorResult(text: string): CallToolResult {
   return { content: [{ type: 'text', text }], isError: true };
+}
+
+/** What request() sends besides the method and the path. */
+interface RequestOptions {
+  /** JSON body (POST). */
+  body?: string;
+  timeoutMs: number;
+  /** Signs the request (and lets the answer's signature be checked). */
+  token?: string;
+  signal?: AbortSignal;
 }
 
 interface HttpReply {
@@ -236,7 +255,7 @@ export class DaemonClient {
       log(`started daemon (PID ${pid ?? 'unknown'})`);
       return true;
     } catch (err: unknown) {
-      log(`failed to start daemon: ${err instanceof Error ? err.message : String(err)}`);
+      log(`failed to start daemon: ${errorMessage(err)}`);
       return false;
     }
   }
@@ -246,9 +265,9 @@ export class DaemonClient {
    * KitsuneMCP daemon answers — even an incompatible one: it holds the port,
    * so starting another would not help (see protocolMismatch()).
    */
-  async checkHealth(timeoutMs: number = HEALTH_TIMEOUT_MS): Promise<boolean> {
+  async checkHealth(timeoutMs: number = HEALTH_PROBE_TIMEOUT_MS): Promise<boolean> {
     try {
-      const reply = await this.request('GET', '/health', undefined, timeoutMs);
+      const reply = await this.request('GET', '/health', { timeoutMs });
       const health = kitsuneHealth(reply.status, reply.body);
       this.daemonSeen = health !== undefined;
       if (health !== undefined) this.daemonProtocol = health['protocol'];
@@ -290,30 +309,24 @@ export class DaemonClient {
    * restarting it would cut off every other session and the Firefox
    * connection — so differences are only reported.
    *
-   * @returns human-readable warnings (empty when the settings agree)
+   * @returns human-readable warnings (empty when the settings agree); null
+   *          when the daemon's settings could not be read (unknown, not "equal")
    */
-  async settingsMismatch(timeoutMs: number = HEALTH_TIMEOUT_MS): Promise<string[]> {
-    return (await this.checkSettings(timeoutMs)) ?? [];
-  }
-
-  /** Like settingsMismatch(), but null when the daemon's settings could not be read (unknown, not "equal"). */
-  async checkSettings(timeoutMs: number = HEALTH_TIMEOUT_MS): Promise<string[] | null> {
+  async checkSettings(timeoutMs: number = HEALTH_PROBE_TIMEOUT_MS): Promise<string[] | null> {
     const token = this.readToken();
     if (token === undefined) return null;
     let reply: HttpReply;
     try {
-      reply = await this.request('GET', '/daemon/info', undefined, timeoutMs, token);
+      reply = await this.request('GET', '/daemon/info', { timeoutMs, token });
     } catch {
       return null;
     }
     if (reply.status !== 200 || !reply.verified || !isRecord(reply.body)) return null;
-    const theirs = daemonSettingsFromInfo(reply.body);
-    if (theirs === null) return null;
-    const pid = typeof reply.body['pid'] === 'number' ? reply.body['pid'] : 'unknown';
-
-    // Effective values, so `true` / `1` and old / new variable names compare equal.
-    const diffs = diffDaemonSettings(effectiveDaemonSettings(process.env), theirs);
+    // Effective values, the rule the doctor uses too (compareDaemonSettings).
+    const diffs = compareDaemonSettings(process.env, reply.body);
+    if (diffs === null) return null;
     if (diffs.length === 0) return [];
+    const pid = typeof reply.body['pid'] === 'number' ? reply.body['pid'] : 'unknown';
     return [
       `The shared KitsuneMCP daemon (PID ${pid}) was started with different settings ` +
       'than this session. The running daemon\'s settings apply to every session: ' +
@@ -340,7 +353,7 @@ export class DaemonClient {
           ? { name, arguments: args }
           : { name, arguments: args, approvalToken },
       ),
-      timeoutMs: maxCommandTimeoutMs(args) + RELAY_TIMEOUT_MARGIN_MS,
+      timeoutMs: maxCommandTimeoutMs(args) + relayTimeoutMarginMs(),
       signal,
       restarted: false,
       tokenReloaded: false,
@@ -367,14 +380,19 @@ export class DaemonClient {
         return RETRY;
       }
       return finished(errorResult(
-        'KitsuneMCP daemon is not available: no API token at ~/.kitsune-mcp/api_token ' +
+        `KitsuneMCP daemon is not available: no API token at ${apiTokenPath()} ` +
         `(the daemon creates it on start; see ${daemonLogPath()}).`,
       ));
     }
 
     let reply: HttpReply;
     try {
-      reply = await this.request('POST', '/mcp/call', call.body, call.timeoutMs, token, call.signal);
+      reply = await this.request('POST', '/mcp/call', {
+        body: call.body,
+        timeoutMs: call.timeoutMs,
+        token,
+        signal: call.signal,
+      });
     } catch (err: unknown) {
       // Connection refused: the request never reached a daemon, so starting
       // one and retrying cannot run the tool twice.
@@ -383,8 +401,7 @@ export class DaemonClient {
         log('daemon not reachable — starting it');
         if (await this.ensureDaemon()) return RETRY;
       }
-      const msg = err instanceof Error ? err.message : String(err);
-      return finished(errorResult(`KitsuneMCP daemon request failed (${this.baseUrl}): ${msg}`));
+      return finished(errorResult(`KitsuneMCP daemon request failed (${this.baseUrl}): ${errorMessage(err)}`));
     }
 
     return this.answerOf(call, reply);
@@ -419,7 +436,8 @@ export class DaemonClient {
       // Answered before the signature could be checked (the body is too
       // big to read), hence unsigned. Not using its text.
       return finished(errorResult(
-        `The arguments of ${call.name} exceed the daemon's request size limit (1 MB); send less data per call.`,
+        `The arguments of ${call.name} exceed the daemon's request size limit ` +
+        `(${MAX_REQUEST_BODY_BYTES} bytes); send less data per call.`,
       ));
     }
 
@@ -440,11 +458,11 @@ export class DaemonClient {
    * may have won the race: report its settings if they differ.
    */
   private warnOnSettingsMismatch(): void {
-    void this.settingsMismatch()
+    void this.checkSettings()
       .then((warnings) => {
-        for (const w of warnings) log(`WARNING: ${w}`);
+        for (const w of warnings ?? []) log(`WARNING: ${w}`);
       })
-      .catch((err: unknown) => log(`settings check failed: ${err instanceof Error ? err.message : String(err)}`));
+      .catch((err: unknown) => log(`settings check failed: ${errorMessage(err)}`));
   }
 
   // -------------------------------------------------------------------------
@@ -467,17 +485,16 @@ export class DaemonClient {
       return {
         ok: false,
         stopped: false,
-        message: `a daemon answers at ${this.baseUrl} but there is no API token at ~/.kitsune-mcp/api_token to sign the request`,
+        message: `a daemon answers at ${this.baseUrl} but there is no API token at ${apiTokenPath()} to sign the request`,
       };
     }
 
     const body = JSON.stringify({ force });
     let reply: HttpReply;
     try {
-      reply = await this.request('POST', '/daemon/shutdown', body, waitMs, token);
+      reply = await this.request('POST', '/daemon/shutdown', { body, timeoutMs: waitMs, token });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return { ok: false, stopped: false, message: `POST ${this.baseUrl}/daemon/shutdown failed: ${msg}` };
+      return { ok: false, stopped: false, message: `POST ${this.baseUrl}/daemon/shutdown failed: ${errorMessage(err)}` };
     }
     if (!reply.verified) {
       return {
@@ -512,7 +529,7 @@ export class DaemonClient {
     const deadline = Date.now() + waitMs;
     while (Date.now() < deadline && signal?.aborted !== true) {
       await sleep(HEALTH_POLL_INTERVAL_MS);
-      if (!(await this.checkHealth(HEALTH_TIMEOUT_MS))) return true;
+      if (!(await this.checkHealth())) return true;
     }
     return false;
   }
@@ -531,7 +548,7 @@ export class DaemonClient {
     return this.postApproval(
       '/approval/browser',
       { requestId },
-      maxCommandTimeoutMs({}) + RELAY_TIMEOUT_MARGIN_MS,
+      maxCommandTimeoutMs({}) + relayTimeoutMarginMs(),
       signal,
     );
   }
@@ -553,7 +570,7 @@ export class DaemonClient {
       if (token === undefined) {
         return { success: false, approved: false, error: 'KitsuneMCP daemon is not available (no API token)' };
       }
-      const reply = await this.request('POST', urlPath, body, timeoutMs, token, signal);
+      const reply = await this.request('POST', urlPath, { body, timeoutMs, token, signal });
       // Unsigned 403: our signature was refused (token file replaced): read it
       // again once, as callTool() does. A signed 403 is the daemon's answer
       // (elicitation disabled).
@@ -608,14 +625,8 @@ export class DaemonClient {
   // HTTP
   // -------------------------------------------------------------------------
 
-  private request(
-    method: 'GET' | 'POST',
-    urlPath: string,
-    body: string | undefined,
-    timeoutMs: number,
-    token?: string,
-    signal?: AbortSignal,
-  ): Promise<HttpReply> {
+  private request(method: 'GET' | 'POST', urlPath: string, options: RequestOptions): Promise<HttpReply> {
+    const { body, timeoutMs, token, signal } = options;
     return new Promise<HttpReply>((resolve, reject) => {
       const headers: http.OutgoingHttpHeaders = { [RELAY_ID_HEADER]: this.relayId };
       const signed = token === undefined ? undefined : signRequest(token, method, urlPath, body ?? '');

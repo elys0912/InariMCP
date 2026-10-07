@@ -2,7 +2,7 @@
  * Contract: timeouts get shorter towards the browser, so the innermost layer
  * that gives up reports its own (meaningful) error first.
  *
- *   relay        HTTP wait for the daemon   maxCommandTimeoutMs(args) + RELAY_TIMEOUT_MARGIN_MS
+ *   relay        HTTP wait for the daemon   maxCommandTimeoutMs(args) + relayTimeoutMarginMs(env)
  *                                           (mcp-server/src/relay/daemon-client.ts)
  *   daemon       transport timeout          resolveCommandTimeout(command, kind)
  *                                           (mcp-server/src/connection/manager.ts)
@@ -43,7 +43,7 @@ import {
   resolveCommandTimeout,
   type BrowserKind,
 } from '../../packages/mcp-server/src/connection/manager.js';
-import { RELAY_TIMEOUT_MARGIN_MS } from '../../packages/mcp-server/src/relay/daemon-client.js';
+import { relayTimeoutMarginMs } from '../../packages/mcp-server/src/relay/daemon-client.js';
 import { MAX_TIMEOUT_ARG_MS, TOOL_SCHEMAS } from '../../packages/mcp-server/src/tools/schemas.js';
 import { PUBLIC_TOOLS } from '../../packages/mcp-server/src/tools/public-tools.js';
 import { readExtensionTree, readNumericObjectConstant } from './helpers/extension-source.js';
@@ -89,16 +89,19 @@ describe('1. relay waits longer than the daemon', () => {
   });
 
   it('the relay adds a positive margin on top', () => {
-    expect(RELAY_TIMEOUT_MARGIN_MS).toBeGreaterThan(0);
-    for (const args of ARG_SETS) {
-      expect(maxCommandTimeoutMs(args) + RELAY_TIMEOUT_MARGIN_MS).toBeGreaterThan(maxCommandTimeoutMs(args));
-    }
+    expect(relayTimeoutMarginMs({})).toBeGreaterThan(0);
   });
 });
 
 describe('2. relay margin covers the headless startup wait', () => {
-  it('RELAY_TIMEOUT_MARGIN_MS > FOX_HEADLESS_STARTUP_TIMEOUT default', () => {
-    expect(RELAY_TIMEOUT_MARGIN_MS).toBeGreaterThan(ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT);
+  it('relayTimeoutMarginMs > FOX_HEADLESS_STARTUP_TIMEOUT default', () => {
+    expect(relayTimeoutMarginMs({})).toBeGreaterThan(ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT);
+  });
+
+  it('R-13: the margin follows a raised FOX_HEADLESS_STARTUP_TIMEOUT (and its legacy name)', () => {
+    const raised = 10 * ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT;
+    expect(relayTimeoutMarginMs({ FOX_HEADLESS_STARTUP_TIMEOUT: String(raised) })).toBeGreaterThan(raised);
+    expect(relayTimeoutMarginMs({ CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT: String(raised) })).toBeGreaterThan(raised);
   });
 });
 

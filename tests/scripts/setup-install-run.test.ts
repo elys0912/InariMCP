@@ -573,7 +573,7 @@ describe('uninstall (real run in a temp home)', () => {
   });
 
   it('--no-stop does not count an unverified daemon without a PID as a problem', async () => {
-    const health = { status: 200, headers: {}, body: Buffer.from(JSON.stringify({ service: 'kitsune-mcp', version: '1' })) };
+    const health = { status: 200, headers: {}, body: Buffer.from(JSON.stringify({ status: 'ok', service: 'kitsune-mcp', version: '1' })) };
     const ctx = realRunDeps(home, repoRoot, { httpGet: async () => health });
     expect(await runUninstall(['--no-stop'], ctx.deps)).toBe(0);
     expect(ctx.text()).not.toContain('PID is unknown');
@@ -600,5 +600,4 @@ describe('uninstall (real run in a temp home)', () => {
     expect(await runUninstall(['--grace=99'], ctx.deps)).toBe(2);
     expect(fs.existsSync(data.nativeHostDir)).toBe(true);
   });
-  // TODO(test): stopDaemonGracefully outcomes (stopped / refused / unanswered / still-running) and the uninstall daemon branch
 });

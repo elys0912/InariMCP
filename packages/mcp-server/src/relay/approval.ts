@@ -27,6 +27,7 @@ import type {
   ElicitResult,
 } from '@modelcontextprotocol/sdk/types.js';
 import { isRecord } from '@kitsune-mcp/shared';
+import { errorMessage } from '../utils/errors.js';
 import type { ApprovalReason } from '../tools/approval-flow.js';
 
 /** `details.approval` of a confirmation_required result. */
@@ -186,7 +187,7 @@ export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Pr
       if (err instanceof McpError && err.code === ErrorCode.RequestTimeout) {
         return { kind: 'not_approved', via: 'elicitation', reason: 'timeout' };
       }
-      elicitationProblem = err instanceof Error ? err.message : String(err);
+      elicitationProblem = errorMessage(err);
       deps.log?.(`elicitation failed (${elicitationProblem}) — asking in the browser instead`);
     }
     if (answer !== null) {
@@ -195,7 +196,7 @@ export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Pr
       try {
         reply = await deps.reportElicitation(info.requestId, approved);
       } catch (err: unknown) {
-        return { kind: 'unavailable', detail: err instanceof Error ? err.message : String(err) };
+        return { kind: 'unavailable', detail: errorMessage(err) };
       }
       if (reply.reason !== 'elicitation_disabled') return fromReply('elicitation', reply);
       // The running daemon does not take elicitation answers (its
@@ -218,7 +219,7 @@ export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Pr
     }
     return outcome;
   } catch (err: unknown) {
-    return { kind: 'unavailable', detail: err instanceof Error ? err.message : String(err) };
+    return { kind: 'unavailable', detail: errorMessage(err) };
   }
 }
 

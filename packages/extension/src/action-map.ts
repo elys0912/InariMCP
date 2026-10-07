@@ -14,9 +14,8 @@
 //             (answered with "Not implemented in extension: <name>", which is
 //             distinct from "Unknown action")
 //
-// Imported by background/wire.ts (bundled into dist/background.js). For contract
-// tests that load this file as a module, the same table is also exposed on
-// globalThis.
+// Imported by background/wire.ts (bundled into dist/background.js); the
+// contract tests import WIRE_ACTION_MAP the same way.
 //
 // Every entry of BROWSER_ACTIONS must appear here, and nothing else, and
 // every internal name must be a row of the action table: checked by the type
@@ -106,6 +105,3 @@ const WIRE_ACTIONS = {
 export const WIRE_ACTION_MAP: ReadonlyMap<string, string | null> = new Map<string, string | null>(
   Object.entries(WIRE_ACTIONS),
 );
-
-(globalThis as { KITSUNE_WIRE_ACTION_MAP?: ReadonlyMap<string, string | null> })
-  .KITSUNE_WIRE_ACTION_MAP = WIRE_ACTION_MAP;

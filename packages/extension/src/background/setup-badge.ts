@@ -1,6 +1,7 @@
 // Setup state (popup guidance) and the toolbar badge (L2). The badge shows
 // the pending approval count reported by approvals.ts, else the setup state.
 
+import { errorMessage } from "../error-message";
 import { t } from "../i18n";
 import type { SetupState } from "../types/setup";
 import { hostStatus, sendToNativeHost } from "./native-connection";
@@ -39,7 +40,7 @@ async function getSetupState(): Promise<SetupState> {
       }),
     ])) as HostStatusReply;
   } catch (error) {
-    return { kind: "hostError", error: (error as Error).message };
+    return { kind: "hostError", error: errorMessage(error) };
   } finally {
     clearTimeout(timer);
   }

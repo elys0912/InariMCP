@@ -3,6 +3,9 @@ export const ENV_PREFIX = 'FOX_' as const;
 /** Highest TCP port number (ports are 1..MAX_PORT). */
 export const MAX_PORT = 65_535;
 
+/** Milliseconds per second, for converting timestamps and durations. */
+export const MS_PER_SECOND = 1_000;
+
 export const ENV = {
   FOX_PORT: 'FOX_PORT',
   FOX_HOST: 'FOX_HOST',

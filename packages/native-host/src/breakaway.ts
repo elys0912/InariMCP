@@ -112,6 +112,8 @@ public static class KitsuneBreakaway {
 
 /** PowerShell compiles the C# first, which takes a second or two. */
 const BREAKAWAY_TIMEOUT_MS = 20_000;
+/** Lines of PowerShell's stderr quoted in the error. */
+const STDERR_DETAIL_LINES = 3;
 
 /**
  * Start `node <entry> --daemon` outside the current job object.
@@ -165,7 +167,7 @@ export function spawnDaemonBreakaway(entry: string, logPath: string, cwd?: strin
       if (code === 0 && Number.isInteger(pid) && pid > 0) {
         resolve(pid);
       } else {
-        const detail = stderr.trim().split(/\r?\n/).slice(0, 3).join(' ');
+        const detail = stderr.trim().split(/\r?\n/).slice(0, STDERR_DETAIL_LINES).join(' ');
         reject(new Error(`exit code ${code ?? 'null'}${detail ? `: ${detail}` : ''}`));
       }
     });

@@ -1,5 +1,6 @@
 // Tab management tools and find_text (L3).
 
+import { errorMessage } from "../error-message";
 import type { ContentRequest } from "../content/types";
 import { DEFAULTS, TOP_FRAME_ID } from "./constants";
 import { isTabInScope, ensureScopeContainer } from "./container-scope";
@@ -83,7 +84,7 @@ export async function getAllTabs(
       },
     };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 
@@ -127,7 +128,7 @@ export async function getTabInfo(tabId: number): Promise<CommandResult> {
       pageInfo,
     };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 
@@ -139,8 +140,9 @@ export async function findTabs(
     const tabs = await browser.tabs.query({});
     let filtered = tabs.filter((t) => isTabInScope(t, scope));
 
-    if (options.url) {
-      filtered = filtered.filter((t) => t.url?.startsWith(options.url!));
+    const prefix = options.url;
+    if (prefix) {
+      filtered = filtered.filter((t) => t.url?.startsWith(prefix));
     }
     const patternArg = urlPatternArg(options.urlPattern);
     if (!patternArg.ok) return patternArg.result;
@@ -174,7 +176,7 @@ export async function findTabs(
       count: filtered.length,
     };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 
@@ -204,7 +206,7 @@ export async function createNewTab(
       url: data.url || "about:blank",
     };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 
@@ -214,7 +216,7 @@ export async function closeTab(tabId: number): Promise<CommandResult> {
     // `closed`: the MCP Server's guard forgets this tab's last URL.
     return { success: true, closed: tabId };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 
@@ -224,7 +226,7 @@ export async function focusTab(tabId: number): Promise<CommandResult> {
     await browser.windows.update(tab.windowId, { focused: true });
     return { success: true };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    return { success: false, error: errorMessage(error) };
   }
 }
 

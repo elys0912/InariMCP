@@ -136,7 +136,7 @@ describe('E-16 action names from the Native Host', () => {
     expect(resolveWireAction('status', true)).toEqual({ kind: 'unknown', wireName: 'status' });
     expect(resolveWireAction('execute_script', true)).toEqual({ kind: 'action', action: 'executeScript' });
     // The Extension's own pages keep using internal names.
-    expect(resolveWireAction('status')).toEqual({ kind: 'action', action: 'status' });
+    expect(resolveWireAction('status', false)).toEqual({ kind: 'action', action: 'status' });
   });
 
   it('handleCommand from the host refuses an internal name without running its handler', async () => {

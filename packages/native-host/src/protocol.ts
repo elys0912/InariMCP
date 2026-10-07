@@ -51,12 +51,12 @@ function readExact(n: number): Promise<Buffer | null> {
     }
 
     function tryRead(): void {
-      const chunk = stdin.read(n) as Buffer | null;
-      if (chunk !== null) {
-        cleanup();
-        resolve(chunk);
-        return;
-      }
+      const chunk: unknown = stdin.read(n);
+      if (chunk === null) return;
+      cleanup();
+      // stdin has no encoding set, so a chunk is a Buffer; anything else
+      // (a string after setEncoding) cannot be a Native Messaging frame.
+      resolve(Buffer.isBuffer(chunk) ? chunk : null);
     }
 
     function onReadable(): void {

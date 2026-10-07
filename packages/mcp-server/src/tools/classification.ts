@@ -1,11 +1,11 @@
 /**
- * Everything derived from TOOL_SCHEMAS[*].classification: the SafetyGuard
- * tool sets and the MCP tool annotations. Derived here, never listed by
- * hand, so a renamed or added tool cannot drift out of the guard.
+ * Everything derived from the tool definitions of TOOL_SCHEMAS: the
+ * SafetyGuard tool sets and the MCP tool annotations. Derived here, never
+ * listed by hand, so a renamed or added tool cannot drift out of the guard.
  */
 
-import { TOOL_SCHEMAS } from './schemas.js';
-import type { ToolClassification, ToolDefinition } from './schemas.js';
+import { OPERATION_NAMES, TOOL_SCHEMAS, isOperationName } from './schemas.js';
+import type { OperationName, ToolClassification, ToolDefinition } from './schemas.js';
 
 /**
  * Classes the guard lets through without the read-only (Layer 5), script
@@ -20,18 +20,37 @@ const GUARD_PASS_THROUGH: ReadonlySet<ToolClassification> = new Set<ToolClassifi
   'human',
 ]);
 
-function namesWhere(pred: (def: ToolDefinition) => boolean): ReadonlySet<string> {
-  return new Set(Object.values(TOOL_SCHEMAS).filter(pred).map((def) => def.name));
+function namesWhere(pred: (def: ToolDefinition) => boolean): ReadonlySet<OperationName> {
+  return new Set(OPERATION_NAMES.filter((name) => pred(TOOL_SCHEMAS[name])));
+}
+
+/**
+ * Whether `name` is an operation in `set`. The guard is also asked about
+ * names from the wire, which may be no operation at all.
+ */
+export function isOperationIn(set: ReadonlySet<OperationName>, name: string): boolean {
+  return isOperationName(name) && set.has(name);
 }
 
 /** Tools the guard treats as observation (see GUARD_PASS_THROUGH). */
-export const OBSERVE_TOOLS: ReadonlySet<string> = namesWhere((def) =>
+export const OBSERVE_TOOLS: ReadonlySet<OperationName> = namesWhere((def) =>
   GUARD_PASS_THROUGH.has(def.classification),
 );
 
 /** Tools refused when allowScriptExecution is false. */
-export const SCRIPT_TOOLS: ReadonlySet<string> = namesWhere(
+export const SCRIPT_TOOLS: ReadonlySet<OperationName> = namesWhere(
   (def) => def.classification === 'script',
+);
+
+/**
+ * Tools that do not act on the content of a tab (ToolDefinition
+ * tabIndependent), so the blocked/allowed check of the tab's last-known URL
+ * does not apply. fox_navigate with a `url` and fox_close_tab stay usable to
+ * leave a tab that ended up on a blocked site. The guard's pre-check and the
+ * rules handlers.ts attaches for the Extension's own check both use it.
+ */
+export const TAB_INDEPENDENT_TOOLS: ReadonlySet<OperationName> = namesWhere(
+  (def) => def.tabIndependent === true,
 );
 
 export interface ToolAnnotations {

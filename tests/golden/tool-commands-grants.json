@@ -93,7 +93,8 @@
         "ctrl": false,
         "shift": false,
         "alt": false,
-        "meta": false
+        "meta": false,
+        "allowPassword": false
       },
       "protectedUrlRules": [
         {

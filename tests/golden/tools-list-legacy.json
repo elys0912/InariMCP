@@ -743,7 +743,7 @@
   },
   {
     "name": "fox_press_key",
-    "description": "Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta) on the element located by selector (CSS), xpath, text or id (checked in that order; it is focused first), else on the focused element. The key events are synthetic (isTrusted=false): page handlers see them, but the browser performs no default action (no focus move on Tab, no scrolling, no browser shortcuts). Plain Enter in a form field submits the form like a real Enter. Headless: selector only.",
+    "description": "Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta) on the element located by selector (CSS), xpath, text or id (checked in that order; it is focused first), else on the focused element. The key events are synthetic (isTrusted=false): page handlers see them, but the browser performs no default action (no focus move on Tab, no scrolling, no browser shortcuts). Plain Enter in a form field submits the form like a real Enter. Headless: selector only; real key presses, so on a password field keys that could change its value are refused (Enter, Tab, Escape, arrows, Home/End, PageUp/PageDown and lone modifiers are allowed).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1251,7 +1251,7 @@
   },
   {
     "name": "fox_type",
-    "description": "Type text into an input, textarea or contenteditable element, located by selector, id, name or placeholder (in that order); without any of them, types into the focused field. The `text` value is never used to find the element. Fails on a disabled element; password fields are refused. Types character by character with synthetic key events (isTrusted=false), waiting `delay` ms per character (0 = none; shortened so all delays stay within 10 s); fox_set_value is faster for long values. clear empties the field first. pressEnter also submits the enclosing form like a real Enter (unless a keydown handler cancels it). Headless: selector and text only (with selector the field is filled, else the focused element receives the keys).",
+    "description": "Type text into an input, textarea or contenteditable element, located by selector, id, name or placeholder (in that order); without any of them, types into the focused field. The `text` value is never used to find the element. Fails on a disabled element; password fields are refused. Types character by character with synthetic key events (isTrusted=false), waiting `delay` ms per character (0 = none; shortened so all delays stay within 10 s); fox_set_value is faster for long values. clear empties the field first. pressEnter also submits the enclosing form like a real Enter (unless a keydown handler cancels it). Headless: selector, text and clear only (with selector the text is appended unless clear, else the focused element receives the keys).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1391,7 +1391,7 @@
   },
   {
     "name": "fox_wait_for_navigation",
-    "description": "[Deprecated: fox_wait_for_navigation is deprecated; use fox_wait with for='navigation'.] Wait for the tab's next top-level navigation to finish (waitUntil: load or domcontentloaded), optionally only one whose URL matches the urlPattern regex. Only navigations that finish after this call count: a fast navigation already done (e.g. right after fox_click) is missed and the call times out. When the destination URL is known, prefer fox_wait_for_url, which returns at once if the URL already matches. Headless: waitUntil and urlPattern are ignored.",
+    "description": "[Deprecated: fox_wait_for_navigation is deprecated; use fox_wait with for='navigation'.] Wait for the tab's next top-level navigation to finish (waitUntil: load or domcontentloaded), optionally only one whose URL matches the urlPattern regex. Only navigations that finish after this call count: a fast navigation already done (e.g. right after fox_click) is missed and the call times out. When the destination URL is known, prefer fox_wait_for_url, which returns at once if the URL already matches. Headless: urlPattern is ignored (any navigation ends the wait).",
     "inputSchema": {
       "type": "object",
       "properties": {

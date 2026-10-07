@@ -36,7 +36,7 @@ import { ACTION_TABLE } from '../../packages/extension/src/background/action-tab
 import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 // ---------------------------------------------------------------------------
-// Extension-side helpers (approval.ts publishes them on globalThis)
+// Extension-side helpers (approval.ts, imported as a module)
 // ---------------------------------------------------------------------------
 
 interface ApprovalView { id: string; kind: string; deadline: number; host?: string; toolName?: string; message?: string }
@@ -61,8 +61,8 @@ const PLAIN_URL = 'https://plain.example.test/';
 
 const browser = {
   tabUrl: PLAIN_URL,
-  /** What the "human" answers in the popup. */
-  popupDecision: 'approved' as 'approved' | 'denied' | 'timeout',
+  /** What the "human" answers in the popup (`error`: the popup itself fails). */
+  popupDecision: 'approved' as 'approved' | 'denied' | 'timeout' | 'cancelled' | 'error',
   received: [] as BrowserCommand[],
 };
 
@@ -70,6 +70,7 @@ function extensionAnswer(command: BrowserCommand): Record<string, unknown> {
   if (command.action === 'request_approval') {
     const view = ext.parseApprovalPrompt(command.data, command.requestId, Date.now(), 60_000);
     if (!view) return { success: false, error: 'Malformed approval request' };
+    if (browser.popupDecision === 'error') return { success: false, error: 'The popup could not be shown' };
     return ext.approvalCommandResult(view, browser.popupDecision, Date.now());
   }
   // background.ts checkProtectedTarget: patterns against the real tab URL,
@@ -110,8 +111,7 @@ function connectFakeBrowser(): void {
 let tmpDir: string;
 
 beforeAll(async () => {
-  await import('../../packages/extension/src/approval.ts');
-  ext = (globalThis as { KITSUNE_APPROVAL?: ExtensionApproval }).KITSUNE_APPROVAL!;
+  ext = await import('../../packages/extension/src/approval.ts');
   // The test feeds plain records (not CommandResult): typed by its own alias.
   toWireResponse = (await import('../../packages/extension/src/background/wire.ts')).toWireResponse as unknown as ToWireResponse;
 
@@ -244,16 +244,30 @@ describe('popup approval → one-time token', () => {
     expect(browser.received).toEqual([]);
   });
 
-  it('denied or unanswered in the popup → no token, request closed', async () => {
-    for (const decision of ['denied', 'timeout'] as const) {
+  it('denied, unanswered or cancelled in the popup → no token, request closed', async () => {
+    const reasons = { denied: 'declined', timeout: 'timeout', cancelled: 'cancelled' } as const;
+    for (const decision of ['denied', 'timeout', 'cancelled'] as const) {
       browser.popupDecision = decision;
       const first = await createToolHandler('fox_navigate')({ action: 'goto', url: PROTECTED_URL });
       const requestId = findApprovalRequest(first)!.requestId;
       const reply = await askBrowser(requestId, getConnectionManager());
-      expect(reply).toMatchObject({ success: true, approved: false, reason: decision === 'denied' ? 'declined' : 'timeout' });
+      expect(reply).toMatchObject({ success: true, approved: false, reason: reasons[decision] });
       expect(reply.approvalToken).toBeUndefined();
       expect(getApprovalStore().getRequest(requestId)).toBeUndefined();
     }
+  });
+
+  // G-21 (c): the popup itself failed: nobody answered, so the request stays open.
+  it('a failed popup → browser_error, no token, request still open', async () => {
+    browser.popupDecision = 'error';
+    const first = await createToolHandler('fox_navigate')({ action: 'goto', url: PROTECTED_URL });
+    const requestId = findApprovalRequest(first)!.requestId;
+    const reply = await askBrowser(requestId, getConnectionManager());
+    expect(reply).toMatchObject({
+      success: false, approved: false, reason: 'browser_error', error: 'The popup could not be shown',
+    });
+    expect(reply.approvalToken).toBeUndefined();
+    expect(getApprovalStore().getRequest(requestId)).toBeDefined();
   });
 
   it('acting on the current protected tab: the approved host reaches the Extension', async () => {
@@ -478,7 +492,6 @@ describe('extension: approval request handling', () => {
 });
 
 describe('extension: approval UI is outside the page', () => {
-  const background = readExtensionTree('background');
   const content = readExtensionTree('content');
   const popup = readExtensionSource('popup/popup.ts');
 
@@ -492,19 +505,17 @@ describe('extension: approval UI is outside the page', () => {
     expect(names).toEqual(expect.arrayContaining(['status', 'requestApproval', 'cancelHumanWait']));
   });
 
-  it('decisions are accepted only from the toolbar popup (extension page, not a tab)', () => {
-    expect(background).toMatch(
-      /msg\.type === APPROVAL_MESSAGE\.LIST \|\| msg\.type === APPROVAL_MESSAGE\.DECIDE\)[\s\S]{0,400}!isExtensionPage\(sender\) \|\| \(msg\.type === APPROVAL_MESSAGE\.DECIDE && sender\.tab\)/,
-    );
-    // The popup uses the shared constants, not its own literals.
+  // Who may list or decide approvals is checked on the listeners themselves
+  // (extension-background.test.ts, 'E-4 runtime.onMessage sender checks').
+  it('the popup uses the shared message types, not its own literals', () => {
     expect(popup).toContain('APPROVAL_MESSAGE.LIST');
     expect(popup).toContain('APPROVAL_MESSAGE.DECIDE');
     expect(popup).not.toContain('kitsune:approvals:');
   });
 
-  it('approval.ts is bundled into background.js and popup.js (imported, not loaded separately)', () => {
-    expect(background).toMatch(/^import \{[^}]*\bAPPROVAL_MESSAGE\b[^}]*\} from "\.\.?\/approval";$/m);
-    expect(readExtensionSource('popup/popup.ts')).toMatch(/^import \{[^}]*\bAPPROVAL_MESSAGE\b[^}]*\} from '\.\.\/approval';$/m);
+  it('popup.html loads only the popup bundle', () => {
+    // approval.ts is not loaded on its own: background.js and popup.js
+    // bundle it through their imports (scripts/build-extension.mjs).
     // manifest.json loads one background bundle: extension-background.test.ts.
     const html = readExtensionSource('popup/popup.html');
     expect([...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1])).toEqual(['popup.js']);

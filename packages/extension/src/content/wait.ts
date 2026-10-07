@@ -74,6 +74,7 @@ export async function waitForChange(
       for (const mutation of mutations) {
         const change: Record<string, unknown> = {
           type: mutation.type,
+          // A text node target has no tagName: `?.` leaves it undefined.
           target: (mutation.target as Element).tagName?.toLowerCase(),
           addedNodes: mutation.addedNodes.length,
           removedNodes: mutation.removedNodes.length,
@@ -116,7 +117,8 @@ export async function waitForChange(
       childList: true,
       subtree: options.subtree !== false,
       attributes: options.attributes !== false,
-      characterData: options.characterData === true,
+      // changeType "text" waits for characterData records: observe them.
+      characterData: options.characterData === true || options.changeType === "text",
       attributeOldValue: options.attributeOldValue === true,
     });
 
@@ -183,6 +185,20 @@ export async function waitForNetworkIdle(
   };
 }
 
+/**
+ * Selector of a mutation's target. A characterData change targets a text
+ * node, which has no selector of its own: its parent element stands for it
+ * ("text" when it has none, e.g. directly under a shadow root).
+ */
+function mutationTargetSelector(node: Node): string {
+  const element = isElementNode(node) ? node : node.parentElement;
+  return element ? generateSelector(element) : "text";
+}
+
+function isElementNode(node: Node): node is Element {
+  return node.nodeType === Node.ELEMENT_NODE;
+}
+
 export function observeElement(
   options: ObserveOptions,
 ): Record<string, unknown> {
@@ -205,7 +221,8 @@ export function observeElement(
       changes.push({
         type: mutation.type,
         timestamp: Date.now(),
-        target: generateSelector(mutation.target as Element),
+        target: mutationTargetSelector(mutation.target),
+        // Added / removed text nodes have no tagName: reported as "text".
         addedNodes: Array.from(mutation.addedNodes)
           .map((n) => (n as Element).tagName?.toLowerCase() || "text")
           .filter(Boolean),
@@ -243,14 +260,14 @@ export function stopObserving(options: {
 }): Record<string, unknown> {
   const observerId = options.observerId;
 
-  if (!activeObservers.has(observerId)) {
+  const record = activeObservers.get(observerId);
+  if (!record) {
     throw new Error(
       `No observer '${observerId}' on this page (observers end when the page ` +
       "reloads or navigates)",
     );
   }
 
-  const record = activeObservers.get(observerId)!;
   record.observer.disconnect();
   activeObservers.delete(observerId);
 
@@ -278,6 +295,7 @@ export async function clickAndWait(
       for (const mutation of mutations) {
         changes.push({
           type: mutation.type,
+          // A text node target has no tagName: `?.` leaves it undefined.
           target: (mutation.target as Element).tagName?.toLowerCase(),
           addedNodes: mutation.addedNodes.length,
           removedNodes: mutation.removedNodes.length,

@@ -1,5 +1,6 @@
 // Target tab resolution and messaging to the tab's content script (L1).
 
+import { errorMessage } from "../error-message";
 import type { ContentRequest } from "../content/types";
 import { TOP_FRAME_ID } from "./constants";
 import type { CommandResult } from "./types";
@@ -55,7 +56,7 @@ export async function sendToContentScript(
  * answered, an explanation of why instead of Firefox's own error text.
  */
 export function contentScriptFailure(error: unknown): CommandResult {
-  const msg = (error as Error).message;
+  const msg = errorMessage(error);
   return {
     success: false,
     error: NO_CONTENT_SCRIPT.test(msg) ? NO_CONTENT_SCRIPT_MESSAGE : msg,

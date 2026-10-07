@@ -9,13 +9,15 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as serverAuth from '@kitsune-mcp/shared/node';
 import { MAX_PORT as SHARED_MAX_PORT } from '@kitsune-mcp/shared';
 import {
   AUTH_HEADER, httpEndpoint, isLoopbackHost, MAX_PORT, computeMac, signPost,
 } from '../../scripts/lib/core.mjs';
-import { httpGet, probeDaemon, removeTreeSafe, writeFileAtomic } from '../../scripts/lib/system.mjs';
+import {
+  RENAME_RETRIES, httpGet, probeDaemon, removeTreeSafe, stopDaemonGracefully, writeFileAtomic,
+} from '../../scripts/lib/system.mjs';
 import { isWin, useTempDir } from './helpers/test-env.js';
 
 const tmp = useTempDir();
@@ -31,22 +33,36 @@ function sha256Hex(data: string | Buffer): string {
 describe('probeDaemon', () => {
   const token = 'c'.repeat(64);
   const deps = { httpGet };
-  let server: http.Server | undefined;
+  /** Servers of the running test, closed in afterEach. */
+  let servers: http.Server[] = [];
   let endpoint: { host: string; port: number };
 
+  async function close(server: http.Server): Promise<void> {
+    servers = servers.filter((s) => s !== server);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+
   /** A loopback HTTP server standing in for the daemon. No real daemon is started. */
-  async function serve(handler: http.RequestListener): Promise<void> {
-    server = http.createServer(handler);
-    await new Promise<void>((resolve) => server!.listen(0, '127.0.0.1', () => resolve()));
-    endpoint = { host: '127.0.0.1', port: (server!.address() as { port: number }).port };
+  async function serve(handler: http.RequestListener): Promise<http.Server> {
+    const server = http.createServer(handler);
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+    const address = server.address();
+    if (address === null || typeof address === 'string') throw new Error('no TCP address');
+    endpoint = { host: '127.0.0.1', port: address.port };
+    return server;
   }
 
   /** A daemon-shaped server; `tweak` breaks one part of the answer. */
-  async function serveDaemon(tweak: { proof?: string | null; pid?: unknown; signature?: string | null } = {}) {
-    await serve((req, res) => {
+  function serveDaemon(
+    tweak: { proof?: string | null; pid?: unknown; signature?: string | null } = {},
+  ): Promise<http.Server> {
+    return serve((req, res) => {
       if (req.url === '/health') {
         const nonce = String(req.headers[AUTH_HEADER.nonce] ?? '');
-        const body: Record<string, unknown> = { service: 'kitsune-mcp', version: '9.9.9', browsers_connected: 1 };
+        const body: Record<string, unknown> = {
+          status: 'ok', service: 'kitsune-mcp', version: '9.9.9', browsers_connected: 1,
+        };
         if (tweak.proof !== null) body.proof = tweak.proof ?? computeMac(token, 'health', nonce);
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify(body));
@@ -69,15 +85,13 @@ describe('probeDaemon', () => {
   }
 
   afterEach(async () => {
-    if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
-    server = undefined;
+    for (const server of [...servers]) await close(server);
   });
 
   it('kind "none" when nothing listens on the port', async () => {
-    await serve((_req, res) => res.end());
+    const server = await serve((_req, res) => res.end());
     const closed = endpoint;
-    await new Promise<void>((resolve) => server!.close(() => resolve()));
-    server = undefined;
+    await close(server);
     expect(await probeDaemon(deps, closed, token)).toEqual({ kind: 'none' });
   });
 
@@ -87,18 +101,29 @@ describe('probeDaemon', () => {
   });
 
   it('kind "foreign" for JSON with another service name or a non-200 status', async () => {
-    await serve((_req, res) => {
+    const other = await serve((_req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ service: 'something-else' }));
+      res.end(JSON.stringify({ status: 'ok', service: 'something-else' }));
     });
     expect(await probeDaemon(deps, endpoint, token)).toEqual({ kind: 'foreign' });
-    await new Promise<void>((resolve) => server!.close(() => resolve()));
+    await close(other);
 
     await serve((_req, res) => {
       res.writeHead(503, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ service: 'kitsune-mcp' }));
+      res.end(JSON.stringify({ status: 'ok', service: 'kitsune-mcp' }));
     });
     expect(await probeDaemon(deps, endpoint, token)).toEqual({ kind: 'foreign' });
+  });
+
+  it('kind "foreign" for a 200 KitsuneMCP answer whose status is not "ok", like kitsuneHealth (R3 N-11)', async () => {
+    for (const status of ['starting', '', undefined]) {
+      const server = await serve((_req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ status, service: 'kitsune-mcp', version: '1.2.3' }));
+      });
+      expect(await probeDaemon(deps, endpoint, token), String(status)).toEqual({ kind: 'foreign' });
+      await close(server);
+    }
   });
 
   it('unverified when no token is known: /daemon/info is never asked', async () => {
@@ -106,7 +131,7 @@ describe('probeDaemon', () => {
     await serve((req, res) => {
       urls.push(String(req.url));
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ service: 'kitsune-mcp', version: '1.2.3', browsers_connected: 0 }));
+      res.end(JSON.stringify({ status: 'ok', service: 'kitsune-mcp', version: '1.2.3', browsers_connected: 0 }));
     });
     expect(await probeDaemon(deps, endpoint, undefined)).toEqual({
       kind: 'kitsune', verified: false, pid: undefined, version: '1.2.3', browsers: 0,
@@ -116,8 +141,8 @@ describe('probeDaemon', () => {
 
   it('unverified when the daemon cannot prove it holds our token', async () => {
     const urls: string[] = [];
-    await serveDaemon({ proof: 'd'.repeat(64) });
-    server!.on('request', (req) => urls.push(String(req.url)));
+    const server = await serveDaemon({ proof: 'd'.repeat(64) });
+    server.on('request', (req) => urls.push(String(req.url)));
     const info = await probeDaemon(deps, endpoint, token);
     expect(info).toMatchObject({ kind: 'kitsune', verified: false, pid: undefined });
     expect(urls).toEqual(['/health']); // the token is never sent to an unverified daemon
@@ -132,19 +157,83 @@ describe('probeDaemon', () => {
 
   it('verified but without a pid when the /daemon/info signature is wrong or missing', async () => {
     for (const signature of ['e'.repeat(64), 'not-hex', null]) {
-      await serveDaemon({ signature });
+      const server = await serveDaemon({ signature });
       expect(await probeDaemon(deps, endpoint, token)).toMatchObject({ kind: 'kitsune', verified: true, pid: undefined });
-      await new Promise<void>((resolve) => server!.close(() => resolve()));
-      server = undefined;
+      await close(server);
     }
   });
 
   it('ignores a pid that is not a positive integer', async () => {
     for (const pid of [0, -1, 1.5, 'nope', null]) {
-      await serveDaemon({ pid });
+      const server = await serveDaemon({ pid });
       expect(await probeDaemon(deps, endpoint, token)).toMatchObject({ verified: true, pid: undefined });
-      await new Promise<void>((resolve) => server!.close(() => resolve()));
-      server = undefined;
+      await close(server);
+    }
+  });
+});
+
+describe('stopDaemonGracefully', () => {
+  const token = 'c'.repeat(64);
+  const endpoint = { host: '127.0.0.1', port: 8765 };
+  type Answer = { status: number; headers: Record<string, string>; body: Buffer } | null;
+
+  /** POST /daemon/shutdown answered by `post`; /health answers `healthAnswers` times, then goes quiet. */
+  function fakeDeps(post: (nonce: string) => Answer, healthAnswers: number) {
+    let left = healthAnswers;
+    const polls: string[] = [];
+    return {
+      polls,
+      deps: {
+        httpPost: async (o: { headers: Record<string, string> }) => post(o.headers[AUTH_HEADER.nonce] ?? ''),
+        httpGet: async (o: { urlPath: string }) => {
+          polls.push(o.urlPath);
+          if (left <= 0) return null;
+          left--;
+          return { status: 200, headers: {}, body: Buffer.from('{}') };
+        },
+        sleep: async () => {},
+      },
+    };
+  }
+
+  /** A correctly signed 200 answer to the shutdown request. */
+  function signedOk(nonce: string): Answer {
+    const body = Buffer.from(JSON.stringify({ stopping: true }));
+    const signature = computeMac(token, 'http-response', nonce, '200', sha256Hex(body));
+    return { status: 200, headers: { [AUTH_HEADER.signature]: signature }, body };
+  }
+
+  it('stopped: signed 200, then /health goes quiet', async () => {
+    const { deps, polls } = fakeDeps(signedOk, 2);
+    expect(await stopDaemonGracefully(deps, endpoint, token, 0)).toBe('stopped');
+    expect(polls).toEqual(['/health', '/health', '/health']);
+  });
+
+  it('refused: not 200, or not signed by the daemon', async () => {
+    const notFound = fakeDeps(() => ({ status: 404, headers: {}, body: Buffer.from('') }), 0);
+    expect(await stopDaemonGracefully(notFound.deps, endpoint, token, 0)).toBe('refused');
+    const unsigned = fakeDeps(() => ({ status: 200, headers: {}, body: Buffer.from('{}') }), 0);
+    expect(await stopDaemonGracefully(unsigned.deps, endpoint, token, 0)).toBe('refused');
+    expect([...notFound.polls, ...unsigned.polls]).toEqual([]);
+  });
+
+  it('unanswered: no answer to the shutdown request', async () => {
+    const { deps, polls } = fakeDeps(() => null, 0);
+    expect(await stopDaemonGracefully(deps, endpoint, token, 0)).toBe('unanswered');
+    expect(polls).toEqual([]);
+  });
+
+  it('still-running: /health keeps answering past the deadline', async () => {
+    let clock = 0;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => {
+      clock += 1_000;
+      return clock;
+    });
+    try {
+      const { deps } = fakeDeps(signedOk, Number.POSITIVE_INFINITY);
+      expect(await stopDaemonGracefully(deps, endpoint, token, 0)).toBe('still-running');
+    } finally {
+      now.mockRestore();
     }
   });
 });
@@ -234,11 +323,11 @@ describe('writeFileAtomic', () => {
     }
   });
 
-  it('gives up after ten attempts and removes the temporary file', () => {
+  it('gives up after RENAME_RETRIES attempts and removes the temporary file', () => {
     const target = path.join(tmp(), 'stubborn.json');
     const fsApi = flakyRename('EBUSY', 99);
     expect(() => writeFileAtomic(target, 'x', {}, asFsApi(fsApi))).toThrow(/EBUSY/);
-    expect(fsApi.attempts).toBe(10);
+    expect(fsApi.attempts).toBe(RENAME_RETRIES);
     expect(fs.existsSync(target)).toBe(false);
     expect(fs.readdirSync(tmp())).toEqual([]);
   });
@@ -394,18 +483,22 @@ describe('daemon authentication copy', () => {
     expect(httpEndpoint({ FOX_HTTP_PORT: String(MAX_PORT + 1) }).port).toBe(8765);
   });
 
-  it('httpEndpoint treats an empty variable as unset like @kitsune-mcp/shared (R2-A R-2)', () => {
+  it('httpEndpoint treats an empty or blank variable as unset like @kitsune-mcp/shared (R2-A R-2, R3 N-1)', () => {
     const legacyPort = 9001;
     const legacyHost = '127.0.0.2';
     const legacyPortEnv = { FOX_HTTP_PORT: '', CLAUDE_BROWSER_HTTP_PORT: String(legacyPort) };
     const legacyHostEnv = { FOX_HOST: '', CLAUDE_BROWSER_HOST: legacyHost };
     const emptyEnv = { FOX_HOST: '', FOX_HTTP_PORT: '' };
-    for (const env of [legacyPortEnv, legacyHostEnv, emptyEnv]) {
+    const blankEnv = { FOX_HOST: ' ', FOX_HTTP_PORT: ' ', CLAUDE_BROWSER_HTTP_PORT: String(legacyPort) };
+    const paddedEnv = { FOX_HOST: ' 127.0.0.1 ', FOX_HTTP_PORT: ' 8765 ' };
+    for (const env of [legacyPortEnv, legacyHostEnv, emptyEnv, blankEnv, paddedEnv]) {
       const endpoint = httpEndpoint(env);
       expect(endpoint.port, JSON.stringify(env)).toBe(serverAuth.resolveHttpPort(undefined, env));
       expect(endpoint.host, JSON.stringify(env)).toBe(serverAuth.resolveHost(env));
     }
     expect(httpEndpoint(legacyPortEnv).port).toBe(legacyPort);
     expect(httpEndpoint(legacyHostEnv).host).toBe(legacyHost);
+    expect(httpEndpoint(blankEnv)).toEqual({ host: '127.0.0.1', port: legacyPort });
+    expect(httpEndpoint(paddedEnv)).toEqual({ host: '127.0.0.1', port: 8765 });
   });
 });

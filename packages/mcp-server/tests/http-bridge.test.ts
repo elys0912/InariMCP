@@ -1,8 +1,11 @@
+import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as net from 'node:net';
+import * as path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getConnectionManager } from '../src/connection/manager.js';
+import { getScreenshotsDir } from '../src/utils/screenshot.js';
 import { SignedRequestVerifier, isAllowedHostHeader, startHttpBridge, type HttpBridgeOptions } from '../src/transport/http-bridge.js';
 import {
   AUTH_HEADER,
@@ -279,6 +282,78 @@ describe('request hygiene', () => {
     await start();
     const r = await request('POST', '/mcp/call', { 'X-API-Key': TOKEN }, '[1,2]');
     expect(r.status).toBe(400);
+  });
+
+  it('answers 400 Invalid JSON to a body that does not parse', async () => {
+    await start();
+    const r = await request('POST', '/mcp/call', { 'X-API-Key': TOKEN }, '{"name":');
+    expect(r.status).toBe(400);
+    expect(r.json['error']).toBe('Invalid JSON');
+  });
+});
+
+describe('POST /browser/command (alias of /mcp/call)', () => {
+  const headers = { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' };
+
+  it('runs a tool call like /mcp/call', async () => {
+    await start();
+    const r = await request('POST', '/browser/command', headers, JSON.stringify({ name: 'fox_safety_status', arguments: {} }));
+    expect(r.status).toBe(200);
+    expect(r.json['success']).toBe(true);
+  });
+
+  it('refuses a raw browser action (400) and points to the tool call form', async () => {
+    await start();
+    const r = await request('POST', '/browser/command', headers, JSON.stringify({ action: 'navigate', data: {} }));
+    expect(r.status).toBe(400);
+    expect(r.json['error']).toContain('Raw browser actions are no longer accepted');
+  });
+
+  it('on /mcp/call a raw action is only a missing tool name', async () => {
+    await start();
+    const r = await request('POST', '/mcp/call', headers, JSON.stringify({ action: 'navigate' }));
+    expect(r.status).toBe(400);
+    expect(r.json['error']).toBe('Missing tool name');
+  });
+});
+
+describe('authenticated GET answers', () => {
+  it('GET /mcp/tools lists every tool with its description', async () => {
+    await start();
+    const r = await signedGet('/mcp/tools');
+    expect(r.status).toBe(200);
+    const tools = r.json['tools'];
+    expect(Array.isArray(tools)).toBe(true);
+    const list = Array.isArray(tools) ? tools : [];
+    expect(list.length).toBeGreaterThan(0);
+    expect(list).toContainEqual(expect.objectContaining({ name: 'fox_safety_status' }));
+    for (const t of list) expect(t).toEqual(expect.objectContaining({ name: expect.any(String) }));
+  });
+
+  it('GET /screenshots answers name, path, size and created per file', async () => {
+    const dir = getScreenshotsDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'r3-shape.png');
+    fs.writeFileSync(file, 'png');
+    try {
+      await start();
+      const r = await signedGet('/screenshots');
+      expect(r.status).toBe(200);
+      expect(r.json['screenshots']).toContainEqual({
+        name: 'r3-shape.png',
+        path: expect.stringContaining('r3-shape.png'),
+        size: 3,
+        created: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      });
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  });
+
+  it('GET /mcp/tools and /screenshots need authentication', async () => {
+    await start();
+    expect((await request('GET', '/mcp/tools')).status).toBe(403);
+    expect((await request('GET', '/screenshots')).status).toBe(403);
   });
 });
 

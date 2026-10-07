@@ -174,6 +174,22 @@ export type ApprovalPrompt = z.infer<typeof ApprovalPromptSchema>;
 // BrowserResponse  (Extension → MCP Server)
 // ---------------------------------------------------------------------------
 
+/**
+ * The `safetyDecision` values the Extension sends with a refusal
+ * (background/url-policy.ts, container-scope.ts, dispatch.ts). The wire
+ * field stays a string, so that an older or newer Extension still parses;
+ * the MCP Server narrows it against this list and treats any other value
+ * as an unknown refusal.
+ */
+export const BROWSER_SAFETY_DECISIONS = [
+  'confirmation_required',
+  'blocked_url',
+  'not_allowlisted',
+  'out_of_scope',
+  'config_error',
+] as const;
+export type BrowserSafetyDecision = (typeof BROWSER_SAFETY_DECISIONS)[number];
+
 export const BrowserResponseSchema = z.object({
   requestId: z.string(),
   success: z.boolean(),

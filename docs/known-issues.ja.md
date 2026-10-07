@@ -48,19 +48,19 @@ KitsuneMCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **無視される引数が多い**（結果の`warnings`に並ぶ）:
   - `fox_navigate`: `waitForLoad`（常に`domcontentloaded`まで待つ）、`bypassCache`（`refresh`は通常の再読み込み）
   - `fox_click`: `selector`か`x` + `y`だけ（`xpath`、`text`、`doubleClick`、`rightClick`は使えない）
-  - `fox_type`: `selector`と`text`だけ（`selector`があれば既存の内容を置き換え、なければフォーカスのある要素に入力する。`clear`、`pressEnter`、`delay`、`placeholder`、`name`、`id`は無視）
+  - `fox_type`: `selector`、`text`、`clear`だけ（`selector`があれば既存の内容の後ろに追記し、`clear: true`なら置き換える。`selector`がなければフォーカスのある要素に入力し、`clear`は無視。`pressEnter`、`delay`、`placeholder`、`name`、`id`は無視）
   - `fox_screenshot`: `saveToFile`（常にファイルに保存する）、`timeout`（`all_tabs`の制限時間で、ヘッドレスは`all_tabs`に対応しない）
   - `fox_press_key`: `xpath`、`text`、`id`（`selector`を使う）
   - `fox_read` `mode: "info"`: URLとタイトルだけを返す
-  - `fox_find` `by: "selector"`: `limit`は無視（最大50件、タグ / テキスト / 位置だけ）
-  - `fox_find` `by: "text"`: 件数だけを返す（`caseSensitive`、`entireWord`、`includeRectData`は無視）
+  - `fox_find` `by: "selector"`: 50を超える`limit`は50件に抑える（`count`は一致した総数）。タグ / テキスト / 位置だけ
+  - `fox_find` `by: "text"`: トップの文書のテキスト中の出現回数だけを返す（iframeは対象外）。`includeRectData`は無視
   - `fox_tabs` `what: "tabs"`: `urlPattern`、`includeFavicon`、`limit`は無視（id、URL、タイトル、activeだけ）
   - `fox_tab` `action: "create"`: `active`は無視（新しいタブは常にアクティブになる）
-  - `fox_interact` `action: "highlight"`: `duration`、`label`は無視（2秒間の赤い枠）
-  - `fox_wait` `for: "element"`: `visible: false`は無視（表示されるまで待つ）
+  - `fox_interact` `action: "highlight"`: `label`は無視（`duration`の間、赤い枠）
   - `fox_wait` `for: "network_idle"`: `idleTime`は無視
-  - `fox_wait` `for: "navigation"`: `waitUntil`、`urlPattern`は無視
+  - `fox_wait` `for: "navigation"`: `urlPattern`は無視（どの遷移でも待機を終える。`waitUntil`は反映する）
   - `fox_observer`: `observerId`は無視（1ページに1つ）。`action: "remove"`は変更の件数だけを返す
+- **パスワード欄への`fox_press_key`はほとんどのキーを拒否する**: ヘッドレスのキー入力は実際の入力になるため、パスワード欄（`selector`の要素、なければフォーカス中の要素）には値を変えないキー（Enter・Tab・Escape・矢印キー・Home / End・PageUp / PageDown・修飾キー単独）だけを送る。それ以外のキーは、`allow_password_typing`が有効でない限り`fox_type`と同じく拒否する
 - **待たれていないダイアログは閉じられる**: どの`fox_handle_dialog`も待っていないダイアログ（alert / confirm / prompt）は2秒後に閉じられ（dismiss）、そのタブの次の結果で報告される。受け入れたいときは、ダイアログを開く操作の前に`fox_handle_dialog`を呼ぶ。`timeout`の間にダイアログが来なければ、そのタブの次のダイアログに備えて30秒間待機を続ける
 
 ## ログ収集

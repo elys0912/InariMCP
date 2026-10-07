@@ -20,6 +20,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { envValue } from '../lib/core.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(path.join(root, 'packages', 'mcp-server', 'package.json'));
@@ -32,12 +33,12 @@ function playwrightFirefox() {
   }
 }
 
-const firefox = process.argv[2] || process.env.FOX_E2E_FIREFOX || playwrightFirefox();
+const firefox = process.argv[2] || envValue(process.env, 'FOX_E2E_FIREFOX') || playwrightFirefox();
 if (!firefox || !existsSync(firefox)) {
   console.error(`Firefox not found (${firefox ?? 'no path'}); run: npx playwright install firefox`);
   process.exit(1);
 }
-const timeoutMs = Number(process.env.FOX_E2E_TIMEOUT_MS) || 60_000;
+const timeoutMs = Number(envValue(process.env, 'FOX_E2E_TIMEOUT_MS')) || 60_000;
 const SETTLE_MS = 3_000;
 
 const webExt = path.join(root, 'node_modules', 'web-ext', 'bin', 'web-ext.js');

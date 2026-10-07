@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { firefox, type Browser, type BrowserContext, type Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CAPTCHA_BANNER_ID } from '../../packages/extension/src/content/constants.ts';
 import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 interface ContentFns {
@@ -444,6 +445,33 @@ describe('waits and observers', () => {
     expect(childListOnly.map((c) => c['type'])).toEqual(['childList']);
     expect(childListOnly[0]).toMatchObject({ addedNodes: ['b'] });
   });
+
+  real('a text change is recorded with the selector of the text node\'s parent', async () => {
+    await load('<div id="t">x</div>');
+    const changes = await run<Record<string, unknown>[]>(
+      `f.wait.observeElement({ selector: '#t', observerId: 'text' });
+       document.getElementById('t').firstChild.data = 'y';
+       await sleep(50);
+       return f.wait.stopObserving({ observerId: 'text' }).changes;`,
+    );
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ type: 'characterData', target: '#t' });
+  });
+});
+
+describe('element kinds in an XHTML document (tagName is lower case there)', () => {
+  real('a password input of an XML document is still a password field', async () => {
+    await load('<p></p>');
+    const r = await run<{ tagName: string; password: boolean; textInput: boolean }>(
+      `const xhtml = 'http://www.w3.org/1999/xhtml';
+       const doc = document.implementation.createDocument(xhtml, 'html', null);
+       const el = doc.createElementNS(xhtml, 'input');
+       el.setAttribute('type', 'password');
+       doc.documentElement.appendChild(el);
+       return { tagName: el.tagName, password: f.dom.isPasswordField(el), textInput: f.dom.isTextInput(el) };`,
+    );
+    expect(r).toEqual({ tagName: 'input', password: true, textInput: true });
+  });
 });
 
 describe('content-side log batching', () => {
@@ -630,11 +658,18 @@ describe('WP44 highlight and overlay banner timers (E-05, E-06, A-07)', () => {
     expect(r[2]).toEqual({ success: true, cancelled: true });
   });
 
-  it('A-07 the captcha banner id is defined once (content/constants.ts)', () => {
-    const tree = readExtensionTree('content');
-    expect(tree.split('"__fox_captcha_banner"')).toHaveLength(2);
-    expect(readExtensionSource('content/constants.ts'))
-      .toContain('export const CAPTCHA_BANNER_ID = "__fox_captcha_banner";');
+  real('A-07 the captcha wait and cancel_human_wait use the same banner id (CAPTCHA_BANNER_ID)', async () => {
+    await load('<div class="g-recaptcha"></div>');
+    const r = await run<Record<string, unknown>>(
+      `const id = ${JSON.stringify(CAPTCHA_BANNER_ID)};
+       const p = f.captcha.solveCaptcha({ timeout: 5000 });
+       await sleep(50);
+       const shown = !!document.getElementById(id);
+       const cancel = f.overlay.cancelHumanWait();
+       const res = await p;
+       return { shown, cancel, gone: !document.getElementById(id), timedOut: res.timedOut };`,
+    );
+    expect(r).toEqual({ shown: true, cancel: { success: true, cancelled: true }, gone: true, timedOut: true });
   });
 });
 
@@ -667,7 +702,50 @@ describe('WP44 content input checks, observer ids, XHR log and truncation (E-12,
        ];`,
     );
     expect(r[0]).toBe('Unknown scroll direction: "sideways" (expected up, down, left, right, top or bottom)');
-    expect(r[1]).toMatchObject({ scrolled: true });
+    expect(r[1]).toMatchObject({ scrolled: true, position: { x: 0, y: 0 } });
+  });
+
+  // The Extension's scroll is the reference the headless backend follows
+  // (R3 E-1 / E-2): these pin its behaviour, E-3 its result shape.
+  real('fox_scroll: no direction, amount 0, and locators that match nothing', async () => {
+    await load('<div id="box" style="height:100px;overflow:auto"><div style="height:1000px">in</div></div>' +
+      '<div style="height:3000px">tall</div>');
+    const r = await run<Record<string, Record<string, unknown>>>(
+      `const reset = async () => { window.scrollTo(0, 0); await sleep(50); };
+       const none = await f.input.performScroll({});
+       const zero = await f.input.performScroll({ direction: 'down', amount: 0 });
+       const missingSelector = await f.input.performScroll({ selector: '#nope', direction: 'down', amount: 200 });
+       await reset();
+       const missingTarget = await f.input.performScroll({ toElement: '#nope', direction: 'down', amount: 200 });
+       await reset();
+       const bottom = await f.input.performScroll({ selector: '#box', direction: 'bottom' });
+       const top = await f.input.performScroll({ selector: '#box', direction: 'top' });
+       return { none, zero, missingSelector, missingTarget, bottom, top };`,
+    );
+    // No direction: nothing moves, still scrolled: true (E-2).
+    expect(r.none).toEqual({ scrolled: true, position: { x: 0, y: 0 } });
+    // amount 0 is 0 pixels, not the 300 px default (E-3).
+    expect(r.zero).toEqual({ scrolled: true, position: { x: 0, y: 0 } });
+    // A selector that matches nothing scrolls the window; a toElement that
+    // matches nothing falls through to the direction (E-1).
+    expect(r.missingSelector).toMatchObject({ scrolled: true });
+    expect((r.missingSelector.position as { y: number }).y).toBeGreaterThan(0);
+    expect(r.missingTarget).not.toHaveProperty('element');
+    expect((r.missingTarget.position as { y: number }).y).toBeGreaterThan(0);
+    // top / bottom report the measured position like every other direction (E-3).
+    expect((r.bottom.position as { y: number }).y).toBeGreaterThan(0);
+    expect(r.top).toEqual({ scrolled: true, position: { x: 0, y: 0 } });
+  });
+
+  real('E-11 waitForChange changeType "text" sees a text change', async () => {
+    await load('<p id="t">before</p>');
+    const r = await run<Record<string, unknown>>(
+      `const node = document.getElementById('t').firstChild;
+       const p = f.wait.waitForChange({ selector: '#t', changeType: 'text', timeout: 2000 });
+       setTimeout(() => { node.data = 'after'; }, 50);
+       return await p;`,
+    );
+    expect(r).toMatchObject({ changed: true, changes: [{ type: 'characterData' }] });
   });
 
   real('E-13 waitForChange fails for a selector that matches nothing and for an unknown changeType', async () => {

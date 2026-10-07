@@ -4,6 +4,7 @@
 
 import { t } from '../i18n';
 import { APPROVAL_MESSAGE, type ApprovalView } from '../approval';
+import { TOP_FRAME_ID } from '../background/constants';
 import type { ContentRequest } from '../content/types';
 import type { SetupState } from '../types/setup';
 import { setupStateOfReply, setupStateOfFailure } from './setup-status';
@@ -234,6 +235,19 @@ interface ApprovalListResponse {
 }
 
 const APPROVAL_POLL_MS = 1_000;
+const MS_PER_SECOND = 1_000;
+
+/** Whole seconds until the background stops waiting for `view` (0 once past). */
+function secondsLeft(view: ApprovalView): string {
+  return String(Math.max(0, Math.round((view.deadline - Date.now()) / MS_PER_SECOND)));
+}
+
+/** The countdown line under a request. */
+function approvalNoteText(view: ApprovalView): string {
+  return view.kind === 'protected_action'
+    ? t('approvalProtectedNote', secondsLeft(view))
+    : t('approvalMessageNote', secondsLeft(view));
+}
 
 function approvalRow(label: string, value: string, mono = false): HTMLElement {
   const row = document.createElement('div');
@@ -276,12 +290,9 @@ function approvalCard(view: ApprovalView, onDecide: (id: string, approved: boole
     }
   }
 
-  const secondsLeft = String(Math.max(0, Math.round((view.deadline - Date.now()) / 1000)));
   const note = document.createElement('p');
   note.className = 'approval-note';
-  note.textContent = view.kind === 'protected_action'
-    ? t('approvalProtectedNote', secondsLeft)
-    : t('approvalMessageNote', secondsLeft);
+  note.textContent = approvalNoteText(view);
   card.appendChild(note);
 
   const buttons = document.createElement('div');
@@ -335,13 +346,8 @@ async function refreshApprovals(): Promise<void> {
 
   const more = approvals.length - 1;
   if (shownApproval?.id === view.id && shownApproval.more === more) {
-    const secondsLeft = String(Math.max(0, Math.round((view.deadline - Date.now()) / 1000)));
     const note = list.querySelector('.approval-note');
-    if (note) {
-      note.textContent = view.kind === 'protected_action'
-        ? t('approvalProtectedNote', secondsLeft)
-        : t('approvalMessageNote', secondsLeft);
-    }
+    if (note) note.textContent = approvalNoteText(view);
     return;
   }
 
@@ -387,6 +393,75 @@ function localizePage(): void {
   });
 }
 
+/** The active tab's title and URL at the top of the popup. */
+function showCurrentTab(tab: browser.tabs.Tab): void {
+  const titleEl = document.querySelector('.tab-title');
+  const urlEl = document.querySelector('.tab-url');
+  if (titleEl) titleEl.textContent = tab.title || t('popupUntitled');
+  if (urlEl) urlEl.textContent = tab.url || '-';
+}
+
+/** Screenshot button: capture through the background and download the image. */
+function setupScreenshotButton(): void {
+  document.getElementById('btn-screenshot')?.addEventListener('click', async () => {
+    try {
+      const result = await browser.runtime.sendMessage({
+        target: 'background',
+        action: 'screenshot',
+      }) as ScreenshotResponse;
+
+      if (result.success && result.imageData) {
+        showToast(t('toastScreenshotCaptured'), 'success');
+        const link = document.createElement('a');
+        link.href = result.imageData;
+        link.download = `screenshot-${Date.now()}.png`;
+        link.click();
+      } else {
+        showToast(result.error || t('toastScreenshotFailed'), 'error');
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : t('toastUnknownError');
+      showToast(msg, 'error');
+    }
+  });
+}
+
+/** Page info button: copy the page info of `tab` (top frame) to the clipboard. */
+function setupPageInfoButton(tab: browser.tabs.Tab): void {
+  document.getElementById('btn-pageinfo')?.addEventListener('click', async () => {
+    try {
+      const result = await browser.tabs.sendMessage(
+        tab.id,
+        { action: 'getPageInfo' } satisfies ContentRequest,
+        { frameId: TOP_FRAME_ID },
+      ) as PageInfoResponse;
+
+      console.log('Page Info:', result);
+      const count = result.interactiveElements?.length ?? 0;
+      showToast(t('toastFoundElements', String(count)), 'success');
+
+      await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+      showToast(t('toastPageInfoCopied'), 'success');
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : t('toastUnknownError');
+      showToast(msg, 'error');
+    }
+  });
+}
+
+/** Copy button of the setup command. */
+function setupCopyCommandButton(): void {
+  document.getElementById('btn-copy-command')?.addEventListener('click', async () => {
+    const command = document.getElementById('setup-command-text')?.textContent ?? '';
+    try {
+      await navigator.clipboard.writeText(command);
+      showToast(t('toastCopied'), 'success');
+    } catch {
+      showToast(t('toastCopyFailed'), 'error');
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   localizePage();
   const os = await browser.runtime.getPlatformInfo().then(info => info.os, () => '');
@@ -398,85 +473,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     .catch((): browser.tabs.Tab[] => []);
   const currentTab = tabs[0];
 
-  if (currentTab) {
-    const titleEl = document.querySelector('.tab-title');
-    const urlEl = document.querySelector('.tab-url');
-    if (titleEl) titleEl.textContent = currentTab.title || t('popupUntitled');
-    if (urlEl) urlEl.textContent = currentTab.url || '-';
-  }
-
-  // Screenshot button
-  const btnScreenshot = document.getElementById('btn-screenshot');
-  if (btnScreenshot) {
-    btnScreenshot.addEventListener('click', async () => {
-      try {
-        const result = await browser.runtime.sendMessage({
-          target: 'background',
-          action: 'screenshot',
-        }) as ScreenshotResponse;
-
-        if (result.success && result.imageData) {
-          showToast(t('toastScreenshotCaptured'), 'success');
-          const link = document.createElement('a');
-          link.href = result.imageData;
-          link.download = `screenshot-${Date.now()}.png`;
-          link.click();
-        } else {
-          showToast(result.error || t('toastScreenshotFailed'), 'error');
-        }
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : t('toastUnknownError');
-        showToast(msg, 'error');
-      }
-    });
-  }
-
-  // Page info button
-  const btnPageinfo = document.getElementById('btn-pageinfo');
-  if (btnPageinfo && currentTab) {
-    btnPageinfo.addEventListener('click', async () => {
-      try {
-        const result = await browser.tabs.sendMessage(
-          currentTab.id,
-          { action: 'getPageInfo' } satisfies ContentRequest,
-          { frameId: 0 },
-        ) as PageInfoResponse;
-
-        console.log('Page Info:', result);
-        const count = result.interactiveElements?.length ?? 0;
-        showToast(t('toastFoundElements', String(count)), 'success');
-
-        await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
-        showToast(t('toastPageInfoCopied'), 'success');
-      } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : t('toastUnknownError');
-        showToast(msg, 'error');
-      }
-    });
-  }
-
-  // Recheck button (retries the native host right away, e.g. after
-  // running the installer)
-  const btnTestConnection = document.getElementById('btn-test-connection');
-  if (btnTestConnection) {
-    btnTestConnection.addEventListener('click', () => {
-      void refreshStatus(os, true);
-    });
-  }
-
-  // Copy the setup command
-  const btnCopyCommand = document.getElementById('btn-copy-command');
-  if (btnCopyCommand) {
-    btnCopyCommand.addEventListener('click', async () => {
-      const command = document.getElementById('setup-command-text')?.textContent ?? '';
-      try {
-        await navigator.clipboard.writeText(command);
-        showToast(t('toastCopied'), 'success');
-      } catch {
-        showToast(t('toastCopyFailed'), 'error');
-      }
-    });
-  }
+  if (currentTab) showCurrentTab(currentTab);
+  setupScreenshotButton();
+  if (currentTab) setupPageInfoButton(currentTab);
+  // Recheck button: retries the native host right away (e.g. after running
+  // the installer).
+  document.getElementById('btn-test-connection')?.addEventListener('click', () => {
+    void refreshStatus(os, true);
+  });
+  setupCopyCommandButton();
 
   void refreshStatus(os, false);
 

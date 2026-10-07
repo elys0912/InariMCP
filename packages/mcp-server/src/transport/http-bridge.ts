@@ -65,16 +65,15 @@
 
 import * as http from 'node:http';
 import * as crypto from 'node:crypto';
-import * as fs from 'node:fs';
 import * as net from 'node:net';
-import * as path from 'node:path';
 import { ENV_DEFAULTS, isRecord } from '@kitsune-mcp/shared';
 import { runWithCallSignal, type BrowserConnectionManager } from '../connection/manager.js';
-import { getScreenshotsDir, listScreenshots } from '../utils/screenshot.js';
+import { listScreenshotEntries } from '../utils/screenshot.js';
 import { callSchemaFor, callableToolNames, describeTool } from '../tools/operations.js';
 import { createToolHandler } from '../tools/handlers.js';
 import { answerFromElicitation, askBrowser } from '../tools/approval-flow.js';
-import { RELAY_ID_HEADER, isValidRelayId } from '../utils/endpoint.js';
+import { MAX_REQUEST_BODY_BYTES, RELAY_ID_HEADER, isValidRelayId } from '../utils/endpoint.js';
+import { errorMessage } from '../utils/errors.js';
 import type { DaemonActivity } from '../daemon/activity.js';
 import {
   AUTH_HEADER,
@@ -93,9 +92,8 @@ import { PACKAGE_VERSION } from '../version.js';
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_BODY_BYTES = 1_048_576; // 1 MB — generous for any JSON payload
 /** How much of an oversized body is read (and dropped) so the 413 gets through. */
-const MAX_DRAIN_BYTES = 16 * MAX_BODY_BYTES;
+const MAX_DRAIN_BYTES = 16 * MAX_REQUEST_BODY_BYTES;
 /** Upper bound of remembered nonces (far above any real request rate). */
 const MAX_REMEMBERED_NONCES = 100_000;
 /**
@@ -269,7 +267,7 @@ export class BodyTooLargeError extends Error {
 }
 
 /**
- * Read the request body (at most MAX_BODY_BYTES).
+ * Read the request body (at most MAX_REQUEST_BODY_BYTES).
  *
  * On overflow the rest of the body is read and discarded, and the promise
  * rejects with BodyTooLargeError only once the client has finished sending:
@@ -286,7 +284,7 @@ function readBody(req: http.IncomingMessage, timeoutMs: number): Promise<Buffer>
     const chunks: Buffer[] = [];
     let totalLength = 0;
     const declared = Number(req.headers['content-length']);
-    let overflow = Number.isFinite(declared) && declared > MAX_BODY_BYTES;
+    let overflow = Number.isFinite(declared) && declared > MAX_REQUEST_BODY_BYTES;
 
     req.on('data', (chunk: Buffer) => {
       totalLength += chunk.length;
@@ -294,7 +292,7 @@ function readBody(req: http.IncomingMessage, timeoutMs: number): Promise<Buffer>
         if (totalLength > MAX_DRAIN_BYTES) req.destroy();
         return;
       }
-      if (totalLength > MAX_BODY_BYTES) {
+      if (totalLength > MAX_REQUEST_BODY_BYTES) {
         overflow = true;
         chunks.length = 0;
         return;
@@ -395,7 +393,12 @@ interface BridgeContext {
   stopping: Promise<Record<string, unknown>> | undefined;
   /** Every tool, deprecated names included (see header comment: FOX_CAPS is applied by each relay). */
   readonly registeredTools: ReadonlySet<string>;
-  readonly options: HttpBridgeOptions;
+  /** HttpBridgeOptions.isShuttingDown (signal, idle). */
+  readonly isShuttingDown: () => boolean;
+  /** Extra fields for GET /daemon/info. */
+  readonly info: () => Record<string, unknown>;
+  /** POST /daemon/shutdown; undefined: the route answers 501. */
+  readonly shutdown: ShutdownHooks | undefined;
 }
 
 function createContext(options: HttpBridgeOptions): BridgeContext {
@@ -413,23 +416,21 @@ function createContext(options: HttpBridgeOptions): BridgeContext {
     startTime: Date.now(),
     stopping: undefined,
     registeredTools: callableToolNames(),
-    options,
+    isShuttingDown: options.isShuttingDown ?? (() => false),
+    info: options.info ?? (() => ({})),
+    shutdown: options.shutdown,
   };
   ctx.ready.then(() => { ctx.isReady = true; }, () => { /* the daemon exits on failure */ });
   return ctx;
 }
 
 function shuttingDown(ctx: BridgeContext): boolean {
-  return ctx.stopping !== undefined || ctx.options.isShuttingDown?.() === true;
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return ctx.stopping !== undefined || ctx.isShuttingDown();
 }
 
 /** The tool did not run: the daemon could not start (ready rejected). */
 function notStarted(err: unknown): string {
-  return `KitsuneMCP daemon could not start: ${errorText(err)}`;
+  return `KitsuneMCP daemon could not start: ${errorMessage(err)}`;
 }
 
 interface Caller {
@@ -520,22 +521,14 @@ function healthAnswer(ctx: BridgeContext, req: http.IncomingMessage): Record<str
   };
 }
 
+/** GET /screenshots: each file is stat()ed once (listScreenshotEntries). */
 function screenshotEntries(): Record<string, unknown>[] {
-  const dir = getScreenshotsDir();
-  return listScreenshots().map((name) => {
-    const fullPath = path.join(dir, name);
-    try {
-      const stat = fs.statSync(fullPath);
-      return {
-        name,
-        path: fullPath,
-        size: stat.size,
-        created: new Date(stat.birthtimeMs).toISOString(),
-      };
-    } catch {
-      return { name, path: fullPath, size: 0, created: '' };
-    }
-  });
+  return listScreenshotEntries().map((e) => ({
+    name: e.name,
+    path: e.path,
+    size: e.size,
+    created: new Date(e.birthtimeMs).toISOString(),
+  }));
 }
 
 function handleGet(ctx: BridgeContext, pathname: string, req: http.IncomingMessage, reply: Responder): void {
@@ -557,7 +550,7 @@ function handleGet(ctx: BridgeContext, pathname: string, req: http.IncomingMessa
       protocol: DAEMON_PROTOCOL_VERSION,
       ready: ctx.isReady,
       relays: ctx.activity?.liveRelayCount() ?? 0,
-      ...(ctx.options.info?.() ?? {}),
+      ...ctx.info(),
     });
     return;
   }
@@ -624,11 +617,11 @@ function handlePost(
     })
     .catch((err: unknown) => {
       if (err instanceof BodyTooLargeError) {
-        reply.error(413, `Request body too large (limit ${MAX_BODY_BYTES} bytes)`);
+        reply.error(413, `Request body too large (limit ${MAX_REQUEST_BODY_BYTES} bytes)`);
         return;
       }
       if (res.destroyed) return; // nobody left to answer
-      reply.error(500, `Internal error: ${errorText(err)}`);
+      reply.error(500, `Internal error: ${errorMessage(err)}`);
     });
 }
 
@@ -665,18 +658,43 @@ function routePost(
 }
 
 /**
- * Run `work` once the daemon is ready, as an in-flight call (idle
- * tracking), cancelled when the client hangs up. `failure` starts the 500
- * message when `work` throws.
+ * Write the answer of a call that ran. `answer` may throw (a result
+ * JSON.stringify cannot encode): that is logged and answered 500 instead of
+ * leaving the request open as an unhandled rejection.
+ */
+function sendAnswer<T>(res: http.ServerResponse, reply: Responder, answer: (result: T) => void, result: T): void {
+  try {
+    answer(result);
+  } catch (err: unknown) {
+    process.stderr.write(`[KitsuneMCP] HTTP answer could not be written: ${errorMessage(err)}\n`);
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
+    reply.error(500, `Internal error: the answer could not be written (${errorMessage(err)})`);
+  }
+}
+
+/** What runTrackedCall runs, and how it answers. */
+interface TrackedCall<T> {
+  /** The call itself; runs once the daemon is ready. */
+  work: () => Promise<T>;
+  /** Writes the answer from the result of `work`. */
+  answer: (result: T) => void;
+  /** Start of the 500 message when `work` throws. */
+  failure: string;
+}
+
+/**
+ * Run `call.work` once the daemon is ready, as an in-flight call (idle
+ * tracking), cancelled when the client hangs up.
  */
 function runTrackedCall<T>(
   ctx: BridgeContext,
   caller: Caller,
   res: http.ServerResponse,
   reply: Responder,
-  work: () => Promise<T>,
-  answer: (result: T) => void,
-  failure: string,
+  { work, answer, failure }: TrackedCall<T>,
 ): void {
   const abort = abortOnHangUp(res);
   ctx.activity?.beginCall();
@@ -684,8 +702,8 @@ function runTrackedCall<T>(
     .then(
       () => runWithCallSignal(abort.signal, work)
         .then(
-          answer,
-          (err: unknown) => reply.error(500, `${failure}: ${errorText(err)}`),
+          (result) => sendAnswer(res, reply, answer, result),
+          (err: unknown) => reply.error(500, `${failure}: ${errorMessage(err)}`),
         ),
       (err: unknown) => reply.error(500, notStarted(err)),
     )
@@ -766,15 +784,11 @@ function handleToolCall(
     typeof data['approvalToken'] === 'string' ? data['approvalToken'] : undefined;
 
   const handler = createToolHandler(toolName, caller.transport);
-  runTrackedCall(
-    ctx,
-    caller,
-    res,
-    reply,
-    () => handler(args, { approvalToken }),
-    (result) => reply.json(200, { success: result.isError !== true, result }),
-    'Tool execution failed',
-  );
+  runTrackedCall(ctx, caller, res, reply, {
+    work: () => handler(args, { approvalToken }),
+    answer: (result) => reply.json(200, { success: result.isError !== true, result }),
+    failure: 'Tool execution failed',
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -811,16 +825,14 @@ function handleApproval(
     return;
   }
 
-  // The relay gave up waiting (session cancelled the call): withdraw the popup question.
-  runTrackedCall(
-    ctx,
-    caller,
-    res,
-    reply,
-    () => askBrowser(requestId, ctx.connectionManager, caller.transport),
-    (answer) => reply.json(200, { ...answer }),
-    'Approval request failed',
-  );
+  // Ask in the Extension's popup. When the client hangs up (the session
+  // cancelled the call and the relay gave up waiting), runTrackedCall
+  // aborts the call, and the popup question is withdrawn.
+  runTrackedCall(ctx, caller, res, reply, {
+    work: () => askBrowser(requestId, ctx.connectionManager, caller.transport),
+    answer: (answer) => reply.json(200, { ...answer }),
+    failure: 'Approval request failed',
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -840,7 +852,7 @@ function handleShutdown(
     reply.error(403, 'POST /daemon/shutdown requires a signed request (X-API-Key is not accepted here)');
     return;
   }
-  const hooks = ctx.options.shutdown;
+  const hooks = ctx.shutdown;
   if (hooks === undefined) {
     reply.error(501, 'This daemon cannot be stopped over HTTP');
     return;
@@ -863,7 +875,7 @@ function handleShutdown(
     // Exit anyway: the shutdown may have stopped halfway (browsers closed,
     // calls refused), and a daemon left like that would refuse every call.
     (err: unknown) => answerThenExit(() => {
-      reply.error(500, `Shutdown failed: ${errorText(err)} (the daemon exits anyway)`);
+      reply.error(500, `Shutdown failed: ${errorMessage(err)} (the daemon exits anyway)`);
     }),
   );
 }
@@ -914,7 +926,7 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
       route(ctx, req, res, reply);
     } catch (err: unknown) {
       // A bug in a route must cost one request, not the daemon.
-      process.stderr.write(`[KitsuneMCP] HTTP handler error: ${errorText(err)}\n`);
+      process.stderr.write(`[KitsuneMCP] HTTP handler error: ${errorMessage(err)}\n`);
       reply.error(500, 'Internal error');
     }
   });
