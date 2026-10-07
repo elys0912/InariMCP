@@ -4,7 +4,7 @@
 
 User-facing changes of KitsuneMCP, newest first. Commit hashes are given in parentheses.
 
-## Unreleased
+## 0.2.0 (2026-10-07)
 
 Changes since 0.1.4. Read **Breaking** before updating, and follow [Update](../README.md#update) in the README.
 
