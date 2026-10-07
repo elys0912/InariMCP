@@ -2,8 +2,12 @@
  * Headless backend actions against a real headless Firefox (Playwright).
  * Skipped as a whole when Firefox cannot be launched.
  */
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HeadlessBrowser } from '../src/headless/backend.js';
+import { PASSWORD_REFUSAL } from '../src/safety/password-guard.js';
 
 type Result = Record<string, unknown>;
 
@@ -39,6 +43,13 @@ function real(name: string, fn: () => Promise<void>, timeout = 30_000): void {
     if (!available) ctx.skip();
     await fn();
   }, timeout);
+}
+
+/** `v`, asserted to be defined (in place of the non-null assertion `!`). */
+function defined<T>(v: T | undefined): T {
+  expect(v).toBeDefined();
+  if (v === undefined) throw new Error('expected a value');
+  return v;
 }
 
 describe('snapshot', () => {
@@ -306,6 +317,72 @@ describe('history and waits (H-13)', () => {
   });
 });
 
+describe('other page actions', () => {
+  real('hover reaches the element (mouseover fires)', async () => {
+    await load('<button id="b" onmouseover="document.title = \'over\'">x</button>');
+    expect((await browser.execute('hover', undefined, { selector: '#b' }))['success']).toBe(true);
+    expect((await browser.execute('get_page_info', undefined, {}))['title']).toBe('over');
+  });
+
+  real('inject_observer records mutations and remove_observer flushes them', async () => {
+    await load('<div id="box"></div>');
+    const injected = await browser.execute('inject_observer', undefined,
+      { selector: '#box', observeAttributes: false, observeChildList: true, observeSubtree: false });
+    expect(injected).toMatchObject({ success: true });
+    expect(String(injected['message'])).toContain('DIV');
+    await browser.execute('execute_script', undefined, { script: 'document.getElementById("box").append("a", "b"); 1' });
+    const removed = await browser.execute('remove_observer', undefined, {});
+    expect(removed).toMatchObject({ success: true, disconnected: true });
+    expect(removed['mutationsFlushed']).toBeGreaterThan(0);
+  });
+
+  real('solve_captcha detects a widget and reports that a human is needed', async () => {
+    await load('<div class="g-recaptcha"></div><textarea name="g-recaptcha-response"></textarea>');
+    const detected = await browser.execute('solve_captcha', undefined, { detectOnly: true });
+    expect(detected).toMatchObject({ success: true, present: true, widgets: [{ type: 'recaptcha', solved: false }] });
+    const solve = await browser.execute('solve_captcha', undefined, {});
+    expect(solve).toMatchObject({ success: false, present: true, needs_human: true });
+    await load('<p>none</p>');
+    expect(await browser.execute('solve_captcha', undefined, { detectOnly: true })).toMatchObject({ present: false, widgets: [] });
+  });
+
+  real('focus_tab makes the tab active and names it (H-23)', async () => {
+    await load('<p>first</p>');
+    const tabs = await browser.execute('get_tabs', undefined, {});
+    const first = defined((tabs['tabs'] as Array<{ id: number; active: boolean }>).find((t) => t.active)).id;
+    const created = await browser.execute('create_tab', undefined, NEW_BLANK_TAB);
+    const other = created['tabId'] as number;
+    const focused = await browser.execute('focus_tab', first, {});
+    expect(focused).toMatchObject({ success: true, tabId: first });
+    expect(String(focused['url'])).toContain('data:text/html');
+    const after = await browser.execute('get_tabs', undefined, {});
+    expect((after['tabs'] as Array<{ id: number; active: boolean }>).find((t) => t.active)?.id).toBe(first);
+    expect((await browser.execute('close_tab', other, {}))['success']).toBe(true);
+  });
+});
+
+describe('screenshot', () => {
+  let dir = '';
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-headless-shot-'));
+    vi.stubEnv('FOX_SCREENSHOTS_DIR', dir);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  real('keeps only the file name of a path, and names a file when none is given', async () => {
+    await load('<p>x</p>');
+    const named = await browser.execute('screenshot', undefined, { filename: `..${path.sep}..${path.sep}escape.png` });
+    expect(named).toMatchObject({ success: true, filename: 'escape.png', imagePath: path.join(dir, 'escape.png') });
+    expect(fs.existsSync(path.join(dir, 'escape.png'))).toBe(true);
+    const unnamed = await browser.execute('screenshot', undefined, {});
+    expect(String(unnamed['filename'])).toMatch(/^screenshot_\d+\.png$/);
+    expect(path.dirname(String(unnamed['imagePath']))).toBe(dir);
+  });
+});
+
 describe('direct execute() calls the tool schemas would refuse (H-24, H-25)', () => {
   real('close_tab without tabId closes nothing; navigate with an empty url fails', async () => {
     await load('<p>x</p>');
@@ -463,6 +540,61 @@ describe('warnings and timeouts', () => {
 // Without a selector the guard follows the focus from the top document's
 // activeElement (the <iframe> / shadow host) to the field inside it
 // (headless/focus.ts). The Extension path still has the old limit.
+// Moved from password-guard.test.ts (H-29): the guard where the element is
+// resolved by the server rather than by content.ts.
+describe('type / set_value: password guard on the element written to', () => {
+  const script = async (src: string): Promise<unknown> =>
+    (await browser.execute('execute_script', undefined, { script: src }))['result'];
+
+  real('refuses a password field that only appears while the fill waits for it', async () => {
+    await load(
+      '<div id="host"></div>' +
+      '<script>setTimeout(() => { document.getElementById("host").innerHTML = ' +
+      '\'<input id="pw" type="password">\'; }, 300)</script>',
+    );
+    const r = await browser.execute('type', undefined, { selector: '#pw', text: 'secret', clear: false });
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain(PASSWORD_REFUSAL);
+    expect(await script('document.getElementById("pw").value')).toBe('');
+  });
+
+  real('fills a late non-password field', async () => {
+    await load(
+      '<div id="host"></div>' +
+      '<script>setTimeout(() => { document.getElementById("host").innerHTML = ' +
+      '\'<input id="user" type="text">\'; }, 300)</script>',
+    );
+    expect((await browser.execute('type', undefined, { selector: '#user', text: 'alice', clear: false }))['success']).toBe(true);
+    expect(await script('document.getElementById("user").value')).toBe('alice');
+  });
+
+  real('refuses a <label for> that points at a password field, for type and set_value', async () => {
+    await load('<label for="pw">Password</label><input id="pw" type="password">');
+    const typed = await browser.execute('type', undefined, { selector: 'label[for=pw]', text: 'secret', clear: false });
+    expect(String(typed['error'])).toContain(PASSWORD_REFUSAL);
+    const set = await browser.execute('set_value', undefined, { selector: '#pw', value: 'secret' });
+    expect(String(set['error'])).toContain(PASSWORD_REFUSAL);
+    expect(await script('document.getElementById("pw").value')).toBe('');
+  });
+
+  real('allows a password field when the command carries allowPassword', async () => {
+    await load('<input id="pw" type="password">');
+    const r = await browser.execute('type', undefined, {
+      selector: '#pw', text: 'secret', clear: false, allowPassword: true,
+    });
+    expect(r['success']).toBe(true);
+    expect(await script('document.getElementById("pw").value')).toBe('secret');
+  });
+
+  real('refuses the focused password field when no selector is given', async () => {
+    await load('<input id="pw" type="password">');
+    await script('document.getElementById("pw").focus()');
+    const r = await browser.execute('type', undefined, { text: 'secret', clear: false });
+    expect(r['success']).toBe(false);
+    expect(String(r['error'])).toContain(PASSWORD_REFUSAL);
+  });
+});
+
 describe('type without selector: password guard follows the focus (WP30)', () => {
   const BOX = 'position:absolute;left:0;top:0;width:300px;height:60px;border:0;margin:0';
   const FIELD = (type: string): string => `<input type=${type} style="${BOX}">`;
@@ -720,9 +852,9 @@ describe('waits and page scripts end on their own (R-1, L-1, R-8)', () => {
       }, ctx(500));
     expect(r['success']).toBe(true);
     const steps = r['steps'] as Array<{ label: string; error: string | null }>;
-    expect(steps[0]!.error).toBeNull();
+    expect(defined(steps[0]).error).toBeNull();
     expect(steps[1]).toMatchObject({ label: 'hang' });
-    expect(String(steps[1]!.error)).toContain('did not finish');
+    expect(String(defined(steps[1]).error)).toContain('did not finish');
   });
 });
 
@@ -736,8 +868,7 @@ describe('element waits and create_tab (R-3, R-2)', () => {
   }, 40_000);
 
   real('a create_tab whose page load fails leaves no page behind', async () => {
-    const pages = (): number =>
-      (browser as unknown as { _context: { pages(): unknown[] } })._context.pages().length;
+    const pages = (): number => browser.contextPageCount();
     const tabs = async (): Promise<number> =>
       (await browser.execute('get_tabs', undefined, {}))['totalTabs'] as number;
     const before = { pages: pages(), tabs: await tabs() };
@@ -752,7 +883,7 @@ describe('results name the tab and its URL (O-1)', () => {
   real('a click that navigates reports the URL it ended on and the tab id', async () => {
     await load('<a id="a" href="#next">next</a>');
     const tabs = await browser.execute('get_tabs', undefined, {});
-    const active = (tabs['tabs'] as Array<{ id: number; active: boolean }>).find((t) => t.active)!.id;
+    const active = defined((tabs['tabs'] as Array<{ id: number; active: boolean }>).find((t) => t.active)).id;
     const click = await browser.execute('click', undefined, { selector: '#a' });
     expect(click['success']).toBe(true);
     expect(String(click['url'])).toMatch(/#next$/);
@@ -768,7 +899,7 @@ describe('results name the tab and its URL (O-1)', () => {
     const created = await browser.execute('create_tab', undefined, NEW_BLANK_TAB);
     const other = created['tabId'] as number;
     const tabs = await browser.execute('get_tabs', undefined, {});
-    const first = (tabs['tabs'] as Array<{ id: number }>).find((t) => t.id !== other)!.id;
+    const first = defined((tabs['tabs'] as Array<{ id: number }>).find((t) => t.id !== other)).id;
     const info = await browser.execute('get_page_info', first, {});
     expect(info).toMatchObject({ success: true, tabId: first });
     expect(String(info['url'])).toContain('data:text/html');

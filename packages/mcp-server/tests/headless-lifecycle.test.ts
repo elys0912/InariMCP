@@ -31,6 +31,44 @@ describe('playwright stays optional at load time', () => {
   });
 });
 
+/**
+ * Actions answered without touching the page, on a started browser whose
+ * playwright is the fake above (no Firefox needed).
+ */
+describe('actions without page work', () => {
+  beforeEach(() => { launch.mockReset(); });
+
+  async function started(): Promise<HeadlessBrowser> {
+    fakeBrowser();
+    const browser = new HeadlessBrowser();
+    await browser.start();
+    return browser;
+  }
+
+  it('request_approval says no human is present', async () => {
+    const r = await (await started()).execute('request_approval', undefined, {});
+    expect(r).toMatchObject({ success: false, approved: false });
+    expect(String(r['error'])).toContain('No human is present');
+  });
+
+  it('container actions are not supported', async () => {
+    const browser = await started();
+    for (const action of ['list_containers', 'open_in_container']) {
+      const r = await browser.execute(action, undefined, {});
+      expect(r['success'], action).toBe(false);
+      expect(String(r['error']), action).toContain('Container actions are not supported');
+    }
+  });
+
+  it('an unsupported action and an unknown action name are refused by name', async () => {
+    const browser = await started();
+    for (const action of ['get_console_logs', 'no_such_action']) {
+      const r = await browser.execute(action, undefined, {});
+      expect(r).toMatchObject({ success: false, error: `Unsupported headless action: ${action}` });
+    }
+  });
+});
+
 describe('HeadlessBrowser lifecycle', () => {
   beforeEach(() => { launch.mockReset(); });
   afterEach(() => { vi.unstubAllEnvs(); });
@@ -85,6 +123,20 @@ describe('HeadlessBrowser lifecycle', () => {
     await browser.stop();
     const result = await browser.execute('get_page_info', undefined, {});
     expect(result['success']).toBe(false);
+    expect(String(result['error'])).toContain('not started');
+  });
+
+  it('names the missing optional dependency when playwright cannot be loaded', async () => {
+    vi.resetModules();
+    vi.doMock('playwright', () => { throw new Error('Cannot find package playwright'); });
+    try {
+      const { HeadlessBrowser: Fresh } = await import('../src/headless/backend.js');
+      await expect(new Fresh().start()).rejects.toThrow('optional dependency playwright');
+    } finally {
+      // Back to the fake of this file (not unmocked: the real one would launch Firefox).
+      vi.doMock('playwright', () => ({ firefox: { launch } }));
+      vi.resetModules();
+    }
   });
 
   it('calling stop() twice is harmless', async () => {
