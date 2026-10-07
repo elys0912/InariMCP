@@ -265,10 +265,10 @@ describe('E-21 get_page_info fails like the other content script tools', () => {
 
   it('no content script: the same explanation as get_elements', async () => {
     useFakeBrowser(failingSend('Could not establish connection. Receiving end does not exist.'));
-    const { getPageInfo, getElements } = await import('../../packages/extension/src/background/page-actions.ts');
+    const { getPageInfo } = await import('../../packages/extension/src/background/page-actions.ts');
     const pageInfo = await getPageInfo(undefined);
     expect(pageInfo).toMatchObject({ success: false, error: expect.stringMatching(/^KitsuneMCP cannot reach this page/) });
-    expect(pageInfo).toEqual(await getElements(undefined, {}));
+    expect(pageInfo).toEqual(await handleCommand({ action: 'get_elements' }, 'host'));
   });
 
   it('any other failure keeps its own text', async () => {

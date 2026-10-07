@@ -48,16 +48,7 @@ import { trackHumanWait, solveCaptcha, cancelHumanWait } from "./human-wait";
 import { startLoggingOnTab, stopLoggingOnTab, getLogsOfTab, clearLogsOfTab } from "./logging";
 import { hostStatus, recheckHost } from "./native-connection";
 import { navigateTo, navigateNewTab, navigateHistory } from "./navigation";
-import {
-  performClick,
-  performType,
-  performScroll,
-  getPageInfo,
-  getElements,
-  executeScript,
-  highlightElement,
-  waitForElement,
-} from "./page-actions";
+import { getPageInfo, executeScript } from "./page-actions";
 import { refreshTab, reloadAllTabs, reloadTabsByUrl } from "./reload";
 import { takeScreenshot, screenshotAllTabs } from "./screenshot";
 import { refreshSetupState } from "./setup-badge";
@@ -171,15 +162,15 @@ async function status(c: ActionContext): Promise<CommandResult> {
 const ACTIONS = {
   // --- Page interaction ---
   screenshot: { scope: "tab", protectedCheck: "upfront", handler: (c) => takeScreenshot(c.tabId, optionsOf<ScreenshotOptions>(c)) },
-  click: { scope: "tab", protectedCheck: "upfront", handler: (c) => performClick(c.tabId, c.data) },
-  type: { scope: "tab", protectedCheck: "upfront", handler: (c) => performType(c.tabId, c.data) },
-  scroll: { scope: "tab", protectedCheck: "upfront", handler: (c) => performScroll(c.tabId, c.data) },
+  click: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("click") },
+  type: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("type") },
+  scroll: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("scroll") },
   navigate: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateTo(c.tabId, optionsOf<{ url: string }>(c)) },
   getPageInfo: { scope: "tab", protectedCheck: "upfront", handler: (c) => getPageInfo(c.tabId) },
-  getElements: { scope: "tab", protectedCheck: "upfront", handler: (c) => getElements(c.tabId, c.data) },
+  getElements: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("getElements") },
   executeScript: { scope: "tab", protectedCheck: "upfront", handler: (c) => executeScript(c.tabId, optionsOf<{ script: string }>(c)) },
-  highlight: { scope: "tab", protectedCheck: "upfront", handler: (c) => highlightElement(c.tabId, c.data) },
-  waitForElement: { scope: "tab", protectedCheck: "upfront", handler: (c) => waitForElement(c.tabId, c.data) },
+  highlight: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("highlight") },
+  waitForElement: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("waitForElement") },
 
   // --- Tab management ---
   getTabs: { scope: "self", protectedCheck: "none", handler: (c) => getAllTabs(optionsOf<GetAllTabsOptions>(c), c.scope) },
