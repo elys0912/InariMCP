@@ -254,6 +254,30 @@ describe('WP38 no active tab: a failure result, not a TypeError', () => {
   });
 });
 
+describe('E-21 get_page_info fails like the other content script tools', () => {
+  const pageTab = { id: 1, url: 'https://app.example.test/', title: 'App' };
+  const failingSend = (message: string) => ({
+    tabs: {
+      query: async () => [pageTab],
+      sendMessage: async () => { throw new Error(message); },
+    },
+  });
+
+  it('no content script: the same explanation as get_elements', async () => {
+    useFakeBrowser(failingSend('Could not establish connection. Receiving end does not exist.'));
+    const { getPageInfo, getElements } = await import('../../packages/extension/src/background/page-actions.ts');
+    const pageInfo = await getPageInfo(undefined);
+    expect(pageInfo).toMatchObject({ success: false, error: expect.stringMatching(/^KitsuneMCP cannot reach this page/) });
+    expect(pageInfo).toEqual(await getElements(undefined, {}));
+  });
+
+  it('any other failure keeps its own text', async () => {
+    useFakeBrowser(failingSend('Message manager disconnected'));
+    const { getPageInfo } = await import('../../packages/extension/src/background/page-actions.ts');
+    expect(await getPageInfo(undefined)).toEqual({ success: false, error: 'Message manager disconnected' });
+  });
+});
+
 describe('WP30 go_back / go_forward wait for the load like navigate', () => {
   it('returns the URL after the history load completes, not after a fixed delay', async () => {
     vi.useFakeTimers();

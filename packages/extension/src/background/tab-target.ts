@@ -46,12 +46,20 @@ export async function sendToContentScript(
     const result = (await browser.tabs.sendMessage(tab.id, message, { frameId })) as Record<string, unknown>;
     return { success: true, ...result };
   } catch (error) {
-    const msg = (error as Error).message;
-    return {
-      success: false,
-      error: NO_CONTENT_SCRIPT.test(msg) ? NO_CONTENT_SCRIPT_MESSAGE : msg,
-    };
+    return contentScriptFailure(error);
   }
+}
+
+/**
+ * Failure result of a message to a content script: when no content script
+ * answered, an explanation of why instead of Firefox's own error text.
+ */
+export function contentScriptFailure(error: unknown): CommandResult {
+  const msg = (error as Error).message;
+  return {
+    success: false,
+    error: NO_CONTENT_SCRIPT.test(msg) ? NO_CONTENT_SCRIPT_MESSAGE : msg,
+  };
 }
 
 /** tabs.sendMessage error when the tab has no content script to answer. */

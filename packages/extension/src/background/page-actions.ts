@@ -3,7 +3,7 @@
 
 import type { ContentRequest } from "../content/types";
 import { TOP_FRAME_ID } from "./constants";
-import { sendToContentScript, resolveTab, noTargetTab } from "./tab-target";
+import { sendToContentScript, resolveTab, noTargetTab, contentScriptFailure } from "./tab-target";
 import type { CommandResult } from "./types";
 
 export async function performClick(
@@ -44,7 +44,8 @@ export async function getPageInfo(
       ...result,
     };
   } catch (error) {
-    return { success: false, error: (error as Error).message };
+    // E-21: the same failure text as the tools sent through sendToContentScript.
+    return contentScriptFailure(error);
   }
 }
 
