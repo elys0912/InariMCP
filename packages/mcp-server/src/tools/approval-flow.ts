@@ -19,12 +19,14 @@
 import type { ApprovalPrompt, BrowserResponse } from '@kitsune-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
 import { getApprovalStore, isElicitationApprovalEnabled } from '../safety/approval.js';
-import type { ApprovalRequest, ApprovalStore } from '../safety/approval.js';
+import type { ApprovalChannel, ApprovalRequest, ApprovalStore } from '../safety/approval.js';
 import { getSafetyGuard } from '../safety/guard.js';
 import { audit } from '../safety/audit.js';
 
 /** How long the Extension's popup waits for the human (ms). */
 export const BROWSER_APPROVAL_WAIT_MS = 60_000;
+/** The popup gets at least this long, even for a request about to expire (ms). */
+const MIN_POPUP_TIMEOUT_MS = 1_000;
 
 export type ApprovalReason =
   | 'approved'
@@ -48,7 +50,7 @@ export interface ApprovalReply {
 function auditDecision(
   request: ApprovalRequest,
   decision: 'approval_granted' | 'approval_denied',
-  via: string,
+  via: ApprovalChannel,
   transport: string | undefined,
 ): void {
   if (!getSafetyGuard().config.auditLog) return;
@@ -73,7 +75,7 @@ function unknownRequest(): ApprovalReply {
 function grant(
   store: ApprovalStore,
   request: ApprovalRequest,
-  via: 'elicitation' | 'browser',
+  via: ApprovalChannel,
   transport: string | undefined,
 ): ApprovalReply {
   const issued = store.issueToken(request.id, via);
@@ -123,7 +125,7 @@ export function buildApprovalPrompt(request: ApprovalRequest, now = Date.now()):
     matchedPattern: request.matchedPattern,
     summary: request.summary,
     expiresAt: request.expiresAt,
-    timeout: Math.max(1_000, Math.min(BROWSER_APPROVAL_WAIT_MS, request.expiresAt - now)),
+    timeout: Math.max(MIN_POPUP_TIMEOUT_MS, Math.min(BROWSER_APPROVAL_WAIT_MS, request.expiresAt - now)),
   };
 }
 

@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { SafetyGuard, type SafetyDenial } from '../src/safety/guard.js';
+import { LAYER, SafetyGuard, type SafetyDenial } from '../src/safety/guard.js';
 import { DEFAULT_CONFIG, getAuditLogPath, type SafetyConfig } from '../src/safety/config.js';
 import { grantCoversDenial, hashArgs, type ApprovalGrant } from '../src/safety/approval.js';
 
@@ -99,6 +99,7 @@ describe('grantCoversDenial', () => {
   const denial: SafetyDenial = {
     success: false,
     safetyDecision: 'confirmation_required',
+    layer: LAYER.protected,
     error: 'x',
     confirmationRequired: true,
     elicitation,

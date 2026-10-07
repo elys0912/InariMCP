@@ -7,12 +7,17 @@ import { grantCoversDenial } from './approval.js';
 import type { ApprovalGrant } from './approval.js';
 import { compileUrlPatterns, normalizeUrl } from './url-pattern.js';
 import type { PatternListName, UrlPattern } from './url-pattern.js';
-import { OBSERVE_TOOLS, SCRIPT_TOOLS } from '../tools/classification.js';
-import { navigateGoesToUrl } from '../tools/schemas.js';
+import {
+  OBSERVE_TOOLS,
+  SCRIPT_TOOLS,
+  TAB_INDEPENDENT_TOOLS,
+  isOperationIn,
+} from '../tools/classification.js';
+import { SAFETY_STATUS_TOOL, navigateGoesToUrl } from '../tools/schemas.js';
 import { isRecord } from '@kitsune-mcp/shared';
 
 // Derived from the tool schemas; re-exported for the existing importers.
-export { OBSERVE_TOOLS, SCRIPT_TOOLS };
+export { OBSERVE_TOOLS, SCRIPT_TOOLS, TAB_INDEPENDENT_TOOLS };
 
 /**
  * The URL a call goes to or opens, or null when it acts on (or reads) a tab
@@ -23,34 +28,44 @@ export { OBSERVE_TOOLS, SCRIPT_TOOLS };
  * for the Extension's own check both decide by this function.
  */
 export function targetUrlOf(toolName: string, args: Record<string, unknown>): string | null {
-  if (toolName === 'fox_wait_for_url') return null;
-  if (toolName === 'fox_navigate' && !navigateGoesToUrl(args['action'])) return null;
+  switch (toolName) {
+    case 'fox_wait_for_url':
+      return null;
+    case 'fox_navigate':
+      if (!navigateGoesToUrl(args['action'])) return null;
+      break;
+    default:
+      break;
+  }
   const url = args['url'];
   return typeof url === 'string' && url !== '' ? url : null;
 }
 
 /** Calls that open a new tab, whose id the result may not report. */
 function opensNewTab(toolName: string | undefined, args: Record<string, unknown>): boolean {
-  return toolName === 'fox_create_tab' || toolName === 'fox_open_in_container' ||
-    (toolName === 'fox_navigate' && args['newTab'] === true);
+  switch (toolName) {
+    case 'fox_create_tab':
+    case 'fox_open_in_container':
+      return true;
+    case 'fox_navigate':
+      return args['newTab'] === true;
+    default:
+      return false;
+  }
 }
 
-/**
- * Tools that do not act on the content of a tab, so the blocked/allowed
- * check of the tab's last-known URL does not apply. fox_navigate with a
- * `url` and fox_close_tab stay usable to leave a tab that ended up on a
- * blocked site. handlers.ts attaches the blocked/allowed rules for the
- * Extension's own check by the same rule.
- */
-export const TAB_INDEPENDENT_TOOLS: ReadonlySet<string> = new Set([
-  'fox_get_tabs',
-  'fox_create_tab',
-  'fox_close_tab',
-  'fox_switch_tab',
-  'fox_list_containers',
-  'fox_open_in_container',
-  'fox_safety_status',
-]);
+/** The layers of the safety model, as reported in `details.layer` of a refusal. */
+export const LAYER = {
+  containerScope: 0,
+  rateLimit: 1,
+  scheme: 2,
+  lists: 3,
+  observe: 4,
+  readOnly: 5,
+  script: 6,
+  protected: 7,
+} as const;
+export type Layer = (typeof LAYER)[keyof typeof LAYER];
 
 /**
  * How a call is named in messages and in the audit log, when that differs
@@ -82,9 +97,30 @@ export type DenialDecision = Exclude<
   'approval_denied' | 'denied' | 'browser_error'
 >;
 
+/**
+ * The layer each refusal belongs to. A config error is in no layer: the
+ * whole policy could not be used, and every tool is refused.
+ */
+export const LAYER_OF: Readonly<Record<DenialDecision, Layer | null>> = {
+  config_error: null,
+  out_of_scope: LAYER.containerScope,
+  rate_limited: LAYER.rateLimit,
+  blocked_scheme: LAYER.scheme,
+  invalid_url: LAYER.scheme,
+  blocked_url: LAYER.lists,
+  not_allowlisted: LAYER.lists,
+  blocked_after_navigation: LAYER.lists,
+  read_only: LAYER.readOnly,
+  scripts_disabled: LAYER.script,
+  // Layer 7, and the Layer 4 exception of a single-tab fox_screenshot.
+  confirmation_required: LAYER.protected,
+};
+
 export interface SafetyDenial {
   success: false;
   safetyDecision: DenialDecision;
+  /** details.layer of the tool result (LAYER_OF). */
+  layer: Layer | null;
   error: string;
   /** The URL the denial is about, when it names one (details.url of the tool result). */
   url?: string;
@@ -146,6 +182,11 @@ export class SafetyGuard {
     this._compilePatterns();
   }
 
+  /** Set when the policy cannot be used: check() then refuses every tool. */
+  get configError(): string | null {
+    return this._configError;
+  }
+
   /**
    * @param grant  A consumed human-approval token for this exact call
    *               (safety/approval.ts). It lifts only a Layer 4/7
@@ -189,7 +230,7 @@ export class SafetyGuard {
 
     // Layer 1: Rate limit, checked last so that only calls that would run
     // count: refused calls and fox_safety_status do not use up the budget.
-    if (denial === null && toolName !== 'fox_safety_status' && !this._withinRateLimit()) {
+    if (denial === null && toolName !== SAFETY_STATUS_TOOL && !this._withinRateLimit()) {
       denial = this._deny(
         'rate_limited',
         `Rate limit exceeded: more than ${this.config.maxActionsPerMinute} actions ` +
@@ -197,7 +238,7 @@ export class SafetyGuard {
       );
     }
 
-    const isObserve = OBSERVE_TOOLS.has(toolName);
+    const isObserve = isOperationIn(OBSERVE_TOOLS, toolName);
     let decision: AuditDecision;
     if (denial !== null) {
       decision = denial.safetyDecision;
@@ -269,7 +310,10 @@ export class SafetyGuard {
     const url = this._reportedUrl(result);
     if (url === null) return;
 
-    const tabId = this._reportedTabId(result) ?? explicitTabId;
+    // A new tab is not the tab the tabId argument names (fox_navigate
+    // newTab with a tabId): only the id the result reports is its own.
+    const reportedTabId = this._reportedTabId(result);
+    const tabId = opensNewTab(toolName, args) ? reportedTabId : reportedTabId ?? explicitTabId;
     if (tabId !== undefined) this._tabUrls.set(tabId, url);
     if (!this._becomesActive(toolName, args, explicitTabId)) return;
 
@@ -347,13 +391,18 @@ export class SafetyGuard {
     args: Record<string, unknown>,
     explicitTabId: number | undefined,
   ): boolean {
-    // fox_switch_tab activates the tab it names.
-    if (toolName === 'fox_switch_tab') return true;
     // A call without tabId acts on the active tab, except a tab opened in the background.
-    if (explicitTabId === undefined) {
-      const inBackground =
-        (toolName === 'fox_create_tab' || toolName === 'fox_open_in_container') && args['active'] === false;
-      return !inBackground;
+    switch (toolName) {
+      case 'fox_switch_tab':
+        // It activates the tab it names.
+        return true;
+      case 'fox_create_tab':
+      case 'fox_open_in_container':
+        if (explicitTabId === undefined) return args['active'] !== false;
+        break;
+      default:
+        if (explicitTabId === undefined) return true;
+        break;
     }
     // A call that names the active tab by its id.
     return explicitTabId === this._activeTabId;
@@ -399,6 +448,7 @@ export class SafetyGuard {
     return {
       success: false,
       safetyDecision: 'confirmation_required',
+      layer: LAYER_OF.confirmation_required,
       confirmationRequired: true,
       elicitation: { protectedUrl, matchedPattern: matched, toolName: shown },
       error:
@@ -462,8 +512,8 @@ export class SafetyGuard {
     args: Record<string, unknown>,
     shown: string,
   ): SafetyDenial | null {
-    const isObserve = OBSERVE_TOOLS.has(toolName);
-    const isScript = SCRIPT_TOOLS.has(toolName);
+    const isObserve = isOperationIn(OBSERVE_TOOLS, toolName);
+    const isScript = isOperationIn(SCRIPT_TOOLS, toolName);
 
     // Layer 0: Container scope (server-side part only).
     // The server cannot see tabs, so the per-tab cookieStoreId check is done
@@ -472,11 +522,7 @@ export class SafetyGuard {
     // backend has no containers at all (headless).
     const containerDenial = checkHeadlessContainerScope(this.config);
     if (containerDenial) {
-      return {
-        success: false,
-        safetyDecision: containerDenial.safetyDecision,
-        error: containerDenial.error,
-      };
+      return this._deny(containerDenial.safetyDecision, containerDenial.error);
     }
 
     // Layer 2-3: URL scheme guard + blocklist/allowlist, on the parsed URL
@@ -506,7 +552,7 @@ export class SafetyGuard {
       if (violation !== null) {
         return this._deny(violation.decision, `URL '${targetUrl}' ${violation.reason}.`, targetUrl);
       }
-    } else if (currentUrl !== null && !TAB_INDEPENDENT_TOOLS.has(toolName)) {
+    } else if (currentUrl !== null && !isOperationIn(TAB_INDEPENDENT_TOOLS, toolName)) {
       // No url argument: the tool acts on (or reads) the tab, whose last
       // known URL may have been reached by a redirect or a click.
       const violation = this._listViolation(currentUrl);
@@ -577,6 +623,7 @@ export class SafetyGuard {
     return {
       success: false,
       safetyDecision: 'confirmation_required',
+      layer: LAYER_OF.confirmation_required,
       confirmationRequired: true,
       elicitation: {
         protectedUrl: checkUrl,
@@ -657,7 +704,13 @@ export class SafetyGuard {
   }
 
   private _deny(decision: DenialDecision, message: string, url?: string): SafetyDenial {
-    return { success: false, safetyDecision: decision, error: message, ...(url !== undefined ? { url } : {}) };
+    return {
+      success: false,
+      safetyDecision: decision,
+      layer: LAYER_OF[decision],
+      error: message,
+      ...(url !== undefined ? { url } : {}),
+    };
   }
 
   private _compilePatterns(): void {

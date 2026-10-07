@@ -34,7 +34,7 @@ import { getConnectionManager, resolveCommandTimeout } from '../../packages/mcp-
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG, type LoadedSafetyConfig } from '../../packages/mcp-server/src/safety/config.js';
 import { callSchemaFor, resolveOperation } from '../../packages/mcp-server/src/tools/operations.js';
-import { LEGACY_REPLACEMENTS } from '../../packages/mcp-server/src/tools/public-tools.js';
+import { LEGACY_REPLACEMENTS, isLegacyOperationName } from '../../packages/mcp-server/src/tools/public-tools.js';
 import { headlessRoute } from '../../packages/mcp-server/src/headless/actions.js';
 
 const UPDATE = process.env['UPDATE_GOLDEN'] === '1';
@@ -415,7 +415,7 @@ describe('public tools (tools/public-tools.ts) give the golden entries of the re
 
   it('every golden case of a replaced name has a public call', () => {
     const replaced = CASES
-      .filter(([, tool]) => LEGACY_REPLACEMENTS[tool] || tool === 'fox_set_value')
+      .filter(([, tool]) => (isLegacyOperationName(tool) && LEGACY_REPLACEMENTS[tool] !== null) || tool === 'fox_set_value')
       .map(([id]) => id);
     expect(Object.keys(PUBLIC_CASES).sort()).toEqual(replaced.sort());
   });

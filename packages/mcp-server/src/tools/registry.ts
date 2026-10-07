@@ -14,10 +14,14 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { TOOL_SCHEMAS } from './schemas.js';
+import type { ZodRawShape } from 'zod';
+import { OPERATION_NAMES, SAFETY_STATUS_TOOL, TOOL_SCHEMAS } from './schemas.js';
+import type { OperationName } from './schemas.js';
 import { toolAnnotations } from './classification.js';
-import { PUBLIC_TOOLS } from './public-tools.js';
+import { PUBLIC_TOOLS, PUBLIC_TOOL_NAMES } from './public-tools.js';
+import type { PublicToolName } from './public-tools.js';
 import { deprecationNote } from './operations.js';
+import { isOneOf } from './one-of.js';
 import { ENV } from '@kitsune-mcp/shared';
 
 /**
@@ -34,12 +38,17 @@ export type ToolCallHandler = (
 // Profile definitions
 // ---------------------------------------------------------------------------
 
+/** The FOX_CAPS profile names (the same with and without `legacy`). */
+export const PROFILE_NAMES = ['core', 'logs', 'script', 'workflow', 'human', 'container', 'wait'] as const;
+export type ProfileName = (typeof PROFILE_NAMES)[number];
+
 /**
  * Named profiles that group tool names, as they were before the WP13
  * consolidation (FOX_CAPS=legacy,<profile>).
  * `fox_safety_status` is always registered regardless of profile.
+ * fox_wait_for_element is in core and in wait, as before WP13.
  */
-const LEGACY_PROFILES: Record<string, string[]> = {
+const LEGACY_PROFILES: Readonly<Record<ProfileName, readonly OperationName[]>> = {
   core: [
     'fox_navigate',
     'fox_click',
@@ -101,7 +110,7 @@ const LEGACY_PROFILES: Record<string, string[]> = {
  * Every public tool is in at least one. `fox_safety_status` is always
  * registered regardless of profile.
  */
-const PROFILES: Record<string, string[]> = {
+const PROFILES: Readonly<Record<ProfileName, readonly PublicToolName[]>> = {
   core: [
     'fox_navigate',
     'fox_click',
@@ -129,7 +138,7 @@ const PROFILES: Record<string, string[]> = {
 };
 
 /** Tool that is always registered regardless of profile (fox_safety_status). */
-export const ALWAYS_REGISTERED = 'fox_safety_status';
+export const ALWAYS_REGISTERED = SAFETY_STATUS_TOOL;
 
 /**
  * FOX_CAPS segment that selects the pre-consolidation tool names (the
@@ -142,10 +151,36 @@ const LEGACY_SEGMENT = 'legacy';
 // Profile resolution
 // ---------------------------------------------------------------------------
 
-interface ToolSet {
-  /** Pre-consolidation names (FOX_CAPS contains `legacy`). */
-  legacy: boolean;
-  names: Set<string>;
+/** Pre-consolidation names (FOX_CAPS contains `legacy`), or the public tools. */
+type ToolSet =
+  | { legacy: true; names: Set<OperationName> }
+  | { legacy: false; names: Set<PublicToolName> };
+
+/**
+ * The tools of the profiles named by `segments` (every tool for none or
+ * `all`), plus fox_safety_status. An unknown profile name is warned about
+ * and ignored.
+ */
+function namesOf<T extends string>(
+  segments: string[],
+  all: readonly T[],
+  profiles: Readonly<Record<ProfileName, readonly T[]>>,
+  alwaysRegistered: T,
+): Set<T> {
+  if (segments.length === 0 || segments.includes('all')) return new Set(all);
+  const names = new Set<T>();
+  for (const segment of segments) {
+    if (isOneOf(PROFILE_NAMES, segment)) {
+      for (const t of profiles[segment]) names.add(t);
+    } else {
+      // Unknown profile name: warn but don't crash
+      process.stderr.write(
+        `[KitsuneMCP] Unknown FOX_CAPS profile: '${segment}' (ignored)\n`,
+      );
+    }
+  }
+  names.add(alwaysRegistered);
+  return names;
 }
 
 /**
@@ -160,36 +195,11 @@ function resolveToolSet(capsEnv: string | undefined): ToolSet {
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
-  const legacy = all.includes(LEGACY_SEGMENT);
   const segments = all.filter((s) => s !== LEGACY_SEGMENT);
-  const catalog = legacy ? TOOL_SCHEMAS : PUBLIC_TOOLS;
-  const profiles = legacy ? LEGACY_PROFILES : PROFILES;
-
-  // No profile or "all" → register everything
-  if (segments.length === 0 || segments.includes('all')) {
-    return { legacy, names: new Set(Object.keys(catalog)) };
+  if (all.includes(LEGACY_SEGMENT)) {
+    return { legacy: true, names: namesOf(segments, OPERATION_NAMES, LEGACY_PROFILES, ALWAYS_REGISTERED) };
   }
-
-  const names = new Set<string>();
-
-  for (const segment of segments) {
-    const profileTools = profiles[segment];
-    if (profileTools) {
-      for (const t of profileTools) {
-        names.add(t);
-      }
-    } else {
-      // Unknown profile name — warn but don't crash
-      process.stderr.write(
-        `[KitsuneMCP] Unknown FOX_CAPS profile: '${segment}' (ignored)\n`,
-      );
-    }
-  }
-
-  // fox_safety_status is always present
-  names.add(ALWAYS_REGISTERED);
-
-  return { legacy, names };
+  return { legacy: false, names: namesOf(segments, PUBLIC_TOOL_NAMES, PROFILES, ALWAYS_REGISTERED) };
 }
 
 // ---------------------------------------------------------------------------
@@ -198,17 +208,16 @@ function resolveToolSet(capsEnv: string | undefined): ToolSet {
 
 interface Registration {
   description: string;
-  inputSchema: Record<string, import('zod').ZodType>;
+  inputSchema: ZodRawShape;
   annotations: Record<string, boolean>;
 }
 
 /** What tools/list shows for a public tool. */
-function publicRegistration(name: string): Registration | null {
+function publicRegistration(name: PublicToolName): Registration {
   const tool = PUBLIC_TOOLS[name];
-  if (!tool) return null;
   return {
     description: tool.description,
-    inputSchema: extractZodShape(tool.listSchema),
+    inputSchema: tool.listSchema.shape,
     // fox_safety_status reads the server's own policy, nothing outside it.
     annotations: name === ALWAYS_REGISTERED
       ? { ...tool.annotations, openWorldHint: false }
@@ -217,13 +226,12 @@ function publicRegistration(name: string): Registration | null {
 }
 
 /** What tools/list shows for a pre-consolidation name (FOX_CAPS=legacy). */
-function legacyRegistration(name: string): Registration | null {
+function legacyRegistration(name: OperationName): Registration {
   const def = TOOL_SCHEMAS[name];
-  if (!def) return null;
   const note = deprecationNote(name);
   return {
     description: note === null ? def.description : `[Deprecated: ${note}] ${def.description}`,
-    inputSchema: extractZodShape(def.inputSchema),
+    inputSchema: def.inputSchema.shape,
     annotations: { ...toolAnnotations(def) },
   };
 }
@@ -245,21 +253,14 @@ export function registerTools(
   capsOverride?: string,
 ): number {
   const capsEnv = capsOverride ?? process.env[ENV.FOX_CAPS];
-  const { legacy, names } = resolveToolSet(capsEnv);
+  const toolSet = resolveToolSet(capsEnv);
+  const registrations: Array<[string, Registration]> = toolSet.legacy
+    ? [...toolSet.names].map((name) => [name, legacyRegistration(name)])
+    : [...toolSet.names].map((name) => [name, publicRegistration(name)]);
 
   let count = 0;
-
-  for (const toolName of names) {
-    const registration = legacy ? legacyRegistration(toolName) : publicRegistration(toolName);
-    if (!registration) {
-      process.stderr.write(
-        `[KitsuneMCP] Tool '${toolName}' in profile but not defined (skipped)\n`,
-      );
-      continue;
-    }
-
+  for (const [toolName, registration] of registrations) {
     server.registerTool(toolName, registration, handlerFactory(toolName));
-
     count++;
   }
 
@@ -270,27 +271,4 @@ export function registerTools(
   );
 
   return count;
-}
-
-// ---------------------------------------------------------------------------
-// Zod shape extraction helper
-// ---------------------------------------------------------------------------
-
-/**
- * Extract the raw shape from a Zod schema.
- *
- * McpServer.registerTool() accepts a ZodRawShapeCompat
- * (Record<string, ZodType>), which is the `.shape` property of a ZodObject.
- * Our TOOL_SCHEMAS store the full ZodObject, so we need to unwrap it.
- */
-function extractZodShape(
-  schema: import('zod').ZodType,
-): Record<string, import('zod').ZodType> {
-  // ZodObject has a .shape getter that returns the raw shape
-  if ('shape' in schema && typeof schema.shape === 'object' && schema.shape !== null) {
-    return schema.shape as Record<string, import('zod').ZodType>;
-  }
-
-  // Fallback: wrap in empty object (shouldn't happen with our schemas)
-  return {};
 }

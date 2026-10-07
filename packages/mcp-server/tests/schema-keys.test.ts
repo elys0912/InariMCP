@@ -33,7 +33,7 @@ function objectKeys(schema: ZodTypeAny, at: string, out: string[]): string[] {
 describe('tool schema keys', () => {
   it('are camelCase at every depth, in the operation schemas and in both schemas of the public tools', () => {
     const keys: string[] = [];
-    for (const [name, def] of Object.entries(TOOL_SCHEMAS)) objectKeys(def.inputSchema as ZodTypeAny, name, keys);
+    for (const [name, def] of Object.entries(TOOL_SCHEMAS)) objectKeys(def.inputSchema, name, keys);
     for (const [name, tool] of Object.entries(PUBLIC_TOOLS)) {
       objectKeys(tool.callSchema as ZodTypeAny, `${name}(call)`, keys);
       objectKeys(tool.listSchema, `${name}(list)`, keys);

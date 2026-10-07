@@ -4,7 +4,9 @@
  * Each MCP tool call flows through a common pipeline:
  *   0. Argument refusals    — password fields, invalid regexes (before the
  *                             guard: they neither count against the rate
- *                             limit nor leave an `allowed` audit line)
+ *                             limit nor leave an `allowed` audit line).
+ *                             Skipped while the safety config cannot be
+ *                             used: the guard then refuses as config_error.
  *   1. SafetyGuard.check()  — policy enforcement
  *   2. BrowserCommand build — action + data + tabId + requestId (the zod-
  *      validated arguments as is: schema keys are camelCase, like the Extension's)
@@ -25,10 +27,16 @@
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { BrowserAction, BrowserCommand, ToolResult } from '@kitsune-mcp/shared';
-import { BROWSER_ACTIONS, ErrorCode, isRecord } from '@kitsune-mcp/shared';
-import { getSafetyGuard, OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS, targetUrlOf } from '../safety/guard.js';
-import type { CallLabel, SafetyDenial } from '../safety/guard.js';
+import type {
+  BrowserAction,
+  BrowserCommand,
+  BrowserResponse,
+  BrowserSafetyDecision,
+  ToolResult,
+} from '@kitsune-mcp/shared';
+import { BROWSER_ACTIONS, BROWSER_SAFETY_DECISIONS, ErrorCode, isRecord } from '@kitsune-mcp/shared';
+import { LAYER_OF, OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS, getSafetyGuard, targetUrlOf } from '../safety/guard.js';
+import type { CallLabel, SafetyDenial, SafetyGuard } from '../safety/guard.js';
 import {
   REQUEST_TTL_MS,
   approvalTargetFor,
@@ -42,10 +50,13 @@ import { getContainerConfig } from '../safety/container.js';
 import { sanitizeResult, sanitizeString } from '../safety/sanitizer.js';
 import { compileUrlPatterns } from '../safety/url-pattern.js';
 import { applyPasswordPolicy, passwordSelectorRefusal } from '../safety/password-guard.js';
-import type { AuditDecision } from '../safety/audit.js';
 import { getConnectionManager } from '../connection/manager.js';
 import { deprecationNote, resolveOperation } from './operations.js';
-import type { NavigateAction } from './schemas.js';
+import { NAVIGATE_ACTIONS, SAFETY_STATUS_TOOL, SCREENSHOT_SCOPES } from './schemas.js';
+import type { NavigateAction, OperationName, ScreenshotScope } from './schemas.js';
+import { isOneOf } from './one-of.js';
+
+const MS_PER_SECOND = 1_000;
 
 // ---------------------------------------------------------------------------
 // Action-name mapping
@@ -56,14 +67,10 @@ import type { NavigateAction } from './schemas.js';
  * Default rule: strip `fox_` prefix → action name (checked against
  * BROWSER_ACTIONS). This table lists exceptions only.
  */
-const ACTION_MAP: Readonly<Record<string, BrowserAction>> = {
+const ACTION_MAP: Readonly<Partial<Record<OperationName, BrowserAction>>> = {
   fox_switch_tab: 'focus_tab',
   fox_detect_captcha: 'solve_captcha',
 };
-
-function isBrowserAction(name: string): name is BrowserAction {
-  return (BROWSER_ACTIONS as readonly string[]).includes(name);
-}
 
 /**
  * fox_navigate sub-action routing.
@@ -81,7 +88,7 @@ const NAVIGATE_ACTION_MAP: Record<NavigateAction, BrowserAction> = {
  * fox_screenshot scope routing.
  * The `scope` argument determines which browser action to dispatch.
  */
-const SCREENSHOT_SCOPE_MAP: Record<string, BrowserAction> = {
+const SCREENSHOT_SCOPE_MAP: Record<ScreenshotScope, BrowserAction> = {
   viewport: 'screenshot',
   full_page: 'screenshot',
   all_tabs: 'screenshot_all_tabs',
@@ -92,24 +99,25 @@ const SCREENSHOT_SCOPE_MAP: Record<string, BrowserAction> = {
 // Resolve browser action from tool name + args
 // ---------------------------------------------------------------------------
 
+/**
+ * The browser action of an operation call. Only the operations routed by
+ * an argument are listed; every other one goes by ACTION_MAP or its name.
+ */
 function resolveAction(
-  toolName: string,
+  toolName: OperationName,
   args: Record<string, unknown>,
 ): BrowserAction {
-  // fox_navigate: sub-action routing
-  if (toolName === 'fox_navigate') {
-    const navAction = args['action'];
-    return typeof navAction === 'string' && Object.hasOwn(NAVIGATE_ACTION_MAP, navAction)
-      ? NAVIGATE_ACTION_MAP[navAction as NavigateAction]
-      : 'navigate';
-  }
-
-  // fox_screenshot: scope routing
-  if (toolName === 'fox_screenshot') {
-    const scope = args['scope'];
-    return typeof scope === 'string' && Object.hasOwn(SCREENSHOT_SCOPE_MAP, scope)
-      ? SCREENSHOT_SCOPE_MAP[scope]!
-      : 'screenshot';
+  switch (toolName) {
+    case 'fox_navigate': {
+      const navAction = args['action'];
+      return isOneOf(NAVIGATE_ACTIONS, navAction) ? NAVIGATE_ACTION_MAP[navAction] : 'navigate';
+    }
+    case 'fox_screenshot': {
+      const scope = args['scope'];
+      return isOneOf(SCREENSHOT_SCOPES, scope) ? SCREENSHOT_SCOPE_MAP[scope] : 'screenshot';
+    }
+    default:
+      break;
   }
 
   // Explicit map overrides
@@ -118,7 +126,7 @@ function resolveAction(
 
   // Default: strip fox_ prefix
   const stripped = toolName.replace(/^fox_/, '');
-  if (!isBrowserAction(stripped)) {
+  if (!isOneOf(BROWSER_ACTIONS, stripped)) {
     throw new Error(`${toolName}: no browser action '${stripped}' (add it to ACTION_MAP)`);
   }
   return stripped;
@@ -128,33 +136,38 @@ function resolveAction(
 // Build BrowserCommand data payload
 // ---------------------------------------------------------------------------
 
+/** The data of the command: the arguments, plus what an operation always adds. */
 function buildCommandData(
-  toolName: string,
+  toolName: OperationName,
   args: Record<string, unknown>,
 ): Record<string, unknown> {
   const data = { ...args };
 
-  // fox_screenshot: add fullPage flag for full_page scope
-  if (toolName === 'fox_screenshot') {
-    const scope = args['scope'] ?? 'viewport';
-    if (scope === 'full_page') {
-      data['fullPage'] = true;
+  switch (toolName) {
+    case 'fox_screenshot': {
+      const scope = args['scope'] ?? 'viewport';
+      // full_page: the fullPage flag of the screenshot action.
+      if (scope === 'full_page') {
+        data['fullPage'] = true;
+      }
+      // all_tabs: the Extension only attaches imageData when includeData is
+      // true, and the Native Host needs it to save the files the result links
+      // to (imagePath). The base64 never reaches the client either way: the
+      // Native Host replaces it with imagePath.
+      if (scope === 'all_tabs') {
+        data['includeData'] = true;
+      }
+      break;
     }
-    // all_tabs: the Extension only attaches imageData when includeData is
-    // true, and the Native Host needs it to save the files the result links
-    // to (imagePath). The base64 never reaches the client either way: the
-    // Native Host replaces it with imagePath.
-    if (scope === 'all_tabs') {
-      data['includeData'] = true;
-    }
-  }
-
-  // fox_detect_captcha → solve_captcha always runs in detect-only mode: the
-  // project never tries to get past a CAPTCHA, and the
-  // caller cannot override this (set after the arguments, so it wins over
-  // any argument of the same name).
-  if (toolName === 'fox_detect_captcha') {
-    data['detectOnly'] = true;
+    case 'fox_detect_captcha':
+      // solve_captcha always runs in detect-only mode: the project never
+      // tries to get past a CAPTCHA, and the caller cannot override this
+      // (set after the arguments, so it wins over any argument of the same
+      // name).
+      data['detectOnly'] = true;
+      break;
+    default:
+      break;
   }
 
   return data;
@@ -235,7 +248,7 @@ const PROTECTED_CAPTURE_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAct
 export function attachSafetyMetadata(
   command: BrowserCommand,
   config: SafetyConfig,
-  toolName: string,
+  toolName: OperationName,
   args: Record<string, unknown>,
 ): void {
   const containerCfg = getContainerConfig(config);
@@ -348,26 +361,26 @@ export function toolResultToCallResult(result: ToolResult): CallToolResult {
 }
 
 /**
- * Convert a SafetyDenial into a CallToolResult.
+ * A refusal as the tool result shows it: a SafetyDenial of the guard, one
+ * the browser made, or (`denied`) a browser refusal with a decision this
+ * server does not know.
+ */
+type SafetyRefusal =
+  Omit<SafetyDenial, 'success' | 'safetyDecision'> & { safetyDecision: SafetyDenial['safetyDecision'] | 'denied' };
+
+/**
+ * Convert a refusal into a CallToolResult. `extraDetails` are added to the
+ * machine-readable block (details.approval).
  */
 function safetyDenialToCallResult(
-  denial: {
-    error: string;
-    layer?: number;
-    decision?: string;
-    url?: string;
-    confirmationRequired?: true;
-    elicitation?: {
-      protectedUrl: string;
-      matchedPattern: string;
-      toolName: string;
-    };
-  },
+  denial: SafetyRefusal,
+  extraDetails: Record<string, unknown> = {},
 ): CallToolResult {
   const details: Record<string, unknown> = {
     code: 'SAFETY_BLOCKED',
-    layer: denial.layer,
-    decision: denial.decision,
+    // A config error is in no layer (null): left out as before.
+    layer: denial.layer ?? undefined,
+    decision: denial.safetyDecision,
     url: denial.url,
   };
 
@@ -378,15 +391,17 @@ function safetyDenialToCallResult(
       `\nConfirmation required: protected URL '${denial.elicitation.protectedUrl}' ` +
       `(pattern: '${denial.elicitation.matchedPattern}').`,
     );
-    details.confirmationRequired = true;
-    details.elicitation = denial.elicitation;
+    details['confirmationRequired'] = true;
+    details['elicitation'] = denial.elicitation;
   }
 
-  // URLs and browser error text in a denial come from the page.
+  // URLs and browser error text in a denial come from the page; the extra
+  // details are the server's own and are not sanitized.
+  const sanitized = sanitizeResult(details);
   return {
     content: [
       { type: 'text' as const, text: sanitizeString(parts.join('')) },
-      { type: 'text' as const, text: JSON.stringify(sanitizeResult(details)) },
+      { type: 'text' as const, text: JSON.stringify({ ...(isRecord(sanitized) ? sanitized : {}), ...extraDetails }) },
     ],
     isError: true,
   };
@@ -421,16 +436,17 @@ function confirmationToCallResult(
   const protectedUrl = denial.elicitation?.protectedUrl ?? '';
   const matchedPattern = denial.elicitation?.matchedPattern ?? '';
   const target = approvalTargetFor(toolName, args, protectedUrl);
-  const result = safetyDenialToCallResult({ ...denial, decision: denial.safetyDecision });
 
   const notes: string[] = [];
   if (tokenRejected) {
     notes.push(
       'The approval token sent with this call was not accepted (expired, already used, ' +
-      'or issued for a different tool, arguments or site).',
+      'or issued for a different tool, arguments or site); a new approval is needed: ' +
+      'the human is asked again on retry.',
     );
   }
 
+  let extraDetails: Record<string, unknown> = {};
   if (target === null) {
     notes.push(
       'This call cannot be approved: the protected page has no usable URL. ' +
@@ -456,20 +472,15 @@ function confirmationToCallResult(
       'confirmation dialog (MCP elicitation) when the client supports it, otherwise in ' +
       'Firefox, where the KitsuneMCP toolbar button shows a badge and the human approves ' +
       'or denies in its popup. An approval covers one call of this tool with exactly these ' +
-      `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / 1000)} s. ` +
+      `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
       'Nothing in the page (buttons, fox_click, fox_evaluate) can approve it. ' +
       `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
       'If the human declined, do not retry without asking them first.',
     );
-    // The second block holds the machine-readable details.
-    const block = result.content[1];
-    if (block && block.type === 'text') {
-      const details = JSON.parse(block.text) as Record<string, unknown>;
-      details['approval'] = approval;
-      block.text = JSON.stringify(details);
-    }
+    extraDetails = { approval };
   }
 
+  const result = safetyDenialToCallResult(denial, extraDetails);
   const first = result.content[0];
   if (first && first.type === 'text') first.text += `\n\n${notes.join('\n')}`;
   return result;
@@ -571,6 +582,15 @@ function withDeprecationNote(calledName: string, result: CallToolResult): CallTo
   return result;
 }
 
+/** One operation call on its way through the pipeline. */
+interface CallContext {
+  guard: SafetyGuard;
+  toolName: OperationName;
+  args: Record<string, unknown>;
+  transport: string;
+  label: CallLabel;
+}
+
 function toolCall(
   calledName: string,
   transport: string,
@@ -585,11 +605,12 @@ function toolCall(
     // guard, the password guard and the command are those of the operation;
     // messages, approvals and the audit log use the name the caller used.
     const { op: toolName, args, label } = resolveOperation(calledName, calledArgs);
+    const call: CallContext = { guard, toolName, args, transport, label };
 
     // -----------------------------------------------------------------------
     // fox_safety_status: server-internal, no browser command needed
     // -----------------------------------------------------------------------
-    if (toolName === 'fox_safety_status') {
+    if (toolName === SAFETY_STATUS_TOOL) {
       const status = guard.status();
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(status) }],
@@ -605,28 +626,12 @@ function toolCall(
       : null;
 
     // -----------------------------------------------------------------------
-    // 1. Refusals of the arguments themselves, before the guard: a call
-    //    refused here is not counted against the rate limit and leaves no
-    //    `allowed` line in the audit log.
+    // 1. Refusals of the arguments themselves. Not while the policy cannot
+    //    be used: the guard then refuses the call as config_error first.
     // -----------------------------------------------------------------------
-    // Password-field protection (fox_type / fox_set_value): a safety
-    // refusal, audited as `denied`.
-    const passwordRefusal = passwordSelectorRefusal(
-      toolName, args, guard.config.allowPasswordTyping,
-    );
-    if (passwordRefusal !== null) {
-      guard.recordAudit(toolName, args, 'denied', transport, label);
-      return { content: [{ type: 'text' as const, text: passwordRefusal }], isError: true };
-    }
-
-    // Regex arguments are compiled by the backends; refuse invalid ones here
-    // (an input error like a schema violation: not audited).
-    const regexError = invalidRegexArgument(args);
-    if (regexError !== null) {
-      return {
-        content: [{ type: 'text' as const, text: `${regexError} [${ErrorCode.INVALID_ARGUMENTS}]` }],
-        isError: true,
-      };
+    if (guard.configError === null) {
+      const refusal = refuseArguments(call);
+      if (refusal !== null) return refusal;
     }
 
     // -----------------------------------------------------------------------
@@ -636,129 +641,208 @@ function toolCall(
     // did not lift it (not valid, or approved for another host): say so.
     const denial = guard.check(toolName, args, transport, grant, label);
     if (denial !== null) {
-      if (denial.safetyDecision === 'confirmation_required') {
-        return confirmationToCallResult(label, denial, presented);
-      }
-      return safetyDenialToCallResult({ ...denial, decision: denial.safetyDecision });
+      return denial.safetyDecision === 'confirmation_required'
+        ? confirmationToCallResult(label, denial, presented)
+        : safetyDenialToCallResult(denial);
     }
 
     // -----------------------------------------------------------------------
     // 3. Resolve action and build command
     // -----------------------------------------------------------------------
-    const action = resolveAction(toolName, args);
-    const data = buildCommandData(toolName, args);
-    // Set after the arguments, so it wins over any argument of the same name.
-    applyPasswordPolicy(toolName, data, guard.config.allowPasswordTyping);
-
-    // Extract tabId before sending (it goes at BrowserCommand level)
-    const tabId = typeof data['tabId'] === 'number' ? data['tabId'] : undefined;
-    delete data['tabId'];
-
-    const command: BrowserCommand = {
-      action,
-      tabId,
-      data,
-      requestId: '', // Will be assigned by connectionManager.sendCommand()
-    };
-    attachSafetyMetadata(command, guard.config, toolName, args);
-    // The human approved this call for one host: the Extension may run it on
-    // a protected tab only while that tab is on this host.
-    if (grant !== null && command.protectedUrlPatterns) {
-      command.approvedHost = grant.target.host;
-    }
+    const command = buildCommand(call, grant);
 
     // -----------------------------------------------------------------------
     // 4. Send command to browser
     // -----------------------------------------------------------------------
-    const connectionManager = getConnectionManager();
-    const response = await connectionManager.sendCommand(command);
-
-    // Extension-side refusal: the actual target tab of a capture or acting
-    // tool matched protectedUrlPatterns. Same elicitation result as guard Layer 7.
-    if (!response.success && response.safetyDecision === 'confirmation_required') {
-      const reportedUrl = response.data?.['url'];
-      const reportedPattern = response.data?.['matchedPattern'];
-      const confirmation = guard.confirmationFromBrowser(
-        toolName,
-        args,
-        typeof reportedUrl === 'string' && reportedUrl ? reportedUrl : null,
-        transport,
-        typeof reportedPattern === 'string' && reportedPattern ? reportedPattern : null,
-        label,
-      );
-      return confirmationToCallResult(label, confirmation, presented);
-    }
-
-    // Other Extension-side safety refusals (Layer 0 out_of_scope; Layer 3
-    // blocked_url / not_allowlisted on the actual target tab): surface as
-    // SAFETY_BLOCKED, distinct from ordinary browser errors.
+    const response = await getConnectionManager().sendCommand(command);
     if (!response.success && response.safetyDecision) {
-      const decision = response.safetyDecision;
-      const listDecision = decision === 'blocked_url' || decision === 'not_allowlisted';
-      const reportedUrl = response.data?.['url'];
-      const refusedUrl = typeof reportedUrl === 'string' && reportedUrl ? reportedUrl : null;
-      // Remember where the tab really is, so the next call is refused
-      // by the guard's own pre-check.
-      if (listDecision && refusedUrl !== null) guard.noteRefusedUrl(refusedUrl, args);
-      const auditDecision: AuditDecision =
-        decision === 'out_of_scope' ? 'out_of_scope' : listDecision ? decision : 'denied';
-      // The command was sent (the guard's `allowed` line stands); this line
-      // records what the browser decided.
-      guard.recordAudit(toolName, args, auditDecision, transport, label, refusedUrl ?? undefined);
-      return safetyDenialToCallResult({
-        error: response.error ?? `Refused by browser safety check (${decision})`,
-        decision,
-        layer: decision === 'out_of_scope' ? 0 : listDecision ? 3 : undefined,
-        ...(listDecision && refusedUrl !== null ? { url: refusedUrl } : {}),
-      });
+      return browserRefusalToResult(call, response.safetyDecision, response, presented);
     }
 
     // -----------------------------------------------------------------------
-    // 5. Post-processing
+    // 5-6. Post-processing and the result
     // -----------------------------------------------------------------------
-
-    // Track the page URL after every successful operation (data.url, or
-    // data.tab.url) per tab, so the guard's checks see the current page on
-    // both the Extension and headless paths. Then check the URL the command
-    // ended on: a redirect or a clicked link may have reached a blocked site.
-    // (Without data too: fox_close_tab answers {success: true} alone.)
-    if (response.success) {
-      const resultData = response.data ?? {};
-      guard.noteUrl(resultData, args, toolName);
-      const reached = guard.checkReachedUrl(toolName, args, resultData, transport, label);
-      if (reached !== null) {
-        return safetyDenialToCallResult({ ...reached, decision: reached.safetyDecision });
-      }
-    }
-
-    // Saved screenshot files → resource_link blocks (both backends).
-    const imagePaths = response.success && response.data
-      ? collectImagePaths(response.data)
-      : [];
-
-    // Sanitize sensitive data from response
-    const sanitizedData = sanitizeResult(response.data);
-
-    // Audit log: the guard already recorded the call as allowed; only a
-    // failure adds a line, and it is no safety decision.
-    if (!response.success) guard.recordAudit(toolName, args, 'browser_error', transport, label);
-
-    // -----------------------------------------------------------------------
-    // 6. Build ToolResult and convert to CallToolResult
-    // -----------------------------------------------------------------------
-    const toolResult: ToolResult = response.success
-      ? { success: true, data: sanitizedData }
-      : {
-        success: false,
-        // Error text can carry page-derived content (script exceptions, URLs).
-        error: sanitizeString(response.error ?? 'Browser command failed'),
-        data: sanitizedData,
-      };
-
-    const callResult = toolResultToCallResult(toolResult);
-    if (imagePaths.length > 0) {
-      callResult.content.push(...screenshotResourceLinks(imagePaths));
-    }
-    return callResult;
+    return finishResult(call, response);
   };
+}
+
+/**
+ * Refusals of the arguments themselves, before the guard: a call refused
+ * here is not counted against the rate limit and leaves no `allowed` line
+ * in the audit log. Null when the arguments are acceptable.
+ */
+function refuseArguments({ guard, toolName, args, transport, label }: CallContext): CallToolResult | null {
+  // Password-field protection (fox_type / fox_set_value): a safety
+  // refusal, audited as `denied`.
+  const passwordRefusal = passwordSelectorRefusal(
+    toolName, args, guard.config.allowPasswordTyping,
+  );
+  if (passwordRefusal !== null) {
+    guard.recordAudit(toolName, args, 'denied', transport, label);
+    return { content: [{ type: 'text' as const, text: passwordRefusal }], isError: true };
+  }
+
+  // Regex arguments are compiled by the backends; refuse invalid ones here
+  // (an input error like a schema violation: not audited).
+  const regexError = invalidRegexArgument(args);
+  if (regexError !== null) {
+    return {
+      content: [{ type: 'text' as const, text: `${regexError} [${ErrorCode.INVALID_ARGUMENTS}]` }],
+      isError: true,
+    };
+  }
+  return null;
+}
+
+/** The BrowserCommand of an allowed call, with the safety metadata attached. */
+function buildCommand({ guard, toolName, args }: CallContext, grant: ApprovalGrant | null): BrowserCommand {
+  const action = resolveAction(toolName, args);
+  const data = buildCommandData(toolName, args);
+  // Set after the arguments, so it wins over any argument of the same name.
+  applyPasswordPolicy(toolName, data, guard.config.allowPasswordTyping);
+
+  // Extract tabId before sending (it goes at BrowserCommand level)
+  const tabId = typeof data['tabId'] === 'number' ? data['tabId'] : undefined;
+  delete data['tabId'];
+
+  const command: BrowserCommand = {
+    action,
+    tabId,
+    data,
+    requestId: '', // Will be assigned by connectionManager.sendCommand()
+  };
+  attachSafetyMetadata(command, guard.config, toolName, args);
+  // The human approved this call for one host: the Extension may run it on
+  // a protected tab only while that tab is on this host.
+  if (grant !== null && command.protectedUrlPatterns) {
+    command.approvedHost = grant.target.host;
+  }
+  return command;
+}
+
+/**
+ * The browser safety refusals other than confirmation_required: whether the
+ * refused URL the browser reports is where the target tab really is
+ * (Layer 3 lists), so that the guard's own pre-check refuses the next call.
+ * The audit decision is the browser's decision; the layer is LAYER_OF's.
+ */
+const BROWSER_REFUSAL_NOTES_URL: Readonly<Record<Exclude<BrowserSafetyDecision, 'confirmation_required'>, boolean>> = {
+  out_of_scope: false,
+  blocked_url: true,
+  not_allowlisted: true,
+  config_error: false,
+};
+
+/** The URL a browser result reports (`data.url`), or null. */
+function reportedUrlOf(response: BrowserResponse): string | null {
+  const url = response.data?.['url'];
+  return typeof url === 'string' && url ? url : null;
+}
+
+/**
+ * The result of a refusal the browser made itself (`safetyDecision`):
+ * confirmation_required (the actual target tab is protected: the same
+ * elicitation result as guard Layer 7), Layer 0 out_of_scope, Layer 3
+ * blocked_url / not_allowlisted on the actual target tab, or config_error
+ * (the browser could not use the attached rules): SAFETY_BLOCKED, distinct
+ * from ordinary browser errors. A decision this server does not know is
+ * refused as `denied` and reported on stderr.
+ */
+function browserRefusalToResult(
+  call: CallContext,
+  decision: string,
+  response: BrowserResponse,
+  presented: boolean,
+): CallToolResult {
+  const { guard, toolName, args, transport, label } = call;
+  const refusedUrl = reportedUrlOf(response);
+
+  if (!isOneOf(BROWSER_SAFETY_DECISIONS, decision)) {
+    process.stderr.write(
+      `[KitsuneMCP] The browser refused ${label.tool} with an unknown safetyDecision ` +
+      `${JSON.stringify(decision)}; treated as denied.\n`,
+    );
+    guard.recordAudit(toolName, args, 'denied', transport, label, refusedUrl ?? undefined);
+    return safetyDenialToCallResult({
+      safetyDecision: 'denied',
+      layer: null,
+      error: response.error ?? `Refused by browser safety check (${decision})`,
+    });
+  }
+
+  if (decision === 'confirmation_required') {
+    const reportedPattern = response.data?.['matchedPattern'];
+    const confirmation = guard.confirmationFromBrowser(
+      toolName,
+      args,
+      refusedUrl,
+      transport,
+      typeof reportedPattern === 'string' && reportedPattern ? reportedPattern : null,
+      label,
+    );
+    return confirmationToCallResult(label, confirmation, presented);
+  }
+
+  const notesUrl = BROWSER_REFUSAL_NOTES_URL[decision] && refusedUrl !== null;
+  // Remember where the tab really is, so the next call is refused
+  // by the guard's own pre-check.
+  if (notesUrl) guard.noteRefusedUrl(refusedUrl, args);
+  // The command was sent (the guard's `allowed` line stands); this line
+  // records what the browser decided.
+  guard.recordAudit(toolName, args, decision, transport, label, refusedUrl ?? undefined);
+  return safetyDenialToCallResult({
+    safetyDecision: decision,
+    layer: LAYER_OF[decision],
+    error: response.error ?? `Refused by browser safety check (${decision})`,
+    ...(notesUrl ? { url: refusedUrl } : {}),
+  });
+}
+
+/**
+ * Post-processing of a browser answer that is no safety refusal, and the
+ * tool result: URL tracking and the check of the URL the command ended on,
+ * screenshot resource_links, sanitizing, the audit line of a failure.
+ */
+function finishResult(
+  { guard, toolName, args, transport, label }: CallContext,
+  response: BrowserResponse,
+): CallToolResult {
+  // Track the page URL after every successful operation (data.url, or
+  // data.tab.url) per tab, so the guard's checks see the current page on
+  // both the Extension and headless paths. Then check the URL the command
+  // ended on: a redirect or a clicked link may have reached a blocked site.
+  // (Without data too: fox_close_tab answers {success: true} alone.)
+  if (response.success) {
+    const resultData = response.data ?? {};
+    guard.noteUrl(resultData, args, toolName);
+    const reached = guard.checkReachedUrl(toolName, args, resultData, transport, label);
+    if (reached !== null) return safetyDenialToCallResult(reached);
+  }
+
+  // Saved screenshot files → resource_link blocks (both backends).
+  const imagePaths = response.success && response.data
+    ? collectImagePaths(response.data)
+    : [];
+
+  // Sanitize sensitive data from response
+  const sanitizedData = sanitizeResult(response.data);
+
+  // Audit log: the guard already recorded the call as allowed; only a
+  // failure adds a line, and it is no safety decision.
+  if (!response.success) guard.recordAudit(toolName, args, 'browser_error', transport, label);
+
+  const toolResult: ToolResult = response.success
+    ? { success: true, data: sanitizedData }
+    : {
+      success: false,
+      // Error text can carry page-derived content (script exceptions, URLs).
+      error: sanitizeString(response.error ?? 'Browser command failed'),
+      data: sanitizedData,
+    };
+
+  const callResult = toolResultToCallResult(toolResult);
+  if (imagePaths.length > 0) {
+    callResult.content.push(...screenshotResourceLinks(imagePaths));
+  }
+  return callResult;
 }

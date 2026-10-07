@@ -154,12 +154,60 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
     expect(details(result)['url']).toBeUndefined();
     expect(g.urlFor(3)).toBeNull();
   });
+
+  // G-11: config_error (the Extension could not use the attached rules) is
+  // audited as such, in no layer.
+  it('config_error is SAFETY_BLOCKED without a layer and audited as config_error', async () => {
+    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, protectedUrlPatterns: [] });
+    testGuard.current = g;
+    const audit = vi.spyOn(g, 'recordAudit');
+    stubBrowser({ success: false, safetyDecision: 'config_error', error: 'Refused: versions may not match' });
+
+    const result = await createToolHandler('fox_click')({ tabId: 3, selector: '#a' });
+    expect(result.isError).toBe(true);
+    expect(details(result)).toEqual({ code: 'SAFETY_BLOCKED', decision: 'config_error' });
+    expect(audit.mock.calls.map((c) => c[2])).toEqual(['allowed', 'config_error']);
+  });
+
+  // G-11: a decision this server does not know is no silent `denied`.
+  it('an unknown safetyDecision is refused as denied and reported on stderr', async () => {
+    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, protectedUrlPatterns: [] });
+    testGuard.current = g;
+    const audit = vi.spyOn(g, 'recordAudit');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    stubBrowser({ success: false, safetyDecision: 'new_layer_9', error: 'refused' });
+
+    const result = await createToolHandler('fox_click')({ tabId: 3, selector: '#a' });
+    expect(result.isError).toBe(true);
+    expect(details(result)).toEqual({ code: 'SAFETY_BLOCKED', decision: 'denied' });
+    expect(audit.mock.calls.map((c) => c[2])).toEqual(['allowed', 'denied']);
+    expect(stderr.mock.calls.map((c) => String(c[0])).join('')).toContain('"new_layer_9"');
+  });
+
+  // G-21 (a): the Extension refused without reporting the tab's URL, and the
+  // guard knows none either: nothing names a host to approve.
+  it('confirmation_required without a known URL cannot be approved', async () => {
+    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, protectedUrlPatterns: ['bank.test'] });
+    testGuard.current = g;
+    stubBrowser({ success: false, safetyDecision: 'confirmation_required', error: 'protected', data: {} });
+
+    const result = await createToolHandler('fox_click')({ selector: '#a' });
+    expect(result.isError).toBe(true);
+    const first = result.content[0];
+    expect(first?.type === 'text' ? first.text : '').toContain('This call cannot be approved');
+    expect(details(result)).toMatchObject({
+      decision: 'confirmation_required',
+      layer: 7,
+      elicitation: { protectedUrl: '(target tab)' },
+    });
+    expect(details(result)['approval']).toBeUndefined();
+  });
 });
 
 describe('attachSafetyMetadata: protectedUrlPatterns', () => {
   it.each([
     ['screenshot', 'fox_screenshot'],
-    ['scroll_and_capture', 'fox_scroll_and_capture'],
+    ['scroll_and_capture', 'fox_screenshot'],
     ['screenshot_all_tabs', 'fox_screenshot'],
     ['start_logging', 'fox_start_logging'],
     ['get_console_logs', 'fox_get_console_logs'],

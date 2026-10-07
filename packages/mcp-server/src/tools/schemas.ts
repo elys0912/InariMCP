@@ -34,7 +34,7 @@ export interface ToolDefinition {
   /** MCP tool description (English) */
   description: string;
   /** Zod input schema: the object listed in tools/list (FOX_CAPS=legacy). */
-  inputSchema: z.ZodType;
+  inputSchema: z.AnyZodObject;
   /**
    * Parses a call when the arguments have rules across fields that an
    * object schema cannot express (default: inputSchema). See callSchemaOf().
@@ -47,6 +47,12 @@ export interface ToolDefinition {
    * `classification` (tools/classification.ts toolAnnotations()).
    */
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
+  /**
+   * The tool does not act on the content of a tab, so the blocked/allowed
+   * check of the tab's last-known URL does not apply (safety/guard.ts
+   * TAB_INDEPENDENT_TOOLS, derived in tools/classification.ts).
+   */
+  tabIndependent?: true;
 }
 
 /** The schema a call of the operation is parsed with. */
@@ -89,8 +95,12 @@ const URL_PATTERN_NOTE =
 // Observe tools (read-only)
 // =========================================================================
 
+/** fox_screenshot scopes; each runs one browser action (handlers.ts). */
+export const SCREENSHOT_SCOPES = ['viewport', 'full_page', 'all_tabs', 'scroll_capture'] as const;
+export type ScreenshotScope = (typeof SCREENSHOT_SCOPES)[number];
+
 const foxScreenshotSchema = z.object({
-  scope: z.enum(['viewport', 'full_page', 'all_tabs', 'scroll_capture'])
+  scope: z.enum(SCREENSHOT_SCOPES)
     .optional()
     .default('viewport')
     .describe('Capture scope: viewport (default), full_page, all_tabs, or scroll_capture'),
@@ -476,7 +486,7 @@ const foxSafetyStatusSchema = z.object({});
 // TOOL_SCHEMAS registry
 // ===========================================================================
 
-export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
+const OPERATIONS = {
   // --- Observe ---
   fox_screenshot: {
     name: 'fox_screenshot',
@@ -526,6 +536,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
       'List open browser tabs: id, url, title, active, windowId, pinned, status (loading/complete), audible; plus totals and a summary. Defaults to the current window and at most 50 tabs. Use urlPattern (regex, applied before limit) to filter, currentWindowOnly=false for all windows, includeFavicon=true for favicon URLs. Headless: id, url, title and active only; arguments are ignored.',
     inputSchema: foxGetTabsSchema,
     classification: 'observe',
+    tabIndependent: true,
   },
 
   // --- Act ---
@@ -599,18 +610,21 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
     inputSchema: foxCreateTabSchema,
     classification: 'act',
     annotations: { destructiveHint: false },
+    tabIndependent: true,
   },
   fox_close_tab: {
     name: 'fox_close_tab',
     description: 'Close a browser tab by its tab ID.',
     inputSchema: foxCloseTabSchema,
     classification: 'act',
+    tabIndependent: true,
   },
   fox_switch_tab: {
     name: 'fox_switch_tab',
     description: 'Focus/activate a browser tab by its tab ID.',
     inputSchema: foxSwitchTabSchema,
     classification: 'interact',
+    tabIndependent: true,
   },
 
   // --- Wait ---
@@ -767,6 +781,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
       'List Firefox container identities (contextualIdentities). Returns name, color, icon, and cookieStoreId for each container. When container scope is enabled in safety.json, only the agent container is returned.',
     inputSchema: foxListContainersSchema,
     classification: 'observe',
+    tabIndependent: true,
   },
   fox_open_in_container: {
     name: 'fox_open_in_container',
@@ -775,6 +790,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
     inputSchema: foxOpenInContainerSchema,
     classification: 'act',
     annotations: { destructiveHint: false },
+    tabIndependent: true,
   },
 
   // --- Safety (always registered) ---
@@ -784,5 +800,27 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
       'Show the active safety guard policy: read-only mode, script toggle, protected/blocked/allowed URL patterns, rate-limit state, and audit log location.',
     inputSchema: foxSafetyStatusSchema,
     classification: 'observe',
+    tabIndependent: true,
   },
-};
+} satisfies Record<string, ToolDefinition>;
+
+/** An operation: one of the tools of TOOL_SCHEMAS (the names before WP13). */
+export type OperationName = keyof typeof OPERATIONS;
+
+/** Whether `name` (a name from the wire) is an operation. */
+export function isOperationName(name: string): name is OperationName {
+  return Object.hasOwn(OPERATIONS, name);
+}
+
+/** Every operation name, in definition order. */
+export const OPERATION_NAMES: readonly OperationName[] = Object.keys(OPERATIONS).filter(isOperationName);
+
+/**
+ * The operations by name. Keyed by string so that a name from the wire can
+ * be looked up; code that knows an operation uses OperationName and
+ * isOperationName().
+ */
+export const TOOL_SCHEMAS: Readonly<Record<string, ToolDefinition>> = OPERATIONS;
+
+/** The server-internal tool that is always registered (registry.ts). */
+export const SAFETY_STATUS_TOOL = 'fox_safety_status' satisfies OperationName;
