@@ -110,8 +110,7 @@ function prepareDaemonLog(): void {
   try {
     fs.appendFileSync(
       logPath,
-      `${new Date().toISOString()} --- daemon start requested by Native Host (PID ${process.pid}) ---
-`,
+      `${new Date().toISOString()} --- daemon start requested by Native Host (PID ${process.pid}) ---\n`,
       { mode: PRIVATE_FILE_MODE },
     );
   } catch {
