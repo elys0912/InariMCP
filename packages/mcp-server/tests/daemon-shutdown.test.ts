@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { BrowserConnectionManager } from '../src/connection/manager.js';
 import { DaemonActivity } from '../src/daemon/activity.js';
-import { createDaemonShutdown, type ShutdownStep } from '../src/daemon/main.js';
+import { buildShutdownSteps, createDaemonShutdown, type ClosableWsServer, type ShutdownStep } from '../src/daemon/main.js';
 
 function setup(steps: ShutdownStep[] = []): {
   activity: DaemonActivity;
@@ -63,5 +64,43 @@ describe('createDaemonShutdown', () => {
     const p = shutdown.prepare('POST /daemon/shutdown', false);
     activity.endCall();
     await expect(p).resolves.toMatchObject({ drained: true, cancelledCalls: 0 });
+  });
+});
+
+describe('buildShutdownSteps (R-3)', () => {
+  function fakeWsServer(): { server: ClosableWsServer; closed: number[]; serverClosed: () => boolean } {
+    const closed: number[] = [];
+    let serverClosed = false;
+    const client = { close: (code: number) => { closed.push(code); } };
+    const server: ClosableWsServer = { clients: [client], close: () => { serverClosed = true; } };
+    return { server, closed, serverClosed: () => serverClosed };
+  }
+
+  it('reads the WebSocket server when the step runs, not when the steps are built', async () => {
+    let ws: ClosableWsServer | undefined;
+    const manager = new BrowserConnectionManager();
+    const shutdownSpy = vi.spyOn(manager, 'shutdown');
+    const steps = buildShutdownSteps({ getWsServer: () => ws, headlessMode: false, connectionManager: manager });
+    expect(steps.map((s) => s.name)).toEqual([
+      'closing the WebSocket connections',
+      'stopping the headless browser',
+      'closing the browser connections',
+    ]);
+
+    const fake = fakeWsServer();
+    ws = fake.server;
+    for (const step of steps) await step.run();
+    expect(fake.closed).toEqual([1001]);
+    expect(fake.serverClosed()).toBe(true);
+    expect(shutdownSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('without a WebSocket server (startup failed before it) the step does nothing', async () => {
+    const [wsStep] = buildShutdownSteps({
+      getWsServer: () => undefined,
+      headlessMode: false,
+      connectionManager: new BrowserConnectionManager(),
+    });
+    await expect(Promise.resolve(wsStep?.run())).resolves.toBeUndefined();
   });
 });

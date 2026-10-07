@@ -6,7 +6,7 @@ import { ENV } from '@kitsune-mcp/shared';
 import { DAEMON_PROTOCOL_VERSION, loadOrCreateApiToken } from '@kitsune-mcp/shared/node';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { probeExistingDaemon } from '../src/daemon/probe.js';
-import { runDaemon } from '../src/daemon/main.js';
+import { occupiedPortExit, runDaemon } from '../src/daemon/main.js';
 import { startHttpBridge } from '../src/transport/http-bridge.js';
 import { TOKEN } from './helpers/ws.js';
 
@@ -105,27 +105,38 @@ describe('probeExistingDaemon (singleton check, Q1)', () => {
   }, 10_000);
 });
 
-class Exited extends Error {
-  constructor(readonly code: number | undefined) {
-    super(`process.exit(${String(code)})`);
-  }
-}
-
-/** Run the daemon against a taken HTTP port and report the exit code it chose. */
+/** Run the daemon against a taken HTTP port and report the exit code it chose (exit injected). */
 async function exitCodeFor(port: number): Promise<number | undefined> {
-  vi.spyOn(process, 'exit').mockImplementation(((code?: number) => { throw new Exited(code); }) as never);
   vi.spyOn(process.stderr, 'write').mockReturnValue(true);
   process.env[ENV.FOX_HOST] = '127.0.0.1';
   process.env[ENV.FOX_HTTP_PORT] = String(port);
   process.env[ENV.FOX_WS_PORT] = String(port);
-  try {
-    await runDaemon();
-  } catch (err: unknown) {
-    if (err instanceof Exited) return err.code;
-    throw err;
-  }
-  return undefined;
+  const codes: number[] = [];
+  await runDaemon({ exit: (code) => { codes.push(code); } });
+  expect(codes).toHaveLength(1);
+  return codes[0];
 }
+
+describe('occupiedPortExit (R-11: the decision, without exiting)', () => {
+  it('0 only for a daemon that proved our token', () => {
+    expect(occupiedPortExit({ kind: 'ok' }, 'h', 1).code).toBe(0);
+    for (const occupant of [
+      { kind: 'impostor' },
+      { kind: 'incompatible', protocol: 9, version: '0.0.1' },
+      { kind: 'foreign' },
+      { kind: 'down' },
+      { kind: 'unverified' },
+    ] as const) {
+      expect(occupiedPortExit(occupant, 'h', 1).code, occupant.kind).toBe(1);
+    }
+  });
+
+  it('names the occupant and what to do', () => {
+    expect(occupiedPortExit({ kind: 'impostor' }, 'h', 1).message).toMatch(/cannot prove it holds .*Stop it, or set FOX_HTTP_PORT/);
+    expect(occupiedPortExit({ kind: 'incompatible', protocol: 9, version: '0.0.1' }, 'h', 1).message).toContain('(9, v0.0.1)');
+    expect(occupiedPortExit({ kind: 'foreign' }, 'h', 1).message).toMatch(/another program\. Set FOX_HTTP_PORT/);
+  });
+});
 
 describe('runDaemon when the HTTP port is already taken (singleton lock)', () => {
   it('exits 0 when the port belongs to a daemon holding our token', async () => {

@@ -27,7 +27,7 @@ import type { WebSocketServer } from 'ws';
 import { ENV } from '@kitsune-mcp/shared';
 import { startHttpBridge } from '../transport/http-bridge.js';
 import { startWebSocketServer } from '../transport/ws-bridge.js';
-import { getConnectionManager } from '../connection/manager.js';
+import { getConnectionManager, type BrowserConnectionManager } from '../connection/manager.js';
 import { isHeadlessEnabled, unrecognizedHeadlessValue } from '../utils/headless-env.js';
 import { getSafetyGuard } from '../safety/guard.js';
 import { headlessContainerScopeWarning } from '../safety/container.js';
@@ -40,9 +40,10 @@ import {
   effectiveDaemonSettings,
   snapshotDaemonSettings,
 } from '../utils/endpoint.js';
+import { errorMessage } from '../utils/errors.js';
 import { DaemonActivity, SHUTDOWN_DRAIN_MS, resolveIdleTimeoutMs } from './activity.js';
 import { PACKAGE_VERSION } from '../version.js';
-import { stderrLogger } from '@kitsune-mcp/shared/node';
+import { stderrLogger, type HealthVerdict } from '@kitsune-mcp/shared/node';
 import { probeExistingDaemon } from './probe.js';
 
 const log = stderrLogger('daemon');
@@ -52,16 +53,13 @@ const WS_GOING_AWAY = 1001;
 
 /**
  * When the headless backend cannot start: how long the tool calls already
- * waiting get to receive the reason (500) before the daemon exits.
+ * waiting get to receive the reason (500) before the daemon exits. Used for
+ * the wait and for closing the HTTP server, so up to twice this in all.
  */
 const STARTUP_FAILURE_ANSWER_MS = 2_000;
 
 function isAddrInUse(err: unknown): boolean {
   return err instanceof Error && 'code' in err && err.code === 'EADDRINUSE';
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 /** One part of the shutdown after the drain; a failing step is logged and the next one runs. */
@@ -119,7 +117,7 @@ export function createDaemonShutdown(deps: DaemonShutdownDeps): DaemonShutdown {
       try {
         await step.run();
       } catch (err: unknown) {
-        say(`shutdown: ${step.name} failed: ${errorText(err)}`);
+        say(`shutdown: ${step.name} failed: ${errorMessage(err)}`);
       }
     }
     return { waitedMs, drained, cancelledCalls: drained ? 0 : activity.inFlightCalls };
@@ -139,9 +137,55 @@ export function createDaemonShutdown(deps: DaemonShutdownDeps): DaemonShutdown {
     get started() { return preparing !== undefined; },
     prepare,
     stop: (reason) => prepare(reason, true)
-      .then(() => undefined, (err: unknown) => { say(`shutdown failed: ${errorText(err)}`); })
+      .then(() => undefined, (err: unknown) => { say(`shutdown failed: ${errorMessage(err)}`); })
       .finally(exit),
   };
+}
+
+/** What the shutdown needs of the WebSocket server (a WebSocketServer). */
+export interface ClosableWsServer {
+  readonly clients: Iterable<{ close(code: number, reason: string): void }>;
+  close(): void;
+}
+
+export interface ShutdownStepsDeps {
+  /** The WebSocket server once it listens (the shutdown is set up before). */
+  getWsServer: () => ClosableWsServer | undefined;
+  headlessMode: boolean;
+  connectionManager: BrowserConnectionManager;
+}
+
+/** The daemon's shutdown steps after the drain, in order. */
+export function buildShutdownSteps(deps: ShutdownStepsDeps): ShutdownStep[] {
+  const { getWsServer, headlessMode, connectionManager } = deps;
+  return [
+    {
+      // Native Hosts: 1001 Going Away, so they know this was deliberate.
+      name: 'closing the WebSocket connections',
+      run: () => {
+        const wsServer = getWsServer();
+        if (wsServer === undefined) return;
+        for (const client of wsServer.clients) {
+          try {
+            client.close(WS_GOING_AWAY, 'daemon shutting down');
+          } catch {
+            // Best-effort
+          }
+        }
+        wsServer.close();
+      },
+    },
+    {
+      name: 'stopping the headless browser',
+      run: async () => {
+        if (!headlessMode) return;
+        // Loaded on demand: playwright is only needed in headless mode.
+        const { getHeadlessBrowser } = await import('../headless/backend.js');
+        await getHeadlessBrowser()?.stop();
+      },
+    },
+    { name: 'closing the browser connections', run: () => connectionManager.shutdown() },
+  ];
 }
 
 /** Close the HTTP server, waiting at most `capMs` for answers still being written. */
@@ -181,59 +225,67 @@ async function startHeadless(): Promise<void> {
         connectionManager.handleResponse({
           requestId: command.requestId,
           success: false,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         });
       });
   }, 'headless');
 }
 
-/**
- * The HTTP port (the singleton lock) is taken: say by whom, and exit — 0
- * when it is another healthy KitsuneMCP daemon of ours, 1 otherwise.
- */
-async function exitForOccupiedPort(host: string, httpPort: number, apiToken: string): Promise<never> {
-  const occupant = await probeExistingDaemon(host, httpPort, apiToken);
-  if (occupant.kind === 'ok') {
-    log(`another KitsuneMCP daemon already owns ${host}:${httpPort} — exiting`);
-    process.exit(0);
-  }
-  if (occupant.kind === 'impostor') {
-    log(
-      `port ${host}:${httpPort} answers as a KitsuneMCP daemon but cannot prove it holds ` +
-      'this user\'s API token (a daemon started before the token file was replaced, ' +
-      'another user\'s daemon, or a program impersonating it). ' +
-      `Stop it, or set ${ENV.FOX_HTTP_PORT} (and ${ENV.FOX_WS_PORT}) to free ports.`,
-    );
-    process.exit(1);
-  }
-  if (occupant.kind === 'incompatible') {
-    log(
-      `port ${host}:${httpPort} is owned by a KitsuneMCP daemon of another protocol ` +
-      `(${String(occupant.protocol)}${occupant.version ? `, v${occupant.version}` : ''}): stop it and retry.`,
-    );
-    process.exit(1);
-  }
-  log(
-    `port ${host}:${httpPort} is in use by another program. ` +
-    `Set ${ENV.FOX_HTTP_PORT} (and ${ENV.FOX_WS_PORT}) to free ports.`,
-  );
-  process.exit(1);
+/** How the daemon ends when the HTTP port (the singleton lock) is taken. */
+export interface OccupiedPortExit {
+  /** 0 when another healthy KitsuneMCP daemon of ours owns the port, 1 otherwise. */
+  code: 0 | 1;
+  /** Who owns the port (logged). */
+  message: string;
 }
 
-export async function runDaemon(): Promise<void> {
-  const connectionManager = getConnectionManager();
+/** Decide the exit for an occupied HTTP port from what answers on it (probeExistingDaemon). */
+export function occupiedPortExit(occupant: HealthVerdict, host: string, httpPort: number): OccupiedPortExit {
+  const freePorts = `${ENV.FOX_HTTP_PORT} (and ${ENV.FOX_WS_PORT}) to free ports`;
+  switch (occupant.kind) {
+    case 'ok':
+      return { code: 0, message: `another KitsuneMCP daemon already owns ${host}:${httpPort} — exiting` };
+    case 'impostor':
+      return {
+        code: 1,
+        message:
+          `port ${host}:${httpPort} answers as a KitsuneMCP daemon but cannot prove it holds ` +
+          'this user\'s API token (a daemon started before the token file was replaced, ' +
+          'another user\'s daemon, or a program impersonating it). ' +
+          `Stop it, or set ${freePorts}.`,
+      };
+    case 'incompatible':
+      return {
+        code: 1,
+        message:
+          `port ${host}:${httpPort} is owned by a KitsuneMCP daemon of another protocol ` +
+          `(${String(occupant.protocol)}${occupant.version ? `, v${occupant.version}` : ''}): stop it and retry.`,
+      };
+    default:
+      return { code: 1, message: `port ${host}:${httpPort} is in use by another program. Set ${freePorts}.` };
+  }
+}
+
+export interface RunDaemonDeps {
+  /** Ends the process (tests: records the code). Default: process.exit. */
+  exit?: (code: number) => void;
+}
+
+/** Where the daemon listens and in which mode, with the warnings about it logged. */
+interface DaemonEndpoint {
+  host: string;
+  httpPort: number;
+  wsPort: number;
+  headlessMode: boolean;
+}
+
+function resolveDaemonEndpoint(): DaemonEndpoint {
   const host = resolveHost();
-  const httpPort = resolveHttpPort();
-  const wsPort = resolveWsPort();
   const headlessMode = isHeadlessEnabled();
   const odd = unrecognizedHeadlessValue();
   if (odd !== undefined) {
     log(`WARNING: ${ENV.FOX_HEADLESS}='${odd}' is not 1/true/yes — headless mode is OFF`);
   }
-  const activity = new DaemonActivity();
-  const settings = snapshotDaemonSettings();
-  const effectiveSettings = effectiveDaemonSettings(process.env);
-
   if (!isLoopbackHost(host)) {
     log(
       `WARNING: ${ENV.FOX_HOST}=${host} is not a loopback address — the HTTP and WebSocket ` +
@@ -241,16 +293,43 @@ export async function runDaemon(): Promise<void> {
       'the API token, but browser control should stay local: unset it unless you really need this.',
     );
   }
+  return { host, httpPort: resolveHttpPort(), wsPort: resolveWsPort(), headlessMode };
+}
 
-  // Only the daemon generates the token (race-safe, see loadOrCreateApiToken).
-  const apiToken = loadOrCreateApiToken();
-
+/** `ready` for the HTTP bridge, with its resolve / reject. */
+function readyGate(): { ready: Promise<void>; markReady: () => void; failReady: (err: Error) => void } {
   let markReady: () => void = () => undefined;
   let failReady: (err: Error) => void = () => undefined;
   const ready = new Promise<void>((resolve, reject) => {
     markReady = resolve;
     failReady = reject;
   });
+  return { ready, markReady, failReady };
+}
+
+function logStartup(endpoint: DaemonEndpoint, idleMs: number): void {
+  const { host, httpPort, wsPort, headlessMode } = endpoint;
+  for (const line of [
+    `kitsune-mcp v${PACKAGE_VERSION} (PID ${process.pid})`,
+    `HTTP  : ${host}:${httpPort}`,
+    `WS    : ${host}:${wsPort}`,
+    `Mode  : ${headlessMode ? 'headless' : 'extension'}`,
+    `Idle  : ${idleMs === 0 ? 'never exits' : `exits after ${idleMs / 1000}s unused`}`,
+  ]) log(line);
+}
+
+export async function runDaemon(deps: RunDaemonDeps = {}): Promise<void> {
+  const exit = deps.exit ?? ((code: number): void => process.exit(code));
+  const connectionManager = getConnectionManager();
+  const endpoint = resolveDaemonEndpoint();
+  const { host, httpPort, wsPort, headlessMode } = endpoint;
+  const activity = new DaemonActivity();
+  const settings = snapshotDaemonSettings();
+  const effectiveSettings = effectiveDaemonSettings(process.env);
+
+  // Only the daemon generates the token (race-safe, see loadOrCreateApiToken).
+  const apiToken = loadOrCreateApiToken();
+  const { ready, markReady, failReady } = readyGate();
 
   // --- Shutdown (two steps: everything but the exit, then the exit) ---
   // Signals and the idle timer run both at once (idle: nothing runs; a
@@ -264,40 +343,14 @@ export async function runDaemon(): Promise<void> {
   const exitNow = (): void => {
     httpServer?.close();
     log('shutdown complete');
-    process.exit(0);
+    exit(0);
   };
 
   const shutdown = createDaemonShutdown({
     activity,
     log,
     exit: exitNow,
-    steps: [
-      {
-        // Native Hosts: 1001 Going Away, so they know this was deliberate.
-        name: 'closing the WebSocket connections',
-        run: () => {
-          if (wsServer === undefined) return;
-          for (const client of wsServer.clients) {
-            try {
-              client.close(WS_GOING_AWAY, 'daemon shutting down');
-            } catch {
-              // Best-effort
-            }
-          }
-          wsServer.close();
-        },
-      },
-      {
-        name: 'stopping the headless browser',
-        run: async () => {
-          if (!headlessMode) return;
-          // Loaded on demand: playwright is only needed in headless mode.
-          const { getHeadlessBrowser } = await import('../headless/backend.js');
-          await getHeadlessBrowser()?.stop();
-        },
-      },
-      { name: 'closing the browser connections', run: () => connectionManager.shutdown() },
-    ],
+    steps: buildShutdownSteps({ getWsServer: () => wsServer, headlessMode, connectionManager }),
   });
 
   // --- HTTP port first: it is the singleton lock ---
@@ -322,18 +375,21 @@ export async function runDaemon(): Promise<void> {
       },
     });
   } catch (err: unknown) {
-    if (isAddrInUse(err)) await exitForOccupiedPort(host, httpPort, apiToken);
-    throw err;
+    if (!isAddrInUse(err)) throw err;
+    const { code, message } = occupiedPortExit(await probeExistingDaemon(host, httpPort, apiToken), host, httpPort);
+    log(message);
+    exit(code);
+    return;
   }
 
   // --- WebSocket bridge (Native Host) ---
   try {
     wsServer = await startWebSocketServer({ host, port: wsPort, apiToken, connectionManager });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log(`cannot listen on ws://${host}:${wsPort}: ${msg}. Set ${ENV.FOX_WS_PORT} to a free port.`);
-    httpServer?.close();
-    process.exit(1);
+    log(`cannot listen on ws://${host}:${wsPort}: ${errorMessage(err)}. Set ${ENV.FOX_WS_PORT} to a free port.`);
+    httpServer.close();
+    exit(1);
+    return;
   }
 
   // --- Headless backend (after the ports: don't boot Firefox for a loser) ---
@@ -352,13 +408,7 @@ export async function runDaemon(): Promise<void> {
   markReady();
 
   const idleMs = resolveIdleTimeoutMs();
-  for (const line of [
-    `kitsune-mcp v${PACKAGE_VERSION} (PID ${process.pid})`,
-    `HTTP  : ${host}:${httpPort}`,
-    `WS    : ${host}:${wsPort}`,
-    `Mode  : ${headlessMode ? 'headless' : 'extension'}`,
-    `Idle  : ${idleMs === 0 ? 'never exits' : `exits after ${idleMs / 1000}s unused`}`,
-  ]) log(line);
+  logStartup(endpoint, idleMs);
 
   process.on('SIGINT', () => void shutdown.stop('SIGINT received'));
   process.on('SIGTERM', () => void shutdown.stop('SIGTERM received'));
