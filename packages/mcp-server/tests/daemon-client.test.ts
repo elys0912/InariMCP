@@ -62,9 +62,9 @@ describe('DaemonClient against the real daemon', () => {
     expect(JSON.stringify(result.content)).toContain('readOnly');
   });
 
-  it('reads /daemon/info (settingsMismatch) over a signed request', async () => {
+  it('reads /daemon/info (checkSettings) over a signed request', async () => {
     const c = client(await realDaemon());
-    await expect(c.settingsMismatch()).resolves.toEqual(expect.any(Array));
+    await expect(c.checkSettings()).resolves.toEqual(expect.any(Array));
   });
 });
 
@@ -84,9 +84,9 @@ describe('DaemonClient against an impostor', () => {
     expect(seen.some((h) => typeof h[AUTH_HEADER.signature] === 'string')).toBe(true);
   });
 
-  it('ignores unsigned /daemon/info settings', async () => {
+  it('ignores unsigned /daemon/info settings (unknown: null)', async () => {
     const { port } = await impostor();
-    await expect(client(port).settingsMismatch()).resolves.toEqual([]);
+    await expect(client(port).checkSettings()).resolves.toBeNull();
   });
 
   it('unsigned /daemon/info that reports other settings is unknown (null), not a mismatch', async () => {
@@ -106,7 +106,6 @@ describe('DaemonClient against an impostor', () => {
     servers.push(s);
     const c = client(portOf(s));
     await expect(c.checkSettings()).resolves.toBeNull();
-    await expect(c.settingsMismatch()).resolves.toEqual([]);
     // Without a token there is nothing to verify with: also unknown.
     await expect(client(portOf(s), undefined).checkSettings()).resolves.toBeNull();
   });
@@ -173,6 +172,21 @@ describe('DaemonClient: refused signature (X-3 / L-4)', () => {
     expect(text).not.toContain('Unauthorized');
   });
 
+  it('tool call: reads the token again once after an unsigned 403, then succeeds', async () => {
+    const port = await realDaemon();
+    let reads = 0;
+    const c = new DaemonClient('test', {
+      host: '127.0.0.1',
+      port,
+      readToken: () => (reads++ === 0 ? other : TOKEN),
+    });
+    await c.checkHealth();
+    const result = await c.callTool('fox_safety_status', {});
+    expect(result.isError).not.toBe(true);
+    expect(JSON.stringify(result.content)).toContain('readOnly');
+    expect(reads).toBe(2);
+  });
+
   it('approval: the same message as the tool call', async () => {
     const c = client(await realDaemon(), other);
     const reply = await c.reportElicitation('req-x', true);
@@ -191,6 +205,47 @@ describe('DaemonClient: elicitation answer refused by the daemon (X-1)', () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe('DaemonClient.stopDaemon: failures', () => {
+  it('nothing answers: ok, nothing stopped', async () => {
+    const { port } = await impostor();
+    const s = servers.pop();
+    s?.closeAllConnections();
+    await new Promise<void>((resolve) => (s ? s.close(() => resolve()) : resolve()));
+    await expect(client(port).stopDaemon()).resolves.toMatchObject({ ok: true, stopped: false });
+  });
+
+  it('no token to sign with', async () => {
+    const r = await client(await realDaemon(), undefined).stopDaemon();
+    expect(r).toMatchObject({ ok: false, stopped: false });
+    expect(r.message).toMatch(/no API token at .*api_token/);
+  });
+
+  it('an unsigned answer is not trusted', async () => {
+    const { port } = await impostor();
+    const r = await client(port).stopDaemon();
+    expect(r).toMatchObject({ ok: false, stopped: false });
+    expect(r.message).toMatch(/not signed by the KitsuneMCP daemon/);
+  });
+
+  it('a signed refusal (not 200) is reported with its error', async () => {
+    // No shutdown hooks: the route answers 501.
+    const r = await client(await realDaemon()).stopDaemon();
+    expect(r).toMatchObject({ ok: false, stopped: false });
+    expect(r.message).toBe('the daemon refused to stop: This daemon cannot be stopped over HTTP');
+  });
+
+  it('a daemon that accepted but still answers after waitMs', async () => {
+    const s = await startHttpBridge({
+      host: '127.0.0.1', port: 0, apiToken: TOKEN, connectionManager: getConnectionManager(),
+      shutdown: { prepare: () => Promise.resolve({}), exit: () => undefined },
+    });
+    servers.push(s);
+    const r = await client(portOf(s)).stopDaemon(false, 500);
+    expect(r).toMatchObject({ ok: false, stopped: false, pid: process.pid });
+    expect(r.message).toMatch(/accepted the stop request but still answers after 0\.5s/);
   });
 });
 
