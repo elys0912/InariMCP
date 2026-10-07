@@ -20,13 +20,22 @@ import * as path from 'node:path';
 import { ENV, ENV_DEFAULTS, isRecord, LEGACY_ENV } from '@kitsune-mcp/shared';
 
 import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, macMatches, newNonce, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
-import { apiTokenPath, dataDir as kitsuneDataDir, kitsuneHealth, type HealthVerdict } from '@kitsune-mcp/shared/node';
+import {
+  apiTokenPath,
+  daemonLogPath,
+  dataDir as kitsuneDataDir,
+  kitsuneHealth,
+  logsDir,
+  nativeHostLogPath,
+  type HealthVerdict,
+} from '@kitsune-mcp/shared/node';
 import { DAEMON_SETTING_KEYS, compareDaemonSettings, readApiTokenFile, resolveHost, resolveHttpPort } from '../utils/endpoint.js';
 import { resolveFoxEnv } from '../utils/headless-env.js';
 import { MAX_LOG_BYTES } from '../utils/log-file.js';
 import { HEALTH_PROBE_TIMEOUT_MS } from '../daemon/probe.js';
 import { getAuditLogPath, parseSafetyConfig } from '../safety/config.js';
 import { PACKAGE_VERSION, readPackageVersion } from '../version.js';
+import { errorMessage } from '../utils/errors.js';
 
 export type Status = 'OK' | 'WARN' | 'FAIL' | 'SKIP';
 
@@ -104,13 +113,15 @@ const STOP_DAEMON = 'stop the daemon with `node packages/mcp-server/dist/index.j
 function stopByPid(ctx: DoctorContext): string {
   return `end the process listening on port ${ctx.port} by PID`;
 }
+const KIB = 1024;
+const MIB = 1024 * KIB;
 /** The Native Host's WebSocket reconnect backoff tops out at this. */
 const RECONNECT_BACKOFF_MAX_S = ENV_DEFAULTS.BACKOFF_MAX_MS / 1000;
 const REG_QUERY_TIMEOUT_MS = 5_000;
 /** Starting powershell.exe can take several seconds on a cold machine. */
 const POWERSHELL_PROBE_TIMEOUT_MS = 15_000;
 /** How much of the end of a log the doctor reads. */
-const LOG_TAIL_BYTES = 64 * 1024;
+const LOG_TAIL_BYTES = 64 * KIB;
 /**
  * A log is rotated once it passes MAX_LOG_BYTES; one past twice that size
  * has not been rotated (an old build, or a writer that does not rotate).
@@ -118,6 +129,17 @@ const LOG_TAIL_BYTES = 64 * 1024;
 const UNROTATED_LOG_BYTES = 2 * MAX_LOG_BYTES;
 const NM_HOST_NAME = 'kitsune_mcp';
 const CLAUDE_SERVER_NAME = 'kitsune-mcp';
+/** Node.js major assumed when package.json has no readable engines.node. */
+const DEFAULT_NODE_MAJOR = 18;
+const DEFAULT_NODE_ENGINES = `>=${DEFAULT_NODE_MAJOR}.0.0`;
+/**
+ * Lines the doctor looks for in native-host.log. They mirror the Native
+ * Host's own log calls (native-host/src/index.ts: "KitsuneMCP Native Host
+ * v<version> starting"; server-launcher.ts and health-monitor.ts: "max start
+ * attempts ..."); a change there must be made here too.
+ */
+const HOST_START_MARKER = 'Native Host v';
+const HOST_GAVE_UP_MARKER = 'max start attempts';
 
 function parseJson(raw: string | Buffer): unknown {
   try {
@@ -137,7 +159,7 @@ function readJsonFile(file: string): { value?: unknown; error?: string } {
   try {
     return { value: JSON.parse(text.replace(/^\uFEFF/, '')) };
   } catch (err: unknown) {
-    return { error: `invalid JSON (${err instanceof Error ? err.message : String(err)})` };
+    return { error: `invalid JSON (${errorMessage(err)})` };
   }
 }
 
@@ -265,8 +287,8 @@ function hostEntry(ctx: DoctorContext): string {
 }
 
 function formatBytes(n: number): string {
-  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)} MB`;
-  if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+  if (n >= MIB) return `${(n / MIB).toFixed(1)} MB`;
+  if (n >= KIB) return `${Math.round(n / KIB)} KB`;
   return `${n} B`;
 }
 
@@ -343,12 +365,21 @@ function sessionEnv(ctx: DoctorContext): Record<string, string | undefined> {
 // Checks
 // ---------------------------------------------------------------------------
 
+/** The first number of an engines range (`>=18.0.0` → 18), if any. */
+function majorOf(range: string): number | undefined {
+  const digits = /(\d+)/.exec(range)?.[1];
+  return digits === undefined ? undefined : Number(digits);
+}
+
 export function checkNode(ctx: DoctorContext): CheckResult {
   const { value } = readJsonFile(path.join(ctx.deps.repoRoot, 'package.json'));
-  const engines = isRecord(value) && isRecord(value['engines']) && typeof value['engines']['node'] === 'string'
+  const declared = isRecord(value) && isRecord(value['engines']) && typeof value['engines']['node'] === 'string'
     ? value['engines']['node']
-    : '>=18.0.0';
-  const min = Number(/(\d+)/.exec(engines)?.[1] ?? '18');
+    : undefined;
+  const declaredMajor = declared === undefined ? undefined : majorOf(declared);
+  const [engines, min] = declared !== undefined && declaredMajor !== undefined
+    ? [declared, declaredMajor]
+    : [DEFAULT_NODE_ENGINES, DEFAULT_NODE_MAJOR];
   const major = Number(ctx.deps.nodeVersion.split('.')[0]);
   if (major >= min) return { id: 'node', status: 'OK', detail: `v${ctx.deps.nodeVersion} (engines ${engines})` };
   return {
@@ -593,12 +624,13 @@ export function checkClaude(ctx: DoctorContext): CheckResult {
     return script === undefined || !samePath(path.resolve(ctx.deps.cwd, script), entry, ctx.deps.platform);
   });
   const list = entries.map((e) => `${e.name} (${e.scope}): ${[e.command, ...e.args].join(' ')}`).join('; ');
-  if (wrong.length > 0) {
+  const [firstWrong] = wrong;
+  if (firstWrong !== undefined) {
     return {
       id,
       status: 'WARN',
       detail: `${list} — not this checkout's ${entry}${cliNote}`,
-      fix: `re-register: claude mcp remove ${wrong[0]!.name} -s ${wrong[0]!.scope}, then ${register}`,
+      fix: `re-register: claude mcp remove ${firstWrong.name} -s ${firstWrong.scope}, then ${register}`,
     };
   }
   return { id, status: 'OK', detail: `${list}${cliNote} (read from the config; claude mcp get is not run: it starts the server)` };
@@ -847,14 +879,10 @@ function tail(file: string, bytes = LOG_TAIL_BYTES): string {
 
 export function checkLogs(ctx: DoctorContext): CheckResult {
   const id = 'logs';
-  const logsDir = path.join(ctx.dataDir, 'logs');
+  const logs = logsDir();
   const rawHostLog = process.env[ENV.FOX_NATIVE_HOST_LOG]?.trim();
-  const hostLog = rawHostLog ? path.resolve(rawHostLog) : path.join(logsDir, 'native-host.log');
-  const files = [
-    path.join(logsDir, 'daemon.log'),
-    hostLog,
-    getAuditLogPath(),
-  ];
+  const hostLog = rawHostLog ? path.resolve(rawHostLog) : nativeHostLogPath();
+  const files = [daemonLogPath(), hostLog, getAuditLogPath()];
   const sizes: string[] = [];
   const oversized: string[] = [];
   for (const file of files) {
@@ -863,13 +891,13 @@ export function checkLogs(ctx: DoctorContext): CheckResult {
     sizes.push(`${path.basename(file)} ${formatBytes(st.size)}`);
     if (!file.endsWith('.jsonl') && st.size > UNROTATED_LOG_BYTES) oversized.push(path.basename(file));
   }
-  const detail = `${logsDir}: ${sizes.length > 0 ? sizes.join(', ') : 'no log files yet'}`;
+  const detail = `${logs}: ${sizes.length > 0 ? sizes.join(', ') : 'no log files yet'}`;
 
   // The Native Host stops trying after ENV_DEFAULTS.MAX_RESTART_ATTEMPTS and
   // says so only in its log (scenario table: no notice).
   const hostTail = tail(hostLog);
-  const gaveUp = hostTail.lastIndexOf('max start attempts');
-  const restarted = Math.max(hostTail.lastIndexOf('Native Host starting'), hostTail.lastIndexOf('Native Host v'));
+  const gaveUp = hostTail.lastIndexOf(HOST_GAVE_UP_MARKER);
+  const restarted = hostTail.lastIndexOf(HOST_START_MARKER);
   if (gaveUp > restarted) {
     const line = hostTail.slice(hostTail.lastIndexOf('\n', gaveUp) + 1, gaveUp);
     return {
@@ -909,7 +937,7 @@ export async function runChecks(deps: DoctorDeps): Promise<CheckResult[]> {
     try {
       return check(ctx);
     } catch (err: unknown) {
-      return { id: check.name, status: 'FAIL' as const, detail: `check crashed: ${err instanceof Error ? err.message : String(err)}` };
+      return { id: check.name, status: 'FAIL' as const, detail: `check crashed: ${errorMessage(err)}` };
     }
   });
 }

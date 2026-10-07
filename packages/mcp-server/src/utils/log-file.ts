@@ -6,6 +6,18 @@ export { MAX_LOG_BYTES, logStamp, rotateIfLarge, stampLines } from '@kitsune-mcp
 /** Encodings whose string spells out bytes (decoded to text before stamping). */
 const BYTE_STRING_ENCODINGS: ReadonlySet<BufferEncoding> = new Set<BufferEncoding>(['hex', 'base64', 'base64url']);
 
+type WriteCallback = (err?: Error | null) => void;
+
+/**
+ * Both overloads of stream.write — (chunk, cb?) and (chunk, encoding?, cb?) —
+ * in one signature, so a replacement can be assigned without a cast.
+ */
+type StreamWrite = (
+  chunk: string | Uint8Array,
+  encodingOrCb?: BufferEncoding | WriteCallback,
+  cb?: WriteCallback,
+) => boolean;
+
 /**
  * Prefix every line the process writes to stderr with a timestamp and the
  * PID. Used by the daemon, whose stderr is ~/.kitsune-mcp/logs/daemon.log:
@@ -17,12 +29,8 @@ export function installStderrTimestamps(
   stamp: () => string = () => logStamp(),
 ): void {
   let atLineStart = true;
-  const original = stream.write.bind(stream) as (chunk: string, cb?: (err?: Error | null) => void) => boolean;
-  const write = (
-    chunk: string | Uint8Array,
-    encodingOrCb?: BufferEncoding | ((err?: Error | null) => void),
-    cb?: (err?: Error | null) => void,
-  ): boolean => {
+  const original = stream.write.bind(stream);
+  const write: StreamWrite = (chunk, encodingOrCb, cb) => {
     // Only a binary-to-text encoding makes the string stand for bytes; with
     // a text encoding (latin1, utf16le, …) the string is already the text.
     const text =
@@ -35,5 +43,5 @@ export function installStderrTimestamps(
     atLineStart = stamped.atLineStart;
     return original(stamped.text, typeof encodingOrCb === 'function' ? encodingOrCb : cb);
   };
-  stream.write = write as typeof stream.write;
+  stream.write = write;
 }

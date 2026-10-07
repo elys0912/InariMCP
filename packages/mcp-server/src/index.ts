@@ -36,6 +36,7 @@ import { helpText, parseArgs } from './cli.js';
 import { PACKAGE_VERSION } from './version.js';
 import { installProcessHandlers } from './utils/process-handlers.js';
 import { installStderrTimestamps } from './utils/log-file.js';
+import { errorMessage } from './utils/errors.js';
 
 const command = parseArgs(process.argv.slice(2));
 
@@ -86,7 +87,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  const msg = err instanceof Error ? err.message : String(err);
-  process.stderr.write(`[KitsuneMCP:${command.kind}] Failed to start: ${msg}\n`);
+  process.stderr.write(`[KitsuneMCP:${command.kind}] Failed to start: ${errorMessage(err)}\n`);
   process.exit(1);
 });

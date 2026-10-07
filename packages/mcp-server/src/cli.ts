@@ -5,6 +5,7 @@
  */
 
 import { PACKAGE_VERSION } from './version.js';
+import { SHUTDOWN_DRAIN_MS } from './daemon/activity.js';
 
 export type CliCommand =
   | { kind: 'relay' }
@@ -68,7 +69,7 @@ Usage: node packages/mcp-server/dist/index.js [option]
                  item FAILs. ("doctor" works too: kitsune-mcp doctor)
   --stop-daemon  stop the running daemon gracefully (signed POST
                  /daemon/shutdown: running tool calls may finish, up to
-                 10 s; headless Firefox is closed). Every Claude Code
+                 ${SHUTDOWN_DRAIN_MS / 1000} s; headless Firefox is closed). Every Claude Code
                  session loses the browser tools until the next call
                  starts a daemon again. Exit code 1 when it did not stop.
                  With --force, running calls are cancelled at once.

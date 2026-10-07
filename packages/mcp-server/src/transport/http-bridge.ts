@@ -73,6 +73,7 @@ import { callSchemaFor, callableToolNames, describeTool } from '../tools/operati
 import { createToolHandler } from '../tools/handlers.js';
 import { answerFromElicitation, askBrowser } from '../tools/approval-flow.js';
 import { MAX_REQUEST_BODY_BYTES, RELAY_ID_HEADER, isValidRelayId } from '../utils/endpoint.js';
+import { errorMessage } from '../utils/errors.js';
 import type { DaemonActivity } from '../daemon/activity.js';
 import {
   AUTH_HEADER,
@@ -427,13 +428,9 @@ function shuttingDown(ctx: BridgeContext): boolean {
   return ctx.stopping !== undefined || ctx.isShuttingDown();
 }
 
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 /** The tool did not run: the daemon could not start (ready rejected). */
 function notStarted(err: unknown): string {
-  return `KitsuneMCP daemon could not start: ${errorText(err)}`;
+  return `KitsuneMCP daemon could not start: ${errorMessage(err)}`;
 }
 
 interface Caller {
@@ -624,7 +621,7 @@ function handlePost(
         return;
       }
       if (res.destroyed) return; // nobody left to answer
-      reply.error(500, `Internal error: ${errorText(err)}`);
+      reply.error(500, `Internal error: ${errorMessage(err)}`);
     });
 }
 
@@ -669,12 +666,12 @@ function sendAnswer<T>(res: http.ServerResponse, reply: Responder, answer: (resu
   try {
     answer(result);
   } catch (err: unknown) {
-    process.stderr.write(`[KitsuneMCP] HTTP answer could not be written: ${errorText(err)}\n`);
+    process.stderr.write(`[KitsuneMCP] HTTP answer could not be written: ${errorMessage(err)}\n`);
     if (res.headersSent) {
       res.destroy();
       return;
     }
-    reply.error(500, `Internal error: the answer could not be written (${errorText(err)})`);
+    reply.error(500, `Internal error: the answer could not be written (${errorMessage(err)})`);
   }
 }
 
@@ -706,7 +703,7 @@ function runTrackedCall<T>(
       () => runWithCallSignal(abort.signal, work)
         .then(
           (result) => sendAnswer(res, reply, answer, result),
-          (err: unknown) => reply.error(500, `${failure}: ${errorText(err)}`),
+          (err: unknown) => reply.error(500, `${failure}: ${errorMessage(err)}`),
         ),
       (err: unknown) => reply.error(500, notStarted(err)),
     )
@@ -878,7 +875,7 @@ function handleShutdown(
     // Exit anyway: the shutdown may have stopped halfway (browsers closed,
     // calls refused), and a daemon left like that would refuse every call.
     (err: unknown) => answerThenExit(() => {
-      reply.error(500, `Shutdown failed: ${errorText(err)} (the daemon exits anyway)`);
+      reply.error(500, `Shutdown failed: ${errorMessage(err)} (the daemon exits anyway)`);
     }),
   );
 }
@@ -929,7 +926,7 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
       route(ctx, req, res, reply);
     } catch (err: unknown) {
       // A bug in a route must cost one request, not the daemon.
-      process.stderr.write(`[KitsuneMCP] HTTP handler error: ${errorText(err)}\n`);
+      process.stderr.write(`[KitsuneMCP] HTTP handler error: ${errorMessage(err)}\n`);
       reply.error(500, 'Internal error');
     }
   });

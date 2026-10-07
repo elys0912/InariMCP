@@ -679,7 +679,7 @@ describe('doctor: screenshots and logs', () => {
     fs.mkdirSync(logs, { recursive: true });
     fs.writeFileSync(path.join(logs, 'native-host.log'), [
       '2026-10-01T09:00:30.000Z giving up: max start attempts (10) reached',
-      '2026-10-01T09:10:00.000Z Native Host starting',
+      '2026-10-01T09:10:00.000Z KitsuneMCP Native Host v0.1.4 starting (PID 1)',
       '',
     ].join('\n'));
     const l = byId(await runChecks(deps(undefined)), 'logs');
