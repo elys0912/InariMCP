@@ -27,6 +27,13 @@ export {
 /** HTTP header a relay uses to identify itself to the daemon (audit log, idle tracking). */
 export const RELAY_ID_HEADER = 'x-kitsune-relay';
 
+/**
+ * Largest request body the daemon reads (1 MiB, generous for any JSON
+ * payload); a larger one is answered 413. Here rather than in the HTTP
+ * bridge so the relay can name the limit without loading the transports.
+ */
+export const MAX_REQUEST_BODY_BYTES = 1_048_576;
+
 /** Relay IDs: 1-32 characters of A-Z, a-z, 0-9, `_` and `-` (relays send shortId()); anything else is ignored. */
 export function isValidRelayId(value: string): boolean {
   return /^[A-Za-z0-9_-]{1,32}$/.test(value);
@@ -142,6 +149,22 @@ export function daemonSettingsFromInfo(body: Record<string, unknown>): Effective
     if (typeof v === 'string') out[k] = v;
   }
   return out;
+}
+
+/**
+ * How a session's settings compare with those of the running daemon, the one
+ * rule shared by the relay (DaemonClient.checkSettings) and the doctor:
+ * effective values, so `true` / `1` and old / new variable names agree.
+ *
+ * @param sessionEnv the environment the session would start a daemon with
+ * @param info       the body of the daemon's GET /daemon/info
+ * @returns one line per differing setting (empty when they agree); null when
+ *          `info` carries no settings (unknown, not "equal")
+ */
+export function compareDaemonSettings(sessionEnv: Env, info: Record<string, unknown>): string[] | null {
+  const theirs = daemonSettingsFromInfo(info);
+  if (theirs === null) return null;
+  return diffDaemonSettings(effectiveDaemonSettings(sessionEnv), theirs);
 }
 
 /** Current values of DAEMON_SETTING_KEYS ('' when unset). */

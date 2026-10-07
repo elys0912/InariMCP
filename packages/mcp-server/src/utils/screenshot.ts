@@ -39,15 +39,24 @@ export function getScreenshotsDir(env: NodeJS.ProcessEnv = process.env): string 
 // List
 // ---------------------------------------------------------------------------
 
+/** A saved screenshot, with what its one stat() returned. */
+export interface ScreenshotEntry {
+  name: string;
+  /** Absolute path. */
+  path: string;
+  size: number;
+  birthtimeMs: number;
+  mtimeMs: number;
+}
+
 /**
- * List saved screenshot filenames in the screenshots directory.
+ * Saved screenshots in the screenshots directory, each stat()ed once.
  *
- * @returns Array of filenames (not full paths), sorted newest-first by mtime.
- *          Returns an empty array if the directory does not exist or cannot
- *          be read. Files that vanish while listing (deleted by another
- *          process) are left out instead of throwing.
+ * @returns sorted newest-first by mtime. Empty if the directory does not
+ *          exist or cannot be read. Files that vanish while listing
+ *          (deleted by another process) are left out instead of throwing.
  */
-export function listScreenshots(): string[] {
+export function listScreenshotEntries(): ScreenshotEntry[] {
   const dir = getScreenshotsDir();
 
   let names: string[];
@@ -58,10 +67,12 @@ export function listScreenshots(): string[] {
   }
 
   // stat each file once, outside the sort comparator
-  const entries: { name: string; mtimeMs: number }[] = [];
+  const entries: ScreenshotEntry[] = [];
   for (const name of names) {
+    const fullPath = path.join(dir, name);
     try {
-      entries.push({ name, mtimeMs: fs.statSync(path.join(dir, name)).mtimeMs });
+      const stat = fs.statSync(fullPath);
+      entries.push({ name, path: fullPath, size: stat.size, birthtimeMs: stat.birthtimeMs, mtimeMs: stat.mtimeMs });
     } catch {
       // Gone since readdir
     }
@@ -69,5 +80,10 @@ export function listScreenshots(): string[] {
 
   // Sort newest-first by modification time
   entries.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return entries.map((e) => e.name);
+  return entries;
+}
+
+/** Filenames (not full paths) of listScreenshotEntries(), newest first. */
+export function listScreenshots(): string[] {
+  return listScreenshotEntries().map((e) => e.name);
 }
