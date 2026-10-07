@@ -23,7 +23,7 @@ export function sanitizeLogRecord(raw: unknown): Record<string, unknown> | null 
       out[key] = value;
     } else if (typeof value === "object" && !Array.isArray(value)) {
       const record: Record<string, string> = {};
-      for (const [k, v] of Object.entries(value as Record<string, unknown>).slice(0, LIMITS.LOG_RECORD_ENTRIES)) {
+      for (const [k, v] of Object.entries<unknown>(value).slice(0, LIMITS.LOG_RECORD_ENTRIES)) {
         if (typeof v === "string") record[clipText(k, LIMITS.LOG_RECORD_KEY)] = clipText(v, LIMITS.LOG_RECORD_VALUE);
       }
       out[key] = record;

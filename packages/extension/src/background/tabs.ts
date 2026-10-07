@@ -140,8 +140,9 @@ export async function findTabs(
     const tabs = await browser.tabs.query({});
     let filtered = tabs.filter((t) => isTabInScope(t, scope));
 
-    if (options.url) {
-      filtered = filtered.filter((t) => t.url?.startsWith(options.url!));
+    const prefix = options.url;
+    if (prefix) {
+      filtered = filtered.filter((t) => t.url?.startsWith(prefix));
     }
     const patternArg = urlPatternArg(options.urlPattern);
     if (!patternArg.ok) return patternArg.result;

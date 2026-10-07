@@ -212,7 +212,7 @@ export async function waitForUrl(
   if (!patternArg.ok) return patternArg.result;
   const pattern = patternArg.pattern;
   const matches = (u: string | undefined): boolean =>
-    !!u && (exact ? u === exact : pattern!.test(u));
+    !!u && (exact !== null ? u === exact : pattern?.test(u) === true);
 
   const tab = await resolveTab(tabId);
   if (!tab) return noTargetTab();

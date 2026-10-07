@@ -135,6 +135,14 @@ function toContentScript(action: ContentAction): ActionHandler {
 }
 
 /**
+ * Handler of a needsTabId row. handleCommand already refused the command
+ * without an explicit tabId; the check here narrows the type for `run`.
+ */
+function withTabId(run: (tabId: number) => Promise<CommandResult>): ActionHandler {
+  return async (c) => (c.tabId === undefined ? { success: false, error: "tabId is required" } : run(c.tabId));
+}
+
+/**
  * The command's data as the options type of a handler: the one place the
  * table narrows `data`. Not checked here -- the MCP Server validates each
  * operation's arguments (operation schemas), and handlers read them
@@ -183,9 +191,9 @@ const ACTIONS = {
         ? navigateNewTab(optionsOf<{ url: string; waitForLoad?: boolean }>(c), c.scope)
         : createNewTab(optionsOf<{ url?: string; active?: boolean }>(c), c.scope),
   },
-  closeTab: { scope: "tab", protectedCheck: "upfront", needsTabId: true, skipUrlReport: true, handler: (c) => closeTab(c.tabId!) },
-  focusTab: { scope: "tab", protectedCheck: "upfront", needsTabId: true, handler: (c) => focusTab(c.tabId!) },
-  getTabInfo: { scope: "tab", protectedCheck: "upfront", needsTabId: true, handler: (c) => getTabInfo(c.tabId!) },
+  closeTab: { scope: "tab", protectedCheck: "upfront", needsTabId: true, skipUrlReport: true, handler: withTabId(closeTab) },
+  focusTab: { scope: "tab", protectedCheck: "upfront", needsTabId: true, handler: withTabId(focusTab) },
+  getTabInfo: { scope: "tab", protectedCheck: "upfront", needsTabId: true, handler: withTabId(getTabInfo) },
   findTabs: { scope: "self", protectedCheck: "none", handler: (c) => findTabs(optionsOf<FindTabsOptions>(c), c.scope) },
   screenshotAllTabs: {
     scope: "self",

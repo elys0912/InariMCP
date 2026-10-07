@@ -235,9 +235,10 @@ function handleNativeMessage(raw: unknown): void {
     hostConfirmedAt = Date.now();
   }
 
-  if (typeof message.requestId === "number" && pendingRequests.has(message.requestId)) {
-    const entry = pendingRequests.get(message.requestId)!;
-    pendingRequests.delete(message.requestId);
+  const requestId = message.requestId;
+  const entry = typeof requestId === "number" ? pendingRequests.get(requestId) : undefined;
+  if (typeof requestId === "number" && entry !== undefined) {
+    pendingRequests.delete(requestId);
     // BUG FIX: clear the timeout so it doesn't fire after resolution
     clearTimeout(entry.timeoutId);
 

@@ -55,7 +55,7 @@ export function registerListeners(): void {
             ? "not_top_frame"
             : senderTabId === undefined || !isLoggingTab(senderTabId)
               ? "not_logging"
-              : acceptLogRecords(senderTabId, [sender.tab?.url, sender.url], msg as { console?: unknown; network?: unknown });
+              : acceptLogRecords(senderTabId, [sender.tab?.url, sender.url], msg);
         sendResponse(refusal === null ? { accepted: true } : { accepted: false, reason: refusal });
         return;
       }

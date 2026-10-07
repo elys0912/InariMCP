@@ -33,7 +33,7 @@ export function getPageInfo(): Record<string, unknown> {
 
   const candidates = document.querySelectorAll(INTERACTIVE_SELECTORS.join(", "));
   for (let index = 0; index < candidates.length && index < LIMITS.PAGE_INFO_ELEMENTS; index++) {
-    const el = candidates[index]!;
+    const el = candidates.item(index);
     const rect = el.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
       const htmlEl = el as HTMLInputElement;
@@ -108,7 +108,7 @@ export function getElements(options: {
   // One evaluation of the selector, read up to `limit` (the NodeList is static).
   const matches = document.querySelectorAll(selector);
   for (let index = 0; index < matches.length && index < limit; index++) {
-    elements.push(getElementInfo(matches[index]!));
+    elements.push(getElementInfo(matches.item(index)));
   }
 
   return {
@@ -188,7 +188,7 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
   const elements: Record<string, unknown>[] = [];
   const candidates = document.querySelectorAll(INTERACTIVE_SELECTORS.join(", "));
   for (let index = 0; index < candidates.length && elements.length < LIMITS.SNAPSHOT_ELEMENTS; index++) {
-    const el = candidates[index]!;
+    const el = candidates.item(index);
     const rect = el.getBoundingClientRect();
     if (
       rect.top < window.innerHeight &&

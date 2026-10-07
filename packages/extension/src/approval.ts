@@ -73,8 +73,10 @@ export function parseApprovalPrompt(
       : defaultTimeoutMs;
 
   if (d.kind === "protected_action") {
-    const str = (k: string): string | null =>
-      typeof d[k] === "string" && d[k] !== "" ? (d[k] as string) : null;
+    const str = (k: string): string | null => {
+      const value = d[k];
+      return typeof value === "string" && value !== "" ? value : null;
+    };
     const approvalId = str("approvalId");
     const toolName = str("toolName");
     const host = str("host");

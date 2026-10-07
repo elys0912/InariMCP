@@ -243,14 +243,14 @@ export function stopObserving(options: {
 }): Record<string, unknown> {
   const observerId = options.observerId;
 
-  if (!activeObservers.has(observerId)) {
+  const record = activeObservers.get(observerId);
+  if (!record) {
     throw new Error(
       `No observer '${observerId}' on this page (observers end when the page ` +
       "reloads or navigates)",
     );
   }
 
-  const record = activeObservers.get(observerId)!;
   record.observer.disconnect();
   activeObservers.delete(observerId);
 

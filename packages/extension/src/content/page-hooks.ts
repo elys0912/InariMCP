@@ -50,9 +50,9 @@ let pageHooksInstalled = false;
 // "loading" at init means the early document_start injection ran.
 // readyStateAtInit is set by content.ts right after its guard
 // (recordScriptStart), not at module load.
-const injectionInfo = {
-  readyStateAtInit: null as string | null,
-  readyStateAtHookInstall: null as string | null,
+const injectionInfo: { readyStateAtInit: string | null; readyStateAtHookInstall: string | null } = {
+  readyStateAtInit: null,
+  readyStateAtHookInstall: null,
 };
 
 /** Where the hooks hand what they see (log-store.ts). */

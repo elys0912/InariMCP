@@ -478,8 +478,9 @@ export function selectOption(
   } else if (options.index !== undefined) {
     option = all[options.index];
   } else if (options.text !== undefined) {
-    option = all.find((o) => o.text === options.text) ??
-      all.find((o) => o.text.trim() === options.text!.trim());
+    const text = options.text;
+    option = all.find((o) => o.text === text) ??
+      all.find((o) => o.text.trim() === text.trim());
   } else {
     throw new Error("Pass value, text or index of the option to select");
   }

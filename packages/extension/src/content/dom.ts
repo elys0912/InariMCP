@@ -260,8 +260,9 @@ export function generateSelector(element: Element): string {
 
     const siblings = current.parentElement?.children;
     if (siblings) {
+      const tagName = current.tagName;
       const sameTagSiblings = Array.from(siblings).filter(
-        (s) => s.tagName === current!.tagName,
+        (s) => s.tagName === tagName,
       );
       if (sameTagSiblings.length > 1) {
         const index = sameTagSiblings.indexOf(current) + 1;
