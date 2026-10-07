@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { externalizeScreenshots } from '../src/screenshot-store.js';
+import { externalizeScreenshots, getScreenshotsDir } from '../src/screenshot-store.js';
 
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const PNG_URL = `data:image/png;base64,${PNG_BYTES.toString('base64')}`;
@@ -19,6 +19,27 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+describe('getScreenshotsDir', () => {
+  const LEGACY_DIR = path.join(os.tmpdir(), 'kitsune-shots-legacy');
+
+  it('uses FOX_SCREENSHOTS_DIR when set', () => {
+    expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: dir })).toBe(path.resolve(dir));
+  });
+
+  it('falls through a blank FOX_SCREENSHOTS_DIR to the legacy name', () => {
+    for (const blank of ['', '   ']) {
+      expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: blank, CLAUDE_BROWSER_SCREENSHOTS_DIR: LEGACY_DIR }))
+        .toBe(path.resolve(LEGACY_DIR));
+    }
+  });
+
+  it('uses the default when both names are blank', () => {
+    const fromBlank = getScreenshotsDir({ FOX_SCREENSHOTS_DIR: ' ', CLAUDE_BROWSER_SCREENSHOTS_DIR: '' });
+    expect(fromBlank).toBe(getScreenshotsDir({}));
+    expect(fromBlank).not.toBe(path.resolve(' '));
+  });
 });
 
 describe('externalizeScreenshots', () => {
