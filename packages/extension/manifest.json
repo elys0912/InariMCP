@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "KitsuneMCP",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "author": "elys0912",
