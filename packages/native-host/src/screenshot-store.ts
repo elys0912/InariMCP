@@ -46,11 +46,16 @@ function isImageMime(value: string): value is ImageMime {
   return (IMAGE_MIMES as readonly string[]).includes(value);
 }
 
-export function getScreenshotsDir(): string {
-  const envDir =
-    process.env[ENV.FOX_SCREENSHOTS_DIR] ??
-    process.env[LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR];
-  if (envDir) return path.resolve(envDir);
+/**
+ * FOX_SCREENSHOTS_DIR, then the legacy name, then the default. A blank
+ * value counts as unset, so `FOX_SCREENSHOTS_DIR=` falls through to the
+ * legacy name instead of hiding it (same convention as shared's FOX_HOST).
+ */
+export function getScreenshotsDir(env: NodeJS.ProcessEnv = process.env): string {
+  for (const name of [ENV.FOX_SCREENSHOTS_DIR, LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR]) {
+    const raw = env[name]?.trim();
+    if (raw !== undefined && raw !== '') return path.resolve(raw);
+  }
   return defaultScreenshotsDir();
 }
 
