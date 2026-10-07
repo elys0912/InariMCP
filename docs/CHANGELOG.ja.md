@@ -26,6 +26,8 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **パスに`?`や`#`を含むURLパターンは設定エラーにする**: パターンはURLのパスだけと比べるので、`example.com/a?x=1`や`example.com/a#top`は何にも一致せず、`blocked_url_patterns` / `protected_url_patterns`に書いても警告なしで何も止めなかった。このようなパターン（`%3F` / `%23`を含むものも）は、どのリストでもエラーになる。クエリやフラグメントを外すか、`re:`で書くこと（f1db501）
 - **Native Hostから届くコマンドはwire上のaction名に限る**: Native Messaging経由で内部のaction名が届いたら`Unknown action`を返す（拡張機能自身のポップアップは引き続き内部名を使う）（d32eefb）
 - **コマンドのデータが拡張機能の検査したactionを置き換えられない**: 拡張機能はページへのメッセージを、検査したactionを最後に置いて組み立てる。コマンドの引数に`action`キーがあっても、実行するページ側のコマンドは変わらない（469b88e）
+- **安全チェックがタブをより多くの場合に追跡する**: 結果にタブを示さない呼び出し（ヘッドレスモード）の後も、それまでに分かっていたタブIDを保つので、そのタブIDを指定した後の呼び出しは実際に表示しているページで確認される。結果のトップレベルで`tabId`を返す場合もそれに従う。拡張機能が拒否した`fox_tab` `close`（保護サイト）でサーバがタブを忘れることはなくなり、拡張機能自身の拒否ではタブの位置を記録する（1452cf8）
+- **ページ由来のエラー文が承認要求を装えない**: ブラウザ側で失敗した結果の本文は`Browser error: `で始まるので、それ自体がJSONのエラーメッセージを中継が承認要求として読むことはない（7758f23）
 
 ### 互換性のない変更
 
@@ -41,6 +43,8 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **ツールの分類をツールのスキーマから導くようにした**: `fox_remove_observer`はスクリプト系のツールになり、スクリプト実行が無効なら拒否される。`fox_hover`、`fox_scroll`、`fox_highlight`、`fox_switch_tab`は分類`interact`になり、読み取り専用モードでも、保護対象サイトでも承認なしで動き、`readOnlyHint`は`false`になる（7febaa5）
 - **全パッケージが版0.1.4を名乗る**: 以前は拡張機能が0.1.4で、daemon・中継・Native Hostは0.1.0を名乗っていた。すべての`package.json`とマニフェストが同じ版になり、`--doctor`がそれを確かめる。すべての部分を一緒に更新すること（c9cbd41）
 - **41個のツールを21個にまとめ、セッションは新しい名前を一覧にする**: 以前のツール名を書いたプロンプトや設定は、新しい名前にするか`FOX_CAPS=legacy`にする必要がある。以前の名前は呼び出せば引き続き動く。[ツール名の統合（41 → 21）](#ツール名の統合41--21)を参照（59dee5c、00bca2b）
+- **`fox_navigate`の`url`は`goto`でだけ受け付ける**: `url`の無い`goto`（既定のアクション）と、`url`付きの`back`・`forward`・`refresh`・`hard_refresh`は拒否する。後者の`url`は使われないのに、安全チェックがそれを移動先とみなし、呼び出しが操作するタブを確認していなかった。それらの呼び出しから`url`を外すこと（7758f23）
+- **数値引数に下限を付けた**: `limit`・`maxLength`・`pollIntervalMs`・`fox_evaluate` `wait_and_act`の`timeout`・`duration`・`maxScrolls`・`scrollStep`は1以上、`amount`・`idleTime`・`delay`・`fox_set_value` `select`のoptionの`index`は0以上。それより小さい値は不正な引数として拒否する（7758f23）
 
 ### ツール名の統合（41 → 21）
 
@@ -90,7 +94,7 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **設定と承認要求の文面**: `safety.json`の`container_scope`を一部だけ書いた場合（`container_name`だけ、`enabled`だけ）、残りは既定値になり、すべてのツールを拒否しなくなった。空白だけの`FOX_SAFETY_CONFIG` / `FOX_SCREENSHOTS_DIR`はdaemonと`--doctor`で未設定として扱い（旧名を読む）、相対パスの`FOX_SCREENSHOTS_DIR`はNative Hostと同じく絶対パスにする。承認要求の要約は絵文字を途中で切らない。単一ラベルのホストパターン（`intranet`）への警告を、`LOCALHOST`・`intranet/`・`intranet:8080`・`http://intranet`にも出す（4fcbc9f、c54bfe2、176858f、71aafd0）
 - **Native Hostの起動**: daemonの起動中でも`ping`に応答する。Windowsでは必要ならPowerShellを使わずに（WMI、次に`schtasks`）Firefoxのジョブオブジェクトの外でdaemonを起動するので、Firefoxを閉じてもdaemonは止まらない。動いているdaemonが開いたままの`daemon.log`はcopy-truncateで回転する（82172be、c1521e9、6856992、099da45、69b1af9）
 - **ヘッドレスのバックエンド**: `fox_select_option`は一致するoptionが無ければ`availableOptions`を付けて失敗する。`fox_handle_dialog`はほかのコマンドを止めなくなった（誰も待っていないダイアログは2秒後に閉じて報告する）。`FOX_HEADLESS_STARTUP_TIMEOUT`をFirefoxの起動に適用する（208cb30、36cb870、2e9ab03）
-- **ヘッドレスのコマンドはサーバーの待ち時間内に終わり、最後のタブを閉じても使い続けられる**: 前のコマンドを待つ間に呼び出しがタイムアウトまたは中止されたコマンドは実行しない。同じタブへの2回目の`fox_handle_dialog`は前の待機を置き換え、前の待機は arm されない。`fox_evaluate`のスクリプト、`chain`の各ステップ、`wait_and_act`の条件と操作は30秒か呼び出しの終了で打ち切る。`wait_and_act`は`pollIntervalMs`が0以下なら200 ms間隔で確認し、`elapsed_ms`は実測値を返す。`fox_type`・`fox_set_value`・`fox_interact`の`hover`・`fox_press_key`の要素待ちと、`refresh`・`fox_tab`の`create`のページ読み込みにそれぞれタイムアウトを設け、`create`で読み込みに失敗したタブは閉じる。最後のタブを閉じた後も`fox_tabs`、`fox_tab`の`create`、`newTab: true`の`fox_navigate`は動き、ほかのツールはタブの開き方を示す。成功した結果には実行したタブの`tabId`と現在の`url`が付く（cdcbd04、2a2793c、a6f6a33）
+- **ヘッドレスのコマンドはサーバーの待ち時間内に終わり、最後のタブを閉じても使い続けられる**: 前のコマンドを待つ間に呼び出しがタイムアウトまたは中止されたコマンドは実行しない。同じタブへの2回目の`fox_handle_dialog`は前の待機を置き換え、前の待機は arm されない。`fox_evaluate`のスクリプト、`chain`の各ステップ、`wait_and_act`の条件と操作は30秒か呼び出しの終了で打ち切る。`wait_and_act`の`elapsed_ms`は実測値を返す（`pollIntervalMs`が0以下になるのはツールのschemaを通らないコマンドだけで、その場合は200 ms間隔で確認する）。`fox_type`・`fox_set_value`・`fox_interact`の`hover`・`fox_press_key`の要素待ちと、`refresh`・`fox_tab`の`create`のページ読み込みにそれぞれタイムアウトを設け、`create`で読み込みに失敗したタブは閉じる。最後のタブを閉じた後も`fox_tabs`、`fox_tab`の`create`、`newTab: true`の`fox_navigate`は動き、ほかのツールはタブの開き方を示す。成功した結果には実行したタブの`tabId`と現在の`url`が付く（cdcbd04、2a2793c、a6f6a33）
 - **ヘッドレスは引数を検査し、`get_value`はパスワードを伏せ、空白の`FOX_EXECUTABLE`は未設定になる**: ヘッドレスのバックエンドは引数をツールのschemaが渡す形で読み、それ以外は失敗にする。`scroll`の`direction`が`up`・`down`・`left`・`right`・`top`・`bottom`以外なら、無視せず失敗する（ツールのschemaが既に拒否するため、schemaを経ないコマンドだけが対象）。ヘッドレスの`get_value`コマンドは、拡張機能と同じくパスワード欄の値を`[MASKED]`で返す（現在`get_value`を送るツールは無い）。空白だけの`FOX_EXECUTABLE`は未設定として扱い、旧名かPlaywrightのFirefoxを使う（107cf40、f35589e、be3453e）
 - **中継はdaemonを待たずに接続する**: Claude CodeのMCP接続はすぐに返り、最初のツール呼び出しがdaemonの起動を待つ（81294f6）
 - **設定の差異は正規化してから比べる**: `true` / `1`や旧名 / 新名を同じものとして扱うので、同じ意味の値で「設定が違う」という警告は出なくなった。古いdaemonとの比較でも同じ（dcf7bfa、f6ad469）
@@ -108,6 +112,10 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 - **空の設定とトークンファイル**: 空の`FOX_HOST`は未設定として扱い、空の`FOX_HTTP_PORT` / `FOX_WS_PORT`は旧名の`CLAUDE_BROWSER_*`を使う。空または読めない`~/.kitsune-mcp/api_token`は上書きしなくなり、削除を求めるメッセージを出してdaemonが終了する（5cf492a）
 - **Native Hostの再起動回数の上限が実際の上限になった**: daemonの起動に10回失敗すると、確認のたびに起動し直すのではなく、使えるdaemonが現れるまで起動しない。PNG・JPEG・WebP以外のMIMEタイプのスクリーンショットの`data:` URLは拒否する（b82e98d）
 - **アンインストーラとインストーラの表示**: 読めないか壊れた`~/.claude.json` / `.mcp.json`は「未登録」ではなく問題として報告し（終了コード1）、別のチェックアウトを指すFirefoxの登録は警告を出す。`--help`と`--manual`の出力のパスは引用符で囲み、インストーラと`--help`が示すdaemonの確認コマンド（`curl`での/health、ポートの確認）は設定したホストとポートを使う。`cmd`に渡すことになるパスに`%`があれば拒否する（d04e56a）
+- **監査ログは1回の呼び出しに1行、`audit_log: false`なら書かない**: これまで実行した呼び出しは2行（安全チェックの`allowed`と、ブラウザの応答後にもう1行）記録され、`audit_log: false`でも書かれていた。ブラウザ側で失敗した呼び出しは`denied`と記録されていた。今後は安全チェックの行だけを残し、ブラウザ側の失敗には`browser_error`の行を足す。`allowed_by_human`は承認が確認を実際に解除したときだけ記録する。パスワード欄と不正な`urlPattern`は安全チェックの前に拒否するので、レート制限に数えず`allowed`の行も残さない（パスワード欄の拒否は`denied`と記録）。以前のツール名による呼び出しは、新しいツールの引数（モードのキーと改名した引数）で記録する（1452cf8、7758f23）
+- **役に立たなかった承認トークンを知らせる**: 承認トークン付きの呼び出しがなお確認を要するとき（別のサイト向けのトークンなど）、結果にトークンを受け付けなかったと書く（7758f23）
+- **`fox_safety_status`は読んだ設定ファイルを示す**: `configFile`はdaemonが読み込んだファイルの絶対パス。空白だけの`FOX_SAFETY_CONFIG`はここでも未設定として扱う（1452cf8）
+- **`fox_handle_dialog`の説明から「どの`FOX_CAPS`プロファイルにも無い」を外した**: 公開ツールは既定の一覧にある。`FOX_CAPS=legacy`では従来の説明のまま（7758f23）
 
 ### 開発者向け
 

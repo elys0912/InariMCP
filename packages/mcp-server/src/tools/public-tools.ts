@@ -21,7 +21,7 @@
 
 import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
-import { MAX_TIMEOUT_ARG_MS, TOOL_SCHEMAS } from './schemas.js';
+import { MAX_TIMEOUT_ARG_MS, TOOL_SCHEMAS, callSchemaOf } from './schemas.js';
 import { toolAnnotations } from './classification.js';
 import type { ToolAnnotations } from './classification.js';
 
@@ -36,6 +36,13 @@ export interface PublicVariant {
    * schema drops the keys it does not know.
    */
   toOp?(args: Record<string, unknown>): Record<string, unknown>;
+  /**
+   * The inverse of toOp: the variant's arguments (discriminator excluded)
+   * from the operation's. A call by the deprecated operation name is
+   * audited in the public tool's form with it (tools/operations.ts).
+   * Default: the same keys.
+   */
+  fromOp?(opArgs: Record<string, unknown>): Record<string, unknown>;
 }
 
 export interface PublicTool {
@@ -173,7 +180,7 @@ function asIs(op: string, description?: string): PublicTool {
   return {
     name: op,
     description: description ?? def.description,
-    callSchema: def.inputSchema,
+    callSchema: callSchemaOf(def),
     listSchema: def.inputSchema,
     annotations: toolAnnotations(def),
     variants,
@@ -279,7 +286,7 @@ const foxFind = grouped({
         text: z.string().describe('Text to search for in the page'),
         ...fieldsOf('fox_find_text', ['caseSensitive', 'entireWord', 'includeRectData', 'tabId']),
       },
-      run: { ...same('fox_find_text'), toOp: renamed({ text: 'query' }) },
+      run: { ...same('fox_find_text'), toOp: renamed({ text: 'query' }), fromOp: renamed({ query: 'text' }) },
     },
   },
 });
@@ -328,6 +335,17 @@ const foxTab = grouped({
             ...(container.cookieStoreId !== undefined ? { cookieStoreId: container.cookieStoreId } : {}),
           };
         },
+        fromOp: (opArgs) => {
+          const { containerName, cookieStoreId, ...rest } = opArgs;
+          if (containerName === undefined && cookieStoreId === undefined) return rest;
+          return {
+            ...rest,
+            container: {
+              ...(containerName !== undefined ? { name: containerName } : {}),
+              ...(cookieStoreId !== undefined ? { cookieStoreId } : {}),
+            },
+          };
+        },
       },
     },
     close: { fields: fieldsOf('fox_close_tab'), run: same('fox_close_tab') },
@@ -362,7 +380,7 @@ const foxSetValue = grouped({
         option: z.object({
           value: z.string().optional().describe('Option value to select'),
           text: z.string().optional().describe('Option text to select'),
-          index: z.number().int().optional().describe('Option index to select'),
+          index: z.number().int().min(0).optional().describe('Option index to select'),
         }).describe('The option to select: exactly one of value, text or index'),
         tabId,
       },
@@ -371,6 +389,15 @@ const foxSetValue = grouped({
         toOp: (args) => {
           const { option, ...rest } = args as { option: Record<string, unknown> };
           return { ...rest, ...option };
+        },
+        fromOp: (opArgs) => {
+          const option: Record<string, unknown> = {};
+          const rest: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(opArgs)) {
+            if ((OPTION_KEYS as readonly string[]).includes(key)) option[key] = value;
+            else rest[key] = value;
+          }
+          return { ...rest, option };
         },
       },
     },
@@ -456,11 +483,15 @@ const foxEvaluate = grouped({
     wait_and_act: {
       fields: {
         ...fieldsOf('fox_wait_and_act', ['condition', 'actionScript', 'pollIntervalMs']),
-        timeout: z.number().int().max(MAX_TIMEOUT_ARG_MS).optional().default(15000)
+        timeout: z.number().int().positive().max(MAX_TIMEOUT_ARG_MS).optional().default(15000)
           .describe(`Max wait time in ms before giving up (at most ${MAX_TIMEOUT_ARG_MS})`),
         tabId,
       },
-      run: { ...same('fox_wait_and_act'), toOp: renamed({ timeout: 'timeoutMs' }) },
+      run: {
+        ...same('fox_wait_and_act'),
+        toOp: renamed({ timeout: 'timeoutMs' }),
+        fromOp: renamed({ timeoutMs: 'timeout' }),
+      },
     },
   },
 });
@@ -494,6 +525,10 @@ const AS_IS_DESCRIPTIONS: Record<string, string> = {
     "Click an element found by selector (CSS), xpath, text or x+y viewport coordinates, in that order. Top document only (not inside iframes or shadow DOM); fails on a disabled element. The element is scrolled into view and receives synthetic mousedown/mouseup/click events (isTrusted=false: pages that require real user input may ignore them); doubleClick / rightClick send dblclick / contextmenu. Returns the clicked element's info. Headless: selector or x+y only.",
   fox_type:
     "Type text into an input, textarea or contenteditable element found by selector, id, name or placeholder (in that order), else into the focused field; `text` is never used to find the element. Fails on a disabled element; password fields are refused. Sends synthetic key events (isTrusted=false) `delay` ms apart (0 = none; shortened so that all delays stay within 10 s); fox_set_value is faster for long values. clear empties the field first; pressEnter also submits the form like a real Enter unless a keydown handler cancels it. Headless: selector and text only (with selector the field is filled, else the focused element receives the keys).",
+  // The operation's own text says "Not in any FOX_CAPS profile", which holds
+  // for the legacy names only: the public tool is in the core profile.
+  fox_handle_dialog:
+    'Extension path: not implemented (returns an error; commands to a tab showing an alert/confirm/prompt time out there). Headless only: wait for the next dialog and accept or dismiss it (promptText for prompts). Call it before the action that opens the dialog: it does not block other commands, and when no dialog comes within timeout it arms itself for the next dialog on the tab (30 s). Dialogs nobody handles are dismissed automatically after 2 s and reported in the next result of that tab.',
 };
 
 export const PUBLIC_TOOLS: Record<string, PublicTool> = Object.fromEntries([
@@ -514,7 +549,7 @@ export const PUBLIC_TOOLS: Record<string, PublicTool> = Object.fromEntries([
   foxGetLogs,
   foxEvaluate,
   foxObserver,
-  asIs('fox_handle_dialog'),
+  asIs('fox_handle_dialog', AS_IS_DESCRIPTIONS['fox_handle_dialog']),
   asIs('fox_request_approval'),
   asIs('fox_detect_captcha'),
   asIs('fox_safety_status'),

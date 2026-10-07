@@ -22,7 +22,12 @@ export type AuditDecision =
   | 'approval_denied'
   | 'invalid_url'
   | 'blocked_after_navigation'
-  | 'config_error';
+  | 'config_error'
+  /**
+   * The browser ran the call the guard allowed (its `allowed` line comes
+   * first) and it failed: an ordinary error, not a safety decision.
+   */
+  | 'browser_error';
 
 export interface AuditEntry {
   ts: string;

@@ -284,6 +284,8 @@ describe('popup approval → one-time token', () => {
     const result = await createToolHandler('fox_click')(args, { approvalToken: reply.approvalToken });
     expect(result.isError).toBe(true);
     expect(details(result)).toMatchObject({ decision: 'confirmation_required' });
+    // WP-G P-4: the token was valid, but lifted nothing here: say so.
+    expect(text(result)).toContain('The approval token sent with this call was not accepted');
   });
 
   it('no Firefox connected → no_browser', async () => {

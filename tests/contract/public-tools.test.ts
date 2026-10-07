@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { ZodTypeAny } from 'zod';
-import { TOOL_SCHEMAS } from '../../packages/mcp-server/src/tools/schemas.js';
+import { TOOL_SCHEMAS, callSchemaOf } from '../../packages/mcp-server/src/tools/schemas.js';
 import { PUBLIC_TOOLS, type PublicTool } from '../../packages/mcp-server/src/tools/public-tools.js';
 
 const GROUPED = Object.values(PUBLIC_TOOLS).filter((t) => t.discriminator !== undefined);
@@ -66,11 +66,11 @@ const opKeys = (op: string): string[] =>
 // ---------------------------------------------------------------------------
 
 describe('tools that are an operation as is', () => {
-  it('list and parse with the operation schema itself', () => {
+  it('list and parse with the operation schemas themselves', () => {
     for (const tool of Object.values(PUBLIC_TOOLS).filter((t) => t.discriminator === undefined)) {
-      const schema = TOOL_SCHEMAS[tool.name]!.inputSchema;
-      expect(tool.listSchema, tool.name).toBe(schema);
-      expect(tool.callSchema, tool.name).toBe(schema);
+      const def = TOOL_SCHEMAS[tool.name]!;
+      expect(tool.listSchema, tool.name).toBe(def.inputSchema);
+      expect(tool.callSchema, tool.name).toBe(callSchemaOf(def));
       expect(Object.keys(tool.variants), tool.name).toEqual(['default']);
     }
   });

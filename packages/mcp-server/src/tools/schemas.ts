@@ -33,8 +33,13 @@ export interface ToolDefinition {
   name: string;
   /** MCP tool description (English) */
   description: string;
-  /** Zod input schema for validation */
+  /** Zod input schema: the object listed in tools/list (FOX_CAPS=legacy). */
   inputSchema: z.ZodType;
+  /**
+   * Parses a call when the arguments have rules across fields that an
+   * object schema cannot express (default: inputSchema). See callSchemaOf().
+   */
+  callSchema?: z.ZodType;
   /** Safety classification */
   classification: ToolClassification;
   /**
@@ -42,6 +47,11 @@ export interface ToolDefinition {
    * `classification` (tools/classification.ts toolAnnotations()).
    */
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
+}
+
+/** The schema a call of the operation is parsed with. */
+export function callSchemaOf(def: ToolDefinition): z.ZodType {
+  return def.callSchema ?? def.inputSchema;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,9 +107,9 @@ const foxScreenshotSchema = z.object({
   ),
   timeout: timeoutMs.describe('all_tabs: time budget for capturing all tabs in ms (default 20000); tabs left when it runs out are reported as skipped'),
   // scroll_capture options
-  scrollStep: z.number().int().optional().describe('Pixels to scroll each step (default: 80% of viewport)'),
-  delay: z.number().int().optional().default(500).describe('Delay between scrolls in ms (for scroll_capture scope)'),
-  maxScrolls: z.number().int().optional().default(20).describe('Maximum number of scroll steps (for scroll_capture scope)'),
+  scrollStep: z.number().int().positive().optional().describe('Pixels to scroll each step (default: 80% of viewport)'),
+  delay: z.number().int().min(0).optional().default(500).describe('Delay between scrolls in ms (for scroll_capture scope)'),
+  maxScrolls: z.number().int().positive().optional().default(20).describe('Maximum number of scroll steps (for scroll_capture scope)'),
   restore: z.boolean().optional().default(true).describe('Restore original scroll position after capture'),
 });
 
@@ -113,13 +123,13 @@ const foxSnapshotSchema = z.object({
 
 const foxGetElementsSchema = z.object({
   selector: z.string().describe('CSS selector to find elements'),
-  limit: z.number().int().optional().default(50).describe('Maximum elements to return'),
+  limit: z.number().int().positive().optional().default(50).describe('Maximum elements to return'),
   tabId,
 });
 
 const foxGetTextSchema = z.object({
   selector: z.string().optional().describe('CSS selector; defaults to the whole page body'),
-  maxLength: z.number().int().optional().default(20000).describe('Truncate returned text to this many characters'),
+  maxLength: z.number().int().positive().optional().default(20000).describe('Truncate returned text to this many characters'),
   tabId,
 });
 
@@ -137,7 +147,7 @@ const foxGetPageInfoSchema = z.object({
 
 const foxGetTabsSchema = z.object({
   currentWindowOnly: z.boolean().optional().default(true).describe('Only list tabs in the current window'),
-  limit: z.number().int().optional().default(50).describe('Max tabs to return'),
+  limit: z.number().int().positive().optional().default(50).describe('Max tabs to return'),
   urlPattern: z.string().optional().describe(`Only tabs whose URL matches this regex, before applying limit. ${URL_PATTERN_NOTE}`),
   includeFavicon: z.boolean().optional().default(false).describe('Include favIconUrl per tab'),
 });
@@ -146,16 +156,49 @@ const foxGetTabsSchema = z.object({
 // Act tools (state-changing)
 // =========================================================================
 
+/** fox_navigate actions; only goto takes a `url`. */
+export const NAVIGATE_ACTIONS = ['goto', 'back', 'forward', 'refresh', 'hard_refresh'] as const;
+export type NavigateAction = (typeof NAVIGATE_ACTIONS)[number];
+
+/**
+ * Whether fox_navigate goes to its `url` argument: only for goto, the
+ * default action. back / forward / refresh / hard_refresh act on the tab
+ * as it is. The single rule behind the call schema below and the guard's
+ * targetUrlOf() (safety/guard.ts).
+ */
+export function navigateGoesToUrl(action: unknown): boolean {
+  return (action ?? 'goto') === 'goto';
+}
+
 const foxNavigateSchema = z.object({
-  action: z.enum(['goto', 'back', 'forward', 'refresh', 'hard_refresh'])
+  action: z.enum(NAVIGATE_ACTIONS)
     .optional()
     .default('goto')
     .describe('Navigation action type'),
-  url: z.string().optional().describe('URL to navigate to (required for goto)'),
+  url: z.string().optional().describe('URL to navigate to (required for goto; not allowed with the other actions)'),
   tabId,
   newTab: z.boolean().optional().default(false).describe('Open URL in new tab (for goto)'),
   waitForLoad: z.boolean().optional().default(true).describe('Wait for page to fully load'),
   bypassCache: z.boolean().optional().default(false).describe('Bypass browser cache (for refresh)'),
+});
+
+/**
+ * goto needs a url; the other actions refuse one, so that a url they would
+ * not use cannot decide which site the guard checks.
+ */
+const foxNavigateCallSchema = foxNavigateSchema.superRefine((args, ctx) => {
+  const hasUrl = typeof args.url === 'string' && args.url !== '';
+  if (navigateGoesToUrl(args.action)) {
+    if (!hasUrl) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['url'], message: 'url is required for goto' });
+    }
+  } else if (args.url !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['url'],
+      message: `url is only used by goto, not by ${args.action}; omit it (or use goto)`,
+    });
+  }
 });
 
 const foxClickSchema = z.object({
@@ -205,7 +248,7 @@ const foxSelectOptionSchema = z.object({
   selector: z.string().describe('CSS selector for the select element'),
   value: z.string().optional().describe('Option value to select'),
   text: z.string().optional().describe('Option text to select'),
-  index: z.number().int().optional().describe('Option index to select'),
+  index: z.number().int().min(0).optional().describe('Option index to select'),
   tabId,
 });
 
@@ -219,7 +262,7 @@ export const SCROLL_DIRECTIONS = ['up', 'down', 'left', 'right', 'top', 'bottom'
 
 const foxScrollSchema = z.object({
   direction: z.enum(SCROLL_DIRECTIONS).optional().describe('Scroll direction'),
-  amount: z.number().int().optional().default(300).describe('Scroll amount in pixels'),
+  amount: z.number().int().min(0).optional().default(300).describe('Scroll amount in pixels'),
   selector: z.string().optional().describe('CSS selector for scrollable element'),
   toElement: z.string().optional().describe('CSS selector of element to scroll into view'),
   tabId,
@@ -227,7 +270,7 @@ const foxScrollSchema = z.object({
 
 const foxHighlightSchema = z.object({
   selector: z.string().describe('CSS selector for the element'),
-  duration: z.number().int().optional().default(3000).describe('Highlight duration in ms'),
+  duration: z.number().int().positive().optional().default(3000).describe('Highlight duration in ms'),
   label: z.string().optional().describe('Label to show above the element'),
   tabId,
 });
@@ -258,7 +301,7 @@ const foxWaitForElementSchema = z.object({
 
 const foxWaitForNetworkIdleSchema = z.object({
   timeout: timeoutMs.default(10000),
-  idleTime: z.number().int().optional().default(500).describe('How long network must be idle (ms)'),
+  idleTime: z.number().int().min(0).optional().default(500).describe('How long network must be idle (ms)'),
   tabId,
 });
 
@@ -293,7 +336,7 @@ const foxStopLoggingSchema = z.object({
 const foxGetConsoleLogsSchema = z.object({
   level: z.enum(['log', 'warn', 'error', 'info', 'debug']).optional().describe('Filter by log level'),
   search: z.string().optional().describe('Filter logs containing this text'),
-  limit: z.number().int().optional().default(100).describe('Maximum number of logs to return'),
+  limit: z.number().int().positive().optional().default(100).describe('Maximum number of logs to return'),
   tabId,
 });
 
@@ -302,7 +345,7 @@ const foxGetNetworkLogsSchema = z.object({
   method: z.string().optional().describe('Filter by HTTP method (GET, POST, etc.)'),
   status: z.number().int().optional().describe('Filter by HTTP status code'),
   errorsOnly: z.boolean().optional().default(false).describe('Only return failed requests'),
-  limit: z.number().int().optional().default(100).describe('Maximum number of logs to return'),
+  limit: z.number().int().positive().optional().default(100).describe('Maximum number of logs to return'),
   tabId,
 });
 
@@ -381,8 +424,8 @@ const foxAuditPageSchema = z.object({
 const foxWaitAndActSchema = z.object({
   condition: z.string().describe('JS expression that returns truthy when ready'),
   actionScript: z.string().describe('JS to run once condition is met'),
-  pollIntervalMs: z.number().int().optional().default(200).describe('How often to check condition'),
-  timeoutMs: z.number().int().max(MAX_TIMEOUT_ARG_MS).optional().default(15000)
+  pollIntervalMs: z.number().int().positive().optional().default(200).describe('How often to check condition'),
+  timeoutMs: z.number().int().positive().max(MAX_TIMEOUT_ARG_MS).optional().default(15000)
     .describe(`Max wait time in ms before giving up (at most ${MAX_TIMEOUT_ARG_MS})`),
   tabId,
 });
@@ -491,6 +534,7 @@ export const TOOL_SCHEMAS: Record<string, ToolDefinition> = {
     description:
       "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R). goto / refresh with waitForLoad, and back / forward always, fail when the page does not finish loading within 25 s or the tab is closed (the navigation itself may still complete).",
     inputSchema: foxNavigateSchema,
+    callSchema: foxNavigateCallSchema,
     classification: 'act',
   },
   fox_click: {

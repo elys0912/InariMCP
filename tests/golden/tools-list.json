@@ -139,10 +139,12 @@
         },
         "pollIntervalMs": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "description": "(mode=wait_and_act; default 200) How often to check condition"
         },
         "timeout": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "maximum": 580000,
           "description": "(mode=wait_and_act; default 15000) Max wait time in ms before giving up (at most 580000)"
         }
@@ -178,6 +180,7 @@
         },
         "limit": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "description": "(by=selector; default 50) Maximum elements to return"
         },
         "tabId": {
@@ -243,6 +246,7 @@
         },
         "limit": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "description": "(default 100) Maximum number of logs to return"
         },
         "tabId": {
@@ -279,7 +283,7 @@
   },
   {
     "name": "fox_handle_dialog",
-    "description": "Extension path: not implemented (returns an error; commands to a tab showing an alert/confirm/prompt time out there). Headless only: wait for the next dialog and accept or dismiss it (promptText for prompts). Call it before the action that opens the dialog: it does not block other commands, and when no dialog comes within timeout it arms itself for the next dialog on the tab (30 s). Dialogs nobody handles are dismissed automatically after 2 s and reported in the next result of that tab. Not in any FOX_CAPS profile.",
+    "description": "Extension path: not implemented (returns an error; commands to a tab showing an alert/confirm/prompt time out there). Headless only: wait for the next dialog and accept or dismiss it (promptText for prompts). Call it before the action that opens the dialog: it does not block other commands, and when no dialog comes within timeout it arms itself for the next dialog on the tab (30 s). Dialogs nobody handles are dismissed automatically after 2 s and reported in the next result of that tab.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -355,6 +359,7 @@
         },
         "amount": {
           "type": "integer",
+          "minimum": 0,
           "description": "(action=scroll; default 300) Scroll amount in pixels"
         },
         "toElement": {
@@ -363,6 +368,7 @@
         },
         "duration": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "description": "(action=highlight; default 3000) Highlight duration in ms"
         },
         "label": {
@@ -444,7 +450,7 @@
         },
         "url": {
           "type": "string",
-          "description": "URL to navigate to (required for goto)"
+          "description": "URL to navigate to (required for goto; not allowed with the other actions)"
         },
         "tabId": {
           "type": "integer",
@@ -610,6 +616,7 @@
         },
         "maxLength": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "description": "(mode=text; default 20000) Truncate returned text to this many characters"
         }
       },
@@ -722,15 +729,18 @@
         },
         "scrollStep": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "description": "Pixels to scroll each step (default: 80% of viewport)"
         },
         "delay": {
           "type": "integer",
+          "minimum": 0,
           "default": 500,
           "description": "Delay between scrolls in ms (for scroll_capture scope)"
         },
         "maxScrolls": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "default": 20,
           "description": "Maximum number of scroll steps (for scroll_capture scope)"
         },
@@ -787,6 +797,7 @@
             },
             "index": {
               "type": "integer",
+              "minimum": 0,
               "description": "Option index to select"
             }
           },
@@ -916,6 +927,7 @@
         },
         "limit": {
           "type": "integer",
+          "exclusiveMinimum": 0,
           "description": "(what=tabs; default 50) Max tabs to return"
         },
         "urlPattern": {
@@ -1032,6 +1044,7 @@
         },
         "idleTime": {
           "type": "integer",
+          "minimum": 0,
           "description": "(for=network_idle; default 500) How long network must be idle (ms)"
         },
         "waitUntil": {

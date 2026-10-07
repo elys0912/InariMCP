@@ -1,4 +1,4 @@
-import { loadConfig, getAuditLogPath } from './config.js';
+import { loadConfig, getAuditLogPath, safetyConfigPath } from './config.js';
 import type { LoadedSafetyConfig } from './config.js';
 import { audit } from './audit.js';
 import type { AuditDecision } from './audit.js';
@@ -8,10 +8,32 @@ import type { ApprovalGrant } from './approval.js';
 import { compileUrlPatterns, normalizeUrl } from './url-pattern.js';
 import type { PatternListName, UrlPattern } from './url-pattern.js';
 import { OBSERVE_TOOLS, SCRIPT_TOOLS } from '../tools/classification.js';
+import { navigateGoesToUrl } from '../tools/schemas.js';
 import { isRecord } from '@kitsune-mcp/shared';
 
 // Derived from the tool schemas; re-exported for the existing importers.
 export { OBSERVE_TOOLS, SCRIPT_TOOLS };
+
+/**
+ * The URL a call goes to or opens, or null when it acts on (or reads) a tab
+ * as it is. fox_wait_for_url's `url` is only the URL it waits for, and
+ * fox_navigate goes to its `url` only for goto (navigateGoesToUrl): a `url`
+ * given to back / forward / refresh would otherwise stand in for the tab's
+ * real URL. The guard's pre-check and the URL rules handlers.ts attaches
+ * for the Extension's own check both decide by this function.
+ */
+export function targetUrlOf(toolName: string, args: Record<string, unknown>): string | null {
+  if (toolName === 'fox_wait_for_url') return null;
+  if (toolName === 'fox_navigate' && !navigateGoesToUrl(args['action'])) return null;
+  const url = args['url'];
+  return typeof url === 'string' && url !== '' ? url : null;
+}
+
+/** Calls that open a new tab, whose id the result may not report. */
+function opensNewTab(toolName: string | undefined, args: Record<string, unknown>): boolean {
+  return toolName === 'fox_create_tab' || toolName === 'fox_open_in_container' ||
+    (toolName === 'fox_navigate' && args['newTab'] === true);
+}
 
 /**
  * Tools that do not act on the content of a tab, so the blocked/allowed
@@ -45,11 +67,24 @@ export interface CallLabel {
    * audit log records this as `tool` and the deprecated name as `legacyTool`.
    */
   replacedBy?: string;
+  /**
+   * With replacedBy: `args` in the form the replacing tool takes them
+   * (discriminator included), so the audit log shows a call the same way
+   * whichever name it was made by. `args` stays as called (approvals).
+   */
+  auditArgs?: Record<string, unknown>;
 }
+
+/** The decisions a denial carries: those of the audit log that refuse. */
+export type DenialDecision = Exclude<
+  AuditDecision,
+  'allowed' | 'allowed_by_human' | 'observed_on_protected_domain' | 'approval_granted' |
+  'approval_denied' | 'denied' | 'browser_error'
+>;
 
 export interface SafetyDenial {
   success: false;
-  safetyDecision: string;
+  safetyDecision: DenialDecision;
   error: string;
   /** The URL the denial is about, when it names one (details.url of the tool result). */
   url?: string;
@@ -83,6 +118,9 @@ export interface SafetyStatus {
   auditLog: string | null;
 }
 
+/** The window of max_actions_per_minute. */
+const RATE_WINDOW_MS = 60_000;
+
 function isHttp(url: string): boolean {
   const n = normalizeUrl(url);
   return n !== null && (n.url.protocol === 'http:' || n.url.protocol === 'https:');
@@ -112,8 +150,9 @@ export class SafetyGuard {
    * @param grant  A consumed human-approval token for this exact call
    *               (safety/approval.ts). It lifts only a Layer 4/7
    *               `confirmation_required` for the approved host; every other
-   *               denial stands. Decisions made with a grant are audited as
-   *               `allowed_by_human`.
+   *               denial stands. A call the grant let through is audited
+   *               as `allowed_by_human`; a grant that lifts nothing
+   *               changes nothing.
    */
   check(
     toolName: string,
@@ -123,15 +162,13 @@ export class SafetyGuard {
     label?: CallLabel,
   ): SafetyDenial | null {
     const shown = label?.tool ?? toolName;
-    const targetUrl = this._targetUrl(toolName, args);
+    const targetUrl = targetUrlOf(toolName, args);
     const currentUrl = this.urlFor(this._tabIdArg(args));
 
     // Fail closed: a policy that could not be loaded refuses everything,
     // whatever its `enabled` flag says.
     if (this._configError !== null) {
-      if (this.config.auditLog) {
-        this._audit(toolName, args, targetUrl ?? currentUrl, 'config_error', transport, label);
-      }
+      this.recordAudit(toolName, args, 'config_error', transport, label, targetUrl ?? currentUrl);
       return this._deny(
         'config_error',
         `${shown} refused: the safety config cannot be used (${this._configError}). ` +
@@ -144,8 +181,11 @@ export class SafetyGuard {
       return null;
     }
 
-    let denial = this._checkInner(toolName, targetUrl, currentUrl, args, shown);
-    if (grantCoversDenial(denial, grant)) denial = null;
+    const inner = this._checkInner(toolName, targetUrl, currentUrl, args, shown);
+    // The grant counts only when it lifts this very denial: a grant for
+    // another host, or for a call that needed none, changes nothing.
+    const liftedByHuman = grantCoversDenial(inner, grant);
+    let denial = liftedByHuman ? null : inner;
 
     // Layer 1: Rate limit, checked last so that only calls that would run
     // count: refused calls and fox_safety_status do not use up the budget.
@@ -159,22 +199,17 @@ export class SafetyGuard {
 
     const isObserve = OBSERVE_TOOLS.has(toolName);
     let decision: AuditDecision;
-    if (denial === null && grant) {
+    if (denial !== null) {
+      decision = denial.safetyDecision;
+    } else if (liftedByHuman) {
       decision = 'allowed_by_human';
-    } else if (denial === null) {
-      if (isObserve && this._matchedProtected(targetUrl ?? currentUrl) !== null) {
-        decision = 'observed_on_protected_domain';
-      } else {
-        decision = 'allowed';
-      }
+    } else if (isObserve && this._matchedProtected(targetUrl ?? currentUrl) !== null) {
+      decision = 'observed_on_protected_domain';
     } else {
-      decision = denial.safetyDecision as AuditDecision;
+      decision = 'allowed';
     }
 
-    if (this.config.auditLog) {
-      this._audit(toolName, args, targetUrl ?? currentUrl, decision, transport, label);
-    }
-
+    this.recordAudit(toolName, args, decision, transport, label, targetUrl ?? currentUrl);
     return denial;
   }
 
@@ -199,9 +234,7 @@ export class SafetyGuard {
     const violation = this._listViolation(url);
     if (violation === null) return null;
 
-    if (this.config.auditLog) {
-      this._audit(toolName, args, url, 'blocked_after_navigation', transport, label);
-    }
+    this.recordAudit(toolName, args, 'blocked_after_navigation', transport, label, url);
     return this._deny(
       'blocked_after_navigation',
       `${label?.tool ?? toolName} ended on '${url}', which ${violation.reason}. The result is withheld. ` +
@@ -215,68 +248,115 @@ export class SafetyGuard {
    * reported tab id (`data.tabId`, `data.tab.id`), else the `tabId`
    * argument. Commands without a `tabId` argument act on the active tab.
    * A `tabs` list (fox_get_tabs) refreshes every listed tab.
+   *
+   * A backend reports `url` and `tabId` at the top level of a result
+   * whenever it knows them: a click on a link or a redirect moves the tab,
+   * and only the result says where to.
    */
   noteUrl(
     result: Record<string, unknown>,
     args: Record<string, unknown> = {},
     toolName?: string,
   ): void {
-    const tabs = result['tabs'];
-    if (Array.isArray(tabs)) {
-      const active: Array<{ id: number; url: string }> = [];
-      for (const tab of tabs) {
-        if (isRecord(tab) && typeof tab['id'] === 'number' && typeof tab['url'] === 'string') {
-          this._tabUrls.set(tab['id'], tab['url']);
-          if (tab['active'] === true) active.push({ id: tab['id'], url: tab['url'] });
-        }
-      }
-      // One active tab per window: only an unambiguous list names "the" active tab.
-      if (active.length === 1) {
-        this._activeTabId = active[0]!.id;
-        this._activeUrl = active[0]!.url;
-      }
-    }
+    this._noteTabsList(result['tabs']);
 
     const explicitTabId = this._tabIdArg(args);
     if (toolName === 'fox_close_tab') {
-      // The tab the backend reports it closed (`closed`; headless also
-      // `closedTabId`), else the tabId argument.
-      const closedId =
-        typeof result['closed'] === 'number' ? result['closed']
-          : typeof result['closedTabId'] === 'number' ? result['closedTabId']
-            : explicitTabId;
-      if (closedId !== undefined) {
-        this._tabUrls.delete(closedId);
-        if (this._activeTabId === closedId) {
-          this._activeTabId = null;
-          this._activeUrl = null;
-        }
-      }
+      this._noteClosed(result, explicitTabId);
       return;
     }
 
     const url = this._reportedUrl(result);
     if (url === null) return;
 
-    const tab = isRecord(result['tab']) ? result['tab'] : undefined;
-    const reportedTabId =
-      typeof result['tabId'] === 'number' ? result['tabId']
-        : typeof tab?.['id'] === 'number' ? tab['id']
-          : undefined;
-    const tabId = reportedTabId ?? explicitTabId;
+    const tabId = this._reportedTabId(result) ?? explicitTabId;
     if (tabId !== undefined) this._tabUrls.set(tabId, url);
+    if (!this._becomesActive(toolName, args, explicitTabId)) return;
 
-    const opensInBackground =
-      (toolName === 'fox_create_tab' || toolName === 'fox_open_in_container') &&
-      args['active'] === false;
-    const becomesActive =
-      toolName === 'fox_switch_tab' ||
-      (explicitTabId === undefined && !opensInBackground) ||
-      (explicitTabId !== undefined && explicitTabId === this._activeTabId);
-    if (becomesActive) {
+    // A result without a tab id is still about the active tab when the call
+    // acted on it: keep the id known so far (fox_get_tabs, an earlier
+    // result), so that a later call with that tabId sees this URL. Only a
+    // new tab has an id nobody knows yet.
+    const activeId = tabId ?? (opensNewTab(toolName, args) ? null : this._activeTabId);
+    this._activeUrl = url;
+    this._activeTabId = activeId;
+    if (activeId !== null) this._tabUrls.set(activeId, url);
+  }
+
+  /**
+   * Record where the target tab of a refused call is, as the browser
+   * reported it: the `tabId` argument, else the active tab. Unlike
+   * noteUrl(), nothing was closed, opened or switched (a refused
+   * fox_close_tab leaves the tab open).
+   */
+  noteRefusedUrl(url: string, args: Record<string, unknown> = {}): void {
+    const explicitTabId = this._tabIdArg(args);
+    if (explicitTabId === undefined) {
       this._activeUrl = url;
-      this._activeTabId = tabId ?? null;
+      if (this._activeTabId !== null) this._tabUrls.set(this._activeTabId, url);
+      return;
     }
+    this._tabUrls.set(explicitTabId, url);
+    if (explicitTabId === this._activeTabId) this._activeUrl = url;
+  }
+
+  /** fox_get_tabs: every listed tab, and the active one when unambiguous. */
+  private _noteTabsList(tabs: unknown): void {
+    if (!Array.isArray(tabs)) return;
+    const active: Array<{ id: number; url: string }> = [];
+    for (const tab of tabs) {
+      if (isRecord(tab) && typeof tab['id'] === 'number' && typeof tab['url'] === 'string') {
+        this._tabUrls.set(tab['id'], tab['url']);
+        if (tab['active'] === true) active.push({ id: tab['id'], url: tab['url'] });
+      }
+    }
+    // One active tab per window: only an unambiguous list names "the" active tab.
+    if (active.length === 1) {
+      this._activeTabId = active[0]!.id;
+      this._activeUrl = active[0]!.url;
+    }
+  }
+
+  /**
+   * fox_close_tab: forget the tab the backend reports it closed (`closed`;
+   * headless also `closedTabId`), else the tabId argument.
+   */
+  private _noteClosed(result: Record<string, unknown>, explicitTabId: number | undefined): void {
+    const closedId =
+      typeof result['closed'] === 'number' ? result['closed']
+        : typeof result['closedTabId'] === 'number' ? result['closedTabId']
+          : explicitTabId;
+    if (closedId === undefined) return;
+    this._tabUrls.delete(closedId);
+    if (this._activeTabId === closedId) {
+      this._activeTabId = null;
+      this._activeUrl = null;
+    }
+  }
+
+  /** The tab id a result reports (`tabId`, else `tab.id`). */
+  private _reportedTabId(result: Record<string, unknown>): number | undefined {
+    if (typeof result['tabId'] === 'number') return result['tabId'];
+    const tab = result['tab'];
+    return isRecord(tab) && typeof tab['id'] === 'number' ? tab['id'] : undefined;
+  }
+
+  /** Whether the tab a result is about is the active tab afterwards. */
+  private _becomesActive(
+    toolName: string | undefined,
+    args: Record<string, unknown>,
+    explicitTabId: number | undefined,
+  ): boolean {
+    // fox_switch_tab activates the tab it names.
+    if (toolName === 'fox_switch_tab') return true;
+    // A call without tabId acts on the active tab, except a tab opened in the background.
+    if (explicitTabId === undefined) {
+      const inBackground =
+        (toolName === 'fox_create_tab' || toolName === 'fox_open_in_container') && args['active'] === false;
+      return !inBackground;
+    }
+    // A call that names the active tab by its id.
+    return explicitTabId === this._activeTabId;
   }
 
   /** Last URL seen on the given tab, or on the active tab when undefined. */
@@ -306,7 +386,7 @@ export class SafetyGuard {
     label?: CallLabel,
   ): SafetyDenial {
     const shown = label?.tool ?? toolName;
-    if (url) this.noteUrl({ url }, args, toolName);
+    if (url) this.noteRefusedUrl(url, args);
     const knownUrl = url ?? this.urlFor(this._tabIdArg(args));
     const protectedUrl = knownUrl ?? '(target tab)';
     const matched =
@@ -314,9 +394,7 @@ export class SafetyGuard {
       matchedPattern ||
       '(protected_url_patterns)';
 
-    if (this.config.auditLog) {
-      this._audit(toolName, args, knownUrl, 'confirmation_required', transport, label);
-    }
+    this.recordAudit(toolName, args, 'confirmation_required', transport, label, knownUrl);
 
     return {
       success: false,
@@ -330,6 +408,29 @@ export class SafetyGuard {
         'sites (banking, payments, health, government). Human confirmation is ' +
         'required via MCP elicitation.',
     };
+  }
+
+  /**
+   * One audit log line, when audit_log is on, under the caller's names
+   * (CallLabel), else the operation's. `url` defaults to the call's target
+   * URL, else the target tab's last-known URL (what check() records).
+   */
+  recordAudit(
+    toolName: string,
+    args: Record<string, unknown>,
+    decision: AuditDecision,
+    transport?: string,
+    label?: CallLabel,
+    url: string | null = targetUrlOf(toolName, args) ?? this.urlFor(this._tabIdArg(args)),
+  ): void {
+    if (!this.config.auditLog) return;
+    if (label === undefined) {
+      audit(toolName, args, url, decision, transport);
+    } else if (label.replacedBy !== undefined) {
+      audit(label.replacedBy, label.auditArgs ?? label.args, url, decision, transport, label.tool);
+    } else {
+      audit(label.tool, label.args, url, decision, transport);
+    }
   }
 
   status(): SafetyStatus {
@@ -348,9 +449,8 @@ export class SafetyGuard {
       blockedUrlPatterns: this.config.blockedUrlPatterns,
       allowedUrlPatterns: this.config.allowedUrlPatterns,
       protectedUrlPatterns: this.config.protectedUrlPatterns,
-      configFile: process.env['FOX_SAFETY_CONFIG'] ??
-        process.env['CLAUDE_BROWSER_SAFETY_CONFIG'] ??
-        '~/.kitsune-mcp/safety.json',
+      // The file loadConfig() read: a blank setting counts as unset.
+      configFile: safetyConfigPath(),
       auditLog: this.config.auditLog ? getAuditLogPath() : null,
     };
   }
@@ -516,34 +616,6 @@ export class SafetyGuard {
     return null;
   }
 
-  /**
-   * The URL a tool goes to or opens. fox_wait_for_url's `url` is only the
-   * URL it waits for, so the tab's own URL is checked instead.
-   */
-  private _targetUrl(toolName: string, args: Record<string, unknown>): string | null {
-    if (toolName === 'fox_wait_for_url') return null;
-    const url = args['url'];
-    return typeof url === 'string' && url ? url : null;
-  }
-
-  /** audit() under the caller's names (CallLabel), else the operation's. */
-  private _audit(
-    toolName: string,
-    args: Record<string, unknown>,
-    url: string | null,
-    decision: AuditDecision,
-    transport: string | undefined,
-    label: CallLabel | undefined,
-  ): void {
-    if (label === undefined) {
-      audit(toolName, args, url, decision, transport);
-    } else if (label.replacedBy !== undefined) {
-      audit(label.replacedBy, label.args, url, decision, transport, label.tool);
-    } else {
-      audit(label.tool, label.args, url, decision, transport);
-    }
-  }
-
   private _tabIdArg(args: Record<string, unknown>): number | undefined {
     const tabId = args['tabId'];
     return typeof tabId === 'number' ? tabId : undefined;
@@ -570,7 +642,7 @@ export class SafetyGuard {
     if (!limit || limit <= 0) return true;
 
     const now = Date.now();
-    const cutoff = now - 60_000;
+    const cutoff = now - RATE_WINDOW_MS;
 
     while (this._actionTimes.length > 0 && this._actionTimes[0]! <= cutoff) {
       this._actionTimes.shift();
@@ -584,7 +656,7 @@ export class SafetyGuard {
     return true;
   }
 
-  private _deny(decision: string, message: string, url?: string): SafetyDenial {
+  private _deny(decision: DenialDecision, message: string, url?: string): SafetyDenial {
     return { success: false, safetyDecision: decision, error: message, ...(url !== undefined ? { url } : {}) };
   }
 

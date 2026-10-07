@@ -11,7 +11,7 @@
 
 import type { z } from 'zod';
 import type { CallLabel } from '../safety/guard.js';
-import { TOOL_SCHEMAS } from './schemas.js';
+import { TOOL_SCHEMAS, callSchemaOf } from './schemas.js';
 import { LEGACY_REPLACEMENTS, PUBLIC_TOOLS } from './public-tools.js';
 
 export interface ResolvedCall {
@@ -44,18 +44,39 @@ export function resolveOperation(toolName: string, args: Record<string, unknown>
       throw new Error(`${toolName}: unknown ${tool.discriminator} '${String(value)}'`);
     }
     const op = variant.op(args);
-    const schema = TOOL_SCHEMAS[op]?.inputSchema;
-    if (!schema) throw new Error(`${toolName}: unknown operation ${op}`);
-    const opArgs = schema.parse(variant.toOp ? variant.toOp(args) : args) as Record<string, unknown>;
+    const def = TOOL_SCHEMAS[op];
+    if (!def) throw new Error(`${toolName}: unknown operation ${op}`);
+    const opArgs = callSchemaOf(def).parse(variant.toOp ? variant.toOp(args) : args) as Record<string, unknown>;
     return { op, args: opArgs, label: { tool: toolName, args } };
   }
 
   const replacement = LEGACY_REPLACEMENTS[toolName];
+  if (!replacement) return { op: toolName, args, label: { tool: toolName, args } };
+  const [replacedBy, variantValue] = replacement;
   return {
     op: toolName,
     args,
-    label: { tool: toolName, args, ...(replacement ? { replacedBy: replacement[0] } : {}) },
+    label: { tool: toolName, args, replacedBy, auditArgs: publicArgsOf(replacedBy, variantValue, args) },
   };
+}
+
+/**
+ * The arguments of a call by a deprecated operation name, as the public
+ * tool that replaces it takes them: the discriminator first, then the
+ * variant's arguments (its fromOp, else the same keys). The audit log
+ * records a call in this one form, whichever name it was made by.
+ */
+function publicArgsOf(
+  tool: string,
+  variantValue: string,
+  opArgs: Record<string, unknown>,
+): Record<string, unknown> {
+  const publicTool = PUBLIC_TOOLS[tool];
+  const discriminator = publicTool?.discriminator;
+  if (publicTool === undefined || discriminator === undefined) return opArgs;
+  const variant = publicTool.variants[variantValue];
+  const rest = variant?.fromOp ? variant.fromOp(opArgs) : opArgs;
+  return { [discriminator]: variantValue, ...rest };
 }
 
 /**
@@ -63,7 +84,10 @@ export function resolveOperation(toolName: string, args: Record<string, unknown>
  * else the operation's own schema (deprecated names), else null.
  */
 export function callSchemaFor(toolName: string): z.ZodType | null {
-  return PUBLIC_TOOLS[toolName]?.callSchema ?? TOOL_SCHEMAS[toolName]?.inputSchema ?? null;
+  const publicTool = PUBLIC_TOOLS[toolName];
+  if (publicTool) return publicTool.callSchema;
+  const def = TOOL_SCHEMAS[toolName];
+  return def ? callSchemaOf(def) : null;
 }
 
 /** Every name the daemon accepts: the public tools and the deprecated names. */

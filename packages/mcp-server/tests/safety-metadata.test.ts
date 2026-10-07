@@ -86,6 +86,10 @@ describe('attachSafetyMetadata: URL rules (WP5b)', () => {
     const wait = command('wait_for_url');
     attachSafetyMetadata(wait, config(lists), 'fox_wait_for_url', { url: 'https://x.test/' });
     expect(wait.blockedUrlRules).toBeDefined();
+    // WP-G P-1: neither is the url of a fox_navigate that does not go to it.
+    const refresh = command('refresh');
+    attachSafetyMetadata(refresh, config(lists), 'fox_navigate', { action: 'refresh', url: 'https://x.test/' });
+    expect(refresh.blockedUrlRules).toBeDefined();
   });
 
   it.each([
@@ -196,6 +200,16 @@ describe('attachSafetyMetadata: protectedUrlPatterns', () => {
     attachSafetyMetadata(cmd, config(), 'fox_navigate', { url: 'https://example.test/' });
     expect(cmd.protectedUrlPatterns).toBeUndefined();
   });
+
+  // WP-G P-1: the guard checks the tab, so the Extension must check it too.
+  it.each(['back', 'forward', 'refresh', 'hard_refresh'] as const)(
+    'is attached to fox_navigate %s even with a url argument (not a target)',
+    (action) => {
+      const cmd = command('navigate');
+      attachSafetyMetadata(cmd, config(), 'fox_navigate', { action, url: 'https://example.test/' });
+      expect(cmd.protectedUrlPatterns).toEqual(WIRE);
+    },
+  );
 
   it('treats an empty url argument as no url', () => {
     const cmd = command('navigate');
