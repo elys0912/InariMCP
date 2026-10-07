@@ -10,6 +10,7 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 
 ### セキュリティ
 
+- **署名付き要求のnonceを単調時計で記憶する**: daemonは署名付き要求のnonceを、署名の有効時間の2倍だけ単調時計で測って記憶する。システム時計を進めたり戻したりしても、有効時間内のnonceを忘れて同じ要求をもう一度受け付けることはなくなった。要求のタイムスタンプは引き続き実時間の時計と比べる（34a435c）
 - **`safety.json`の未知のキーは設定エラーにする**: 綴りの誤りや存在しないキー（`readonly`、`allow_scripts`、`container_scope`の中の未知のキー）は、これまで何も言わずに捨てられ、ポリシーを締めるつもりの設定が効いていなかった。今後は他の壊れた設定と同じくすべてのツールを拒否し、エラー（`daemon.log`、`fox_safety_status`、`--doctor`）にそのキーを示す。互換性のない変更を参照（4fcbc9f）
 - **URLパターンは解析したURLで照合し、拡張機能も同じ方法で判定する**: `safety.json`のパターンは、解析したURLのホスト（とサブドメイン）・パス・スキームと比べる。`example.com.attacker.net`や、ホスト名を含むクエリ文字列には一致しなくなった。ユーザー名やパスワードを含むURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。更新したら`fox_safety_status`でリストを確認すること（db0e662、b1ebced、9f5a61d、f8d6496）
 - **壊れた`safety.json`ではすべてのツールを拒否する（fail-closed）**: ファイルが読めない、JSONとして正しくない、値の型が違う、使えないURLパターンがある場合、`enabled: false`でも`fox_safety_status`以外のすべてのツールを拒否する。ファイルを直してdaemonを再起動し、`fox_safety_status`で確認すること（db0e662）
@@ -83,6 +84,8 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 
 ### 修正
 
+- **daemonの停止と起動失敗**: daemonが停止を始めたら（`--stop-daemon`、シグナル、アイドルタイムアウト）、新しいツール呼び出しと承認には「停止中」（HTTP 503）を返して実行しない。中継はそのdaemonの終了を待ち、新しいdaemonへ呼び出しを1回だけ送り直す。通常の停止で実行中の呼び出しを待っている間にSIGTERMまたはSIGINTを受けたら、待つのをすぐにやめる。停止処理が失敗したらHTTP 500を返し、すべての呼び出しを断る状態で残らずに終了する。ヘッドレスブラウザを起動できないときは、待っているツール呼び出しに理由（HTTP 500）を返してから終了する（cd70735、55e93f7）
+- **中継の承認と署名拒否**: daemonでMCP elicitationが無効のとき、Claude Codeのダイアログで人が承認した操作はツールバーのポップアップで聞き直す（拒否はそのまま拒否）。トークンを読み直してもdaemonがこのセッションの署名を拒否するときは、ツール呼び出し・承認・`--stop-daemon`のどれも、daemonを止めるよう示す同じメッセージを返す。`fox_safety_status`はdaemonの設定を読めなかったときに注記を付け、次の呼び出しで読み直す（55e93f7）
 - **設定と承認要求の文面**: `safety.json`の`container_scope`を一部だけ書いた場合（`container_name`だけ、`enabled`だけ）、残りは既定値になり、すべてのツールを拒否しなくなった。空白だけの`FOX_SAFETY_CONFIG` / `FOX_SCREENSHOTS_DIR`はdaemonと`--doctor`で未設定として扱い（旧名を読む）、相対パスの`FOX_SCREENSHOTS_DIR`はNative Hostと同じく絶対パスにする。承認要求の要約は絵文字を途中で切らない。単一ラベルのホストパターン（`intranet`）への警告を、`LOCALHOST`・`intranet/`・`intranet:8080`・`http://intranet`にも出す（4fcbc9f、c54bfe2、176858f、71aafd0）
 - **Native Hostの起動**: daemonの起動中でも`ping`に応答する。Windowsでは必要ならPowerShellを使わずに（WMI、次に`schtasks`）Firefoxのジョブオブジェクトの外でdaemonを起動するので、Firefoxを閉じてもdaemonは止まらない。動いているdaemonが開いたままの`daemon.log`はcopy-truncateで回転する（82172be、c1521e9、6856992、099da45、69b1af9）
 - **ヘッドレスのバックエンド**: `fox_select_option`は一致するoptionが無ければ`availableOptions`を付けて失敗する。`fox_handle_dialog`はほかのコマンドを止めなくなった（誰も待っていないダイアログは2秒後に閉じて報告する）。`FOX_HEADLESS_STARTUP_TIMEOUT`をFirefoxの起動に適用する（208cb30、36cb870、2e9ab03）
@@ -103,6 +106,7 @@ KitsuneMCPの利用者向けの変更を新しい順に記す。括弧内はコ�
 
 ### 開発者向け
 
+- **daemon・中継・通信部分のコードを挙動を変えずに整理した**: HTTPとWebSocketの要求処理と中継のツール呼び出しを名前の付いた関数に分け、生成するIDは`@kitsune-mcp/shared`の`shortId()`を使う（監査ログの中継ID `relay:<id>`は16進8桁から36進最大6文字になる）。daemonと中継が共有する時間は1つの定数から求める（c50e375、d81a565）
 - **拡張機能をesbuildでbundleする**: ソースはES moduleになり、`npm run build`が`dist/background.js`、`dist/content.js`、`dist/popup/popup.js`を書き出す。bundleにzodや`@kitsune-mcp/shared/node`が入るとビルドが失敗する。`npm run build`の後に`packages/extension/manifest.json`を読み込む（0e3376e、156600f）
 - **Vitest**: `npm test`は単体・契約・インストーラのテストを、テストファイルごとに一時的なホームディレクトリで実行する。開発にはNode.js 22.12以降（または24）が必要（1925170、146fc2d）
 - **`npm run typecheck`はテストも型検査する**: 拡張機能の型検査（`typecheck`スクリプトを持つworkspaceは拡張機能だけ）のあと、`npm run typecheck:tests`（`tsc -p tsconfig.test.json`。対象は`packages/*/tests`と`tests/`）を実行する。`npm run lint:ext`は`web-ext lint`を実行する（f93909a、156e11d）
