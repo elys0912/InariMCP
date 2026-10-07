@@ -2,7 +2,7 @@
  * WebSocket server bridge for browser connections.
  *
  * Uses the `ws` library. Listens on `ws://{host}:{FOX_WS_PORT}` (the daemon
- * passes FOX_HOST, 127.0.0.1 by default).
+ * passes FOX_HOST; ENV_DEFAULTS.FOX_HOST when none is given).
  *
  * v0.1 client: the Native Host (packages/native-host/src/ws-client.ts),
  * which relays commands to the Extension over Native Messaging. A direct
@@ -18,7 +18,7 @@
  *     cannot pose as an Origin-less client; and every client, with or
  *     without Origin, must still pass step 2.
  *  2. Server sends `{ type: 'auth_challenge', protocol, nonce: S }`.
- *  3. Client answers within AUTH_TIMEOUT_MS (5 s) with
+ *  3. Client answers within AUTH_TIMEOUT_MS with
  *     `{ type: 'auth', protocol, nonce: C, mac: MAC('ws-client', S, C) }`.
  *     Anything else (including the old `{ token }` frame), a bad MAC or a
  *     timeout → close 1008 (Policy Violation). The token never travels.
@@ -76,7 +76,8 @@ const CLOSE_GRACE_MS = 1_000;
 /** Largest frame accepted at all: the Native Host's own cap on Extension frames. */
 const MAX_PAYLOAD_BYTES = ENV_DEFAULTS.NATIVE_MSG_MAX_INCOMING_SIZE;
 const HEARTBEAT_INTERVAL_MS = 30_000;
-const PROBE_TIMEOUT_MS = 5_000;
+/** How long the older Native Hosts have to answer the ping sent when a new one authenticates. */
+const NEWCOMER_PROBE_TIMEOUT_MS = 5_000;
 
 const POLICY_VIOLATION = 1008;
 const MESSAGE_TOO_BIG = 1009;
@@ -197,6 +198,37 @@ function checkAuthFrame(raw: RawFrame, apiToken: string, serverNonce: string): A
 }
 
 /**
+ * Cut a connection that sends more than MAX_UNAUTHENTICATED_BYTES before its
+ * auth frame is in. A peer still sending would not read a close frame, and
+ * `ws` would go on buffering what it sends: cut it at once (terminate()
+ * right after close(): the close frame is queued, but not waited for).
+ *
+ * @returns stops the count (call it when the first frame is in)
+ */
+function limitBytesBeforeAuth(ws: WebSocket, req: IncomingMessage): () => void {
+  let received = 0;
+  // Set by the first frame. `ws` may deliver it from inside the very
+  // 'data' event that also carries later bytes, and an emit already in
+  // progress still calls a listener removed meanwhile: those must not count.
+  let stopped = false;
+  const countBytes = (chunk: Buffer): void => {
+    if (stopped) return;
+    received += chunk.length;
+    if (received <= MAX_UNAUTHENTICATED_BYTES) return;
+    req.socket.off('data', countBytes);
+    log('WebSocket connection refused: too much data before auth');
+    ws.close(MESSAGE_TOO_BIG, 'too much data before auth');
+    ws.terminate();
+  };
+  req.socket.on('data', countBytes);
+  ws.on('close', () => req.socket.off('data', countBytes));
+  return () => {
+    stopped = true;
+    req.socket.off('data', countBytes);
+  };
+}
+
+/**
  * Send the challenge and wait for the auth frame, within AUTH_TIMEOUT_MS
  * and MAX_UNAUTHENTICATED_BYTES. Calls `onAuthenticated` from the 'message'
  * event of that frame, so that the handlers it attaches see the next frame.
@@ -215,26 +247,7 @@ function awaitAuthFrame(
   };
   ws.on('close', settle);
 
-  // ----- Byte budget until the auth frame is in -----
-  // A peer still sending would not read a close frame, and `ws` would go
-  // on buffering what it sends: cut it at once (terminate() right after
-  // close(): the close frame is queued, but not waited for).
-  let received = 0;
-  // Set by the first frame. `ws` may deliver it from inside the very
-  // 'data' event that also carries later bytes, and an emit already in
-  // progress still calls a listener removed meanwhile: those must not count.
-  let firstFrameIn = false;
-  const countBytes = (chunk: Buffer): void => {
-    if (firstFrameIn) return;
-    received += chunk.length;
-    if (received <= MAX_UNAUTHENTICATED_BYTES) return;
-    req.socket.off('data', countBytes);
-    log('WebSocket connection refused: too much data before auth');
-    ws.close(MESSAGE_TOO_BIG, 'too much data before auth');
-    ws.terminate();
-  };
-  req.socket.on('data', countBytes);
-  ws.on('close', () => req.socket.off('data', countBytes));
+  const stopCounting = limitBytesBeforeAuth(ws, req);
 
   // ----- Challenge (AUTH_TIMEOUT_MS to answer) -----
   const serverNonce = newNonce();
@@ -248,8 +261,7 @@ function awaitAuthFrame(
   ws.once('message', (raw: RawFrame) => {
     clearTimeout(authTimer);
     settle();
-    firstFrameIn = true;
-    req.socket.off('data', countBytes);
+    stopCounting();
 
     const check = checkAuthFrame(raw, state.apiToken, serverNonce);
     if (!check.ok) {
@@ -322,12 +334,16 @@ function handleHostFrame(connectionManager: BrowserConnectionManager, data: RawF
 
 /**
  * Authenticated — prove ourselves, then register the socket as a browser
- * connection.
- * @returns the browser ID it is registered under
+ * connection under `id`.
  */
-function attachAuthenticated(state: WsServerState, ws: WebSocket, serverNonce: string, clientNonce: string): string {
+function attachAuthenticated(
+  state: WsServerState,
+  ws: WebSocket,
+  id: string,
+  serverNonce: string,
+  clientNonce: string,
+): void {
   const { connectionManager, hosts } = state;
-  const id = `ws_${Date.now()}_${shortId()}`;
   ws.send(JSON.stringify({
     type: 'auth_ok',
     mac: computeMac(state.apiToken, MAC_LABEL.wsServer, serverNonce, clientNonce),
@@ -358,15 +374,17 @@ function attachAuthenticated(state: WsServerState, ws: WebSocket, serverNonce: s
     hosts.delete(entry);
     connectionManager.unregisterBrowser(id);
   });
-  return id;
 }
 
 function handleConnection(state: WsServerState, ws: WebSocket, req: IncomingMessage): void {
+  // The ID the socket is registered under once authenticated; known from
+  // the start so every log line about this socket names it.
+  const browserId = `ws_${Date.now()}_${shortId()}`;
+  let authenticated = false;
   // First, before anything can fail: an invalid frame makes `ws` emit
   // 'error' on the socket, and an unhandled 'error' would end the daemon.
-  let browserId: string | undefined;
   ws.on('error', (err) => {
-    log(`WebSocket error (${browserId ?? 'unauthenticated'}): ${err.message}`);
+    log(`WebSocket error (${browserId}${authenticated ? '' : ', unauthenticated'}): ${err.message}`);
   });
 
   const origin = req.headers.origin;
@@ -385,7 +403,8 @@ function handleConnection(state: WsServerState, ws: WebSocket, req: IncomingMess
   }
 
   awaitAuthFrame(state, ws, req, (serverNonce, clientNonce) => {
-    browserId = attachAuthenticated(state, ws, serverNonce, clientNonce);
+    authenticated = true;
+    attachAuthenticated(state, ws, browserId, serverNonce, clientNonce);
   });
 }
 
@@ -397,12 +416,12 @@ function handleConnection(state: WsServerState, ws: WebSocket, req: IncomingMess
  *          startHttpBridge().
  */
 export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocketServer> {
-  const { port, apiToken, connectionManager, host = '127.0.0.1' } = options;
+  const { port, apiToken, connectionManager, host = ENV_DEFAULTS.FOX_HOST } = options;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS;
   const state: WsServerState = {
     apiToken,
     connectionManager,
-    probeTimeoutMs: options.probeTimeoutMs ?? PROBE_TIMEOUT_MS,
+    probeTimeoutMs: options.probeTimeoutMs ?? NEWCOMER_PROBE_TIMEOUT_MS,
     hosts: new Set<HostSocket>(),
     unauthenticated: 0,
   };

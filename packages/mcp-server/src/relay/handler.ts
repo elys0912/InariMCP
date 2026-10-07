@@ -9,8 +9,10 @@
  */
 
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { errorResult } from './daemon-client.js';
-import { ALWAYS_REGISTERED as SAFETY_STATUS_TOOL } from '../tools/registry.js';
+import { daemonLogPath, errorResult } from './daemon-client.js';
+// fox_safety_status: registered whatever FOX_CAPS says; its answer is where
+// this handler adds the settings comparison.
+import { ALWAYS_REGISTERED } from '../tools/registry.js';
 
 /** The part of DaemonClient the handler uses (replaceable in tests). */
 export interface RelayClient {
@@ -83,12 +85,12 @@ export function createRelayHandlers(
 
     handlerFor: (toolName) => async (args, extra) => {
       if (!(await client.ready())) {
-        return errorResult(`KitsuneMCP daemon unavailable at ${client.baseUrl} (see ~/.kitsune-mcp/logs/daemon.log)`);
+        return errorResult(`KitsuneMCP daemon unavailable at ${client.baseUrl} (see ${daemonLogPath()})`);
       }
       const result = await invoke(toolName, args, extra.signal);
       if (result.isError) return result;
 
-      if (toolName === SAFETY_STATUS_TOOL) {
+      if (toolName === ALWAYS_REGISTERED) {
         // Re-check on every status call: the daemon may have been restarted
         // by another session since this relay started.
         const mismatch = await client.checkSettings();

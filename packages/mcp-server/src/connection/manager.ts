@@ -14,6 +14,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { shortId, type BrowserAction, type BrowserCommand, type BrowserResponse } from '@kitsune-mcp/shared';
+import { errorMessage } from '../utils/errors.js';
 
 // ---------------------------------------------------------------------------
 // Call context (client abort)
@@ -154,6 +155,13 @@ function cancelHumanWait(conn: BrowserConnection, requestId: string): void {
  */
 const ARG_TIMEOUT_MARGIN_MS = 5_000;
 
+/** The tool's own `timeoutMs` / `timeout` argument (schemas.ts), when it is a positive number. */
+function argTimeoutOf(data: Record<string, unknown>): number | undefined {
+  return [data['timeoutMs'], data['timeout']].find(
+    (v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0,
+  );
+}
+
 /**
  * Compute the transport timeout for a command.
  *
@@ -171,10 +179,7 @@ export function resolveCommandTimeout(
     ACTION_TIMEOUT_MS[command.action] ??
     (kind === 'headless' ? HEADLESS_COMMAND_TIMEOUT_MS : DEFAULT_COMMAND_TIMEOUT_MS);
 
-  const data = command.data ?? {};
-  const argTimeout = [data['timeoutMs'], data['timeout']].find(
-    (v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0,
-  );
+  const argTimeout = argTimeoutOf(command.data ?? {});
   if (argTimeout === undefined) return base;
   return Math.max(base, argTimeout + ARG_TIMEOUT_MARGIN_MS);
 }
@@ -191,9 +196,7 @@ export function maxCommandTimeoutMs(args: Record<string, unknown>): number {
     HEADLESS_COMMAND_TIMEOUT_MS,
     ...Object.values(ACTION_TIMEOUT_MS).filter((v): v is number => typeof v === 'number'),
   );
-  const argTimeout = [args['timeoutMs'], args['timeout']].find(
-    (v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0,
-  );
+  const argTimeout = argTimeoutOf(args);
   return argTimeout === undefined ? base : Math.max(base, argTimeout + ARG_TIMEOUT_MARGIN_MS);
 }
 
@@ -237,13 +240,20 @@ export class BrowserConnectionManager {
     process.stderr.write(`[KitsuneMCP] Browser unregistered: ${id}\n`);
 
     for (const [requestId, entry] of this.pending) {
-      if (entry.connectionId !== id) continue;
-      clearTimeout(entry.timer);
-      this.pending.delete(requestId);
-      const error = 'Browser disconnected before responding';
-      entry.resolve({ requestId, success: false, error });
-      entry.abort(error);
+      if (entry.connectionId === id) this.failPending(requestId, entry, 'Browser disconnected before responding');
     }
+  }
+
+  /**
+   * Answer a pending request with `error` and abort its CommandContext: the
+   * one way a request ends without the browser's answer (timeout, client
+   * abort, send failure, disconnect, shutdown).
+   */
+  private failPending(requestId: string, entry: PendingRequest, error: string): void {
+    clearTimeout(entry.timer);
+    this.pending.delete(requestId);
+    entry.resolve({ requestId, success: false, error });
+    entry.abort(error);
   }
 
   /**
@@ -327,57 +337,77 @@ export class BrowserConnectionManager {
 
     this.requestCounter += 1;
     const requestId = `${this.bootId}-${this.requestCounter}`;
-    // Rewrite the command's requestId so caller and browser agree.
-    const outgoing: BrowserCommand = { ...command, requestId };
-    const humanWait = HUMAN_WAIT_ACTIONS.has(command.action);
     const commandAbort = new AbortController();
     const context: CommandContext = {
       deadline: Date.now() + effectiveTimeout,
       signal: commandAbort.signal,
     };
-    const abort = (reason: string): void => { commandAbort.abort(new Error(reason)); };
+    const response = this.registerPending({ command, conn, requestId, effectiveTimeout, signal, commandAbort });
+    // Rewrite the command's requestId so caller and browser agree.
+    this.dispatch(conn, { ...command, requestId }, context, requestId);
+    return response;
+  }
 
+  /**
+   * Put the command in `pending` and return the promise of its answer: the
+   * browser's, or a synthetic error on timeout or client abort (a human wait
+   * on the Native Host path also asks the Extension to withdraw its banner).
+   */
+  private registerPending(p: {
+    command: BrowserCommand;
+    conn: BrowserConnection;
+    requestId: string;
+    effectiveTimeout: number;
+    signal: AbortSignal | undefined;
+    commandAbort: AbortController;
+  }): Promise<BrowserResponse> {
+    const { command, conn, requestId, effectiveTimeout, signal, commandAbort } = p;
+    const humanWait = HUMAN_WAIT_ACTIONS.has(command.action);
+    const withdrawBanner = humanWait && conn.kind !== 'headless';
     return new Promise<BrowserResponse>((resolve) => {
       const onAbort = (): void => {
-        if (!this.pending.has(requestId)) return;
-        fail(CANCELLED_ERROR);
-        if (humanWait && conn.kind !== 'headless') cancelHumanWait(conn, requestId);
+        if (!this.failRequest(requestId, CANCELLED_ERROR)) return;
+        if (withdrawBanner) cancelHumanWait(conn, requestId);
       };
-      const settle = (response: BrowserResponse): void => {
-        signal?.removeEventListener('abort', onAbort);
-        resolve(response);
-      };
-      const fail = (error: string): void => {
-        const entry = this.pending.get(requestId);
-        if (!entry) return;
-        clearTimeout(entry.timer);
-        this.pending.delete(requestId);
-        entry.resolve({ requestId, success: false, error });
-        abort(error);
-      };
-
       const timer = setTimeout(() => {
-        fail(
+        this.failRequest(
+          requestId,
           `Command '${command.action}' timed out after ${effectiveTimeout}ms` +
           (humanWait ? HUMAN_WAIT_TIMEOUT_NOTE : ''),
         );
-        if (humanWait && conn.kind !== 'headless') cancelHumanWait(conn, requestId);
+        if (withdrawBanner) cancelHumanWait(conn, requestId);
       }, effectiveTimeout);
 
-      this.pending.set(requestId, { resolve: settle, timer, connectionId: conn.id, abort });
+      this.pending.set(requestId, {
+        resolve: (response) => {
+          signal?.removeEventListener('abort', onAbort);
+          resolve(response);
+        },
+        timer,
+        connectionId: conn.id,
+        abort: (reason) => { commandAbort.abort(new Error(reason)); },
+      });
       signal?.addEventListener('abort', onAbort, { once: true });
-
-      try {
-        const maybePromise = commandContext.run(context, () => conn.send(outgoing));
-        if (maybePromise instanceof Promise) {
-          maybePromise.catch((err: unknown) => {
-            fail(`Send failed: ${err instanceof Error ? err.message : String(err)}`);
-          });
-        }
-      } catch (err: unknown) {
-        fail(`Send failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
     });
+  }
+
+  /** Hand the command to the connection; a send failure fails the pending request. */
+  private dispatch(conn: BrowserConnection, outgoing: BrowserCommand, context: CommandContext, requestId: string): void {
+    const sendFailed = (err: unknown): void => { this.failRequest(requestId, `Send failed: ${errorMessage(err)}`); };
+    try {
+      const maybePromise = commandContext.run(context, () => conn.send(outgoing));
+      if (maybePromise instanceof Promise) maybePromise.catch(sendFailed);
+    } catch (err: unknown) {
+      sendFailed(err);
+    }
+  }
+
+  /** failPending() by ID. @returns false when the request is no longer pending. */
+  private failRequest(requestId: string, error: string): boolean {
+    const entry = this.pending.get(requestId);
+    if (!entry) return false;
+    this.failPending(requestId, entry, error);
+    return true;
   }
 
   /**
@@ -402,13 +432,7 @@ export class BrowserConnectionManager {
 
   /** Fail all pending requests and clear connections. */
   shutdown(): void {
-    const error = 'Connection manager shutting down';
-    for (const [id, entry] of this.pending) {
-      clearTimeout(entry.timer);
-      entry.resolve({ requestId: id, success: false, error });
-      entry.abort(error);
-    }
-    this.pending.clear();
+    for (const [id, entry] of this.pending) this.failPending(id, entry, 'Connection manager shutting down');
     this.connections.clear();
   }
 }
