@@ -266,9 +266,11 @@ export function sendToNativeHost(
 /**
  * Posting failed on `port` (it is broken): stop using it, fail its requests
  * and report the loss as handleDisconnect would, since its own onDisconnect
- * is no longer listened to. The caller retries on a new port.
+ * is no longer listened to. The caller then retries on a new port, or, out
+ * of retries, schedules the reconnect handleDisconnect would have. True when
+ * `port` was the current port.
  */
-function dropFailedPort(port: browser.runtime.Port): void {
+function dropFailedPort(port: browser.runtime.Port): boolean {
   const wasCurrent = port === nativePort;
   if (wasCurrent) {
     nativePort = null;
@@ -279,6 +281,7 @@ function dropFailedPort(port: browser.runtime.Port): void {
   releasePort(port);
   rejectPending(port, "Native host disconnected - reconnecting...");
   if (wasCurrent) hooks.onDisconnected();
+  return wasCurrent;
 }
 
 function sendAttempt(message: NativeMessage, timeoutMs: number, retryCount: number): Promise<unknown> {
@@ -329,11 +332,15 @@ function sendAttempt(message: NativeMessage, timeoutMs: number, retryCount: numb
         pendingRequests.delete(requestId);
         clearTimeout(timeoutId);
 
+        const wasCurrent = dropFailedPort(port);
         if (retryCount < MAX_SEND_RETRIES) {
           console.log("[KitsuneMCP] Send failed, reconnecting and retrying...");
-          dropFailedPort(port);
           retry();
         } else {
+          // Out of retries: the broken port is dropped all the same (kept, it
+          // would stay current until an onDisconnect that may never come), and
+          // the connection comes back on the usual backoff.
+          if (wasCurrent) scheduleReconnect();
           reject(error);
         }
       }
