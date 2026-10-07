@@ -1,7 +1,7 @@
 import type { Browser, BrowserContext, Page, Dialog } from 'playwright';
 import { z } from 'zod';
 import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
-import { headlessStartupTimeoutMs } from '../utils/headless-env.js';
+import { headlessStartupTimeoutMs, resolveFoxEnv } from '../utils/headless-env.js';
 import { ignoredParamWarnings, parseArgs } from './helpers.js';
 import { headlessRoute, NO_TAB_ERROR, type TabHost } from './actions.js';
 import {
@@ -86,9 +86,8 @@ export class HeadlessBrowser {
   // -----------------------------------------------------------------------
 
   async start(): Promise<void> {
-    const executablePath =
-      process.env[ENV.FOX_EXECUTABLE] ??
-      process.env[LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE];
+    // A blank value counts as unset: Playwright's own Firefox is used.
+    const executablePath = resolveFoxEnv(process.env, ENV.FOX_EXECUTABLE, LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE);
 
     const timeout = headlessStartupTimeoutMs();
 
@@ -107,7 +106,7 @@ export class HeadlessBrowser {
     this._browser = await firefox.launch({
       headless: true,
       timeout,
-      ...(executablePath ? { executablePath } : {}),
+      ...(executablePath !== undefined ? { executablePath } : {}),
     });
 
     this._context = await this._browser.newContext({
