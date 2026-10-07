@@ -31,16 +31,6 @@ function objectKeys(schema: ZodTypeAny, at: string, out: string[]): string[] {
  * camelCase. A snake_case schema key would silently never arrive.
  */
 describe('tool schema keys', () => {
-  it('are all camelCase', () => {
-    const snake: string[] = [];
-    for (const [name, def] of Object.entries(TOOL_SCHEMAS)) {
-      const schema = def.inputSchema;
-      const shape = schema instanceof z.ZodObject ? (schema.shape as Record<string, unknown>) : {};
-      for (const key of Object.keys(shape)) if (key.includes('_')) snake.push(`${name}.${key}`);
-    }
-    expect(snake).toEqual([]);
-  });
-
   it('are camelCase at every depth, in the operation schemas and in both schemas of the public tools', () => {
     const keys: string[] = [];
     for (const [name, def] of Object.entries(TOOL_SCHEMAS)) objectKeys(def.inputSchema as ZodTypeAny, name, keys);
