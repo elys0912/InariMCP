@@ -94,6 +94,17 @@ export const INTERACTIVE_SELECTORS = [
   '[tabindex]:not([tabindex="-1"])',
 ] as const;
 
+/** Look of the fox_highlight overlay (highlightElement). */
+export const HIGHLIGHT_STYLE = {
+  /** Border, and background of the label. */
+  COLOR: "#7c3aed",
+  /** The same color, translucent: fill of the overlay, and its glow. */
+  FILL: "rgba(124, 58, 237, 0.1)",
+  GLOW: "rgba(124, 58, 237, 0.5)",
+  /** Above the page's own content. */
+  Z_INDEX: 999_999,
+} as const;
+
 /** DOM id of the captcha wait banner (solveCaptcha, cancelHumanWait). */
 export const CAPTCHA_BANNER_ID = "__fox_captcha_banner";
 
