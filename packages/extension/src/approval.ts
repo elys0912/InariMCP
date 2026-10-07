@@ -14,8 +14,8 @@
 //                     Claude. The answer goes back to Claude and unlocks
 //                     nothing.
 //
-// Imported by the background modules and popup.ts (bundled into both). Contract tests
-// load it as a module; it also publishes its helpers on globalThis for them.
+// Imported by the background modules and popup.ts (bundled into both).
+// Contract tests import it as a module.
 
 import { clipText } from "./text-clip";
 
@@ -140,10 +140,3 @@ export function isApprovedHost(tabUrl: string | undefined, approvedHost: unknown
     return false;
   }
 }
-
-(globalThis as { KITSUNE_APPROVAL?: unknown }).KITSUNE_APPROVAL = {
-  APPROVAL_MESSAGE,
-  parseApprovalPrompt,
-  approvalCommandResult,
-  isApprovedHost,
-};

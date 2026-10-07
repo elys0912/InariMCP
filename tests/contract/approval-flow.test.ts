@@ -36,7 +36,7 @@ import { ACTION_TABLE } from '../../packages/extension/src/background/action-tab
 import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 // ---------------------------------------------------------------------------
-// Extension-side helpers (approval.ts publishes them on globalThis)
+// Extension-side helpers (approval.ts, imported as a module)
 // ---------------------------------------------------------------------------
 
 interface ApprovalView { id: string; kind: string; deadline: number; host?: string; toolName?: string; message?: string }
@@ -110,8 +110,7 @@ function connectFakeBrowser(): void {
 let tmpDir: string;
 
 beforeAll(async () => {
-  await import('../../packages/extension/src/approval.ts');
-  ext = (globalThis as { KITSUNE_APPROVAL?: ExtensionApproval }).KITSUNE_APPROVAL!;
+  ext = await import('../../packages/extension/src/approval.ts');
   // The test feeds plain records (not CommandResult): typed by its own alias.
   toWireResponse = (await import('../../packages/extension/src/background/wire.ts')).toWireResponse as unknown as ToWireResponse;
 
