@@ -116,7 +116,8 @@ export async function waitForChange(
       childList: true,
       subtree: options.subtree !== false,
       attributes: options.attributes !== false,
-      characterData: options.characterData === true,
+      // changeType "text" waits for characterData records: observe them.
+      characterData: options.characterData === true || options.changeType === "text",
       attributeOldValue: options.attributeOldValue === true,
     });
 
