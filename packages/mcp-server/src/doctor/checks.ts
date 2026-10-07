@@ -24,6 +24,7 @@ import { apiTokenPath, dataDir as kitsuneDataDir, kitsuneHealth, type HealthVerd
 import { DAEMON_SETTING_KEYS, readApiTokenFile, resolveHost, resolveHttpPort } from '../utils/endpoint.js';
 import { resolveFoxEnv } from '../utils/headless-env.js';
 import { MAX_LOG_BYTES } from '../utils/log-file.js';
+import { HEALTH_PROBE_TIMEOUT_MS } from '../daemon/probe.js';
 import { getAuditLogPath, parseSafetyConfig } from '../safety/config.js';
 import { PACKAGE_VERSION, readPackageVersion } from '../version.js';
 
@@ -97,7 +98,6 @@ export interface DoctorContext {
   nm: NmRegistrations;
 }
 
-const HEALTH_TIMEOUT_MS = 2_000;
 /** The graceful way to stop the daemon (signed POST /daemon/shutdown through the relay CLI). */
 const STOP_DAEMON = 'stop the daemon with `node packages/mcp-server/dist/index.js --stop-daemon`';
 /** For daemons --stop-daemon cannot talk to (older protocol, no token, impostor). */
@@ -144,7 +144,7 @@ function readJsonFile(file: string): { value?: unknown; error?: string } {
 /** Ask the daemon, the way the Native Host judges it: strict /health, protocol, nonce proof. */
 export async function probeDaemon(deps: DoctorDeps, token: string | undefined): Promise<DaemonState> {
   const nonce = newNonce();
-  const reply = await deps.get('/health', { [AUTH_HEADER.nonce]: nonce }, HEALTH_TIMEOUT_MS);
+  const reply = await deps.get('/health', { [AUTH_HEADER.nonce]: nonce }, HEALTH_PROBE_TIMEOUT_MS);
   if (reply === undefined) return { kind: 'down' };
   const health = parseJson(reply.raw);
   if (kitsuneHealth(reply.status, health) === undefined || !isRecord(health)) return { kind: 'foreign' };
@@ -153,7 +153,7 @@ export async function probeDaemon(deps: DoctorDeps, token: string | undefined): 
   if (!macMatches(health['proof'], computeMac(token, MAC_LABEL.health, nonce))) return { kind: 'impostor', health };
 
   const signed = signRequest(token, 'GET', '/daemon/info');
-  const infoReply = await deps.get('/daemon/info', signed.headers, HEALTH_TIMEOUT_MS);
+  const infoReply = await deps.get('/daemon/info', signed.headers, HEALTH_PROBE_TIMEOUT_MS);
   if (
     infoReply !== undefined &&
     infoReply.status === 200 &&

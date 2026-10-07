@@ -3,7 +3,7 @@ import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getConnectionManager } from '../src/connection/manager.js';
-import { isAllowedHostHeader, startHttpBridge, type HttpBridgeOptions } from '../src/transport/http-bridge.js';
+import { SignedRequestVerifier, isAllowedHostHeader, startHttpBridge, type HttpBridgeOptions } from '../src/transport/http-bridge.js';
 import {
   AUTH_HEADER,
   DAEMON_PROTOCOL_VERSION,
@@ -132,6 +132,47 @@ describe('signed requests', () => {
     expect(r.status).toBe(200);
     expect(r.json['success']).toBe(true);
     expect(verifyResponse(TOKEN, s.nonce, 200, r.raw, r.headers[AUTH_HEADER.signature])).toBe(true);
+  });
+
+  describe('nonce memory follows a monotonic clock (X-5, L-2)', () => {
+    const WINDOW = 1_000;
+    const T = 1_700_000_000_000;
+
+    function signedReq(wallNow: number): { req: http.IncomingMessage; nonce: string } {
+      const s = signRequest(TOKEN, 'GET', '/daemon/info', '', wallNow);
+      const req = new http.IncomingMessage(new net.Socket());
+      req.method = 'GET';
+      req.url = '/daemon/info';
+      req.headers = { ...s.headers };
+      return { req, nonce: s.nonce };
+    }
+
+    it('a wall clock set forward and back again does not reopen a used nonce', () => {
+      let mono = 0;
+      const v = new SignedRequestVerifier(TOKEN, WINDOW, () => mono);
+      const a = signedReq(T);
+      expect(v.verify(a.req, Buffer.alloc(0), T)).toBe(a.nonce);
+      // The wall clock jumps far ahead (a wall-clock prune would forget A here) ...
+      mono = 1;
+      const b = signedReq(T + 100 * WINDOW);
+      expect(v.verify(b.req, Buffer.alloc(0), T + 100 * WINDOW)).toBe(b.nonce);
+      // ... and back: A is still inside its window, and still a replay.
+      mono = 2;
+      expect(v.verify(a.req, Buffer.alloc(0), T + 1)).toBeUndefined();
+    });
+
+    it('a wall clock set back does not keep expired nonces', () => {
+      let mono = 0;
+      const v = new SignedRequestVerifier(TOKEN, WINDOW, () => mono);
+      expect(v.verify(signedReq(T).req, Buffer.alloc(0), T)).toBeDefined();
+      mono = 1;
+      // Set back by 100 windows: entered later, must not block the pruning of what follows.
+      expect(v.verify(signedReq(T - 100 * WINDOW).req, Buffer.alloc(0), T - 100 * WINDOW)).toBeDefined();
+      expect(v.rememberedNonces).toBe(2);
+      mono = 2 * WINDOW + 2;
+      expect(v.verify(signedReq(T).req, Buffer.alloc(0), T)).toBeDefined();
+      expect(v.rememberedNonces).toBe(1); // both earlier ones expired on the monotonic clock
+    });
   });
 
   it('still accepts X-API-Key for manual debugging, unsigned', async () => {
@@ -320,8 +361,72 @@ describe('POST /daemon/shutdown', () => {
     expect((await request('POST', '/daemon/shutdown', { ...s.headers, 'Content-Type': 'application/json' }, '{}')).status).toBe(501);
   });
 
-  // TODO(test): a second shutdown request while the first is preparing shares it (repeated: true); non-boolean force → 400;
-  //             daemon/main.ts prepareShutdown waits for in-flight calls (activity.waitForIdle) and closes WS clients with 1001
+  it('X-2: a failing prepare is answered 500 and the daemon still exits (no lasting 503)', async () => {
+    let exits = 0;
+    server = await startHttpBridge({
+      host: '127.0.0.1',
+      port: 0,
+      apiToken: TOKEN,
+      connectionManager: getConnectionManager(),
+      shutdown: {
+        prepare: () => Promise.reject(new Error('ws close failed')),
+        exit: () => { exits++; },
+      },
+    });
+    port = (server.address() as AddressInfo).port;
+    const s = signRequest(TOKEN, 'POST', '/daemon/shutdown', '{}');
+    const r = await request('POST', '/daemon/shutdown', { ...s.headers, 'Content-Type': 'application/json' }, '{}');
+    expect(r.status).toBe(500);
+    expect(String(r.json['error'])).toContain('ws close failed');
+    expect(verifyResponse(TOKEN, s.nonce, 500, r.raw, r.headers[AUTH_HEADER.signature])).toBe(true);
+    await waitFor(() => exits > 0);
+    expect(exits).toBe(1);
+  });
+
+  it('every request reaches prepare (it shares a running shutdown); later answers say repeated', async () => {
+    const { prepared } = await startWithShutdown();
+    for (const force of [false, true]) {
+      const body = JSON.stringify({ force });
+      const s = signRequest(TOKEN, 'POST', '/daemon/shutdown', body);
+      const r = await request('POST', '/daemon/shutdown', { ...s.headers, 'Content-Type': 'application/json' }, body);
+      expect(r.json['repeated']).toBe(force);
+    }
+    expect(prepared).toEqual([{ force: false }, { force: true }]);
+  });
+
+  // TODO(test): non-boolean force → 400
+});
+
+describe('daemon state seen by tool calls', () => {
+  const callBody = JSON.stringify({ name: 'fox_safety_status', arguments: {} });
+  const approvalBody = JSON.stringify({ requestId: 'r1' });
+  const headers = { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' };
+
+  it('Q-5: refuses tool calls and approvals (503) once the daemon stops on its own (signal, idle)', async () => {
+    let stopping = false;
+    await start({ isShuttingDown: () => stopping });
+    expect((await request('POST', '/mcp/call', headers, callBody)).status).toBe(200);
+    stopping = true;
+    expect((await request('POST', '/mcp/call', headers, callBody)).status).toBe(503);
+    expect((await request('POST', '/approval/browser', headers, approvalBody)).status).toBe(503);
+  });
+
+  it('Q-4: a daemon that cannot start answers waiting calls with the reason (500)', async () => {
+    let fail: (err: Error) => void = () => undefined;
+    const ready = new Promise<void>((_resolve, reject) => { fail = reject; });
+    await start({ ready });
+    const call = request('POST', '/mcp/call', headers, callBody);
+    const approval = request('POST', '/approval/browser', headers, approvalBody);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    fail(new Error('Firefox did not launch'));
+    for (const r of [await call, await approval]) {
+      expect(r.status).toBe(500);
+      expect(r.json['error']).toBe('KitsuneMCP daemon could not start: Firefox did not launch');
+    }
+    // Later calls too, and /health keeps saying not ready.
+    expect((await request('POST', '/mcp/call', headers, callBody)).json['error']).toContain('could not start');
+    expect((await request('GET', '/health')).json['ready']).toBe(false);
+  });
 });
 
 describe('isAllowedHostHeader', () => {

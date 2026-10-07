@@ -35,10 +35,12 @@
  *  Both answer { success, approved, reason, approvalToken?, expiresAt? }.
  *
  * Graceful stop: POST /daemon/shutdown { force?: boolean } — signed requests
- * only (never X-API-Key). Waits for running calls (10 s cap; none with
- * force), closes the headless browser and the WS connections (1001),
- * answers { status: 'stopping', pid, … } and exits 0 once the answer is
- * out. New tool calls get 503 meanwhile. Clients: relay `--stop-daemon`
+ * only (never X-API-Key). Waits for running calls (SHUTDOWN_DRAIN_MS cap,
+ * daemon/activity.ts; none with force), closes the headless browser and the
+ * WS connections (1001), answers { status: 'stopping', pid, … } and exits
+ * 0 once the answer is out (also after a failed shutdown, answered 500).
+ * New tool calls get 503 meanwhile, as they do while the daemon stops on a
+ * signal or when idle (isShuttingDown). Clients: relay `--stop-daemon`
  * (relay/daemon-client.ts stopDaemon), scripts/uninstall.mjs, tests/e2e.
  *
  * Fork-source: server.py L885-1460 MCPHTTPHandler
@@ -66,7 +68,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as path from 'node:path';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord } from '@kitsune-mcp/shared';
 import { runWithCallSignal, type BrowserConnectionManager } from '../connection/manager.js';
 import { getScreenshotsDir, listScreenshots } from '../utils/screenshot.js';
 import { callSchemaFor, callableToolNames, describeTool } from '../tools/operations.js';
@@ -105,6 +107,8 @@ const MAX_REMEMBERED_NONCES = 100_000;
 const BODY_TIMEOUT_MS = 30_000;
 /** How long a client has to send its request headers. */
 const HEADERS_TIMEOUT_MS = 10_000;
+/** x-kitsune-timestamp: milliseconds since the epoch, decimal (16 digits reach far past year 2100). */
+const TIMESTAMP_PATTERN = /^\d{1,16}$/;
 
 // ---------------------------------------------------------------------------
 // Auth helpers
@@ -140,14 +144,28 @@ function header(req: http.IncomingMessage, name: string): string | undefined {
  * Checks signed requests (auth.ts): MAC, timestamp window, and that the
  * nonce was not used before (replay). Nonces are remembered for twice the
  * timestamp window, after which a replay fails the timestamp check anyway.
+ *
+ * The timestamp is compared with the wall clock (the client signs with its
+ * own), but how long a nonce is remembered is measured on a monotonic clock:
+ * a wall clock set forward must not make us forget nonces that are still
+ * inside the window once it is set back, and a clock set back must not
+ * break the expiry order the pruning relies on. Only a wall clock set back
+ * by more than the window after a nonce was forgotten can reopen it.
  */
 export class SignedRequestVerifier {
+  /** nonce → expiry on the monotonic clock. Insertion order = expiry order. */
   private readonly seen = new Map<string, number>();
 
   constructor(
     private readonly token: string,
     private readonly windowMs: number = HTTP_SIGNATURE_WINDOW_MS,
+    private readonly monotonicNow: () => number = () => performance.now(),
   ) {}
+
+  /** Nonces currently remembered (tests). */
+  get rememberedNonces(): number {
+    return this.seen.size;
+  }
 
   /** True when the request carries signature headers at all. */
   static isSigned(req: http.IncomingMessage): boolean {
@@ -159,7 +177,7 @@ export class SignedRequestVerifier {
     const timestamp = header(req, AUTH_HEADER.timestamp);
     const nonce = header(req, AUTH_HEADER.nonce);
     const signature = header(req, AUTH_HEADER.signature);
-    if (timestamp === undefined || !/^\d{1,16}$/.test(timestamp) || !isNonce(nonce)) return undefined;
+    if (timestamp === undefined || !TIMESTAMP_PATTERN.test(timestamp) || !isNonce(nonce)) return undefined;
     if (Math.abs(now - Number(timestamp)) > this.windowMs) return undefined;
 
     const expected = computeMac(
@@ -173,15 +191,16 @@ export class SignedRequestVerifier {
     );
     if (!macMatches(signature, expected)) return undefined;
 
-    this.prune(now);
+    const mono = this.monotonicNow();
+    this.prune(mono);
     if (this.seen.has(nonce) || this.seen.size >= MAX_REMEMBERED_NONCES) return undefined;
-    this.seen.set(nonce, now + 2 * this.windowMs);
+    this.seen.set(nonce, mono + 2 * this.windowMs);
     return nonce;
   }
 
-  private prune(now: number): void {
+  private prune(mono: number): void {
     for (const [nonce, expiry] of this.seen) {
-      if (expiry > now) break; // insertion order = expiry order
+      if (expiry > mono) break; // insertion order = expiry order (monotonic clock)
       this.seen.delete(nonce);
     }
   }
@@ -319,8 +338,17 @@ export interface HttpBridgeOptions {
   port?: number;
   apiToken: string;
   connectionManager: BrowserConnectionManager;
-  /** Resolves once the daemon can run tools (headless backend booted). */
+  /**
+   * Resolves once the daemon can run tools (headless backend booted).
+   * Rejects when it cannot start: waiting and later calls get a 500 with
+   * the reason.
+   */
   ready?: Promise<void>;
+  /**
+   * True once the daemon has begun to stop for any reason (signal, idle,
+   * POST /daemon/shutdown): new tool calls and approvals get 503.
+   */
+  isShuttingDown?: () => boolean;
   /** Idle tracking: relay heartbeats and in-flight calls. */
   activity?: DaemonActivity;
   /** Extra fields for GET /daemon/info (authenticated). */
@@ -335,12 +363,537 @@ export interface HttpBridgeOptions {
  * What POST /daemon/shutdown drives. `prepare` runs the whole shutdown but
  * the exit (wait for running calls unless `force`, close the browser and the
  * WS connections) and returns the fields of the answer; `exit` is called
- * once the answer has left the socket, and ends the process.
+ * once the answer has left the socket, and ends the process — also when
+ * `prepare` failed (the answer is then a 500): a daemon half shut down must
+ * not stay behind refusing every call.
+ *
+ * `prepare` is called for every request: it must share a shutdown already
+ * running (a forced request may cut its wait for running calls short).
  */
 export interface ShutdownHooks {
   prepare: (opts: { force: boolean }) => Promise<Record<string, unknown>>;
   exit: () => void;
 }
+
+/** Answer to a tool call or an approval while the daemon stops (POST /daemon/shutdown, signal, idle). */
+const SHUTTING_DOWN_MESSAGE = 'KitsuneMCP daemon is shutting down';
+
+/** State shared by the request handlers of one server. */
+interface BridgeContext {
+  readonly host: string;
+  readonly apiToken: string;
+  readonly connectionManager: BrowserConnectionManager;
+  readonly activity: DaemonActivity | undefined;
+  readonly bodyTimeoutMs: number;
+  readonly verifier: SignedRequestVerifier;
+  /** Resolves once tools can run; rejects when the daemon cannot start. */
+  readonly ready: Promise<void>;
+  /** `ready` has resolved. */
+  isReady: boolean;
+  readonly startTime: number;
+  /** Set by POST /daemon/shutdown: new tool calls are refused (503) from then on. */
+  stopping: Promise<Record<string, unknown>> | undefined;
+  /** Every tool, deprecated names included (see header comment: FOX_CAPS is applied by each relay). */
+  readonly registeredTools: ReadonlySet<string>;
+  readonly options: HttpBridgeOptions;
+}
+
+function createContext(options: HttpBridgeOptions): BridgeContext {
+  // The daemon resolves FOX_HOST / FOX_HTTP_PORT once (utils/endpoint.ts)
+  // and passes them in; reading the env again here could disagree with it.
+  const ctx: BridgeContext = {
+    host: options.host ?? ENV_DEFAULTS.FOX_HOST,
+    apiToken: options.apiToken,
+    connectionManager: options.connectionManager,
+    activity: options.activity,
+    bodyTimeoutMs: options.bodyTimeoutMs ?? BODY_TIMEOUT_MS,
+    verifier: new SignedRequestVerifier(options.apiToken),
+    ready: options.ready ?? Promise.resolve(),
+    isReady: options.ready === undefined,
+    startTime: Date.now(),
+    stopping: undefined,
+    registeredTools: callableToolNames(),
+    options,
+  };
+  ctx.ready.then(() => { ctx.isReady = true; }, () => { /* the daemon exits on failure */ });
+  return ctx;
+}
+
+function shuttingDown(ctx: BridgeContext): boolean {
+  return ctx.stopping !== undefined || ctx.options.isShuttingDown?.() === true;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** The tool did not run: the daemon could not start (ready rejected). */
+function notStarted(err: unknown): string {
+  return `KitsuneMCP daemon could not start: ${errorText(err)}`;
+}
+
+interface Caller {
+  /** Audit transport label: `relay:<id>` for relays, `http` otherwise. */
+  transport: string;
+  relayId?: string;
+}
+
+function callerOf(req: http.IncomingMessage): Caller {
+  const raw = req.headers[RELAY_ID_HEADER];
+  const id = typeof raw === 'string' ? raw.trim() : '';
+  if (id && isValidRelayId(id)) return { transport: `relay:${id}`, relayId: id };
+  return { transport: 'http' };
+}
+
+/** A relay request doubles as its heartbeat (idle shutdown). */
+function noteCaller(ctx: BridgeContext, caller: Caller): void {
+  if (caller.relayId !== undefined) ctx.activity?.noteRelay(caller.relayId);
+}
+
+/**
+ * Authenticate a request whose body is known (GET: empty). On success with
+ * a signed request, later answers are signed.
+ */
+function authenticate(ctx: BridgeContext, req: http.IncomingMessage, body: Buffer, reply: Responder): boolean {
+  if (SignedRequestVerifier.isSigned(req)) {
+    const nonce = ctx.verifier.verify(req, body);
+    if (nonce === undefined) return false;
+    reply.signWith(nonce);
+    return true;
+  }
+  return verifyApiKey(header(req, 'x-api-key'), ctx.apiToken);
+}
+
+function route(ctx: BridgeContext, req: http.IncomingMessage, res: http.ServerResponse, reply: Responder): void {
+  if (!isAllowedHostHeader(req.headers.host, ctx.host)) {
+    reply.error(403, 'Host not allowed');
+    return;
+  }
+
+  let pathname: string;
+  try {
+    pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+  } catch {
+    reply.error(400, 'Bad request target');
+    return;
+  }
+  const method = (req.method ?? 'GET').toUpperCase();
+
+  // ----- OPTIONS → 403 (CORS disabled) -----
+  if (method === 'OPTIONS') {
+    res.writeHead(403);
+    res.end();
+    return;
+  }
+
+  if (method === 'GET') {
+    handleGet(ctx, pathname, req, reply);
+    return;
+  }
+
+  if (method === 'POST') {
+    handlePost(ctx, pathname, req, res, reply);
+    return;
+  }
+
+  reply.error(405, 'Method not allowed');
+}
+
+// ---------------------------------------------------------------------------
+// GET handler
+// ---------------------------------------------------------------------------
+
+/** GET /health — unauthenticated. Relays also call it as their heartbeat. */
+function healthAnswer(ctx: BridgeContext, req: http.IncomingMessage): Record<string, unknown> {
+  noteCaller(ctx, callerOf(req));
+  const nonce = header(req, AUTH_HEADER.nonce);
+  return {
+    status: 'ok',
+    service: 'kitsune-mcp',
+    version: PACKAGE_VERSION,
+    protocol: DAEMON_PROTOCOL_VERSION,
+    ready: ctx.isReady,
+    connected: ctx.connectionManager.hasBrowser,
+    browsers_connected: ctx.connectionManager.browserCount,
+    uptime: Math.floor((Date.now() - ctx.startTime) / 1000),
+    ...(isNonce(nonce) ? { proof: computeMac(ctx.apiToken, MAC_LABEL.health, nonce) } : {}),
+  };
+}
+
+function screenshotEntries(): Record<string, unknown>[] {
+  const dir = getScreenshotsDir();
+  return listScreenshots().map((name) => {
+    const fullPath = path.join(dir, name);
+    try {
+      const stat = fs.statSync(fullPath);
+      return {
+        name,
+        path: fullPath,
+        size: stat.size,
+        created: new Date(stat.birthtimeMs).toISOString(),
+      };
+    } catch {
+      return { name, path: fullPath, size: 0, created: '' };
+    }
+  });
+}
+
+function handleGet(ctx: BridgeContext, pathname: string, req: http.IncomingMessage, reply: Responder): void {
+  if (pathname === '/health') {
+    reply.json(200, healthAnswer(ctx, req));
+    return;
+  }
+
+  // All other GETs require auth
+  if (!authenticate(ctx, req, Buffer.alloc(0), reply)) {
+    reply.error(403, 'Unauthorized');
+    return;
+  }
+
+  if (pathname === '/daemon/info') {
+    reply.json(200, {
+      pid: process.pid,
+      version: PACKAGE_VERSION,
+      protocol: DAEMON_PROTOCOL_VERSION,
+      ready: ctx.isReady,
+      relays: ctx.activity?.liveRelayCount() ?? 0,
+      ...(ctx.options.info?.() ?? {}),
+    });
+    return;
+  }
+
+  if (pathname === '/mcp/tools') {
+    const tools = [...ctx.registeredTools].flatMap((name) => {
+      const info = describeTool(name);
+      return info ? [{ name, ...info }] : [];
+    });
+    reply.json(200, { tools });
+    return;
+  }
+
+  if (pathname === '/screenshots') {
+    reply.json(200, { screenshots: screenshotEntries() });
+    return;
+  }
+
+  reply.error(404, 'Not found');
+}
+
+// ---------------------------------------------------------------------------
+// POST handler
+// ---------------------------------------------------------------------------
+
+/** The body as a JSON object (empty body: `{}`), or the 400 message. */
+function parseJsonObject(rawBody: Buffer): { data: Record<string, unknown> } | { error: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawBody.length > 0 ? rawBody.toString('utf-8') : '{}');
+  } catch {
+    return { error: 'Invalid JSON' };
+  }
+  return isRecord(parsed) ? { data: parsed } : { error: 'Request body must be a JSON object' };
+}
+
+function handlePost(
+  ctx: BridgeContext,
+  pathname: string,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  reply: Responder,
+): void {
+  // X-API-Key can be checked before reading the body; a signature covers
+  // the body, so a signed request is checked once the body is in.
+  const signed = SignedRequestVerifier.isSigned(req);
+  if (!signed && !verifyApiKey(header(req, 'x-api-key'), ctx.apiToken)) {
+    reply.error(403, 'Unauthorized');
+    return;
+  }
+
+  readBody(req, ctx.bodyTimeoutMs)
+    .then((rawBody) => {
+      if (signed && !authenticate(ctx, req, rawBody, reply)) {
+        reply.error(403, 'Unauthorized');
+        return;
+      }
+      const body = parseJsonObject(rawBody);
+      if ('error' in body) {
+        reply.error(400, body.error);
+        return;
+      }
+      routePost(ctx, pathname, signed, body.data, req, res, reply);
+    })
+    .catch((err: unknown) => {
+      if (err instanceof BodyTooLargeError) {
+        reply.error(413, `Request body too large (limit ${MAX_BODY_BYTES} bytes)`);
+        return;
+      }
+      if (res.destroyed) return; // nobody left to answer
+      reply.error(500, `Internal error: ${errorText(err)}`);
+    });
+}
+
+function routePost(
+  ctx: BridgeContext,
+  pathname: string,
+  signed: boolean,
+  data: Record<string, unknown>,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  reply: Responder,
+): void {
+  // /browser/command is kept as an alias of /mcp/call. It used to take
+  // a raw browser action and queue it unchecked; raw actions skipped
+  // SafetyGuard, containerScope and zod validation, and mapping an
+  // action back to a tool is ambiguous (screenshot ← viewport/full_page,
+  // navigate ← goto/back/forward/…). Both now take a tool call.
+  if (pathname === '/mcp/call' || pathname === '/browser/command') {
+    handleToolCall(ctx, pathname, data, req, res, reply);
+    return;
+  }
+
+  if (pathname === '/approval/elicitation' || pathname === '/approval/browser') {
+    handleApproval(ctx, pathname, data, req, res, reply);
+    return;
+  }
+
+  if (pathname === '/daemon/shutdown') {
+    handleShutdown(ctx, signed, data, res, reply);
+    return;
+  }
+
+  reply.error(404, 'Not found');
+}
+
+/**
+ * Run `work` once the daemon is ready, as an in-flight call (idle
+ * tracking), cancelled when the client hangs up. `failure` starts the 500
+ * message when `work` throws.
+ */
+function runTrackedCall<T>(
+  ctx: BridgeContext,
+  caller: Caller,
+  res: http.ServerResponse,
+  reply: Responder,
+  work: () => Promise<T>,
+  answer: (result: T) => void,
+  failure: string,
+): void {
+  const abort = abortOnHangUp(res);
+  ctx.activity?.beginCall();
+  ctx.ready
+    .then(
+      () => runWithCallSignal(abort.signal, work)
+        .then(
+          answer,
+          (err: unknown) => reply.error(500, `${failure}: ${errorText(err)}`),
+        ),
+      (err: unknown) => reply.error(500, notStarted(err)),
+    )
+    .finally(() => {
+      ctx.activity?.endCall();
+      noteCaller(ctx, caller);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Tool call (POST /mcp/call, POST /browser/command)
+// Body: { name: "fox_*", arguments?: {...} }
+// ---------------------------------------------------------------------------
+
+/** The tool name, or the 400 message when it is missing. */
+function toolNameOf(pathname: string, data: Record<string, unknown>): { name: string } | { error: string } {
+  const toolName = data['name'];
+  if (typeof toolName === 'string' && toolName) return { name: toolName };
+  if (pathname === '/browser/command' && typeof data['action'] === 'string') {
+    return {
+      error: 'Raw browser actions are no longer accepted. Send a tool call instead: ' +
+        '{ "name": "fox_<tool>", "arguments": { ... } } (see GET /mcp/tools).',
+    };
+  }
+  return { error: 'Missing tool name' };
+}
+
+function handleToolCall(
+  ctx: BridgeContext,
+  pathname: string,
+  data: Record<string, unknown>,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  reply: Responder,
+): void {
+  const caller = callerOf(req);
+  noteCaller(ctx, caller);
+  if (shuttingDown(ctx)) {
+    reply.error(503, SHUTTING_DOWN_MESSAGE);
+    return;
+  }
+
+  const named = toolNameOf(pathname, data);
+  if ('error' in named) {
+    reply.error(400, named.error);
+    return;
+  }
+  const toolName = named.name;
+
+  const schema = callSchemaFor(toolName);
+  if (!schema || !ctx.registeredTools.has(toolName)) {
+    reply.error(404, `Unknown tool: ${toolName}`);
+    return;
+  }
+
+  const rawArgs = data['arguments'] ?? {};
+  const parsed = schema.safeParse(rawArgs);
+  if (!parsed.success) {
+    reply.json(400, {
+      success: false,
+      error: `Invalid arguments for ${toolName}`,
+      code: 'INVALID_ARGUMENTS',
+      issues: parsed.error.issues.map((i) => ({
+        path: i.path.join('.'),
+        message: i.message,
+      })),
+    });
+    return;
+  }
+
+  const args: unknown = parsed.data;
+  if (!isRecord(args)) {
+    reply.error(400, 'Tool arguments must be an object');
+    return;
+  }
+
+  const approvalToken =
+    typeof data['approvalToken'] === 'string' ? data['approvalToken'] : undefined;
+
+  const handler = createToolHandler(toolName, caller.transport);
+  runTrackedCall(
+    ctx,
+    caller,
+    res,
+    reply,
+    () => handler(args, { approvalToken }),
+    (result) => reply.json(200, { success: result.isError !== true, result }),
+    'Tool execution failed',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Human approval (POST /approval/elicitation, POST /approval/browser)
+// ---------------------------------------------------------------------------
+function handleApproval(
+  ctx: BridgeContext,
+  pathname: string,
+  data: Record<string, unknown>,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  reply: Responder,
+): void {
+  const caller = callerOf(req);
+  noteCaller(ctx, caller);
+  if (shuttingDown(ctx)) {
+    reply.error(503, SHUTTING_DOWN_MESSAGE);
+    return;
+  }
+
+  const requestId = data['requestId'];
+  if (typeof requestId !== 'string' || requestId === '') {
+    reply.error(400, 'Missing requestId');
+    return;
+  }
+
+  if (pathname === '/approval/elicitation') {
+    if (typeof data['approved'] !== 'boolean') {
+      reply.error(400, 'Missing boolean "approved"');
+      return;
+    }
+    const answer = answerFromElicitation(requestId, data['approved'], caller.transport);
+    reply.json(answer.reason === 'elicitation_disabled' ? 403 : 200, { ...answer });
+    return;
+  }
+
+  // The relay gave up waiting (session cancelled the call): withdraw the popup question.
+  runTrackedCall(
+    ctx,
+    caller,
+    res,
+    reply,
+    () => askBrowser(requestId, ctx.connectionManager, caller.transport),
+    (answer) => reply.json(200, { ...answer }),
+    'Approval request failed',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Graceful stop (POST /daemon/shutdown)
+// Body: { force?: boolean }. Signed requests only: stopping the daemon
+// cuts off every session, so the X-API-Key debugging path is not enough.
+// The answer is sent first; the process exits once it has left the socket.
+// ---------------------------------------------------------------------------
+function handleShutdown(
+  ctx: BridgeContext,
+  signed: boolean,
+  data: Record<string, unknown>,
+  res: http.ServerResponse,
+  reply: Responder,
+): void {
+  if (!signed) {
+    reply.error(403, 'POST /daemon/shutdown requires a signed request (X-API-Key is not accepted here)');
+    return;
+  }
+  const hooks = ctx.options.shutdown;
+  if (hooks === undefined) {
+    reply.error(501, 'This daemon cannot be stopped over HTTP');
+    return;
+  }
+  if (data['force'] !== undefined && typeof data['force'] !== 'boolean') {
+    reply.error(400, '"force" must be a boolean');
+    return;
+  }
+  const force = data['force'] === true;
+  const first = ctx.stopping === undefined;
+  // Every request reaches prepare(), which shares a running shutdown (see ShutdownHooks).
+  const pending = Promise.resolve().then(() => hooks.prepare({ force }));
+  ctx.stopping ??= pending;
+
+  const answerThenExit = exitAfterAnswer(res, hooks.exit);
+  pending.then(
+    (summary) => answerThenExit(() => {
+      reply.json(200, { status: 'stopping', pid: process.pid, force, repeated: !first, ...summary });
+    }),
+    // Exit anyway: the shutdown may have stopped halfway (browsers closed,
+    // calls refused), and a daemon left like that would refuse every call.
+    (err: unknown) => answerThenExit(() => {
+      reply.error(500, `Shutdown failed: ${errorText(err)} (the daemon exits anyway)`);
+    }),
+  );
+}
+
+/**
+ * Returns a function that sends an answer, then calls `exitHook` once the
+ * answer has left the socket ('close' also covers a client that hung up).
+ */
+function exitAfterAnswer(res: http.ServerResponse, exitHook: () => void): (answer: () => void) => void {
+  let exited = false;
+  const exit = (): void => {
+    if (exited) return;
+    exited = true;
+    exitHook();
+  };
+  return (answer) => {
+    if (res.destroyed) {
+      // The client gave up while running calls were drained: nobody to answer.
+      setImmediate(exit);
+      return;
+    }
+    res.once('finish', () => setImmediate(exit));
+    res.once('close', () => setImmediate(exit));
+    answer();
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Server
+// ---------------------------------------------------------------------------
 
 /**
  * Create the HTTP bridge server and start listening.
@@ -352,424 +905,20 @@ export interface ShutdownHooks {
  * @returns The http.Server instance, once it is listening.
  */
 export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server> {
-  // The daemon resolves FOX_HOST / FOX_HTTP_PORT once (utils/endpoint.ts)
-  // and passes them in; reading the env again here could disagree with it.
-  const host = options.host ?? ENV_DEFAULTS.FOX_HOST;
+  const ctx = createContext(options);
   const port = options.port ?? ENV_DEFAULTS.FOX_HTTP_PORT;
 
-  const { apiToken, connectionManager, activity } = options;
-  const bodyTimeoutMs = options.bodyTimeoutMs ?? BODY_TIMEOUT_MS;
-  const verifier = new SignedRequestVerifier(apiToken);
-  const ready = options.ready ?? Promise.resolve();
-  let isReady = options.ready === undefined;
-  ready.then(() => { isReady = true; }, () => { /* the daemon exits on failure */ });
-  const startTime = Date.now();
-  /** Set by POST /daemon/shutdown: new tool calls are refused (503) from then on. */
-  let stopping: Promise<Record<string, unknown>> | undefined;
-
-  // Every tool, deprecated names included (see header comment: FOX_CAPS
-  // is applied by each relay).
-  const registeredTools = callableToolNames();
-
-  /** Audit transport label: `relay:<id>` for relays, `http` otherwise. */
-  const callerOf = (req: http.IncomingMessage): { transport: string; relayId?: string } => {
-    const raw = req.headers[RELAY_ID_HEADER];
-    const id = typeof raw === 'string' ? raw.trim() : '';
-    if (id && isValidRelayId(id)) return { transport: `relay:${id}`, relayId: id };
-    return { transport: 'http' };
-  };
-
   const server = http.createServer((req, res) => {
-    const reply = responder(res, apiToken);
+    const reply = responder(res, ctx.apiToken);
     try {
-      route(req, res, reply);
+      route(ctx, req, res, reply);
     } catch (err: unknown) {
       // A bug in a route must cost one request, not the daemon.
-      const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(`[KitsuneMCP] HTTP handler error: ${msg}\n`);
+      process.stderr.write(`[KitsuneMCP] HTTP handler error: ${errorText(err)}\n`);
       reply.error(500, 'Internal error');
     }
   });
 
-  function route(req: http.IncomingMessage, res: http.ServerResponse, reply: Responder): void {
-    if (!isAllowedHostHeader(req.headers.host, host)) {
-      reply.error(403, 'Host not allowed');
-      return;
-    }
-
-    let pathname: string;
-    try {
-      pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
-    } catch {
-      reply.error(400, 'Bad request target');
-      return;
-    }
-    const method = (req.method ?? 'GET').toUpperCase();
-
-    // ----- OPTIONS → 403 (CORS disabled) -----
-    if (method === 'OPTIONS') {
-      res.writeHead(403);
-      res.end();
-      return;
-    }
-
-    if (method === 'GET') {
-      handleGet(pathname, req, reply);
-      return;
-    }
-
-    if (method === 'POST') {
-      handlePost(pathname, req, res, reply);
-      return;
-    }
-
-    reply.error(405, 'Method not allowed');
-  }
-
-  /**
-   * Authenticate a request whose body is known (GET: empty). On success with
-   * a signed request, later answers are signed.
-   */
-  function authenticate(req: http.IncomingMessage, body: Buffer, reply: Responder): boolean {
-    if (SignedRequestVerifier.isSigned(req)) {
-      const nonce = verifier.verify(req, body);
-      if (nonce === undefined) return false;
-      reply.signWith(nonce);
-      return true;
-    }
-    return verifyApiKey(header(req, 'x-api-key'), apiToken);
-  }
-
-  // -----------------------------------------------------------------------
-  // GET handler
-  // -----------------------------------------------------------------------
-  function handleGet(pathname: string, req: http.IncomingMessage, reply: Responder): void {
-    // /health — unauthenticated. Relays also call it as their heartbeat.
-    if (pathname === '/health') {
-      const { relayId } = callerOf(req);
-      if (relayId !== undefined) activity?.noteRelay(relayId);
-      const nonce = header(req, AUTH_HEADER.nonce);
-      reply.json(200, {
-        status: 'ok',
-        service: 'kitsune-mcp',
-        version: PACKAGE_VERSION,
-        protocol: DAEMON_PROTOCOL_VERSION,
-        ready: isReady,
-        connected: connectionManager.hasBrowser,
-        browsers_connected: connectionManager.browserCount,
-        uptime: Math.floor((Date.now() - startTime) / 1000),
-        ...(isNonce(nonce) ? { proof: computeMac(apiToken, MAC_LABEL.health, nonce) } : {}),
-      });
-      return;
-    }
-
-    // All other GETs require auth
-    if (!authenticate(req, Buffer.alloc(0), reply)) {
-      reply.error(403, 'Unauthorized');
-      return;
-    }
-
-    if (pathname === '/daemon/info') {
-      reply.json(200, {
-        pid: process.pid,
-        version: PACKAGE_VERSION,
-        protocol: DAEMON_PROTOCOL_VERSION,
-        ready: isReady,
-        relays: activity?.liveRelayCount() ?? 0,
-        ...(options.info?.() ?? {}),
-      });
-      return;
-    }
-
-    if (pathname === '/mcp/tools') {
-      const tools = [...registeredTools].flatMap((name) => {
-        const info = describeTool(name);
-        return info ? [{ name, ...info }] : [];
-      });
-      reply.json(200, { tools });
-      return;
-    }
-
-    if (pathname === '/screenshots') {
-      const dir = getScreenshotsDir();
-      const names = listScreenshots();
-      const screenshots = names.map((name) => {
-        const fullPath = path.join(dir, name);
-        try {
-          const stat = fs.statSync(fullPath);
-          return {
-            name,
-            path: fullPath,
-            size: stat.size,
-            created: new Date(stat.birthtimeMs).toISOString(),
-          };
-        } catch {
-          return { name, path: fullPath, size: 0, created: '' };
-        }
-      });
-      reply.json(200, { screenshots });
-      return;
-    }
-
-    reply.error(404, 'Not found');
-  }
-
-  // -----------------------------------------------------------------------
-  // POST handler
-  // -----------------------------------------------------------------------
-  function handlePost(
-    pathname: string,
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    reply: Responder,
-  ): void {
-    // X-API-Key can be checked before reading the body; a signature covers
-    // the body, so a signed request is checked once the body is in.
-    const signed = SignedRequestVerifier.isSigned(req);
-    if (!signed && !verifyApiKey(header(req, 'x-api-key'), apiToken)) {
-      reply.error(403, 'Unauthorized');
-      return;
-    }
-
-    readBody(req, bodyTimeoutMs)
-      .then((rawBody) => {
-        if (signed && !authenticate(req, rawBody, reply)) {
-          reply.error(403, 'Unauthorized');
-          return;
-        }
-
-        let data: Record<string, unknown>;
-        try {
-          const parsed: unknown = JSON.parse(rawBody.length > 0 ? rawBody.toString('utf-8') : '{}');
-          if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-            reply.error(400, 'Request body must be a JSON object');
-            return;
-          }
-          data = parsed as Record<string, unknown>;
-        } catch {
-          reply.error(400, 'Invalid JSON');
-          return;
-        }
-
-        // /browser/command is kept as an alias of /mcp/call. It used to take
-        // a raw browser action and queue it unchecked; raw actions skipped
-        // SafetyGuard, containerScope and zod validation, and mapping an
-        // action back to a tool is ambiguous (screenshot ← viewport/full_page,
-        // navigate ← goto/back/forward/…). Both now take a tool call.
-        if (pathname === '/mcp/call' || pathname === '/browser/command') {
-          handleToolCall(pathname, data, req, res, reply);
-          return;
-        }
-
-        if (pathname === '/approval/elicitation' || pathname === '/approval/browser') {
-          handleApproval(pathname, data, req, res, reply);
-          return;
-        }
-
-        if (pathname === '/daemon/shutdown') {
-          handleShutdown(signed, data, res, reply);
-          return;
-        }
-
-        reply.error(404, 'Not found');
-      })
-      .catch((err: unknown) => {
-        if (err instanceof BodyTooLargeError) {
-          reply.error(413, `Request body too large (limit ${MAX_BODY_BYTES} bytes)`);
-          return;
-        }
-        if (res.destroyed) return; // nobody left to answer
-        const msg = err instanceof Error ? err.message : String(err);
-        reply.error(500, `Internal error: ${msg}`);
-      });
-  }
-
-  // -----------------------------------------------------------------------
-  // Tool call (POST /mcp/call, POST /browser/command)
-  // Body: { name: "fox_*", arguments?: {...} }
-  // -----------------------------------------------------------------------
-  function handleToolCall(
-    pathname: string,
-    data: Record<string, unknown>,
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    reply: Responder,
-  ): void {
-    const caller = callerOf(req);
-    if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
-    if (stopping !== undefined) {
-      reply.error(503, 'KitsuneMCP daemon is shutting down');
-      return;
-    }
-
-    const toolName = data['name'];
-    if (typeof toolName !== 'string' || !toolName) {
-      if (pathname === '/browser/command' && typeof data['action'] === 'string') {
-        reply.error(
-          400,
-          'Raw browser actions are no longer accepted. Send a tool call instead: ' +
-          '{ "name": "fox_<tool>", "arguments": { ... } } (see GET /mcp/tools).',
-        );
-        return;
-      }
-      reply.error(400, 'Missing tool name');
-      return;
-    }
-
-    const schema = callSchemaFor(toolName);
-    if (!schema || !registeredTools.has(toolName)) {
-      reply.error(404, `Unknown tool: ${toolName}`);
-      return;
-    }
-
-    const rawArgs = data['arguments'] ?? {};
-    const parsed = schema.safeParse(rawArgs);
-    if (!parsed.success) {
-      reply.json(400, {
-        success: false,
-        error: `Invalid arguments for ${toolName}`,
-        code: 'INVALID_ARGUMENTS',
-        issues: parsed.error.issues.map((i) => ({
-          path: i.path.join('.'),
-          message: i.message,
-        })),
-      });
-      return;
-    }
-
-    const args: unknown = parsed.data;
-    if (typeof args !== 'object' || args === null || Array.isArray(args)) {
-      reply.error(400, 'Tool arguments must be an object');
-      return;
-    }
-
-    const approvalToken =
-      typeof data['approvalToken'] === 'string' ? data['approvalToken'] : undefined;
-
-    const abort = abortOnHangUp(res);
-
-    const handler = createToolHandler(toolName, caller.transport);
-    activity?.beginCall();
-    ready
-      .then(() => runWithCallSignal(abort.signal, () => handler(args as Record<string, unknown>, { approvalToken })))
-      .then((result) => {
-        reply.json(200, { success: result.isError !== true, result });
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        reply.error(500, `Tool execution failed: ${msg}`);
-      })
-      .finally(() => {
-        activity?.endCall();
-        if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
-      });
-  }
-
-  // -----------------------------------------------------------------------
-  // Human approval (POST /approval/elicitation, POST /approval/browser)
-  // -----------------------------------------------------------------------
-  function handleApproval(
-    pathname: string,
-    data: Record<string, unknown>,
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-    reply: Responder,
-  ): void {
-    const caller = callerOf(req);
-    if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
-    if (stopping !== undefined) {
-      reply.error(503, 'KitsuneMCP daemon is shutting down');
-      return;
-    }
-
-    const requestId = data['requestId'];
-    if (typeof requestId !== 'string' || requestId === '') {
-      reply.error(400, 'Missing requestId');
-      return;
-    }
-
-    if (pathname === '/approval/elicitation') {
-      if (typeof data['approved'] !== 'boolean') {
-        reply.error(400, 'Missing boolean "approved"');
-        return;
-      }
-      const answer = answerFromElicitation(requestId, data['approved'], caller.transport);
-      reply.json(answer.reason === 'elicitation_disabled' ? 403 : 200, { ...answer });
-      return;
-    }
-
-    // The relay gave up waiting (session cancelled the call): withdraw the popup question.
-    const abort = abortOnHangUp(res);
-    activity?.beginCall();
-    ready
-      .then(() => runWithCallSignal(abort.signal, () => askBrowser(requestId, connectionManager, caller.transport)))
-      .then((answer) => reply.json(200, { ...answer }))
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        reply.error(500, `Approval request failed: ${msg}`);
-      })
-      .finally(() => {
-        activity?.endCall();
-        if (caller.relayId !== undefined) activity?.noteRelay(caller.relayId);
-      });
-  }
-
-  // -----------------------------------------------------------------------
-  // Graceful stop (POST /daemon/shutdown)
-  // Body: { force?: boolean }. Signed requests only: stopping the daemon
-  // cuts off every session, so the X-API-Key debugging path is not enough.
-  // The answer is sent first; the process exits once it has left the socket.
-  // -----------------------------------------------------------------------
-  function handleShutdown(
-    signed: boolean,
-    data: Record<string, unknown>,
-    res: http.ServerResponse,
-    reply: Responder,
-  ): void {
-    if (!signed) {
-      reply.error(403, 'POST /daemon/shutdown requires a signed request (X-API-Key is not accepted here)');
-      return;
-    }
-    const hooks = options.shutdown;
-    if (hooks === undefined) {
-      reply.error(501, 'This daemon cannot be stopped over HTTP');
-      return;
-    }
-    if (data['force'] !== undefined && typeof data['force'] !== 'boolean') {
-      reply.error(400, '"force" must be a boolean');
-      return;
-    }
-    const force = data['force'] === true;
-    const first = stopping === undefined;
-    stopping ??= hooks.prepare({ force });
-
-    stopping
-      .then((summary) => {
-        // Exit only after the answer is out ('close' also covers a client that hung up).
-        let exited = false;
-        const exit = (): void => {
-          if (exited) return;
-          exited = true;
-          hooks.exit();
-        };
-        if (res.destroyed) {
-          // The client gave up while running calls were drained: nobody to answer.
-          setImmediate(exit);
-          return;
-        }
-        res.once('finish', () => setImmediate(exit));
-        res.once('close', () => setImmediate(exit));
-        reply.json(200, { status: 'stopping', pid: process.pid, force, repeated: !first, ...summary });
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        reply.error(500, `Shutdown failed: ${msg}`);
-      });
-  }
-
-  // -----------------------------------------------------------------------
-  // Start listening
-  // -----------------------------------------------------------------------
   // Tool calls may legitimately take minutes (request_approval 90 s,
   // detect_captcha 200 s, or longer with an explicit timeout argument):
   // don't let Node's default request timeout cut them off.
@@ -777,6 +926,11 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
   // Explicit rather than Node's default (checked every connectionsCheckingInterval, 30 s).
   server.headersTimeout = HEADERS_TIMEOUT_MS;
 
+  return listen(server, port, ctx.host);
+}
+
+/** Resolves once listening; rejects with the listen error (see startHttpBridge). */
+function listen(server: http.Server, port: number, host: string): Promise<http.Server> {
   return new Promise<http.Server>((resolve, reject) => {
     const onStartupError = (err: Error): void => {
       server.close();

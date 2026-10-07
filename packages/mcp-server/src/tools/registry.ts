@@ -128,8 +128,8 @@ const PROFILES: Record<string, string[]> = {
   wait: ['fox_wait'],
 };
 
-/** Tool that is always registered regardless of profile. */
-const ALWAYS_REGISTERED = 'fox_safety_status';
+/** Tool that is always registered regardless of profile (fox_safety_status). */
+export const ALWAYS_REGISTERED = 'fox_safety_status';
 
 /**
  * FOX_CAPS segment that selects the pre-consolidation tool names (the

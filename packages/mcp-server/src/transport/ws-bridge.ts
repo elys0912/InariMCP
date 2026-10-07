@@ -1,7 +1,8 @@
 /**
  * WebSocket server bridge for browser connections.
  *
- * Uses the `ws` library. Listens on `ws://127.0.0.1:{FOX_WS_PORT}`.
+ * Uses the `ws` library. Listens on `ws://{host}:{FOX_WS_PORT}` (the daemon
+ * passes FOX_HOST, 127.0.0.1 by default).
  *
  * v0.1 client: the Native Host (packages/native-host/src/ws-client.ts),
  * which relays commands to the Extension over Native Messaging. A direct
@@ -17,7 +18,7 @@
  *     cannot pose as an Origin-less client; and every client, with or
  *     without Origin, must still pass step 2.
  *  2. Server sends `{ type: 'auth_challenge', protocol, nonce: S }`.
- *  3. Client answers within 5 s with
+ *  3. Client answers within AUTH_TIMEOUT_MS (5 s) with
  *     `{ type: 'auth', protocol, nonce: C, mac: MAC('ws-client', S, C) }`.
  *     Anything else (including the old `{ token }` frame), a bad MAC or a
  *     timeout → close 1008 (Policy Violation). The token never travels.
@@ -47,7 +48,7 @@
 
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
-import { ENV_DEFAULTS, parseBrowserResponse } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord, parseBrowserResponse, shortId } from '@kitsune-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
 import { AUTH_PROTOCOL, computeMac, isNonce, MAC_LABEL, macMatches, newNonce, stderrLogger } from '@kitsune-mcp/shared/node';
 
@@ -132,8 +133,264 @@ interface HostSocket {
   lastPongAt: number;
 }
 
+/** State shared by the connections of one server. */
+interface WsServerState {
+  readonly apiToken: string;
+  readonly connectionManager: BrowserConnectionManager;
+  readonly probeTimeoutMs: number;
+  /** Authenticated Native Host sockets. */
+  readonly hosts: Set<HostSocket>;
+  /** Connections that have not sent their auth frame yet (MAX_UNAUTHENTICATED). */
+  unauthenticated: number;
+}
+
+type RawFrame = Buffer | ArrayBuffer | Buffer[];
+
 /**
- * Start the WebSocket server for Extension connections.
+ * Refuse an unauthenticated connection. close() waits for the peer's
+ * close frame (up to 30 s in `ws`); a peer that never sends it would
+ * keep the socket open, so it is cut after CLOSE_GRACE_MS.
+ */
+function refuse(ws: WebSocket, code: number, reason: string): void {
+  ws.close(code, reason);
+  setTimeout(() => ws.terminate(), CLOSE_GRACE_MS).unref();
+}
+
+type AuthCheck =
+  | { ok: true; clientNonce: string }
+  | { ok: false; code: number; reason: string; logText: string };
+
+/** Check the first frame of a connection against our challenge (step 3 of the header comment). */
+function checkAuthFrame(raw: RawFrame, apiToken: string, serverNonce: string): AuthCheck {
+  if (frameLength(raw) > MAX_AUTH_FRAME_BYTES) {
+    return { ok: false, code: MESSAGE_TOO_BIG, reason: 'auth frame too large', logText: 'oversized auth frame' };
+  }
+
+  let msg: unknown;
+  try {
+    msg = JSON.parse(frameText(raw));
+  } catch {
+    msg = undefined;
+  }
+  const frame = isRecord(msg) ? msg : {};
+
+  if (frame['type'] !== 'auth' || frame['protocol'] !== AUTH_PROTOCOL) {
+    const legacy = typeof frame['token'] === 'string';
+    return {
+      ok: false,
+      code: POLICY_VIOLATION,
+      reason: legacy ? 'auth protocol mismatch' : 'auth required',
+      logText: legacy
+        ? 'plaintext token frame from an older Native Host (update it: this daemon uses challenge-response auth)'
+        : 'no valid auth frame',
+    };
+  }
+
+  const clientNonce = frame['nonce'];
+  if (
+    !isNonce(clientNonce) ||
+    !macMatches(frame['mac'], computeMac(apiToken, MAC_LABEL.wsClient, serverNonce, clientNonce))
+  ) {
+    return { ok: false, code: POLICY_VIOLATION, reason: 'auth failed', logText: 'invalid auth MAC' };
+  }
+  return { ok: true, clientNonce };
+}
+
+/**
+ * Send the challenge and wait for the auth frame, within AUTH_TIMEOUT_MS
+ * and MAX_UNAUTHENTICATED_BYTES. Calls `onAuthenticated` from the 'message'
+ * event of that frame, so that the handlers it attaches see the next frame.
+ */
+function awaitAuthFrame(
+  state: WsServerState,
+  ws: WebSocket,
+  req: IncomingMessage,
+  onAuthenticated: (serverNonce: string, clientNonce: string) => void,
+): void {
+  state.unauthenticated++;
+  let counted = true;
+  const settle = (): void => {
+    if (counted) state.unauthenticated--;
+    counted = false;
+  };
+  ws.on('close', settle);
+
+  // ----- Byte budget until the auth frame is in -----
+  // A peer still sending would not read a close frame, and `ws` would go
+  // on buffering what it sends: cut it at once (terminate() right after
+  // close(): the close frame is queued, but not waited for).
+  let received = 0;
+  // Set by the first frame. `ws` may deliver it from inside the very
+  // 'data' event that also carries later bytes, and an emit already in
+  // progress still calls a listener removed meanwhile: those must not count.
+  let firstFrameIn = false;
+  const countBytes = (chunk: Buffer): void => {
+    if (firstFrameIn) return;
+    received += chunk.length;
+    if (received <= MAX_UNAUTHENTICATED_BYTES) return;
+    req.socket.off('data', countBytes);
+    log('WebSocket connection refused: too much data before auth');
+    ws.close(MESSAGE_TOO_BIG, 'too much data before auth');
+    ws.terminate();
+  };
+  req.socket.on('data', countBytes);
+  ws.on('close', () => req.socket.off('data', countBytes));
+
+  // ----- Challenge (AUTH_TIMEOUT_MS to answer) -----
+  const serverNonce = newNonce();
+  const authTimer = setTimeout(() => {
+    log('WebSocket connection refused: auth timeout');
+    refuse(ws, POLICY_VIOLATION, 'auth timeout');
+  }, AUTH_TIMEOUT_MS);
+  ws.on('close', () => clearTimeout(authTimer));
+  ws.send(JSON.stringify({ type: 'auth_challenge', protocol: AUTH_PROTOCOL, nonce: serverNonce }));
+
+  ws.once('message', (raw: RawFrame) => {
+    clearTimeout(authTimer);
+    settle();
+    firstFrameIn = true;
+    req.socket.off('data', countBytes);
+
+    const check = checkAuthFrame(raw, state.apiToken, serverNonce);
+    if (!check.ok) {
+      log(`WebSocket connection refused: ${check.logText}`);
+      refuse(ws, check.code, check.reason);
+      return;
+    }
+    onAuthenticated(serverNonce, check.clientNonce);
+  });
+}
+
+/**
+ * A new Native Host is in: make sure the older ones are still alive.
+ * The probe keeps its own send time; it must not touch lastPingAt, or a
+ * heartbeat tick right after it would count the probe's still-pending pong
+ * as a missed one.
+ */
+function probeOthers(state: WsServerState, newcomer: HostSocket): void {
+  for (const h of state.hosts) {
+    if (h === newcomer) continue;
+    const sentAt = Date.now();
+    try {
+      h.ws.ping();
+    } catch {
+      h.ws.terminate();
+      continue;
+    }
+    const timer = setTimeout(() => {
+      if (h.lastPongAt < sentAt && state.hosts.has(h)) {
+        log(`WebSocket ${h.browserId} did not answer the probe — terminating (a newer Native Host connected)`);
+        h.ws.terminate();
+      }
+    }, state.probeTimeoutMs);
+    timer.unref();
+  }
+}
+
+/** A frame from an authenticated Native Host: a command response, or an event. */
+function handleHostFrame(connectionManager: BrowserConnectionManager, data: RawFrame): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(frameText(data));
+  } catch {
+    log('Invalid JSON from browser WebSocket');
+    return;
+  }
+
+  if (typeof parsed === 'object' && parsed !== null && 'requestId' in parsed) {
+    // Response to a command we sent
+    const result = parseBrowserResponse(parsed);
+    if (result.ok) {
+      connectionManager.handleResponse(result.response);
+      return;
+    }
+    log(result.error);
+    if (result.requestId !== undefined) {
+      connectionManager.handleResponse({
+        requestId: result.requestId,
+        success: false,
+        error: result.error,
+      });
+    }
+    return;
+  }
+
+  // Event from the browser side (no requestId)
+  const eventType = isRecord(parsed) && 'type' in parsed ? String(parsed['type']) : 'unknown';
+  log(`Browser event: ${eventType}`);
+}
+
+/**
+ * Authenticated — prove ourselves, then register the socket as a browser
+ * connection.
+ * @returns the browser ID it is registered under
+ */
+function attachAuthenticated(state: WsServerState, ws: WebSocket, serverNonce: string, clientNonce: string): string {
+  const { connectionManager, hosts } = state;
+  const id = `ws_${Date.now()}_${shortId()}`;
+  ws.send(JSON.stringify({
+    type: 'auth_ok',
+    mac: computeMac(state.apiToken, MAC_LABEL.wsServer, serverNonce, clientNonce),
+  }));
+  connectionManager.registerBrowser(id, (command) => {
+    if (ws.readyState !== ws.OPEN) {
+      throw new Error('WebSocket is not open');
+    }
+    ws.send(JSON.stringify(command));
+  }, 'native-host');
+
+  const now = Date.now();
+  const entry: HostSocket = { ws, browserId: id, lastPingAt: now, lastPongAt: now };
+  hosts.add(entry);
+  ws.on('pong', () => { entry.lastPongAt = Date.now(); });
+  if (hosts.size > 1) {
+    log(
+      `${hosts.size} Native Hosts connected — commands go to the earliest live one ` +
+      `(${connectionManager.getActiveBrowser()?.id ?? 'none'}); checking the older ones`,
+    );
+    probeOthers(state, entry);
+  }
+
+  // ----- Subsequent messages -----
+  ws.on('message', (data: RawFrame) => handleHostFrame(connectionManager, data));
+
+  ws.on('close', () => {
+    hosts.delete(entry);
+    connectionManager.unregisterBrowser(id);
+  });
+  return id;
+}
+
+function handleConnection(state: WsServerState, ws: WebSocket, req: IncomingMessage): void {
+  // First, before anything can fail: an invalid frame makes `ws` emit
+  // 'error' on the socket, and an unhandled 'error' would end the daemon.
+  let browserId: string | undefined;
+  ws.on('error', (err) => {
+    log(`WebSocket error (${browserId ?? 'unauthenticated'}): ${err.message}`);
+  });
+
+  const origin = req.headers.origin;
+
+  // ----- Origin check -----
+  if (!isOriginAllowed(origin)) {
+    log(`WebSocket connection refused: invalid origin "${origin}"`);
+    refuse(ws, POLICY_VIOLATION, 'invalid origin');
+    return;
+  }
+
+  if (state.unauthenticated >= MAX_UNAUTHENTICATED) {
+    log(`WebSocket connection refused: ${MAX_UNAUTHENTICATED} connections already waiting for auth`);
+    refuse(ws, TRY_AGAIN_LATER, 'too many pending connections');
+    return;
+  }
+
+  awaitAuthFrame(state, ws, req, (serverNonce, clientNonce) => {
+    browserId = attachAuthenticated(state, ws, serverNonce, clientNonce);
+  });
+}
+
+/**
+ * Start the WebSocket server for the Native Host connections.
  *
  * @returns The WebSocketServer instance, once it is listening. Rejects with
  *          the listen error (e.g. EADDRINUSE) — same contract as
@@ -142,11 +399,15 @@ interface HostSocket {
 export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocketServer> {
   const { port, apiToken, connectionManager, host = '127.0.0.1' } = options;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS;
-  const probeTimeoutMs = options.probeTimeoutMs ?? PROBE_TIMEOUT_MS;
+  const state: WsServerState = {
+    apiToken,
+    connectionManager,
+    probeTimeoutMs: options.probeTimeoutMs ?? PROBE_TIMEOUT_MS,
+    hosts: new Set<HostSocket>(),
+    unauthenticated: 0,
+  };
 
   const wss = new WebSocketServer({ host, port, maxPayload: MAX_PAYLOAD_BYTES });
-  const hosts = new Set<HostSocket>();
-  let unauthenticated = 0;
 
   const ping = (h: HostSocket): void => {
     h.lastPingAt = Date.now();
@@ -158,7 +419,7 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
   };
 
   const heartbeat = setInterval(() => {
-    for (const h of hosts) {
+    for (const h of state.hosts) {
       if (h.lastPongAt < h.lastPingAt) {
         log(`WebSocket ${h.browserId} did not answer the last ping — terminating`);
         h.ws.terminate();
@@ -170,211 +431,7 @@ export function startWebSocketServer(options: WsBridgeOptions): Promise<WebSocke
   heartbeat.unref();
   wss.on('close', () => clearInterval(heartbeat));
 
-  /**
-   * A new Native Host is in: make sure the older ones are still alive.
-   * The probe keeps its own send time; it must not touch lastPingAt, or a
-   * heartbeat tick right after it would count the probe's still-pending pong
-   * as a missed one.
-   */
-  const probeOthers = (newcomer: HostSocket): void => {
-    for (const h of hosts) {
-      if (h === newcomer) continue;
-      const sentAt = Date.now();
-      try {
-        h.ws.ping();
-      } catch {
-        h.ws.terminate();
-        continue;
-      }
-      const timer = setTimeout(() => {
-        if (h.lastPongAt < sentAt && hosts.has(h)) {
-          log(`WebSocket ${h.browserId} did not answer the probe — terminating (a newer Native Host connected)`);
-          h.ws.terminate();
-        }
-      }, probeTimeoutMs);
-      timer.unref();
-    }
-  };
-
-  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    // First, before anything can fail: an invalid frame makes `ws` emit
-    // 'error' on the socket, and an unhandled 'error' would end the daemon.
-    let browserId: string | undefined;
-    ws.on('error', (err) => {
-      log(`WebSocket error (${browserId ?? 'unauthenticated'}): ${err.message}`);
-    });
-
-    /**
-     * Refuse an unauthenticated connection. close() waits for the peer's
-     * close frame (up to 30 s in `ws`); a peer that never sends it would
-     * keep the socket open, so it is cut after CLOSE_GRACE_MS.
-     */
-    const refuse = (code: number, reason: string): void => {
-      ws.close(code, reason);
-      setTimeout(() => ws.terminate(), CLOSE_GRACE_MS).unref();
-    };
-
-    const origin = req.headers['origin'] as string | undefined;
-
-    // ----- Origin check -----
-    if (!isOriginAllowed(origin)) {
-      log(`WebSocket connection refused: invalid origin "${origin}"`);
-      refuse(POLICY_VIOLATION, 'invalid origin');
-      return;
-    }
-
-    if (unauthenticated >= MAX_UNAUTHENTICATED) {
-      log(`WebSocket connection refused: ${MAX_UNAUTHENTICATED} connections already waiting for auth`);
-      refuse(TRY_AGAIN_LATER, 'too many pending connections');
-      return;
-    }
-    unauthenticated++;
-    let counted = true;
-    const settle = (): void => {
-      if (counted) unauthenticated--;
-      counted = false;
-    };
-    ws.on('close', settle);
-
-    // ----- Byte budget until the auth frame is in -----
-    // A peer still sending would not read a close frame, and `ws` would go
-    // on buffering what it sends: cut it at once.
-    let received = 0;
-    // Set by the first frame. `ws` may deliver it from inside the very
-    // 'data' event that also carries later bytes, and an emit already in
-    // progress still calls a listener removed meanwhile: those must not count.
-    let firstFrameIn = false;
-    const countBytes = (chunk: Buffer): void => {
-      if (firstFrameIn) return;
-      received += chunk.length;
-      if (received <= MAX_UNAUTHENTICATED_BYTES) return;
-      req.socket.off('data', countBytes);
-      log('WebSocket connection refused: too much data before auth');
-      ws.close(MESSAGE_TOO_BIG, 'too much data before auth');
-      ws.terminate();
-    };
-    req.socket.on('data', countBytes);
-    ws.on('close', () => req.socket.off('data', countBytes));
-
-    // ----- Challenge (5 s to answer) -----
-    const serverNonce = newNonce();
-    const authTimer = setTimeout(() => {
-      log('WebSocket connection refused: auth timeout');
-      refuse(POLICY_VIOLATION, 'auth timeout');
-    }, AUTH_TIMEOUT_MS);
-    ws.on('close', () => clearTimeout(authTimer));
-    ws.send(JSON.stringify({ type: 'auth_challenge', protocol: AUTH_PROTOCOL, nonce: serverNonce }));
-
-    ws.once('message', (raw: Buffer | ArrayBuffer | Buffer[]) => {
-      clearTimeout(authTimer);
-      settle();
-      firstFrameIn = true;
-      req.socket.off('data', countBytes);
-
-      if (frameLength(raw) > MAX_AUTH_FRAME_BYTES) {
-        log('WebSocket connection refused: oversized auth frame');
-        refuse(MESSAGE_TOO_BIG, 'auth frame too large');
-        return;
-      }
-
-      let msg: unknown;
-      try {
-        msg = JSON.parse(frameText(raw));
-      } catch {
-        msg = undefined;
-      }
-      const frame = typeof msg === 'object' && msg !== null ? (msg as Record<string, unknown>) : {};
-
-      if (frame['type'] !== 'auth' || frame['protocol'] !== AUTH_PROTOCOL) {
-        const legacy = typeof frame['token'] === 'string';
-        log(
-          'WebSocket connection refused: ' +
-          (legacy
-            ? 'plaintext token frame from an older Native Host (update it: this daemon uses challenge-response auth)'
-            : 'no valid auth frame'),
-        );
-        refuse(POLICY_VIOLATION, legacy ? 'auth protocol mismatch' : 'auth required');
-        return;
-      }
-
-      const clientNonce = frame['nonce'];
-      if (
-        !isNonce(clientNonce) ||
-        !macMatches(frame['mac'], computeMac(apiToken, MAC_LABEL.wsClient, serverNonce, clientNonce))
-      ) {
-        log('WebSocket connection refused: invalid auth MAC');
-        refuse(POLICY_VIOLATION, 'auth failed');
-        return;
-      }
-
-      // ----- Authenticated — prove ourselves, then register -----
-      const id = `ws_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      browserId = id;
-      ws.send(JSON.stringify({
-        type: 'auth_ok',
-        mac: computeMac(apiToken, MAC_LABEL.wsServer, serverNonce, clientNonce),
-      }));
-      connectionManager.registerBrowser(id, (command) => {
-        if (ws.readyState !== ws.OPEN) {
-          throw new Error('WebSocket is not open');
-        }
-        ws.send(JSON.stringify(command));
-      }, 'native-host');
-
-      const now = Date.now();
-      const entry: HostSocket = { ws, browserId: id, lastPingAt: now, lastPongAt: now };
-      hosts.add(entry);
-      ws.on('pong', () => { entry.lastPongAt = Date.now(); });
-      if (hosts.size > 1) {
-        log(
-          `${hosts.size} Native Hosts connected — commands go to the earliest live one ` +
-          `(${connectionManager.getActiveBrowser()?.id ?? 'none'}); checking the older ones`,
-        );
-        probeOthers(entry);
-      }
-
-      // ----- Subsequent messages -----
-      ws.on('message', (data: Buffer | ArrayBuffer | Buffer[]) => {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(frameText(data));
-        } catch {
-          log('Invalid JSON from browser WebSocket');
-          return;
-        }
-
-        if (typeof parsed === 'object' && parsed !== null && 'requestId' in parsed) {
-          // Response to a command we sent
-          const result = parseBrowserResponse(parsed);
-          if (result.ok) {
-            connectionManager.handleResponse(result.response);
-            return;
-          }
-          log(result.error);
-          if (result.requestId !== undefined) {
-            connectionManager.handleResponse({
-              requestId: result.requestId,
-              success: false,
-              error: result.error,
-            });
-          }
-          return;
-        }
-
-        // Event from the browser side (no requestId)
-        const eventType =
-          typeof parsed === 'object' && parsed !== null && 'type' in parsed
-            ? String((parsed as { type: unknown }).type)
-            : 'unknown';
-        log(`Browser event: ${eventType}`);
-      });
-
-      ws.on('close', () => {
-        hosts.delete(entry);
-        connectionManager.unregisterBrowser(id);
-      });
-    });
-  });
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => handleConnection(state, ws, req));
 
   return new Promise<WebSocketServer>((resolve, reject) => {
     const onStartupError = (err: Error): void => {
