@@ -36,6 +36,7 @@ export function getPageInfo(): Record<string, unknown> {
     const el = candidates.item(index);
     const rect = el.getBoundingClientRect();
     if (rect.width > 0 && rect.height > 0) {
+      // Property reads only: on an element without them they are undefined (→ null below).
       const htmlEl = el as HTMLInputElement;
       interactiveElements.push({
         tag: el.tagName.toLowerCase(),
@@ -76,6 +77,7 @@ export function getPageInfo(): Record<string, unknown> {
       fields: Array.from(form.elements)
         .slice(0, LIMITS.FORM_FIELDS)
         .map((el) => {
+          // A form control of any kind: property reads only, undefined where absent.
           const inp = el as HTMLInputElement;
           return {
             tag: el.tagName.toLowerCase(),
@@ -288,6 +290,7 @@ let lastContextTarget: Element | null = null;
  * can reach.
  */
 export function rememberContextTarget(event: { target: EventTarget | null }): void {
+  // Checked by nodeType below (a page element is not `instanceof Element` in this sandbox).
   const target = event.target as Element | null;
   lastContextTarget = target && target.nodeType === 1 ? target : null;
 }

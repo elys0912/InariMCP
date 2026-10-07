@@ -219,6 +219,7 @@ export async function performType(
 
   assertNotPasswordField(element, options);
 
+  // focus() exists on HTML and SVG elements alike (HTMLOrSVGElement).
   (element as HTMLElement).focus();
   element.scrollIntoView({ behavior: "smooth", block: "center" });
   await sleep(DELAYS.SCROLL_INTO_VIEW);
@@ -419,6 +420,7 @@ export async function pressKey(
   if (hasLocator(locator)) {
     const element = findElement(locator);
     if (!element) throw notFoundError(locator);
+    // focus() exists on HTML and SVG elements alike (HTMLOrSVGElement).
     (element as HTMLElement).focus();
     target = element;
   }

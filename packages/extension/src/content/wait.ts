@@ -74,6 +74,7 @@ export async function waitForChange(
       for (const mutation of mutations) {
         const change: Record<string, unknown> = {
           type: mutation.type,
+          // A text node target has no tagName: `?.` leaves it undefined.
           target: (mutation.target as Element).tagName?.toLowerCase(),
           addedNodes: mutation.addedNodes.length,
           removedNodes: mutation.removedNodes.length,
@@ -207,6 +208,7 @@ export function observeElement(
         type: mutation.type,
         timestamp: Date.now(),
         target: generateSelector(mutation.target as Element),
+        // Added / removed text nodes have no tagName: reported as "text".
         addedNodes: Array.from(mutation.addedNodes)
           .map((n) => (n as Element).tagName?.toLowerCase() || "text")
           .filter(Boolean),
@@ -279,6 +281,7 @@ export async function clickAndWait(
       for (const mutation of mutations) {
         changes.push({
           type: mutation.type,
+          // A text node target has no tagName: `?.` leaves it undefined.
           target: (mutation.target as Element).tagName?.toLowerCase(),
           addedNodes: mutation.addedNodes.length,
           removedNodes: mutation.removedNodes.length,
