@@ -19,7 +19,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { commandInvocation, nmManifestTargets } from '../lib/core.mjs';
+import { MS_PER_SECOND, commandInvocation, nmManifestTargets } from '../lib/core.mjs';
 
 const USAGE = `Usage: node scripts/e2e/nm-probe.mjs [manifest.json]
 
@@ -104,6 +104,14 @@ host.on('error', (err) => {
 // EPIPE when the host has already exited; the reply timeout reports it.
 host.stdin.on('error', (err) => console.log('host stdin:', err.message));
 
+/** Wait for one reply, for the host to exit, between status polls; how many polls. */
+const REPLY_TIMEOUT_MS = 8_000;
+const EXIT_WAIT_MS = 5_000;
+const STATUS_POLL_MS = 500;
+const STATUS_POLLS = 20;
+/** Characters of a non-JSON message shown. */
+const RAW_EXCERPT_LENGTH = 200;
+
 let buf = Buffer.alloc(0);
 const waiters = new Map();
 host.stdout.on('data', (chunk) => {
@@ -117,7 +125,7 @@ host.stdout.on('data', (chunk) => {
     try {
       msg = JSON.parse(raw);
     } catch {
-      console.log('message that is not JSON:', raw.slice(0, 200));
+      console.log('message that is not JSON:', raw.slice(0, RAW_EXCERPT_LENGTH));
       continue;
     }
     const resolve = waiters.get(msg?.requestId);
@@ -134,8 +142,15 @@ function send(action) {
   head.writeUInt32LE(body.length, 0);
   host.stdin.write(Buffer.concat([head, body]));
   return new Promise((resolve, reject) => {
-    waiters.set(requestId, resolve);
-    setTimeout(() => reject(new Error(`no reply to '${action}' within 8s`)), 8000);
+    const timer = setTimeout(() => {
+      waiters.delete(requestId);
+      reject(new Error(`no reply to '${action}' within ${REPLY_TIMEOUT_MS / MS_PER_SECOND}s`));
+    }, REPLY_TIMEOUT_MS);
+    // The stdout handler removes the waiter before calling it.
+    waiters.set(requestId, (msg) => {
+      clearTimeout(timer);
+      resolve(msg);
+    });
   });
 }
 
@@ -145,10 +160,10 @@ try {
   const pong = await send('ping');
   console.log('ping   ->', JSON.stringify(pong));
   let status;
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < STATUS_POLLS; i++) {
     status = await send('status');
     if (status.mcp_server?.available && status.mcp_server?.ws?.connected) break;
-    await sleep(500);
+    await sleep(STATUS_POLL_MS);
   }
   console.log('status ->', JSON.stringify(status));
   ok = Boolean(pong.pong && status.mcp_server?.available && status.mcp_server?.ws?.connected);
@@ -160,7 +175,7 @@ try {
 host.stdin.end();
 const exited = host.exitCode !== null || host.signalCode !== null
   ? `exited (code ${host.exitCode})`
-  : await Promise.race([exitedPromise, sleep(5000).then(() => 'still running after 5s')]);
+  : await Promise.race([exitedPromise, sleep(EXIT_WAIT_MS).then(() => `still running after ${EXIT_WAIT_MS / MS_PER_SECOND}s`)]);
 console.log('host after stdin close:', exited);
 if (exited.startsWith('still')) { host.kill(); ok = false; }
 
