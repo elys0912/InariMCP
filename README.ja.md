@@ -4,7 +4,7 @@
 
 **普段使いのFirefoxをClaude Codeから操作する。** Firefox専用のMCPアドオン — 使い捨てブラウザではなく、あなたの実プロファイル・実ログインをそのまま使う。
 
-> ステータス: **開発初期 — インストーラは完成済み（Windows・macOS・Linux。macOSは実機で未検証）で、拡張機能経路はエンドツーエンドで動く。** AMO / GitHub Releases経由での署名済みパッケージ配布は準備中。下記の[Status](#status)を参照。
+> ステータス: **開発初期 — インストーラは完成済み（Windows・macOS・Linux。macOSは実機で未検証）で、拡張機能経路はエンドツーエンドで動く。** AMOで署名した拡張機能は[GitHub Releases](https://github.com/elys0912/KitsuneMCP/releases/latest)で配布している。下記の[Status](#status)を参照。
 
 ![status](https://img.shields.io/badge/status-WIP-yellow) ![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
 
@@ -88,7 +88,14 @@ npm run setup
 
 ### Firefoxへの拡張機能の読み込み
 
-署名済みでワンクリックインストールできる`.xpi`はまだ配布していない（AMO署名 + GitHub Releasesでの配布は準備中）。今のところは一時的なアドオンとして読み込む。
+[GitHub Releases](https://github.com/elys0912/KitsuneMCP/releases/latest)から`kitsunemcp-<版>.xpi`をダウンロードする。AMOの署名付き（unlisted。アドオンストアの検索には出ない）で、Firefoxを再起動しても消えない。入れ方はどちらでもよい。
+
+- `.xpi`をFirefoxのウィンドウにドラッグ＆ドロップする
+- `about:addons`を開き、歯車アイコン →「ファイルからアドオンをインストール」で`.xpi`を選ぶ
+
+拡張機能・Native Host・サーバーは一緒に変わり、版が合わないとコマンドを拒否することがあるので、チェックアウトした版（`git checkout v<版>`）と同じリリースの`.xpi`を使うこと。
+
+拡張機能を自分で変更して試すときは、代わりに一時的なアドオンとして読み込む。
 
 1. Firefoxで`about:debugging#/runtime/this-firefox`を開く
 2. 「一時的なアドオンを読み込む」→ `packages/extension/manifest.json`を選択（`packages/extension/dist/`のバンドルを読み込むので、先に`npm run build`を実行しておく）
@@ -205,7 +212,7 @@ npm run build
 npm run setup
 ```
 
-その後、`about:debugging`で拡張機能を再読み込みし（またはFirefoxを再起動して読み込み直し）、Claude Codeを再起動する。古い版のdaemonは止めるまで動き続ける。新しい中継やNative Hostが、動いているdaemonについて「speaks protocol …」「is from another version」と報告したら、そのdaemonのプロセスを止める（Native Hostが起動したものならFirefoxも再起動する）。次のツール呼び出しで対応する版のdaemonが起動する。`--stop-daemon`より前のdaemonはPIDで終了する（探すポートは`--doctor`が表示する）。それより新しいdaemonは`node packages/mcp-server/dist/index.js --stop-daemon`で止められる。
+その後、[GitHub Releases](https://github.com/elys0912/KitsuneMCP/releases/latest)の新しい`.xpi`を入れて（古いものは上書きされる。一時的なアドオンなら`about:debugging`で再読み込みする）、FirefoxとClaude Codeを再起動する。古い版のdaemonは止めるまで動き続ける。新しい中継やNative Hostが、動いているdaemonについて「speaks protocol …」「is from another version」と報告したら、そのdaemonのプロセスを止める（Native Hostが起動したものならFirefoxも再起動する）。次のツール呼び出しで対応する版のdaemonが起動する。`--stop-daemon`より前のdaemonはPIDで終了する（探すポートは`--doctor`が表示する）。それより新しいdaemonは`node packages/mcp-server/dist/index.js --stop-daemon`で止められる。
 
 #### 更新時の注意
 
@@ -409,7 +416,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 
 ## Status
 
-このプロジェクトは**活発かつ段階的に開発中** — まだ一般利用の準備は整っていない。とはいえ「読んでビルドできるソースコード」の段階は過ぎていて、拡張機能を自分で読み込めば（`about:debugging`の一時的なアドオン）実際のFirefoxをエンドツーエンドで動かせる。足りないのは、それを手作業なしで誰でもインストールできるようにするパッケージングの部分だけ。
+このプロジェクトは**活発かつ段階的に開発中** — まだ一般利用の準備は整っていない。とはいえ「読んでビルドできるソースコード」の段階は過ぎていて、インストーラとGitHub ReleasesのAMO署名済み拡張機能で、実際のFirefoxをエンドツーエンドで動かせる。
 
 **完了済み:**
 - 設計 + 多角的レビュー
@@ -426,9 +433,11 @@ daemon はセッションごとに新しく起動されるわけではない。C
 - 診断（`--doctor`）、`--help` / `--version`、全パッケージと拡張機能の版の統一（0.1.4）
 - 配布準備: 正式なExtension ID確定（`kitsune-mcp@elys0912.github.io`）、AMOの`data_collection_permissions`設定、`web-ext lint`がエラー・警告0件（P8）
 - 承認をページの外へ移動（ツールバーのポップアップ / MCP elicitation、1回限りの承認トークン）、daemon・中継・Native Hostの間のHMACによる相互認証
+- AMOでの署名（unlisted）と、GitHub Releasesでの署名済み`.xpi`の配布（0.1.0から）
 
 **未完了:**
-- AMOでの署名と、GitHub Releasesでの署名済みパッケージの配布
+- 実機のmacOSでのインストーラの確認
+- AMOのストアへの掲載（当面は予定なし。配布はGitHub Releasesだけ）
 
 
 ### ツールの対応状況

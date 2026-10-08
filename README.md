@@ -4,7 +4,7 @@
 
 **Control your everyday Firefox from Claude Code.** A Firefox-only MCP addon — your real profile, your real logins, no throwaway browser.
 
-> Status: **early WIP — the installer is in place (Windows, macOS and Linux; macOS untested on real hardware) and the extension path works end-to-end.** Signed-package distribution via AMO/GitHub Releases is still in progress. See [Status](#status) below.
+> Status: **early WIP — the installer is in place (Windows, macOS and Linux; macOS untested on real hardware) and the extension path works end-to-end.** The AMO-signed extension is published on [GitHub Releases](https://github.com/elys0912/KitsuneMCP/releases/latest). See [Status](#status) below.
 
 ![status](https://img.shields.io/badge/status-WIP-yellow) ![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
 
@@ -88,7 +88,14 @@ Questions are asked only when stdin is a terminal; otherwise the default answer 
 
 ### Load the extension in Firefox
 
-A signed, one-click-install `.xpi` isn't published yet (AMO signing + GitHub Releases distribution is still in progress). For now, load it as a temporary add-on:
+Download `kitsunemcp-<version>.xpi` from [GitHub Releases](https://github.com/elys0912/KitsuneMCP/releases/latest). It is signed by AMO (unlisted: it is not in the add-on store's search) and stays installed across restarts. Install it either way:
+
+- Drag and drop the `.xpi` onto a Firefox window.
+- Open `about:addons`, click the gear icon → "Install Add-on From File..." and choose the `.xpi`.
+
+Use the `.xpi` from the release that matches your checkout (`git checkout v<version>`): the extension, the Native Host and the server change together, and mismatched versions can refuse commands.
+
+To try your own changes to the extension, load it as a temporary add-on instead:
 
 1. Open `about:debugging#/runtime/this-firefox` in Firefox.
 2. "Load Temporary Add-on..." → select `packages/extension/manifest.json` (it loads the bundles in `packages/extension/dist/`, so run `npm run build` first).
@@ -205,7 +212,7 @@ npm run build
 npm run setup
 ```
 
-Then reload the extension in `about:debugging` (or restart Firefox and load it again) and restart Claude Code. A daemon from the old version keeps running until it is stopped: when the new relay or Native Host reports that the running daemon "speaks protocol …" / "is from another version", stop that daemon process (and restart Firefox if the Native Host started it); a matching one starts on the next tool call. A daemon that predates `--stop-daemon` has to be ended by PID (`--doctor` prints the port to look for); a newer one can be stopped with `node packages/mcp-server/dist/index.js --stop-daemon`.
+Then install the new `.xpi` from [GitHub Releases](https://github.com/elys0912/KitsuneMCP/releases/latest) (it replaces the old one in place; with a temporary add-on, reload it in `about:debugging` instead), restart Firefox and restart Claude Code. A daemon from the old version keeps running until it is stopped: when the new relay or Native Host reports that the running daemon "speaks protocol …" / "is from another version", stop that daemon process (and restart Firefox if the Native Host started it); a matching one starts on the next tool call. A daemon that predates `--stop-daemon` has to be ended by PID (`--doctor` prints the port to look for); a newer one can be stopped with `node packages/mcp-server/dist/index.js --stop-daemon`.
 
 #### Notes on updating
 
@@ -409,7 +416,7 @@ The daemon isn't started fresh per session — whoever gets there first (your Cl
 
 ## Status
 
-This project is **under active, incremental development** — not ready for general use yet. It has moved past "source you can read and build": you can now load the extension yourself (`about:debugging` temporary add-on) and drive your real Firefox end-to-end. What's missing is packaging it up so anyone can install it without doing that by hand.
+This project is **under active, incremental development** — not ready for general use yet. It has moved past "source you can read and build": the installer and the AMO-signed extension on GitHub Releases let you drive your real Firefox end-to-end.
 
 **Done:**
 - Design and multi-angle review
@@ -426,9 +433,11 @@ This project is **under active, incremental development** — not ready for gene
 - Diagnostics (`--doctor`), `--help` / `--version`, and one version (0.1.4) for every package and the extension
 - Distribution prep: the real Extension ID is confirmed (`kitsune-mcp@elys0912.github.io`), AMO's `data_collection_permissions` is set, and `web-ext lint` passes with 0 errors/warnings (P8)
 - Human approval moved out of the page (toolbar popup / MCP elicitation, one-time approval tokens), and HMAC mutual authentication between the daemon, the relays and the Native Host
+- AMO signing (unlisted) and distributing the signed `.xpi` via GitHub Releases (since 0.1.0)
 
 **Not done yet:**
-- AMO signing and distributing the signed package via GitHub Releases
+- Running the installer on real macOS
+- Listing on the AMO store (not planned for now; the extension is distributed only through GitHub Releases)
 
 
 ### Tool availability
