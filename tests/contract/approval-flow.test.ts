@@ -33,6 +33,8 @@ import { getApprovalStore } from '../../packages/mcp-server/src/safety/approval.
 import { callWithApproval, findApprovalRequest } from '../../packages/mcp-server/src/relay/approval.js';
 import { startHttpBridge } from '../../packages/mcp-server/src/transport/http-bridge.js';
 import { ACTION_TABLE } from '../../packages/extension/src/background/action-table.ts';
+import { checkProtectedTarget } from '../../packages/extension/src/background/url-policy.ts';
+import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
 import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 // ---------------------------------------------------------------------------
@@ -73,19 +75,12 @@ function extensionAnswer(command: BrowserCommand): Record<string, unknown> {
     if (browser.popupDecision === 'error') return { success: false, error: 'The popup could not be shown' };
     return ext.approvalCommandResult(view, browser.popupDecision, Date.now());
   }
-  // background.ts checkProtectedTarget: patterns against the real tab URL,
-  // let through only on the approved host.
-  const patterns = (command.protectedUrlPatterns ?? []).map((p) => new RegExp(p, 'i'));
-  const matched = patterns.find((p) => p.test(browser.tabUrl));
-  if (matched && !ext.isApprovedHost(browser.tabUrl, command.approvedHost)) {
-    return {
-      success: false,
-      safetyDecision: 'confirmation_required',
-      error: 'Protected domain: confirmation required',
-      url: browser.tabUrl,
-      matchedPattern: matched.source,
-    };
-  }
+  // The Extension's own check (background/url-policy.ts): the URL rules it
+  // gets against the real tab URL, let through only on the approved host.
+  const rules = compileUrlRules(command.protectedUrlRules ?? []).rules;
+  const tab = { id: 1, url: browser.tabUrl } as Parameters<typeof checkProtectedTarget>[0];
+  const refusal = checkProtectedTarget(tab, rules, command.approvedHost);
+  if (refusal) return refusal;
   if (command.action === 'navigate' && typeof command.data?.['url'] === 'string') {
     browser.tabUrl = command.data['url'];
   }
@@ -191,6 +186,26 @@ describe('without approval, protected-site actions are refused', () => {
     expect(fake.isError).toBe(true);
     expect(text(fake)).toContain('was not accepted');
     expect(browser.received).toEqual([]);
+  });
+
+  // A-KM-01: the human would approve arguments they were not shown in full.
+  // D-KM-01 / D-KM-05: a URL cannot be split, so the LLM is told how the length is counted and
+  // that such a value cannot be approved, not only to shorten it.
+  it('arguments too long to show in full: no approval request, the LLM is told the length cannot be approved', async () => {
+    const before = getApprovalStore().pendingCount;
+    const url = `${PROTECTED_URL}?note=${'x'.repeat(200)}`;
+    const result = await createToolHandler('fox_navigate')({ action: 'goto', url });
+    expect(result.isError).toBe(true);
+    expect(browser.received).toEqual([]);
+    const d = details(result);
+    expect(d).toMatchObject({ decision: 'confirmation_required' });
+    expect(d['approval']).toBeUndefined();
+    expect(getApprovalStore().pendingCount).toBe(before);
+    expect(text(result)).toContain('cannot be approved on a protected site');
+    expect(text(result)).toContain('too long to show the human in full');
+    expect(text(result)).toContain('UTF-16 code units of the value as JSON');
+    expect(text(result)).toContain('a value that cannot be split, such as a long URL, cannot be approved on this site');
+    expect(text(result)).not.toContain('Shorten the arguments');
   });
 });
 

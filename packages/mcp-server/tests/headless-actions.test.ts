@@ -1,6 +1,8 @@
 /**
  * Headless backend actions against a real headless Firefox (Playwright).
- * Skipped as a whole when Firefox cannot be launched.
+ * Skipped as a whole when Firefox cannot be launched, except on CI or with
+ * KITSUNE_REQUIRE_FIREFOX (npm run test:firefox), where that fails the run
+ * (tests/contract/helpers/real-firefox.ts).
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -8,6 +10,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HeadlessBrowser } from '../src/headless/backend.js';
 import { PASSWORD_REFUSAL } from '../src/safety/password-guard.js';
+import { skipOrFailWithoutFirefox } from '../../../tests/contract/helpers/real-firefox.js';
 
 type Result = Record<string, unknown>;
 
@@ -29,7 +32,8 @@ beforeAll(async () => {
   try {
     await browser.start();
     available = true;
-  } catch {
+  } catch (err) {
+    skipOrFailWithoutFirefox(err);
     available = false;
   }
 }, 60_000);
@@ -184,8 +188,9 @@ describe('select_option', () => {
 
 describe('get_value', () => {
   real('masks a password field as the Extension does, and returns other values', async () => {
-    await load('<input id="p" type="password" value="secret"><input id="c" autocomplete="current-password" value="secret"><input id="t" value="plain">');
-    for (const selector of ['#p', '#c']) {
+    await load('<input id="p" type="password" value="secret"><input id="c" autocomplete="current-password" value="secret">' +
+      '<input id="w" autocomplete="Current-Password webauthn" value="secret"><input id="t" value="plain">');
+    for (const selector of ['#p', '#c', '#w']) {
       expect(await browser.execute('get_value', undefined, { selector })).toMatchObject({ success: true, value: '[MASKED]' });
     }
     expect(await browser.execute('get_value', undefined, { selector: '#t' })).toMatchObject({ success: true, value: 'plain' });
@@ -381,6 +386,22 @@ describe('screenshot', () => {
     const unnamed = await browser.execute('screenshot', undefined, {});
     expect(String(unnamed['filename'])).toMatch(/^screenshot_\d+\.png$/);
     expect(path.dirname(String(unnamed['imagePath']))).toBe(dir);
+  });
+
+  // A-KM-06: Playwright took the format from the extension and refused a name without one.
+  real('always saves a PNG named as the Extension path does, whatever the extension', async () => {
+    await load('<p>x</p>');
+    const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    for (const [requested, expected] of [
+      ['shot', 'shot.png'],
+      ['shot.jpg', 'shot.png'],
+      ['shot.WEBP', 'shot.png'],
+      ['a b?.gif', 'a_b_.gif.png'],
+    ] as const) {
+      const r = await browser.execute('screenshot', undefined, { filename: requested });
+      expect(r, requested).toMatchObject({ success: true, filename: expected, imagePath: path.join(dir, expected) });
+      expect(fs.readFileSync(path.join(dir, expected)).subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)).toBe(true);
+    }
   });
 });
 

@@ -12,6 +12,7 @@
 import type { BrowserContext, ConsoleMessage, ElementHandle, Page } from 'playwright';
 import { z } from 'zod';
 import { BrowserActionSchema, isRecord, type BrowserAction } from '@kitsune-mcp/shared';
+import { screenshotStem } from '@kitsune-mcp/shared/node';
 import { countOccurrences, filterAriaSnapshot, parseArgs } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
 import { focusedIsPassword } from './focus.js';
@@ -294,9 +295,12 @@ const screenshot: ActionHandler = async ({ page, args }) => {
   const { filename: requested, fullPage } = parseArgs(screenshotArgs, args, 'screenshot');
   const dir = getScreenshotsDir();
   fs.mkdirSync(dir, { recursive: true });
-  const filename = path.basename(requested || `screenshot_${Date.now()}.png`);
+  // Always PNG, named as the Native Host names the Extension's captures:
+  // Playwright takes the format from the extension and refuses any other
+  // than png / jpeg / webp (a name without one included).
+  const filename = `${screenshotStem(requested) ?? `screenshot_${Date.now()}`}.png`;
   const filepath = path.join(dir, filename);
-  await page.screenshot({ path: filepath, fullPage: fullPage === true });
+  await page.screenshot({ path: filepath, type: 'png', fullPage: fullPage === true });
   const stats = fs.statSync(filepath);
   // Same shape as the Extension path (Native Host): data.imagePath
   return {

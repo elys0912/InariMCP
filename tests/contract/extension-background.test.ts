@@ -236,6 +236,58 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
     expect(result.error).toMatch(/outside the container scope/);
     expect(sent).toEqual([]);
   });
+
+  // B-KM-03: approvedHost lets one approved call through on exactly that host.
+  describe('approvedHost (a human approved this call for one hostname)', () => {
+    const subdomainTab = fakeTab({ id: 4, url: 'https://pay.bank.example.test/', cookieStoreId: 'c-agent' });
+    const protectedMessage = { ...scopeMessage, protectedUrlRules: [hostRule('bank.example.test')] };
+
+    /** dispatcherBrowser, with the subdomain tab known to tabs.get as well. */
+    function approvalBrowser(active: browser.tabs.Tab): { tabId: number; frameId: number }[] {
+      const { sent } = dispatcherBrowser([active]);
+      const fake = (globalThis as unknown as { browser: { tabs: { get: (id: number) => Promise<unknown> } } }).browser;
+      const get = fake.tabs.get;
+      fake.tabs.get = async (id: number) => (id === subdomainTab.id ? subdomainTab : get(id));
+      return sent;
+    }
+
+    it('the approved host: the handler runs on the protected tab', async () => {
+      const sent = approvalBrowser(bankTab);
+      const result = await handleCommand({ action: 'click', ...protectedMessage, approvedHost: 'bank.example.test' }, 'host');
+      expect(result.safetyDecision).toBeUndefined();
+      expect(sent).toEqual([{ tabId: 2, frameId: 0 }]);
+    });
+
+    it('a subdomain or another host of the protected tree: confirmation_required, no handler', async () => {
+      for (const [active, approvedHost] of [
+        [subdomainTab, 'bank.example.test'],
+        [bankTab, 'pay.bank.example.test'],
+        [bankTab, 'other.example.test'],
+        [bankTab, 'example.test'],
+      ] as const) {
+        const sent = approvalBrowser(active);
+        const result = await handleCommand({ action: 'click', ...protectedMessage, approvedHost }, 'host');
+        expect(result, `${active.url} / ${approvedHost}`).toMatchObject({
+          success: false,
+          safetyDecision: 'confirmation_required',
+          url: active.url,
+        });
+        expect(sent).toEqual([]);
+      }
+    });
+
+    it('start_logging (checked in its handler) follows the same rule', async () => {
+      const approved = approvalBrowser(bankTab);
+      const ok = await handleCommand({ action: 'start_logging', ...protectedMessage, approvedHost: 'bank.example.test' }, 'host');
+      expect(ok.safetyDecision).toBeUndefined();
+      expect(approved).toEqual([{ tabId: 2, frameId: 0 }]);
+
+      const refused = approvalBrowser(subdomainTab);
+      const denied = await handleCommand({ action: 'start_logging', ...protectedMessage, approvedHost: 'bank.example.test' }, 'host');
+      expect(denied).toMatchObject({ success: false, safetyDecision: 'confirmation_required', url: subdomainTab.url });
+      expect(refused).toEqual([]);
+    });
+  });
 });
 
 describe('WP38 no active tab: a failure result, not a TypeError', () => {

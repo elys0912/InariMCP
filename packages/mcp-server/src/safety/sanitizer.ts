@@ -71,6 +71,37 @@ export function stripInvisible(s: string): string {
 }
 
 /**
+ * Characters escaped in text shown to a human who approves a call: those of
+ * INVISIBLE_RE, plus ZWNJ / ZWJ (U+200C-200D) and the line / paragraph
+ * separators (U+2028-2029), which `JSON.stringify` leaves as they are and
+ * which break or join lines in the popup and the MCP client.
+ */
+const HUMAN_HIDDEN_RE = new RegExp(`${INVISIBLE_RE.source}|[\\u200C\\u200D\\u2028\\u2029]`, 'g');
+
+/** Digits of a `\uXXXX` escape (BMP code points). */
+const BMP_ESCAPE_DIGITS = 4;
+
+function escapeCodePoint(ch: string): string {
+  const cp = ch.codePointAt(0) ?? 0;
+  const hex = cp.toString(16).toUpperCase();
+  return hex.length <= BMP_ESCAPE_DIGITS ? `\\u${hex.padStart(BMP_ESCAPE_DIGITS, '0')}` : `\\u{${hex}}`;
+}
+
+/**
+ * Show the invisible and reordering characters of `s` as escapes
+ * (`\u202E`, `\u{E0041}`) instead of removing them, so a human sees that
+ * they are there. `found` tells whether there was any.
+ */
+export function revealInvisible(s: string): { text: string; found: boolean } {
+  let found = false;
+  const text = s.replace(HUMAN_HIDDEN_RE, (ch) => {
+    found = true;
+    return escapeCodePoint(ch);
+  });
+  return { text, found };
+}
+
+/**
  * Sanitize one string bound for the MCP client: strip invisible characters,
  * mask credentials (Bearer / Basic values, JWTs, secret query parameters and
  * JSON fields).

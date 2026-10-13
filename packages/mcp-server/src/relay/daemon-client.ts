@@ -10,6 +10,10 @@
  *    ~/.kitsune-mcp/api_token *after* the daemon is healthy — only the daemon
  *    creates the token; the token itself is never sent, see
  *    @kitsune-mcp/shared/node auth.ts) and X-Kitsune-Relay (audit transport `relay:<id>`).
+ *    Before each call, GET /health with a fresh nonce must come back with
+ *    the daemon's proof (evaluateHealth, as the Native Host and the daemon's
+ *    singleton check judge it): the body (tool name, arguments, approval
+ *    token) is never sent to a program that cannot prove it holds the token.
  *    The daemon signs its answer; an unsigned or wrongly signed answer
  *    means another program holds the port, and is refused. Aborting the
  *    call (MCP cancellation) closes the request, which the daemon turns
@@ -37,8 +41,16 @@ import { maxCommandTimeoutMs } from '../connection/manager.js';
 import { isApprovalReason, type ApprovalReply } from './approval.js';
 import { RELAY_HEARTBEAT_MS, SHUTDOWN_DRAIN_MS } from '../daemon/activity.js';
 import { HEALTH_PROBE_TIMEOUT_MS } from '../daemon/probe.js';
-import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
-import { apiTokenPath, daemonLogPath, kitsuneHealth, spawnDetachedDaemon, stderrLogger } from '@kitsune-mcp/shared/node';
+import {
+  AUTH_HEADER,
+  DAEMON_PROTOCOL_VERSION,
+  evaluateHealth,
+  newNonce,
+  signRequest,
+  verifyResponse,
+  type HealthVerdict,
+} from '@kitsune-mcp/shared/node';
+import { apiTokenPath, daemonLogPath, spawnDetachedDaemon, stderrLogger } from '@kitsune-mcp/shared/node';
 import {
   MAX_REQUEST_BODY_BYTES,
   RELAY_ID_HEADER,
@@ -54,6 +66,11 @@ import { isRecord } from '@kitsune-mcp/shared';
 /** How long a relay waits for a daemon it started to answer /health. */
 const DAEMON_STARTUP_WAIT_MS = 15_000;
 const HEALTH_POLL_INTERVAL_MS = 200;
+/**
+ * Second wait for /health before a signed request, when the first
+ * (HEALTH_PROBE_TIMEOUT_MS) timed out: a daemon busy for a moment answers late.
+ */
+const BUSY_HEALTH_PROBE_TIMEOUT_MS = 10_000;
 /** POST /approval/elicitation only records an answer: no browser round trip. */
 const ELICITATION_REPORT_TIMEOUT_MS = 10_000;
 /**
@@ -101,6 +118,8 @@ interface RequestOptions {
   timeoutMs: number;
   /** Signs the request (and lets the answer's signature be checked). */
   token?: string;
+  /** Extra request headers (the /health nonce). */
+  headers?: http.OutgoingHttpHeaders;
   signal?: AbortSignal;
 }
 
@@ -112,6 +131,8 @@ interface HttpReply {
 }
 
 class ConnectionRefusedError extends Error {}
+/** No answer within the request's timeout: something may hold the port but be busy. */
+class RequestTimeoutError extends Error {}
 
 /** A tool call in progress (callTool()): what is sent, and which retries are used up. */
 interface PendingCall {
@@ -144,6 +165,22 @@ function signatureRefused(baseUrl: string): string {
     'or end its process) and call the tool again.';
 }
 
+/**
+ * /health came back without a valid proof for our token (read twice): not
+ * the daemon we share a token with, so the call is not sent at all.
+ */
+function proofRefused(baseUrl: string): string {
+  return `${unprovenDaemon(baseUrl)} The call was not sent. Check which process owns the port, or stop the daemon ` +
+    '(node dist/index.js --stop-daemon, or end its process) and call the tool again.';
+}
+
+/** Why nothing signed is sent to the program on the port (stopDaemon(), approvals, tool calls). */
+function unprovenDaemon(baseUrl: string): string {
+  return `The program at ${baseUrl} answers as the KitsuneMCP daemon but cannot prove it holds this ` +
+    "session's API token (another program may be using its port, or api_token was replaced since the " +
+    'daemon started).';
+}
+
 export interface StopDaemonResult {
   /** False when something went wrong (a daemon may still be running). */
   ok: boolean;
@@ -159,6 +196,11 @@ export interface DaemonClientOptions {
   port?: number;
   /** Defaults to reading ~/.kitsune-mcp/api_token. */
   readToken?: () => string | undefined;
+}
+
+/** Something that answers /health as a KitsuneMCP daemon holds the port (proven or not). */
+function isDaemonOnPort(verdict: HealthVerdict): boolean {
+  return verdict.kind !== 'down' && verdict.kind !== 'foreign';
 }
 
 export class DaemonClient {
@@ -262,20 +304,68 @@ export class DaemonClient {
 
   /**
    * GET /health (also serves as this relay's heartbeat). True when a
-   * KitsuneMCP daemon answers — even an incompatible one: it holds the port,
-   * so starting another would not help (see protocolMismatch()).
+   * KitsuneMCP daemon answers — even an incompatible one, or one whose proof
+   * is not checked here: it holds the port, so starting another would not
+   * help (see protocolMismatch(); callTool() checks the proof).
    */
   async checkHealth(timeoutMs: number = HEALTH_PROBE_TIMEOUT_MS): Promise<boolean> {
+    return isDaemonOnPort(await this.probeHealth(undefined, timeoutMs));
+  }
+
+  /**
+   * GET /health with a fresh nonce, judged by evaluateHealth: with `token`,
+   * a compatible daemon is `ok` only when its proof matches. Records what
+   * protocolMismatch() reports. `onTimeout` is called when the answer did
+   * not come within `timeoutMs` (the verdict is then `down`).
+   */
+  private async probeHealth(
+    token: string | undefined,
+    timeoutMs: number = HEALTH_PROBE_TIMEOUT_MS,
+    onTimeout?: () => void,
+  ): Promise<HealthVerdict> {
+    const nonce = newNonce();
+    let verdict: HealthVerdict;
     try {
-      const reply = await this.request('GET', '/health', { timeoutMs });
-      const health = kitsuneHealth(reply.status, reply.body);
-      this.daemonSeen = health !== undefined;
-      if (health !== undefined) this.daemonProtocol = health['protocol'];
-      return health !== undefined;
-    } catch {
-      this.daemonSeen = false;
-      return false;
+      const reply = await this.request('GET', '/health', { timeoutMs, headers: { [AUTH_HEADER.nonce]: nonce } });
+      verdict = evaluateHealth(reply.status, reply.body, token, nonce);
+    } catch (err: unknown) {
+      if (err instanceof RequestTimeoutError) onTimeout?.();
+      verdict = { kind: 'down' };
     }
+    this.daemonSeen = isDaemonOnPort(verdict);
+    if (this.daemonSeen) {
+      this.daemonProtocol = verdict.kind === 'incompatible' ? verdict.protocol : DAEMON_PROTOCOL_VERSION;
+    }
+    return verdict;
+  }
+
+  /**
+   * /health judged with the current token; an `impostor` answer is checked
+   * once more with the token read again (the file may have been replaced).
+   * Used before anything signed is sent.
+   */
+  private async verifyDaemon(): Promise<{ token: string | undefined; verdict: HealthVerdict }> {
+    let token = this.readToken();
+    let verdict = await this.probeHealthPatiently(token);
+    if (verdict.kind === 'impostor') {
+      token = this.readToken();
+      verdict = await this.probeHealthPatiently(token);
+    }
+    return { token, verdict };
+  }
+
+  /**
+   * probeHealth(), asked once more with BUSY_HEALTH_PROBE_TIMEOUT_MS when the
+   * first answer did not come in time: a busy daemon is not taken for a
+   * missing one (which would start another daemon and fail the call). A
+   * refused connection is not asked again.
+   */
+  private async probeHealthPatiently(token: string | undefined): Promise<HealthVerdict> {
+    let timedOut = false;
+    const verdict = await this.probeHealth(token, HEALTH_PROBE_TIMEOUT_MS, () => { timedOut = true; });
+    if (verdict.kind !== 'down' || !timedOut) return verdict;
+    log(`no /health answer from ${this.baseUrl} within ${HEALTH_PROBE_TIMEOUT_MS / 1000}s — asking once more`);
+    return this.probeHealth(token, BUSY_HEALTH_PROBE_TIMEOUT_MS);
   }
 
   /** Error text when the running daemon speaks another protocol, else undefined. */
@@ -367,13 +457,28 @@ export class DaemonClient {
 
   /** One POST /mcp/call; decides whether callTool() sends it again. */
   private async attemptCall(call: PendingCall): Promise<CallAttempt> {
-    // Look again before refusing: the user may have stopped the old
-    // daemon since (then nothing answers, and the request below starts one).
-    if (this.protocolMismatch() !== undefined) await this.checkHealth();
+    // A fresh /health every time: the user may have stopped an old daemon
+    // since, and whatever holds the port now must prove it holds the token.
+    const { token, verdict } = await this.verifyDaemon();
     const mismatch = this.protocolMismatch();
     if (mismatch !== undefined) return finished(errorResult(mismatch));
 
-    const token = this.readToken();
+    if (verdict.kind === 'down') {
+      // Nothing was sent, so starting a daemon and retrying cannot run the tool twice.
+      if (!call.restarted) {
+        call.restarted = true;
+        log('daemon not reachable — starting it');
+        if (await this.ensureDaemon()) return RETRY;
+      }
+      return finished(errorResult(`KitsuneMCP daemon is not reachable at ${this.baseUrl} (see ${daemonLogPath()}).`));
+    }
+    if (verdict.kind === 'foreign') {
+      return finished(errorResult(
+        `The program at ${this.baseUrl} is not the KitsuneMCP daemon (its /health answer is not ` +
+        "the daemon's). The call was not sent. Check which process owns the port.",
+      ));
+    }
+
     if (token === undefined) {
       if (!call.restarted && (await this.ensureDaemon())) {
         call.restarted = true;
@@ -384,6 +489,7 @@ export class DaemonClient {
         `(the daemon creates it on start; see ${daemonLogPath()}).`,
       ));
     }
+    if (verdict.kind !== 'ok') return finished(errorResult(proofRefused(this.baseUrl)));
 
     let reply: HttpReply;
     try {
@@ -472,20 +578,28 @@ export class DaemonClient {
   /**
    * Ask the running daemon to stop (signed POST /daemon/shutdown) and wait
    * until nothing answers /health any more. Never starts a daemon.
-   * `force` skips the daemon's wait for running calls.
+   * `force` skips the daemon's wait for running calls. The signed request is
+   * sent only to a daemon whose /health proves it holds our token.
    */
   async stopDaemon(force = false, waitMs: number = DAEMON_STOP_WAIT_MS): Promise<StopDaemonResult> {
-    if (!(await this.checkHealth())) {
+    const { token, verdict } = await this.verifyDaemon();
+    if (!isDaemonOnPort(verdict)) {
       return { ok: true, stopped: false, message: `no KitsuneMCP daemon answers at ${this.baseUrl}` };
     }
     const mismatch = this.protocolMismatch();
     if (mismatch !== undefined) return { ok: false, stopped: false, message: mismatch };
-    const token = this.readToken();
     if (token === undefined) {
       return {
         ok: false,
         stopped: false,
         message: `a daemon answers at ${this.baseUrl} but there is no API token at ${apiTokenPath()} to sign the request`,
+      };
+    }
+    if (verdict.kind !== 'ok') {
+      return {
+        ok: false,
+        stopped: false,
+        message: `${unprovenDaemon(this.baseUrl)} The stop request was not sent. Check which process owns the port.`,
       };
     }
 
@@ -555,7 +669,9 @@ export class DaemonClient {
 
   /**
    * POST to an approval endpoint. No daemon restart on failure: a new
-   * daemon would not know the request anyway.
+   * daemon would not know the request anyway. Sent only to a daemon whose
+   * /health proves it holds our token (the request ID and the human's answer
+   * are not given to another program on the port).
    */
   private async postApproval(
     urlPath: string,
@@ -566,9 +682,17 @@ export class DaemonClient {
     const body = JSON.stringify(payload);
     let tokenReloaded = false;
     for (;;) {
-      const token = this.readToken();
+      const { token, verdict } = await this.verifyDaemon();
+      if (!isDaemonOnPort(verdict)) {
+        return { success: false, approved: false, error: `no KitsuneMCP daemon answers at ${this.baseUrl}` };
+      }
+      const mismatch = this.protocolMismatch();
+      if (mismatch !== undefined) return { success: false, approved: false, error: mismatch };
       if (token === undefined) {
         return { success: false, approved: false, error: 'KitsuneMCP daemon is not available (no API token)' };
+      }
+      if (verdict.kind !== 'ok') {
+        return { success: false, approved: false, error: `${unprovenDaemon(this.baseUrl)} The answer was not sent.` };
       }
       const reply = await this.request('POST', urlPath, { body, timeoutMs, token, signal });
       // Unsigned 403: our signature was refused (token file replaced): read it
@@ -628,7 +752,7 @@ export class DaemonClient {
   private request(method: 'GET' | 'POST', urlPath: string, options: RequestOptions): Promise<HttpReply> {
     const { body, timeoutMs, token, signal } = options;
     return new Promise<HttpReply>((resolve, reject) => {
-      const headers: http.OutgoingHttpHeaders = { [RELAY_ID_HEADER]: this.relayId };
+      const headers: http.OutgoingHttpHeaders = { ...options.headers, [RELAY_ID_HEADER]: this.relayId };
       const signed = token === undefined ? undefined : signRequest(token, method, urlPath, body ?? '');
       if (signed !== undefined) Object.assign(headers, signed.headers);
       if (body !== undefined) {
@@ -663,7 +787,7 @@ export class DaemonClient {
       );
 
       const timer = setTimeout(() => {
-        req.destroy(new Error(`no answer from the daemon within ${Math.round(timeoutMs / 1000)}s`));
+        req.destroy(new RequestTimeoutError(`no answer from the daemon within ${Math.round(timeoutMs / 1000)}s`));
       }, timeoutMs);
 
       req.on('error', (err) => {

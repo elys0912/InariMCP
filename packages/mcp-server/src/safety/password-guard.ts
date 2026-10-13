@@ -53,12 +53,11 @@ export function isPasswordElement(el: Element | null): boolean {
   // Playwright's fill() on a <label> fills its control.
   const target = el !== null && isLabel(el) ? el.control : el;
   if (target === null || !isInput(target)) return false;
-  const autocomplete = target.getAttribute('autocomplete');
-  return (
-    target.type === 'password' ||
-    autocomplete === 'current-password' ||
-    autocomplete === 'new-password'
-  );
+  if (target.type === 'password') return true;
+  // autocomplete: a space-separated token list, compared without regard to case (HTML).
+  const passwordTokens = ['current-password', 'new-password'];
+  const tokens = (target.getAttribute('autocomplete') ?? '').toLowerCase().split(/\s+/);
+  return tokens.some((token) => passwordTokens.includes(token));
 }
 
 /**

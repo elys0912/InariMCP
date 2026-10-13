@@ -76,19 +76,42 @@ describe('DaemonClient against the real daemon', () => {
 });
 
 describe('DaemonClient against an impostor', () => {
-  it('never sends the token, and discards the unsigned answer', async () => {
+  // A-KM-03: the call body (arguments, approval token) went out before the answer was checked.
+  it('sends no call to a /health without a valid proof: only nonce-carrying /health requests', async () => {
     const { port, seen } = await impostor();
     const c = client(port);
     expect(await c.checkHealth()).toBe(true);
-    const result = await c.callTool('fox_safety_status', {});
+    const result = await c.callTool('fox_type', { text: 'secret input' }, undefined, 'kat_' + 'x'.repeat(43));
     expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toMatch(/not signed by the KitsuneMCP daemon/);
+    expect(JSON.stringify(result.content)).toMatch(/cannot prove it holds this session's API token/);
+    expect(JSON.stringify(result.content)).toMatch(/The call was not sent/);
     expect(JSON.stringify(result.content)).not.toContain('forged');
+    expect(seen.length).toBeGreaterThan(0);
     for (const headers of seen) {
       expect(JSON.stringify(headers)).not.toContain(TOKEN);
       expect(headers['x-api-key']).toBeUndefined();
+      expect(headers[AUTH_HEADER.signature]).toBeUndefined();
+      expect(typeof headers[AUTH_HEADER.nonce]).toBe('string');
+      expect(headers['content-length']).toBeUndefined();
     }
-    expect(seen.some((h) => typeof h[AUTH_HEADER.signature] === 'string')).toBe(true);
+  });
+
+  it('sends no call to a program whose /health is not that of the daemon', async () => {
+    const seen: string[] = [];
+    const s = http.createServer((req, res) => {
+      seen.push(`${req.method} ${req.url}`);
+      req.resume();
+      req.on('end', () => {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('hello');
+      });
+    });
+    await new Promise<void>((resolve) => s.listen(0, '127.0.0.1', () => resolve()));
+    servers.push(s);
+    const result = await client(portOf(s)).callTool('fox_safety_status', {});
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toMatch(/is not the KitsuneMCP daemon/);
+    expect(seen.every((line) => line === 'GET /health')).toBe(true);
   });
 
   it('ignores unsigned /daemon/info settings (unknown: null)', async () => {
@@ -171,11 +194,11 @@ describe('DaemonClient and oversized calls', () => {
 describe('DaemonClient: refused signature (X-3 / L-4)', () => {
   const other = 'e'.repeat(64);
 
-  it('tool call: one fixed message, the unsigned body is not passed on', async () => {
+  it('tool call: the proof of /health fails for another token, so nothing is sent', async () => {
     const c = client(await realDaemon(), other);
     await c.checkHealth();
     const text = JSON.stringify((await c.callTool('fox_safety_status', {})).content);
-    expect(text).toMatch(/refused this session's signature/);
+    expect(text).toMatch(/api_token was replaced since the daemon started/);
     expect(text).not.toContain('Unauthorized');
   });
 
@@ -198,7 +221,38 @@ describe('DaemonClient: refused signature (X-3 / L-4)', () => {
     const c = client(await realDaemon(), other);
     const reply = await c.reportElicitation('req-x', true);
     expect(reply).toMatchObject({ success: false, approved: false });
-    expect(reply.error).toMatch(/refused this session's signature/);
+    expect(reply.error).toMatch(/api_token was replaced since the daemon started/);
+  });
+
+  it('approval: reads the token again once when the proof fails for the first one, then reaches the daemon', async () => {
+    const port = await realDaemon();
+    let reads = 0;
+    const c = new DaemonClient('test', {
+      host: '127.0.0.1',
+      port,
+      readToken: () => (reads++ === 0 ? other : TOKEN),
+    });
+    const reply = await c.reportElicitation('req-x', true);
+    // Signed by the daemon: it does not know the request.
+    expect(reply.error).not.toMatch(/api_token was replaced|refused this session's signature/);
+    expect(reads).toBe(2);
+  });
+});
+
+describe('DaemonClient: approvals to an impostor (D-KM-02)', () => {
+  it('sends neither the elicitation answer nor the browser request to a /health without a valid proof', async () => {
+    const { port, seen } = await impostor();
+    const c = client(port);
+    for (const reply of [await c.reportElicitation('req-x', true), await c.askBrowser('req-x')]) {
+      expect(reply).toMatchObject({ success: false, approved: false });
+      expect(reply.error).toMatch(/cannot prove it holds this session's API token/);
+      expect(reply.error).toMatch(/The answer was not sent/);
+    }
+    expect(seen.length).toBeGreaterThan(0);
+    for (const headers of seen) {
+      expect(headers[AUTH_HEADER.signature]).toBeUndefined();
+      expect(headers['content-length']).toBeUndefined();
+    }
   });
 });
 
@@ -230,11 +284,18 @@ describe('DaemonClient.stopDaemon: failures', () => {
     expect(r.message).toMatch(/no API token at .*api_token/);
   });
 
-  it('an unsigned answer is not trusted', async () => {
-    const { port } = await impostor();
+  // D-KM-02: the signed stop request went out before the proof was checked.
+  it('sends no stop request to a /health without a valid proof', async () => {
+    const { port, seen } = await impostor();
     const r = await client(port).stopDaemon();
     expect(r).toMatchObject({ ok: false, stopped: false });
-    expect(r.message).toMatch(/not signed by the KitsuneMCP daemon/);
+    expect(r.message).toMatch(/cannot prove it holds this session's API token/);
+    expect(r.message).toMatch(/The stop request was not sent/);
+    expect(seen.length).toBeGreaterThan(0);
+    for (const headers of seen) {
+      expect(headers[AUTH_HEADER.signature]).toBeUndefined();
+      expect(headers['content-length']).toBeUndefined();
+    }
   });
 
   it('a signed refusal (not 200) is reported with its error', async () => {
@@ -254,6 +315,57 @@ describe('DaemonClient.stopDaemon: failures', () => {
     expect(r).toMatchObject({ ok: false, stopped: false, pid: process.pid });
     expect(r.message).toMatch(/accepted the stop request but still answers after 0\.5s/);
   });
+});
+
+/**
+ * Forwards every request to the daemon on `target`, holding the first
+ * /health back for `delayMs` (a daemon busy for a moment).
+ */
+async function slowFirstHealth(target: number, delayMs: number): Promise<{ port: number; seen: string[] }> {
+  const seen: string[] = [];
+  let delayed = false;
+  const s = http.createServer((req, res) => {
+    seen.push(`${req.method} ${req.url}`);
+    res.on('error', () => undefined);
+    const forward = (): void => {
+      const upstream = http.request(
+        { host: '127.0.0.1', port: target, path: req.url, method: req.method, headers: req.headers },
+        (answer) => {
+          res.writeHead(answer.statusCode ?? 502, answer.headers);
+          answer.pipe(res);
+        },
+      );
+      upstream.on('error', () => res.destroy());
+      req.pipe(upstream);
+    };
+    if (req.url === '/health' && !delayed) {
+      delayed = true;
+      setTimeout(forward, delayMs);
+    } else {
+      forward();
+    }
+  });
+  await new Promise<void>((resolve) => s.listen(0, '127.0.0.1', () => resolve()));
+  servers.push(s);
+  return { port: portOf(s), seen };
+}
+
+describe('DaemonClient: slow /health (D-KM-03)', () => {
+  // Longer than the first wait for /health (HEALTH_PROBE_TIMEOUT_MS, 2 s), shorter than the second.
+  const BUSY_DELAY_MS = 2_500;
+
+  it('asks /health once more with a longer wait instead of starting a daemon and failing the call', async () => {
+    const { port, seen } = await slowFirstHealth(await realDaemon(), BUSY_DELAY_MS);
+    const c = client(port);
+    const ensure = vi.spyOn(c, 'ensureDaemon').mockResolvedValue(false);
+
+    const result = await c.callTool('fox_safety_status', {});
+
+    expect(result.isError).not.toBe(true);
+    expect(JSON.stringify(result.content)).toContain('readOnly');
+    expect(ensure).not.toHaveBeenCalled();
+    expect(seen).toEqual(['GET /health', 'GET /health', 'POST /mcp/call']);
+  }, 15_000);
 });
 
 describe('DaemonClient: daemon shutting down (Q-6)', () => {

@@ -29,14 +29,20 @@ export function isSelectElement(el: Element): el is HTMLSelectElement {
   return el.localName === "select";
 }
 
+/** autocomplete tokens that mark a password field. */
+const PASSWORD_AUTOCOMPLETE_TOKENS: readonly string[] = ["current-password", "new-password"];
+
+/**
+ * An input of type password, or one whose autocomplete has a password
+ * token. autocomplete is a space-separated token list compared without
+ * regard to case (HTML), so `section-login current-password` and
+ * `Current-Password webauthn` count as well.
+ */
 export function isPasswordField(element: Element): boolean {
   if (!isInputElement(element)) return false;
-  const input = element;
-  return (
-    input.type === "password" ||
-    input.getAttribute("autocomplete") === "current-password" ||
-    input.getAttribute("autocomplete") === "new-password"
-  );
+  if (element.type === "password") return true;
+  const tokens = (element.getAttribute("autocomplete") ?? "").toLowerCase().split(/\s+/);
+  return tokens.some((token) => PASSWORD_AUTOCOMPLETE_TOKENS.includes(token));
 }
 
 export function assertNotPasswordField(

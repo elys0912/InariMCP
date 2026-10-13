@@ -86,7 +86,7 @@ export function getPageInfo(): Record<string, unknown> {
             id: el.id,
             placeholder: inp.placeholder,
             required: inp.required,
-            value: inp.type === "password" ? "[MASKED]" : truncatedValue(inp.value, LIMITS.FORM_FIELD_VALUE),
+            value: isPasswordField(el) ? "[MASKED]" : truncatedValue(inp.value, LIMITS.FORM_FIELD_VALUE),
           };
         }),
     })),

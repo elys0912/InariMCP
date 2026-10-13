@@ -39,6 +39,9 @@ import { LAYER_OF, OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS, getSafetyGuard, targetU
 import type { CallLabel, SafetyDenial, SafetyGuard } from '../safety/guard.js';
 import {
   REQUEST_TTL_MS,
+  SUMMARY_MAX,
+  SUMMARY_VALUE_MAX,
+  approvalDisplayUrl,
   approvalTargetFor,
   getApprovalStore,
   hashArgs,
@@ -447,22 +450,33 @@ function confirmationToCallResult(
   }
 
   let extraDetails: Record<string, unknown> = {};
+  const summary = target === null ? null : summarizeArgs(args);
   if (target === null) {
     notes.push(
       'This call cannot be approved: the protected page has no usable URL. ' +
       'Pass the tab explicitly (tabId) and try again.',
     );
+  } else if (summary === null) {
+    notes.push(
+      'This call cannot be approved on a protected site: its arguments are too long to show ' +
+      `the human in full (at most ${SUMMARY_VALUE_MAX} per argument value and ${SUMMARY_MAX} for all the lines, ` +
+      'counted in UTF-16 code units of the value as JSON, including the quotes and escapes, with ' +
+      'invisible characters as \\u escapes). Text or a script that can be split may be sent in ' +
+      'several shorter calls; a value that cannot be split, such as a long URL, cannot be ' +
+      'approved on this site: tell the user instead of retrying.',
+    );
   } else {
+    const shownUrl = approvalDisplayUrl(protectedUrl);
     const request = getApprovalStore().createRequest(target, {
-      protectedUrl,
+      protectedUrl: shownUrl,
       matchedPattern,
-      summary: summarizeArgs(args),
+      summary,
     });
     const approval: ApprovalRequestDetails = {
       requestId: request.id,
       toolName,
       host: target.host,
-      protectedUrl,
+      protectedUrl: shownUrl,
       matchedPattern,
       summary: request.summary,
       expiresAt: request.expiresAt,

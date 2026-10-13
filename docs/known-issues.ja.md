@@ -12,6 +12,7 @@ KitsuneMCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **URLパターンはパスと比べ、クエリやフラグメントとは比べない**: パスに`?`や`#`（`%3F`、`%23`も）を含むホストパターンは、決して一致しないので設定エラーになる。クエリ文字列で一致させたいときは、`re:`（URL全体に対する正規表現）で書くこと
 - **拡張機能とMCP Serverの版が違うと、コマンドが`config_error`で拒否されることがある**: MCP Serverがコマンドに付けたコンテナスコープやURLルールを拡張機能が使えないとき、拡張機能はその検査を飛ばして実行せず、コマンドを拒否する。拡張機能とMCP Serverは一緒に更新すること（READMEの「更新」を参照）
 - **共有daemonは、起動したプロセスの環境変数を使う**: `FOX_READ_ONLY`などの環境変数は、実際にdaemonを起動したプロセスのものだけが読まれる。Firefox（Native Host）が起動したdaemonはFirefoxの環境変数を引き継ぎ、`claude mcp add --env`の値は使われない。確実に効かせたい設定は`~/.kitsune-mcp/safety.json`に書くこと（READMEを参照）。セッションとdaemonで設定が食い違うと、セッション開始時と`fox_safety_status`の結果に警告が出る
+- **スクリプトの実行は、URLのリスト・保護対象サイトの承認・パスワードのマスクの対象外**: スクリプト系ツール（`fox_evaluate`、`fox_observer`）は既定で有効（`allow_script_execution: true`）で、ガードはスクリプトを実行するタブのURLだけを確認し、スクリプト自身が何をするかは確認しない。拡張機能経路ではスクリプトはコンテンツスクリプトの中で動くので、パスワード欄の値（`fox_read` / `fox_find`では`[MASKED]`になるもの）を読めるし、拡張機能のホスト権限（`<all_urls>`）で`fetch` / XHRの要求を、保護対象サイトにも`allowed_url_patterns`の外のサイトにも承認なしで送れる。エージェントにそれを許したくないときは、`safety.json`の`allow_script_execution`を`false`にする（または`FOX_ALLOW_SCRIPTS=0`）
 - **`blocked_url_patterns` / `allowed_url_patterns`はhttp(s)のタブにだけ効く**: ユーザーが開いた`file://`のページやブラウザ内部のページ（`about:`、`moz-extension://`）はサイトではないので、リストの対象にならない。許可リストのモードでも、そのようなタブは読み取り・操作の対象になる。`fox_navigate`ではそこへ行けない（http(s)と`about:blank`以外は`blocked_scheme`で拒否する）
 
 ## 人による承認

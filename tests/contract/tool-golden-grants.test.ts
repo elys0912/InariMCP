@@ -30,6 +30,8 @@ import { getConnectionManager } from '../../packages/mcp-server/src/connection/m
 import { getSafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { answerFromElicitation } from '../../packages/mcp-server/src/tools/approval-flow.js';
 import { findApprovalRequest } from '../../packages/mcp-server/src/relay/approval.js';
+import { checkProtectedTarget } from '../../packages/extension/src/background/url-policy.ts';
+import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
 
 const UPDATE = process.env['UPDATE_GOLDEN'] === '1';
 const GOLDEN = fileURLToPath(new URL('../golden/tool-commands-grants.json', import.meta.url));
@@ -75,21 +77,20 @@ const SAME_COMMAND: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Fake Firefox: the Extension's protected-tab check (protectedUrlPatterns,
-// approvedHost) on one tab whose URL the test sets.
+// Fake Firefox: the Extension's own protected-tab check (checkProtectedTarget
+// with protectedUrlRules and approvedHost) on one tab whose URL the test sets.
 // ---------------------------------------------------------------------------
 
 const browser = { tabUrl: PLAIN_URL, sent: [] as BrowserCommand[] };
 
 function answer(command: BrowserCommand): Record<string, unknown> {
-  const matched = (command.protectedUrlPatterns ?? []).find((p) => new RegExp(p, 'i').test(browser.tabUrl));
-  if (matched !== undefined && command.approvedHost !== new URL(browser.tabUrl).hostname) {
-    return {
-      success: false,
-      safetyDecision: 'confirmation_required',
-      error: 'Protected domain: confirmation required',
-      data: { url: browser.tabUrl, matchedPattern: matched },
-    };
+  const rules = compileUrlRules(command.protectedUrlRules ?? []).rules;
+  const tab = { id: 1, url: browser.tabUrl } as Parameters<typeof checkProtectedTarget>[0];
+  const refusal = checkProtectedTarget(tab, rules, command.approvedHost);
+  if (refusal) {
+    // The wire form: everything but success / safetyDecision / error goes in `data`.
+    const { success, safetyDecision, error, ...data } = refusal;
+    return { success, safetyDecision, error, data };
   }
   return { success: true, data: {} };
 }

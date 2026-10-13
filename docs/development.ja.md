@@ -84,7 +84,7 @@ npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefo
 
 ## テスト
 
-`vitest.config.mts`のプロジェクトは`shared`、`mcp-server`、`native-host`（`packages/<pkg>/tests/`）、`contract`（`tests/contract/`）、`scripts`（`tests/scripts/`）、`e2e`（`tests/e2e/`。`npm run test:e2e`のときだけ）。実際のヘッドレスFirefoxを動かすテストファイルは別のプロジェクト`mcp-server-firefox`と`contract-firefox`（それぞれ再試行1回）に分けてあるので、`npx vitest run --project=mcp-server`だけでは実行されない。`--project=mcp-server-firefox`も付ける。拡張機能はプロジェクトにしていない。`background.ts`と`content.ts`はトップレベルでブラウザのリスナーを登録するので、契約テストはそのソースを読むか、副作用のないモジュール（`action-map.ts`、`approval.ts`、`url-rule.ts`）をimportする。テストファイルはどれも一時的なホームディレクトリで動く。
+`vitest.config.mts`のプロジェクトは`shared`、`mcp-server`、`native-host`（`packages/<pkg>/tests/`）、`contract`（`tests/contract/`）、`scripts`（`tests/scripts/`）、`e2e`（`tests/e2e/`。`npm run test:e2e`のときだけ）。実際のヘッドレスFirefoxを動かすテストファイルは別のプロジェクト`mcp-server-firefox`と`contract-firefox`（それぞれ再試行1回）に分けてあるので、`npx vitest run --project=mcp-server`だけでは実行されない。`--project=mcp-server-firefox`も付ける。Firefoxを起動できないとき、これらのテストはスキップになる。ただしCIでは（`CI`が空・`0`・`false`以外に設定されていると）スキップせずに失敗する。`KITSUNE_REQUIRE_FIREFOX`（値の扱いは同じ）を設定すると、`CI`がなくても同じになる。`npm run test:firefox`はこの2つのプロジェクトだけを`KITSUNE_REQUIRE_FIREFOX=1`で動かし、スキップしたテストが1件でもあれば失敗する。実際のブラウザーのテストが動いたことを確かめるには、Firefoxのある環境（CIも）でこれを実行する。拡張機能はプロジェクトにしていない。`background.ts`と`content.ts`はトップレベルでブラウザのリスナーを登録するので、契約テストはそのソースを読むか、副作用のないモジュール（`action-map.ts`、`approval.ts`、`url-rule.ts`）をimportする。テストファイルはどれも一時的なホームディレクトリで動く。
 
 `npm run typecheck:tests`（`npm run typecheck`の後半）は、`tsconfig.test.json`でテストを型検査する。対象は`packages/*/tests`、`tests/contract`、`tests/e2e`、`tests/scripts`、`tests/setup`。`bundler`の解決方法と、`vitest.config.mts`と同じ`@kitsune-mcp/shared`のパスを使うので、ビルドは要らない。
 

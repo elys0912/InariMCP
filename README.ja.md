@@ -285,7 +285,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 `claude mcp add`のコマンドは変わらない。中継が最初の利用時に共有サーバーを起動し（Firefoxが先ならNative Hostが起動する）、共有サーバーは10分使われなければ自分で終了する（`FOX_DAEMON_IDLE_TIMEOUT`）。セッションごとに中継が1つずつ立ち、全員が1つの共有サーバーを使うので、Claude Codeを複数セッション同時に使ってもポートがぶつからない。安全ガードの状態（レート制限、監査ログ、タブごとの最後に見たURL）もセッション間で共有される。
 
-中継とNative Hostはdaemonを、daemonは中継とNative Hostを、`~/.kitsune-mcp/api_token`のAPIトークンを使ったHMACのチャレンジ応答で確かめ合う（トークン自体は送らない）。ポートを横取りしたプログラムはdaemonになりすませない。`GET /health`は認証不要で、nonceを付けると`proof`を加え、中継とNative Hostが確認する`protocol`の版を返す。HTTP APIは`X-API-Key: <token>`ヘッダーも受け付けるが、手作業のデバッグ用（その応答には署名が付かない）。ただし`POST /daemon/shutdown`は署名付きの要求しか受け付けない。`FOX_HOST`がループバック以外のアドレスだと、daemonは警告をログに出す（ポートが他のマシンから届くようになる）。
+中継とNative Hostはdaemonを、daemonは中継とNative Hostを、`~/.kitsune-mcp/api_token`のAPIトークンを使ったHMACのチャレンジ応答で確かめ合う（トークン自体は送らない）。ポートを横取りしたプログラムはdaemonになりすませない。`GET /health`は認証不要で、nonceを付けると`proof`を加え、中継とNative Hostが確認する`protocol`の版を返す。中継はツールの呼び出し・承認の回答・`--stop-daemon`のたびにこの`proof`を確かめ、正しいときだけ署名付きの要求（ツール名・引数・承認トークン、承認要求のIDと人の回答、停止の要求）を送るので、ポートを横取りしたプログラムにはそれも届かない。HTTP APIは`X-API-Key: <token>`ヘッダーも受け付けるが、手作業のデバッグ用（その応答には署名が付かない）。ただし`POST /daemon/shutdown`は署名付きの要求しか受け付けない。`FOX_HOST`がループバック以外のアドレスだと、daemonは警告をログに出す（ポートが他のマシンから届くようになる）。
 
 ## 設定
 
@@ -369,9 +369,9 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 |---|---|---|
 | `enabled` | `true` | 安全ガードを有効にする |
 | `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ、スクリプト）を拒否する。観察・待機・ログ・UIだけを変えるツール（`fox_interact`、`action: "switch"`の`fox_tab`）は使える |
-| `allow_script_execution` | `true` | スクリプト系ツールを許可する |
+| `allow_script_execution` | `true` | スクリプト系ツールを許可する。スクリプトの実行は、URLのリスト・保護対象サイトの承認・パスワードのマスクの対象外で、パスワード欄を読むことも、ほかのサイトへ要求を送ることもできる（[既知の制約](docs/known-issues.ja.md)を参照） |
 | `confirm_protected_actions` | `true` | 保護対象サイトでの操作（スクリーンショット・ログ収集を含む）の前に人に尋ねる |
-| `allow_password_typing` | `false` | パスワード欄（`type="password"`、`autocomplete`が`current-password` / `new-password`）への`fox_type` / `fox_set_value`を許可する |
+| `allow_password_typing` | `false` | パスワード欄（`type="password"`、または`autocomplete`に`current-password` / `new-password`のトークンを含むもの。大文字小文字は問わず、`section-login current-password`も含む）への`fox_type` / `fox_set_value`を許可する |
 | `max_actions_per_minute` | `120` | レート制限。全セッション共通（`0`で制限なし） |
 | `audit_log` | `true` | `~/.kitsune-mcp/logs/audit.jsonl`に書く |
 | `blocked_url_patterns` | `[]` | 拒否するURL |
@@ -404,7 +404,7 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 
 承認が要るのは、ページのデータを変えるツール（入力、遷移、タブの変更、スクリプト）。読み取るだけのツールのうち承認が要るのは3つ: 単一タブの`fox_screenshot`（`scope: "all_tabs"`は保護対象のタブを除いて撮る）、`scope: "scroll_capture"`、`action: "start"`の`fox_logging`（ログ収集中のタブが保護対象サイトにある間は記録を止める）。ほかの読み取りツール（`fox_read`、`fox_find`、`fox_tabs`など）、`fox_wait`、UIだけを変えるツール（`fox_interact`、`action: "switch"`の`fox_tab`）は、保護対象サイトでも承認なしで動く。同時に待てる承認要求は最大32件。
 
-承認が効くのは、そのツールをその引数のまま、そのホストで1回呼ぶことだけ。要求の期限（120秒。Firefoxのポップアップが待つのは最大60秒）までに答える必要があり、承認は中継だけが見る1回限りのトークンで運ばれる（モデルには見えない）。ページの中のもの — ボタン、`fox_click`、`fox_evaluate` — では承認できない。elicitationでの承認が有効な間は、1つのリスクを受け入れている: 回答はローカルのHTTPでdaemonに届くので、`~/.kitsune-mcp/api_token`を読めるローカルのプロセスは自分の要求を自分で承認できる。Firefoxのポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する（ヘッドレスモードでは承認できなくなる）。
+承認が効くのは、そのツールをその引数のまま、そのホストで1回呼ぶことだけ。要求の期限（120秒。Firefoxのポップアップが待つのは最大60秒）までに答える必要があり、承認は中継だけが見る1回限りのトークンで運ばれる（モデルには見えない）。引数は省略せずに見せる: 見えない文字と文字の向きを変える文字（双方向制御文字、ゼロ幅文字、タグ文字、U+2028 / U+2029）は警告の行を付けて`\u`のエスケープで表示し、引数が収まらない呼び出し（1つの値が160、または`名前: 値`の行の全体が800を超える。長さは各値をJSONに直した後のUTF-16の単位で数え、引用符とエスケープを含む。値の中の改行は2、絵文字は2と数える）は承認を求めずに、承認できないことをモデルに返す。つまり保護サイトでは、長い引数は承認できない: 長いURLの`fox_navigate`、複数行のスクリプトの`fox_evaluate`、長文の`fox_type`。テキストやスクリプトは短い呼び出しに分けられる場合があるが、URLは分けられない。ページの中のもの — ボタン、`fox_click`、`fox_evaluate` — では承認できない。elicitationでの承認が有効な間は、1つのリスクを受け入れている: 回答はローカルのHTTPでdaemonに届くので、`~/.kitsune-mcp/api_token`を読めるローカルのプロセスは自分の要求を自分で承認できる。Firefoxのポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する（ヘッドレスモードでは承認できなくなる）。
 
 `fox_request_approval`はこれとは別の、同じポップアップであなたに尋ねる単純な質問で、その答えで保護対象サイトの操作が許可されることはない。
 

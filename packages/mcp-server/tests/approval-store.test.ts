@@ -13,6 +13,10 @@ import {
   hashArgs,
   hostOf,
   summarizeArgs,
+  approvalDisplayUrl,
+  SUMMARY_HIDDEN_CHARS_WARNING,
+  SUMMARY_MAX,
+  SUMMARY_VALUE_MAX,
   type ApprovalTarget,
 } from '../src/safety/approval.js';
 import { truncateCodePoints } from '../src/utils/text.js';
@@ -54,30 +58,56 @@ describe('approval target helpers', () => {
     expect(approvalTargetFor('fox_click', ARGS, '(target tab)')).toBeNull();
   });
 
-  it('summarizeArgs shows values, masks password, cuts long strings', () => {
-    const summary = summarizeArgs({ text: 'hello', password: 'secret', script: 'x'.repeat(500) });
+  it('summarizeArgs shows values in full and masks password', () => {
+    const script = 'x'.repeat(SUMMARY_VALUE_MAX - 2); // the two quotes make it SUMMARY_VALUE_MAX
+    const summary = summarizeArgs({ text: 'hello', password: 'secret', script });
     expect(summary).toContain('text: "hello"');
     expect(summary).toContain('password: ***');
+    expect(summary).toContain(`script: "${script}"`);
     expect(summary).not.toContain('secret');
-    expect(summary.length).toBeLessThan(400);
+    expect(summary).not.toContain('…');
     expect(summarizeArgs({})).toBe('(no arguments)');
   });
 
-  // R2-B S-4: slice() on UTF-16 units left half of a surrogate pair, shown as U+FFFD.
-  it('summarizeArgs cuts by code point, never inside a surrogate pair', () => {
-    const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-    // `"` + emoji: the value cut falls on every possible offset across the two cases.
-    for (const text of ['😀'.repeat(200), `a${'😀'.repeat(200)}`]) {
-      const summary = summarizeArgs({ text });
-      expect(summary).not.toMatch(loneSurrogate);
-      expect(summary.endsWith('…')).toBe(true);
-    }
-    // the whole summary as well (many values, each under the per-value cut)
+  // A-KM-01: a cut summary let the human approve what they were not shown.
+  it('summarizeArgs gives null instead of cutting a value or the whole summary', () => {
+    expect(summarizeArgs({ script: 'x'.repeat(SUMMARY_VALUE_MAX - 1) })).toBeNull();
+    // counted in UTF-16 units, as the popup clips: 80 emoji are 82 code points but 162 units
+    expect(summarizeArgs({ text: '😀'.repeat(SUMMARY_VALUE_MAX / 2) })).toBeNull();
     const many: Record<string, unknown> = {};
-    for (let i = 0; i < 20; i++) many[`k${String(i).padStart(2, '0')}`] = '😀'.repeat(50);
-    const summary = summarizeArgs(many);
-    expect(summary).not.toMatch(loneSurrogate);
-    expect(Array.from(summary).length).toBe(800 + 1);
+    for (let i = 0; i < 20; i++) many[`k${String(i).padStart(2, '0')}`] = 'x'.repeat(50);
+    expect(summarizeArgs(many)).toBeNull();
+    // under both limits: shown whole
+    const fits: Record<string, unknown> = {};
+    for (let i = 0; i < 10; i++) fits[`k${i}`] = 'x'.repeat(70);
+    const summary = summarizeArgs(fits);
+    expect(summary).not.toBeNull();
+    expect(summary!.length).toBeLessThanOrEqual(SUMMARY_MAX);
+    expect(summary).not.toContain('…');
+  });
+
+  // B-KM-01: bidi overrides, zero-width and tag characters, U+2028 / U+2029.
+  it('summarizeArgs shows invisible and reordering characters as escapes, with a warning', () => {
+    const summary = summarizeArgs({
+      script: 'safe()\u202E;)(yenom_dnes',
+      text: 'a\u2028b\u2029c\u200Bd\u{E0041}e',
+    });
+    expect(summary).not.toBeNull();
+    expect(summary!.split('\n')[0]).toBe(SUMMARY_HIDDEN_CHARS_WARNING);
+    expect(summary).toContain(String.raw`script: "safe()\u202E;)(yenom_dnes"`);
+    expect(summary).toContain(String.raw`text: "a\u2028b\u2029c\u200Bd\u{E0041}e"`);
+    expect(summary).not.toMatch(/[\u200B\u202E\u2028\u2029]|\uDB40/);
+    // nested values and keys as well
+    expect(summarizeArgs({ options: { note: '\u2066x' } })).toContain(String.raw`\u2066x`);
+    expect(summarizeArgs({ ['k\u202E']: 1 })).toContain(String.raw`k\u202E: 1`);
+    // plain text: no warning
+    expect(summarizeArgs({ text: 'hello' })).toBe('text: "hello"');
+  });
+
+  it('approvalDisplayUrl escapes invisible characters of the protected URL', () => {
+    expect(approvalDisplayUrl('https://pay.example.test/\u202Efdp.exe'))
+      .toBe(String.raw`https://pay.example.test/\u202Efdp.exe`);
+    expect(approvalDisplayUrl('https://pay.example.test/a')).toBe('https://pay.example.test/a');
   });
 });
 

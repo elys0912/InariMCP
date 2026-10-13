@@ -28,8 +28,8 @@
 import * as crypto from 'node:crypto';
 import { ENV, ENV_DEFAULTS } from '@kitsune-mcp/shared';
 import { isFalsyEnv } from '../utils/headless-env.js';
-import { truncateCodePoints } from '../utils/text.js';
 import type { SafetyDenial } from './guard.js';
+import { revealInvisible } from './sanitizer.js';
 
 /**
  * FOX_APPROVAL_ELICITATION: `0` / `false` / `off` / `no` (any case) turn
@@ -122,26 +122,53 @@ export function hashArgs(args: Record<string, unknown>): string {
   return crypto.createHash('sha256').update(canonicalJson(args)).digest('hex');
 }
 
-/** Code points of one argument value in the summary, and of the whole summary. */
-const SUMMARY_VALUE_MAX = 160;
-const SUMMARY_MAX = 800;
+/**
+ * UTF-16 units of one argument value in the summary, and of the whole
+ * summary. Counted as String#length counts, so that the Extension's popup
+ * (APPROVAL_TEXT_LIMITS.SUMMARY in packages/extension/src/approval.ts, the
+ * same 800) never cuts what the human is asked to approve.
+ */
+export const SUMMARY_VALUE_MAX = 160;
+export const SUMMARY_MAX = 800;
 const SUMMARY_MASKED_KEYS: ReadonlySet<string> = new Set(['password']);
+/** First line of a summary whose values had invisible or reordering characters. */
+export const SUMMARY_HIDDEN_CHARS_WARNING =
+  'WARNING: the arguments contain invisible or text-direction characters, shown as \\u escapes.';
 
 /**
- * One line per argument, for the human who decides. Values are shown (the
- * human must see what is typed / run), long strings are cut.
+ * One line per argument, for the human who decides. Values are shown in
+ * full (the human must see what is typed / run); invisible and reordering
+ * characters are shown as escapes, with a warning line first.
+ *
+ * Null when a value or the whole summary is longer than the limits: the
+ * approval would cover what the human was not shown, so such a call is not
+ * offered for approval at all (the caller is told that it cannot be
+ * approved, and to split it only where the value can be split).
  */
-export function summarizeArgs(args: Record<string, unknown>): string {
+export function summarizeArgs(args: Record<string, unknown>): string | null {
   const lines: string[] = [];
+  let hiddenChars = false;
   for (const key of Object.keys(args).sort()) {
     const raw = args[key];
     if (raw === undefined) continue;
-    const text = SUMMARY_MASKED_KEYS.has(key)
+    const value = SUMMARY_MASKED_KEYS.has(key)
       ? '***'
       : typeof raw === 'string' ? JSON.stringify(raw) : canonicalJson(raw);
-    lines.push(`${key}: ${truncateCodePoints(text, SUMMARY_VALUE_MAX)}`);
+    const shownKey = revealInvisible(key);
+    const shownValue = revealInvisible(value);
+    if (shownValue.text.length > SUMMARY_VALUE_MAX) return null;
+    hiddenChars ||= shownKey.found || shownValue.found;
+    lines.push(`${shownKey.text}: ${shownValue.text}`);
   }
-  return lines.length === 0 ? '(no arguments)' : truncateCodePoints(lines.join('\n'), SUMMARY_MAX);
+  if (lines.length === 0) return '(no arguments)';
+  if (hiddenChars) lines.unshift(SUMMARY_HIDDEN_CHARS_WARNING);
+  const summary = lines.join('\n');
+  return summary.length > SUMMARY_MAX ? null : summary;
+}
+
+/** The protected URL as shown to the human (invisible characters escaped). */
+export function approvalDisplayUrl(url: string): string {
+  return revealInvisible(url).text;
 }
 
 /** Target of a confirmation_required answer, or null when its URL has no host. */

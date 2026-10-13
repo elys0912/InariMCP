@@ -9,7 +9,8 @@
  * bundle is injected into a page served over HTTP, and `browser.*`,
  * `wrappedJSObject` and `exportFunction` (the Firefox content-script
  * sandbox) are stubbed in the page first. Skipped when Firefox cannot be
- * launched.
+ * launched, except on CI or with KITSUNE_REQUIRE_FIREFOX (npm run test:firefox),
+ * where that fails the run (helpers/real-firefox.ts).
  */
 
 import { createServer, type Server } from 'node:http';
@@ -21,6 +22,7 @@ import { firefox, type Browser, type BrowserContext, type Page } from 'playwrigh
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CAPTCHA_BANNER_ID } from '../../packages/extension/src/content/constants.ts';
 import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
+import { skipOrFailWithoutFirefox } from './helpers/real-firefox.js';
 
 interface ContentFns {
   escapeXPathString(s: string): string;
@@ -124,7 +126,8 @@ beforeAll(async () => {
     browserInstance = await firefox.launch({ headless: true });
     context = await browserInstance.newContext();
     available = true;
-  } catch {
+  } catch (err) {
+    skipOrFailWithoutFirefox(err);
     available = false;
   }
 }, 120_000);
@@ -471,6 +474,64 @@ describe('element kinds in an XHTML document (tagName is lower case there)', () 
        return { tagName: el.tagName, password: f.dom.isPasswordField(el), textInput: f.dom.isTextInput(el) };`,
     );
     expect(r).toEqual({ tagName: 'input', password: true, textInput: true });
+  });
+});
+
+// B-KM-02: the Extension's own masking and refusal, run in a page. A-KM-05:
+// fox_read info's forms looked at type="password" only. B-KM-05: autocomplete
+// is a case-insensitive token list.
+describe('password fields on the extension path', () => {
+  const FORM =
+    '<form id="f">' +
+    '<input id="p" type="password" value="pw-secret-1">' +
+    '<input id="c" type="text" autocomplete="current-password" value="pw-secret-2">' +
+    '<input id="t" type="text" autocomplete="section-login Current-Password webauthn" value="pw-secret-3">' +
+    '<input id="u" type="text" autocomplete="username" value="user-1">' +
+    '</form>';
+  const MASKED_VIEW = { p: '[MASKED]', c: '[MASKED]', t: '[MASKED]', u: 'user-1' };
+  type View = Record<string, unknown>;
+
+  real('fox_read info, fox_find and get_value show [MASKED] for every password field', async () => {
+    await load(FORM);
+    const r = await run<{ interactive: View; forms: View; found: View; values: View }>(
+      `const byId = (list) => Object.fromEntries(list.map((e) => [e.id, e.value]));
+       const info = f.inspect.getPageInfo();
+       return {
+         interactive: byId(info.interactiveElements),
+         forms: byId(info.forms[0].fields),
+         found: byId(f.inspect.getElements({ selector: 'input' }).elements),
+         values: Object.fromEntries(['p', 'c', 't', 'u'].map((id) => [id, f.inspect.getValue({ id }).value])),
+       };`,
+    );
+    expect(r.interactive).toEqual(MASKED_VIEW);
+    expect(r.forms).toEqual(MASKED_VIEW);
+    expect(r.found).toEqual(MASKED_VIEW);
+    expect(r.values).toEqual(MASKED_VIEW);
+    expect(JSON.stringify(r)).not.toContain('pw-secret');
+  });
+
+  real('fox_type and fox_set_value refuse every password field unless allowPassword', async () => {
+    await load(FORM);
+    const r = await run<Record<string, unknown>>(
+      `const out = {};
+       for (const id of ['p', 'c', 't']) {
+         const typed = await f.input.performType({ id, text: 'x', instant: true })
+           .then(() => 'typed', (e) => e.message);
+         let set;
+         try { f.input.setValue({ id, value: 'x' }); set = 'set'; } catch (e) { set = e.message; }
+         out[id] = [typed, set, document.getElementById(id).value];
+       }
+       out.allowed = await f.input.performType({ id: 'c', text: 'x', instant: true, allowPassword: true })
+         .then(() => 'typed', (e) => e.message);
+       out.plain = f.input.setValue({ id: 'u', value: 'user-2' }).set;
+       return out;`,
+    );
+    const refused = expect.stringContaining('Refused: target is a password field');
+    expect(r['p']).toEqual([refused, refused, 'pw-secret-1']);
+    expect(r['c']).toEqual([refused, refused, 'pw-secret-2']);
+    expect(r['t']).toEqual([refused, refused, 'pw-secret-3']);
+    expect(r['allowed']).toBe('typed');
+    expect(r['plain']).toBe(true);
   });
 });
 

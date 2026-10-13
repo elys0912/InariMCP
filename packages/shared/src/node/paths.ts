@@ -51,3 +51,23 @@ export function defaultSafetyConfigPath(): string {
 export function defaultScreenshotsDir(): string {
   return path.join(dataDir(), 'screenshots');
 }
+
+/** Longest stem kept from a caller-chosen screenshot filename. */
+export const SCREENSHOT_STEM_MAX = 120;
+
+/**
+ * The usable stem of a caller-chosen screenshot filename: its base name
+ * (after `/` or `\`) without an image extension (.png / .jpg / .jpeg /
+ * .webp), characters other than A-Z a-z 0-9 . _ - replaced by `_`, leading
+ * dots removed, cut to SCREENSHOT_STEM_MAX. Null when nothing usable
+ * remains (the caller generates a name). The Native Host (Extension path)
+ * and the headless backend name files this way, so the same `filename`
+ * gives the same file on both.
+ */
+export function screenshotStem(requested: string | undefined): string | null {
+  if (!requested) return null;
+  const base = path.posix.basename(requested.replace(/\\/g, '/'));
+  const withoutExt = base.replace(/\.(png|jpe?g|webp)$/i, '');
+  const safe = withoutExt.replace(/[^A-Za-z0-9._-]/g, '_').replace(/^\.+/, '');
+  return safe === '' ? null : safe.slice(0, SCREENSHOT_STEM_MAX);
+}

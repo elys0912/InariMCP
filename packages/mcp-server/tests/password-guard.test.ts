@@ -6,7 +6,6 @@ import {
   PASSWORD_REFUSAL,
 } from '../src/safety/password-guard.js';
 import { invalidRegexArgument } from '../src/tools/handlers.js';
-import { readExtensionTree } from '../../../tests/contract/helpers/extension-source.js';
 
 function fakeElement(localName: string, type: string, autocomplete: string | null = null): Element {
   return { localName, type, getAttribute: () => autocomplete } as unknown as Element;
@@ -17,6 +16,11 @@ describe('isPasswordElement', () => {
     ['password input', fakeElement('input', 'password'), true],
     ['current-password', fakeElement('input', 'text', 'current-password'), true],
     ['new-password', fakeElement('input', 'text', 'new-password'), true],
+    // B-KM-05: autocomplete is a space-separated, case-insensitive token list
+    ['current-password with webauthn', fakeElement('input', 'text', 'current-password webauthn'), true],
+    ['section- and new-password', fakeElement('input', 'text', 'section-login  new-password'), true],
+    ['Current-Password', fakeElement('input', 'text', 'Current-Password'), true],
+    ['a token that only contains the word', fakeElement('input', 'text', 'current-passwords'), false],
     ['text input', fakeElement('input', 'text', 'username'), false],
     ['textarea', fakeElement('textarea', 'textarea'), false],
     ['nothing focused', null, false],
@@ -71,21 +75,8 @@ describe('applyPasswordPolicy', () => {
 });
 
 // The headless backend's checks of the element written to (Firefox) are in
-// headless-actions.test.ts.
-
-describe('Extension contract: content.ts reads the same allowPassword key and field test', () => {
-  const content = readExtensionTree('content');
-
-  it('refuses unless options.allowPassword === true', () => {
-    expect(content).toContain('options.allowPassword !== true');
-  });
-
-  it('treats the same inputs as password fields', () => {
-    expect(content).toMatch(/input\.type === "password"/);
-    expect(content).toMatch(/"current-password"/);
-    expect(content).toMatch(/"new-password"/);
-  });
-});
+// headless-actions.test.ts; the Extension's (masking, refusal, allowPassword)
+// in tests/contract/extension-content.test.ts.
 
 describe('invalidRegexArgument (5.10)', () => {
   it('reports a urlPattern that does not compile', () => {
