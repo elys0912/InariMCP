@@ -13,7 +13,7 @@ import type { BrowserContext, ElementHandle, Page } from 'playwright';
 import { z } from 'zod';
 import { BrowserActionSchema, isMaskedField, MASKED_VALUE, type BrowserAction, type MaskFieldInfo } from '@inari-mcp/shared';
 import { screenshotStem } from '@inari-mcp/shared/node';
-import { countOccurrences, filterAriaSnapshot, parseArgs } from './helpers.js';
+import { countOccurrences, filterAriaSnapshot, maskAriaSnapshot, parseArgs, type MaskedSnapshotTexts } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
 import { focusedIsPassword } from './focus.js';
 import { getScreenshotsDir } from '../utils/screenshot.js';
@@ -325,14 +325,63 @@ const snapshotArgs = z.object({
   roles: z.array(z.string()).optional(),
 });
 
+/** A form field whose value an aria snapshot can show, as snapshotFields() reads it. */
+interface SnapshotField {
+  info: MaskFieldInfo;
+  /** The value of an input or textarea; the selected option's text of a select. */
+  text: string;
+  isSelect: boolean;
+}
+
+/**
+ * The form fields under `root` (itself and open shadow roots included) whose
+ * value an aria snapshot shows: inputs other than checkbox, radio, file and
+ * hidden (never rendered), textareas, selects. Self-contained (runs in the page).
+ */
+function snapshotFields(root: Element): SnapshotField[] {
+  const fieldOf = (el: Element): SnapshotField | null => {
+    const info = { localName: el.localName, type: '', autocomplete: el.getAttribute('autocomplete') };
+    if (el instanceof HTMLInputElement) {
+      const shown = !['checkbox', 'radio', 'file', 'hidden'].includes(el.type);
+      return shown ? { info: { ...info, type: el.type }, text: el.value, isSelect: false } : null;
+    }
+    if (el instanceof HTMLTextAreaElement) return { info, text: el.value, isSelect: false };
+    if (el instanceof HTMLSelectElement) return { info, text: el.selectedOptions[0]?.text ?? '', isSelect: true };
+    return null;
+  };
+  const fields: SnapshotField[] = [];
+  const visit = (el: Element): void => {
+    const field = fieldOf(el);
+    if (field !== null) fields.push(field);
+    for (const child of Array.from(el.children)) visit(child);
+    for (const child of Array.from(el.shadowRoot?.children ?? [])) visit(child);
+  };
+  visit(root);
+  return fields;
+}
+
+/** What the masked fields among `fields` show in a snapshot (helpers.ts maskAriaSnapshot). */
+function maskedSnapshotTexts(fields: SnapshotField[]): MaskedSnapshotTexts {
+  const masked = fields.filter((f) => isMaskedField(f.info));
+  return {
+    values: masked.filter((f) => !f.isSelect).map((f) => f.text),
+    selectedOptions: masked.filter((f) => f.isSelect).map((f) => f.text),
+  };
+}
+
 const snapshot: ActionHandler = async ({ page, args }) => {
   const { selector, maxDepth, includeText, roles } = parseArgs(snapshotArgs, args, 'snapshot');
   const sel = selector || 'body';
   const loc = page.locator(sel);
   const matches = await loc.count();
   if (matches === 0) return { success: false, error: `No element matches selector: ${sel}` };
-  const raw = await loc.first().ariaSnapshot({ timeout: ELEMENT_TIMEOUT_MS });
-  const text = filterAriaSnapshot(raw, { maxDepth, includeText, roles });
+  const root = loc.first();
+  // Read before and after the snapshot: a value the page changes meanwhile is masked as well.
+  const before = await root.evaluate(snapshotFields);
+  const raw = await root.ariaSnapshot({ timeout: ELEMENT_TIMEOUT_MS });
+  const after = await root.evaluate(snapshotFields);
+  const masked = maskAriaSnapshot(raw, maskedSnapshotTexts([...before, ...after]));
+  const text = filterAriaSnapshot(masked, { maxDepth, includeText, roles });
   return {
     success: true,
     url: page.url(),

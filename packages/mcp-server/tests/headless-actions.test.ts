@@ -91,6 +91,22 @@ describe('snapshot', () => {
     expect(missing['success']).toBe(false);
   });
 
+  real('masks the values of masked fields and the choice of a masked select', async () => {
+    await load(
+      '<label>Password <input type="password" value="hunter2"></label>' +
+      '<label>Code <input autocomplete="one-time-code" value="123456" placeholder="6 digits"></label>' +
+      '<label>Month <select autocomplete="cc-exp-month"><option>01</option><option selected>02</option></select></label>' +
+      '<label>Name <input value="Alice"></label>',
+    );
+    const r = await browser.execute('snapshot', undefined, { includeText: true });
+    const text = r['snapshot'] as string;
+    expect(text).not.toContain('hunter2');
+    expect(text).not.toContain('123456');
+    expect(text).not.toMatch(/option "02" \[selected\]/);
+    expect(text).toContain('[MASKED]');
+    expect(text).toContain('Alice');
+  });
+
   real('warns when the selector matches several elements', async () => {
     await load('<button>A</button><button>B</button>');
     const r = await browser.execute('snapshot', undefined, { selector: 'button', includeText: true });

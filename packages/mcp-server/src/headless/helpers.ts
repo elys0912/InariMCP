@@ -4,7 +4,7 @@
  */
 
 import type { z } from 'zod';
-import { BrowserActionSchema, formatZodIssues, type BrowserAction } from '@inari-mcp/shared';
+import { BrowserActionSchema, formatZodIssues, MASKED_VALUE, type BrowserAction } from '@inari-mcp/shared';
 import { GET_ELEMENTS_MAX } from './limits.js';
 
 /**
@@ -74,6 +74,70 @@ export function filterAriaSnapshot(yaml: string, o: AriaFilter): string {
       .map((l) => l.trimStart());
   }
   return lines.join('\n');
+}
+
+/** What the masked fields under a snapshot's root show (headless/actions.ts snapshot). */
+export interface MaskedSnapshotTexts {
+  /** The values of masked input and textarea fields. */
+  values: string[];
+  /** The text of the selected option of each masked select. */
+  selectedOptions: string[];
+}
+
+/** Text as an aria snapshot shows it (Playwright's normalizeWhiteSpace). */
+function ariaText(text: string): string {
+  return text.replace(/[​­]/g, '').trim().replace(/\s+/g, ' ');
+}
+
+/** One character escaped inside a double-quoted YAML value, as Playwright escapes it. */
+function escapeYamlChar(c: string): string {
+  switch (c) {
+    case '\\': return '\\\\';
+    case '"': return '\\"';
+    case '\b': return '\\b';
+    case '\f': return '\\f';
+    case '\n': return '\\n';
+    case '\r': return '\\r';
+    case '\t': return '\\t';
+    default: return `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`;
+  }
+}
+
+/**
+ * The line endings by which `text` shows as the value of a node: `: text`,
+ * or quoted when YAML needs it (Playwright's yamlEscapeValueIfNeeded).
+ */
+function valueLineEndings(text: string): string[] {
+  // eslint-disable-next-line no-control-regex -- the control characters are what Playwright escapes
+  const quoted = `"${text.replace(/[\\"\x00-\x1f\x7f-\x9f]/g, escapeYamlChar)}"`;
+  return [`: ${text}`, `: ${quoted}`];
+}
+
+/** One line of the snapshot with a masked value replaced, or a masked select's choice left out. */
+function maskAriaLine(line: string, valueEndings: string[], selectedKeys: string[]): string {
+  const ending = valueEndings.find((e) => line.endsWith(e));
+  if (ending !== undefined) return `${line.slice(0, line.length - ending.length)}: ${MASKED_VALUE}`;
+  if (line.includes(' [selected]') && selectedKeys.some((key) => line.includes(key))) {
+    return line.replace(' [selected]', '');
+  }
+  return line;
+}
+
+/**
+ * Mask what Playwright's ariaSnapshot() shows of masked fields (the rule of
+ * shared/src/field-mask.ts): the value of an input or textarea, which it
+ * renders after the node (`- textbox "Password": value`, or a `- text:`
+ * line below it), becomes `[MASKED]`; the selected option of a select loses
+ * its `[selected]`. The YAML has no link back to the elements, so every line
+ * that shows such a value is masked, also one that belongs to another node:
+ * it errs on the side of masking.
+ */
+export function maskAriaSnapshot(yaml: string, masked: MaskedSnapshotTexts): string {
+  const shown = (texts: string[]): string[] => texts.map(ariaText).filter((t) => t !== '');
+  const valueEndings = shown(masked.values).flatMap(valueLineEndings);
+  const selectedKeys = shown(masked.selectedOptions).map((t) => `option ${JSON.stringify(t)}`);
+  if (valueEndings.length === 0 && selectedKeys.length === 0) return yaml;
+  return yaml.split('\n').map((line) => maskAriaLine(line, valueEndings, selectedKeys)).join('\n');
 }
 
 export interface IgnoredParam {

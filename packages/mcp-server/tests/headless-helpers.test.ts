@@ -6,6 +6,7 @@ import {
   countOccurrences,
   filterAriaSnapshot,
   HEADLESS_IGNORED,
+  maskAriaSnapshot,
   ignoredParamWarnings,
   parseArgs,
 } from '../src/headless/helpers.js';
@@ -83,6 +84,47 @@ describe('filterAriaSnapshot', () => {
 
   it('combines roles with maxDepth', () => {
     expect(filterAriaSnapshot(YAML, { roles: ['link'], maxDepth: 2 })).toBe('- link "Home"');
+  });
+});
+
+describe('maskAriaSnapshot (the masked fields of fox_snapshot)', () => {
+  const none = { values: [], selectedOptions: [] };
+
+  it('masks a value shown after its node, plain or quoted', () => {
+    const yaml = [
+      '- textbox "Password": hunter2',
+      '- textbox "Card": "4111: 1111"',
+      '- textbox "Name": Alice',
+    ].join('\n');
+    expect(maskAriaSnapshot(yaml, { values: ['hunter2', '4111: 1111'], selectedOptions: [] }).split('\n')).toEqual([
+      '- textbox "Password": [MASKED]',
+      '- textbox "Card": [MASKED]',
+      '- textbox "Name": Alice',
+    ]);
+  });
+
+  it('masks a value shown as a text line below its node, after normalizing its white space', () => {
+    const yaml = ['- textbox "Code":', '  - /placeholder: 6 digits', '  - text: 12 34'].join('\n');
+    expect(maskAriaSnapshot(yaml, { values: ['  12\n34 '], selectedOptions: [] })).toBe(
+      ['- textbox "Code":', '  - /placeholder: 6 digits', '  - text: [MASKED]'].join('\n'),
+    );
+  });
+
+  it('leaves out the choice of a masked select', () => {
+    const yaml = ['- combobox "Month":', '  - option "01"', '  - option "02" [selected]'].join('\n');
+    expect(maskAriaSnapshot(yaml, { values: [], selectedOptions: ['02'] })).toBe(
+      ['- combobox "Month":', '  - option "01"', '  - option "02"'].join('\n'),
+    );
+  });
+
+  it('changes nothing without masked values, and ignores empty ones', () => {
+    const yaml = '- textbox "Search": shoes';
+    expect(maskAriaSnapshot(yaml, none)).toBe(yaml);
+    expect(maskAriaSnapshot(yaml, { values: ['', ' '], selectedOptions: [''] })).toBe(yaml);
+  });
+
+  it('does not mask a line whose value only ends with the masked one', () => {
+    expect(maskAriaSnapshot('- textbox "A": xab', { values: ['ab'], selectedOptions: [] })).toBe('- textbox "A": xab');
   });
 });
 
