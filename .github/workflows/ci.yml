@@ -29,8 +29,14 @@ jobs:
 
       # With CI set, the tests that drive a real headless Firefox fail
       # instead of being skipped (docs/development.md, "Tests").
+      # The browsers path is fixed because tests/setup/isolate-home.ts points
+      # HOME at a temporary directory, where Playwright would otherwise look.
       - run: npx playwright install --with-deps firefox
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
       - run: npm test
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/ms-playwright
 
       # Rebuilds the add-on, lints it and writes the file hashes. Nothing is
       # uploaded as an artifact: the zip files are made by hand at release time.
