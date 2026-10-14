@@ -124,7 +124,7 @@ test page: http://127.0.0.1:50123/index.html
 PASS  fox_tabs: list the tabs  — tabs=1
       fox_tab create is an action: open the Inari MCP toolbar popup in Firefox (it shows a badge) and press "Approve".
 PASS  fox_tab create: open the local test page  — http://127.0.0.1:50123/index.html
-PASS  fox_read: page 1 is loaded  — title: InariMCP reviewer smoke: page 1
+PASS  fox_read: page 1 is loaded  — title: Inari MCP reviewer smoke: page 1
 PASS  fox_read: password field is [MASKED]  — values: ["[MASKED]"]
 PASS  fox_read: hidden field is [MASKED]  — values: ["[MASKED]"]
 PASS  fox_find: find the heading text  — count=1

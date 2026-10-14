@@ -180,7 +180,7 @@ describe('other issues', () => {
     expect(issues[0]!.fatal).toBe(false);
   });
 
-  // R2-B T-15: the warning was given only when the entry was written exactly
+  // The warning was given only when the entry was written exactly
   // as the (lower-cased) host, so these spellings went without it.
   it.each(['LOCALHOST', 'intranet/', 'intranet:8080', 'http://intranet', 'intranet/admin'])(
     'a single label written as %j warns as well',

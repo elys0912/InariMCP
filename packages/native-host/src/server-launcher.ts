@@ -389,11 +389,11 @@ export class ServerLauncher {
         break;
       case 'impostor':
         line =
-          `the program on ${this.host}:${this.httpPort} claims to be the InariMCP daemon but cannot ` +
+          `the program on ${this.host}:${this.httpPort} claims to be the Inari MCP daemon but cannot ` +
           'prove it holds the API token — not connecting to it. Check which process owns the port.';
         break;
       case 'foreign':
-        line = `port ${this.host}:${this.httpPort} answers, but not as a InariMCP daemon`;
+        line = `port ${this.host}:${this.httpPort} answers, but not as an Inari MCP daemon`;
         break;
       case 'ok':
       case 'unverified':

@@ -397,7 +397,7 @@ Auto-generated on first run at `~/.inari-mcp/safety.json` (or `FOX_SAFETY_CONFIG
 | `blocked_url_patterns` | `[]` | URLs to refuse |
 | `allowed_url_patterns` | `[]` | When not empty, only these URLs are allowed |
 | `confirm_read_sites` | `[]` | Sites where reading tools and screenshots also ask a human first (acting tools always do, on every site; see [Human approval](#human-approval)) |
-| `container_scope` | `{ "enabled": false, "container_name": "InariMCP Agent" }` | Layer 0: restrict the agent to one Firefox container |
+| `container_scope` | `{ "enabled": false, "container_name": "Inari MCP Agent" }` | Layer 0: restrict the agent to one Firefox container |
 
 URL patterns are matched against the parsed URL, not the raw string, so `example.com.attacker.net` or a query string that mentions a host does not match:
 

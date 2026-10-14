@@ -289,7 +289,7 @@ export class SafetyGuard {
     return this._deny(
       'config_error',
       `${shown} refused: the safety config cannot be used (${configError}). ` +
-      'Every tool is refused until it is fixed and the InariMCP daemon restarted. ' +
+      'Every tool is refused until it is fixed and the Inari MCP daemon restarted. ' +
       'fox_safety_status shows the error.',
     );
   }

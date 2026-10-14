@@ -397,7 +397,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `blocked_url_patterns` | `[]` | 拒否するURL |
 | `allowed_url_patterns` | `[]` | 空でなければ、これに一致するURLだけを許可する |
 | `confirm_read_sites` | `[]` | 読み取りツールとスクリーンショットでも先に人に尋ねるサイト（操作系ツールはどのサイトでも常に尋ねる。[人による承認](#人による承認)を参照） |
-| `container_scope` | `{ "enabled": false, "container_name": "InariMCP Agent" }` | レイヤー0: エージェントを1つのFirefoxコンテナに制限する |
+| `container_scope` | `{ "enabled": false, "container_name": "Inari MCP Agent" }` | レイヤー0: エージェントを1つのFirefoxコンテナに制限する |
 
 URLパターンは文字列のままではなく、解析したURLと照合する。`example.com.attacker.net`や、ホスト名を含むクエリ文字列には一致しない。
 

@@ -374,7 +374,7 @@ export interface ShutdownHooks {
 }
 
 /** Answer to a tool call or an approval while the daemon stops (POST /daemon/shutdown, signal, idle). */
-const SHUTTING_DOWN_MESSAGE = 'InariMCP daemon is shutting down';
+const SHUTTING_DOWN_MESSAGE = 'Inari MCP daemon is shutting down';
 
 /** State shared by the request handlers of one server. */
 interface BridgeContext {
@@ -430,7 +430,7 @@ function shuttingDown(ctx: BridgeContext): boolean {
 
 /** The tool did not run: the daemon could not start (ready rejected). */
 function notStarted(err: unknown): string {
-  return `InariMCP daemon could not start: ${errorMessage(err)}`;
+  return `Inari MCP daemon could not start: ${errorMessage(err)}`;
 }
 
 interface Caller {

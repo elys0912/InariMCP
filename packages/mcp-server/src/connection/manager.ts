@@ -322,7 +322,7 @@ export class BrowserConnectionManager {
         requestId: command.requestId,
         success: false,
         error:
-          'No browser connected. Start Firefox with the InariMCP extension ' +
+          'No browser connected. Start Firefox with the Inari MCP extension ' +
           '(its Native Host connects to this server over WebSocket), or set FOX_HEADLESS=1.',
       };
     }

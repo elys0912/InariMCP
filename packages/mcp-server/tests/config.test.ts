@@ -65,7 +65,7 @@ describe('loadConfig (2.B2)', () => {
     expect(written).not.toHaveProperty('confirm_protected_actions');
   });
 
-  // R2-B S-1: an unknown key used to be dropped, so the setting the user meant
+  // An unknown key used to be dropped, so the setting the user meant
   // to tighten did not apply (fail-open).
   it.each([
     ['a misspelt key', '{ "readonly": true }', 'readonly'],
@@ -96,7 +96,7 @@ describe('loadConfig (2.B2)', () => {
     expect(cfg.containerScope.containerName).toBe('Work');
   });
 
-  // R2-B S-2: a partial container_scope keeps the defaults for the rest
+  // A partial container_scope keeps the defaults for the rest
   // (it used to be a config_error: `enabled: Required`).
   it.each([
     ['container_name only', '{ "container_scope": { "container_name": "Foo" } }', { enabled: false, containerName: 'Foo' }],
@@ -124,7 +124,7 @@ describe('loadConfig (2.B2)', () => {
     expect({ ...again }).toEqual({ ...DEFAULT_CONFIG });
   });
 
-  // R2-B L-5: a blank FOX_SAFETY_CONFIG is unset, as for every other daemon
+  // A blank FOX_SAFETY_CONFIG is unset, as for every other daemon
   // setting.
   it('WP-G T-5: with FOX_SAFETY_CONFIG blank, fox_safety_status names the default file by its full path', () => {
     vi.stubEnv('HOME', dir);
@@ -136,7 +136,7 @@ describe('loadConfig (2.B2)', () => {
     expect(new SafetyGuard(cfg).status().configFile).toBe(path.join(dir, '.inari-mcp', 'safety.json'));
   });
 
-  // Windows ignores the mode bits (see the WP2 note on 0o600 / 0o700).
+  // Windows ignores the mode bits, so 0o600 / 0o700 cannot be checked there.
   it.skipIf(process.platform === 'win32')('creates a missing config directory 0o700', () => {
     const file = path.join(dir, 'sub', 'safety.json');
     vi.stubEnv('HOME', dir);

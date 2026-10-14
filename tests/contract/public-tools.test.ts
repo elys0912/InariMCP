@@ -4,7 +4,7 @@
  *
  *   - listSchema (tools/list) says, per argument, which variants use it,
  *     which require it and their defaults, as callSchema enforces them
- *   - tool annotations are those of the WP13 specification (2.2)
+ *   - tool annotations are the readOnlyHint / destructiveHint given per tool
  *   - no argument is lost between a public tool and its operation: every
  *     variant argument reaches an operation argument and back
  */
@@ -133,7 +133,7 @@ describe('listSchema of the grouped tools', () => {
   });
 });
 
-describe('tool annotations (WP13 specification 2.2)', () => {
+describe('tool annotations', () => {
   const EXPECTED: Record<PublicToolName, [readOnlyHint: boolean, destructiveHint: boolean]> = {
     fox_screenshot: [true, false],
     fox_snapshot: [true, false],

@@ -162,7 +162,7 @@ describe('5. daemon waits longer than the extension-side fallbacks', () => {
   });
 });
 
-describe('5b. extension-side waits without a timeout argument end before the daemon (WP5)', () => {
+describe('5b. extension-side waits without a timeout argument end before the daemon', () => {
   const content = readNumericObjectConstant(readExtensionTree('content'), 'TIMEOUTS');
   const background = readNumericObjectConstant(readExtensionTree('background'), 'TIMEOUTS');
 
@@ -199,7 +199,7 @@ describe('6. native-host in-flight bookkeeping outlives the daemon timeout', () 
       .reduce((a, b) => a * b, 1);
     expect(ttl).toBe(600_000);
     expect(ttl).toBeGreaterThan(maxCommandTimeoutMs({}));
-    // ... and the daemon's wait for the largest timeout argument (WP30).
+    // ... and the daemon's wait for the largest timeout argument.
     expect(ttl).toBeGreaterThan(maxCommandTimeoutMs({ timeout: MAX_TIMEOUT_ARG_MS }));
   });
 

@@ -239,12 +239,12 @@ export function occupiedPortExit(occupant: HealthVerdict, host: string, httpPort
   const freePorts = `${ENV.FOX_HTTP_PORT} (and ${ENV.FOX_WS_PORT}) to free ports`;
   switch (occupant.kind) {
     case 'ok':
-      return { code: 0, message: `another InariMCP daemon already owns ${host}:${httpPort} — exiting` };
+      return { code: 0, message: `another Inari MCP daemon already owns ${host}:${httpPort} — exiting` };
     case 'impostor':
       return {
         code: 1,
         message:
-          `port ${host}:${httpPort} answers as a InariMCP daemon but cannot prove it holds ` +
+          `port ${host}:${httpPort} answers as an Inari MCP daemon but cannot prove it holds ` +
           'this user\'s API token (a daemon started before the token file was replaced, ' +
           'another user\'s daemon, or a program impersonating it). ' +
           `Stop it, or set ${freePorts}.`,
@@ -253,7 +253,7 @@ export function occupiedPortExit(occupant: HealthVerdict, host: string, httpPort
       return {
         code: 1,
         message:
-          `port ${host}:${httpPort} is owned by a InariMCP daemon of another protocol ` +
+          `port ${host}:${httpPort} is owned by an Inari MCP daemon of another protocol ` +
           `(${String(occupant.protocol)}${occupant.version ? `, v${occupant.version}` : ''}): stop it and retry.`,
       };
     default:

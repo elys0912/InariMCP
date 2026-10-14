@@ -85,7 +85,7 @@ export function createRelayHandlers(
 
     handlerFor: (toolName) => async (args, extra) => {
       if (!(await client.ready())) {
-        return errorResult(`InariMCP daemon unavailable at ${client.baseUrl} (see ${daemonLogPath()})`);
+        return errorResult(`Inari MCP daemon unavailable at ${client.baseUrl} (see ${daemonLogPath()})`);
       }
       const result = await invoke(toolName, args, extra.signal);
       if (result.isError) return result;

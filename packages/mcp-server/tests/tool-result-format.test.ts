@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe('toolResultToCallResult', () => {
-  it('writes result data as compact JSON (WP13-S4)', () => {
+  it('writes result data as compact JSON', () => {
     const r = toolResultToCallResult({ success: true, data: { url: 'https://example.test/', tabs: [{ id: 1 }] } });
     expect(text(r)).toEqual(['{"url":"https://example.test/","tabs":[{"id":1}]}']);
   });

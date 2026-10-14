@@ -1,6 +1,6 @@
 /**
  * Extension background (background.ts and background/*.ts): routing and
- * robustness fixes of WP5 (review 3.A2-A9, 5.2, 5.7, 3.security). Functions
+ * robustness (waits that end, failures instead of exceptions). Functions
  * of the side-effect-free modules under background/ are imported directly;
  * the rest is checked on the source text (helpers/extension-source.ts).
  */
@@ -279,7 +279,7 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
   });
 });
 
-describe('WP38 no active tab: a failure result, not a TypeError', () => {
+describe('no active tab: a failure result, not a TypeError', () => {
   it('get_page_info answers "No target tab" when tabs.query finds none', async () => {
     useFakeBrowser({
       tabs: {
@@ -293,7 +293,7 @@ describe('WP38 no active tab: a failure result, not a TypeError', () => {
   });
 });
 
-describe('E-21 get_page_info fails like the other content script tools', () => {
+describe('get_page_info fails like the other content script tools', () => {
   const pageTab = { id: 1, url: 'https://app.example.test/', title: 'App' };
   const failingSend = (message: string) => ({
     tabs: {
@@ -318,7 +318,7 @@ describe('E-21 get_page_info fails like the other content script tools', () => {
   });
 });
 
-describe('WP30 go_back / go_forward wait for the load like navigate', () => {
+describe('go_back / go_forward wait for the load like navigate', () => {
   it('returns the URL after the history load completes, not after a fixed delay', async () => {
     vi.useFakeTimers();
     const tabs = fakeTabs({ status: 'complete', url: 'https://b.test/' });
@@ -366,13 +366,13 @@ describe('3.A3 / 5.1 frame routing', () => {
 });
 
 describe('3.A5 capture of the target tab', () => {
-  // takeScreenshot itself is run in 'WP30 screenshot of a background tab' below.
+  // takeScreenshot itself is run in 'screenshot of a background tab' below.
   it('no background source calls captureVisibleTab(windowId)', () => {
     expect(background).not.toMatch(/\.captureVisibleTab\(/);
   });
 });
 
-describe('WP30 screenshot of a background tab keeps the active tab', () => {
+describe('screenshot of a background tab keeps the active tab', () => {
   it('captures the tabId given without tabs.update; a discarded tab fails', async () => {
     const update = vi.fn(async () => ({}));
     const captureTab = vi.fn(async (id: number) => `data:image/png;base64,${id}`);
@@ -509,7 +509,7 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     expect(captured).toEqual([1]);
   });
 
-  it('WP38 both excluded counts are always there, 0 included', async () => {
+  it('both excluded counts are always there, 0 included', async () => {
     const tabs = [fakeTab({ id: 1, url: 'https://ok.test/' })];
     useFakeBrowser({
       tabs: {

@@ -681,7 +681,7 @@ describe('type / set_value: password guard on the element written to', () => {
   });
 });
 
-describe('type without selector: password guard follows the focus (WP30)', () => {
+describe('type without selector: password guard follows the focus', () => {
   const BOX = 'position:absolute;left:0;top:0;width:300px;height:60px;border:0;margin:0';
   const FIELD = (type: string): string => `<input type=${type} style="${BOX}">`;
   const frameDoc = (type: string): string =>

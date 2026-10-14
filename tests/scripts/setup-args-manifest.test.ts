@@ -17,7 +17,7 @@ import { manualForPlatform, manualMarkdown } from '../../scripts/lib/texts.mjs';
 // Command line
 // ---------------------------------------------------------------------------
 
-describe('lookup (R2-A SC-C4)', () => {
+describe('lookup', () => {
   it('returns the listed text and throws for an unlisted key', () => {
     const table = { same: 'a', different: 'b' };
     expect(lookup(table, 'same', 'state')).toBe('a');

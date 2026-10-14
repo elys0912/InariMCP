@@ -188,11 +188,11 @@ describe('hosts the URL parser rewrites, and a rule without `port`', () => {
   });
 });
 
-describe('R2-C fail-closed wire input', () => {
+describe('fail-closed wire input', () => {
   const hostWire = (path: string | null, pathMatch: 'strict' | 'loose' = 'loose') =>
     ({ kind: 'host', source: 'x', scheme: null, hosts: 'tree', host: 'example.test', port: null, path, pathMatch });
 
-  it('E-03: a list that is there but not an array is one unusable entry; undefined is no list', () => {
+  it('a list that is there but not an array is one unusable entry; undefined is no list', () => {
     expect(ext.compileUrlRules(undefined)).toEqual({ rules: [], invalid: 0 });
     for (const raw of [null, 'https://a.example', 42, {}, { 0: hostWire(null) }, true]) {
       expect(ext.compileUrlRules(raw), JSON.stringify(raw)).toEqual({ rules: [], invalid: 1 });

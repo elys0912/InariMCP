@@ -1,6 +1,6 @@
 /**
- * Extension content script: element location and typing fixes of WP5
- * (review 3.A1 / 6.Critical, 3.A11, 3.A13, 6.High). The helpers are
+ * Extension content script: element location, typing and the masked
+ * values. The helpers are
  * imported from content/dom.ts and content/input.ts (modules without
  * top-level side effects); DOM behaviour itself needs a real browser.
  *
@@ -201,7 +201,7 @@ describe('no "inspect element" context menu', () => {
     expect(menu).not.toMatch(/inspect/i);
     // A right click (fox_click with rightClick) still dispatches a contextmenu event.
     expect(readExtensionTree('content')).not.toMatch(/addEventListener\(\s*["'`]contextmenu/);
-    // WP38: nor does the contextMenus type declare pageX / pageY.
+    // Nor does the contextMenus type declare pageX / pageY.
     expect(readExtensionSource('types/browser.d.ts')).not.toMatch(/page[XY]\?: number/);
   });
 });
@@ -313,7 +313,7 @@ describe('fox_type / fox_click targets', () => {
     expect(type).toContain('Element is disabled');
   });
 
-  real('WP38 performType into a disabled focused field names it by tag / id / name', async () => {
+  real('performType into a disabled focused field names it by tag / id / name', async () => {
     await load('<input id="i" name="n">');
     const message = await run<string>(
       `const el = document.getElementById('i');
@@ -324,7 +324,7 @@ describe('fox_type / fox_click targets', () => {
     expect(message).toBe('Focused element is disabled: {"tag":"input","id":"i","name":"n"}');
   });
 
-  real('WP38 pressKey finds its target by xpath, id and text like fox_click', async () => {
+  real('pressKey finds its target by xpath, id and text like fox_click', async () => {
     await load('<input id="a"><input id="b"><button>Send</button><input id="c">');
     const r = await run<unknown[]>(
       `const seen = [];
@@ -589,7 +589,7 @@ describe('options of a masked select, selectors that test a value, and what the 
 });
 
 describe('highlight and overlay banner timers', () => {
-  real('E-05 the timer of an earlier highlight does not remove the next one', async () => {
+  real('the timer of an earlier highlight does not remove the next one', async () => {
     await load('<div id="a">A</div><div id="b">B</div>');
     const r = await run<Record<string, number>>(
       // The overlay is the body's only child without an id; it carries no class.
@@ -619,7 +619,7 @@ describe('highlight and overlay banner timers', () => {
     expect(r).toEqual({ animations: 1, endless: Infinity, sheets: 0 });
   });
 
-  real('E-06 a banner replaced by one with the same id settles at once; cancel reaches the new one', async () => {
+  real('a banner replaced by one with the same id settles at once; cancel reaches the new one', async () => {
     await load('<div>page</div>');
     const r = await run<Record<string, unknown>>(
       `const cfg = (title) => ({ id: 'b1', title, buttons: [{ label: 'x', value: 'done', color: '#fff' }],
@@ -642,7 +642,7 @@ describe('highlight and overlay banner timers', () => {
     });
   });
 
-  real('E-06 a captcha solved by its token leaves no banner for cancelHumanWait', async () => {
+  real('a captcha solved by its token leaves no banner for cancelHumanWait', async () => {
     await load('<div class="g-recaptcha"></div>');
     const r = await run<Record<string, unknown>>(
       `const p = f.captcha.solveCaptcha({ timeout: 5000 });
@@ -664,7 +664,7 @@ describe('highlight and overlay banner timers', () => {
     });
   });
 
-  real('E-06 a second captcha wait in the tab ends the first one as superseded', async () => {
+  real('a second captcha wait in the tab ends the first one as superseded', async () => {
     await load('<div class="g-recaptcha"></div>');
     const r = await run<Record<string, unknown>[]>(
       `const first = f.captcha.solveCaptcha({ timeout: 5000 });
@@ -696,9 +696,9 @@ describe('highlight and overlay banner timers', () => {
   });
 });
 
-describe('WP44 content input checks and truncation (E-12, E-13, E-17)', () => {
+describe('content input checks and truncation', () => {
   // The cut itself (clipText in text-clip.ts) is tested once, in extension-background-async.test.ts.
-  it('E-17 truncatedValue stringifies a value and keeps a missing one null', async () => {
+  it('truncatedValue stringifies a value and keeps a missing one null', async () => {
     const dom = await import('../../packages/extension/src/content/dom.ts');
     expect(dom.truncatedValue(3, 10)).toBe('3');
     expect(dom.truncatedValue(12345, 3)).toBe('123');
@@ -707,12 +707,12 @@ describe('WP44 content input checks and truncation (E-12, E-13, E-17)', () => {
     expect(dom.truncatedValue(null, 10)).toBeNull();
   });
 
-  it('E-17 truncatedValue returns null for an object value instead of "[object Object]"', async () => {
+  it('truncatedValue returns null for an object value instead of "[object Object]"', async () => {
     const dom = await import('../../packages/extension/src/content/dom.ts');
     expect(dom.truncatedValue({}, 20)).toBeNull();
   });
 
-  real('E-17 getText and element info cut on character boundaries; numeric values do not fail', async () => {
+  real('getText and element info cut on character boundaries; numeric values do not fail', async () => {
     await load('<p id="p">ab\u{1F600}cd</p><ul><li id="li" value="3">x</li></ul>');
     const r = await run<Record<string, unknown>>(
       `const text = f.inspect.getText({ selector: '#p', maxLength: 3 });
@@ -722,7 +722,7 @@ describe('WP44 content input checks and truncation (E-12, E-13, E-17)', () => {
     expect(r).toEqual({ text: 'ab', truncated: true, liValue: '3' });
   });
 
-  real('E-12 performScroll fails for an unknown direction', async () => {
+  real('performScroll fails for an unknown direction', async () => {
     await load('<div style="height:3000px">tall</div>');
     const r = await run<[string, Record<string, unknown>]>(
       `return [

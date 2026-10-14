@@ -11,7 +11,7 @@ import type { ScreenshotOptions, CommandResult, ScopeFilter, UrlLists } from "./
 import { NO_URL_LISTS, isReadConfirmTab, violatesUrlLists } from "./url-policy";
 
 const NO_IMAGE_NOTE =
-  "saveToFile is false: no image was captured. InariMCP returns screenshots only " +
+  "saveToFile is false: no image was captured. Inari MCP returns screenshots only " +
   "as saved files (resource_link), never inline.";
 
 export async function takeScreenshot(

@@ -173,7 +173,7 @@ export class ServerConnection {
         log(
           handshake.step === 'await-challenge'
             ? 'WS auth timed out: the server sent no auth_challenge — it is probably an older ' +
-              'InariMCP daemon (stop it; a matching one is started automatically)'
+              'Inari MCP daemon (stop it; a matching one is started automatically)'
             : 'WS auth timed out (no auth_ok)',
         );
         ws.terminate();

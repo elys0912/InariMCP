@@ -156,7 +156,7 @@ export async function askBrowser(
       approved: false,
       reason: 'no_browser',
       error:
-        'No Firefox with the InariMCP extension is connected, so nobody can be asked ' +
+        'No Firefox with the Inari MCP extension is connected, so nobody can be asked ' +
         'in the browser (headless mode has no human).',
     };
   }

@@ -2,7 +2,7 @@
  * Judging a GET /health answer — the same rules for the daemon (singleton
  * check), the relays, the Native Host and `doctor`.
  *
- * A InariMCP daemon answers 200 with JSON `{ status: 'ok', service:
+ * An Inari MCP daemon answers 200 with JSON `{ status: 'ok', service:
  * 'inari-mcp', protocol, version, … }`, plus `proof` (MAC over the
  * x-inari-nonce header, auth.ts) when asked.
  */
@@ -15,8 +15,8 @@ export const HEALTH_SERVICE = 'inari-mcp';
 /**
  * What answered GET /health:
  *  down         nothing (connection refused, timeout) — decided by the caller
- *  foreign      something that is not a InariMCP daemon
- *  incompatible a InariMCP daemon of another protocol (an older build)
+ *  foreign      something that is not an Inari MCP daemon
+ *  incompatible an Inari MCP daemon of another protocol (an older build)
  *  impostor     claims to be the daemon but cannot prove it holds the token
  *  unverified   a compatible daemon; no token yet to check its proof
  *  ok           a compatible daemon that proved it holds our token

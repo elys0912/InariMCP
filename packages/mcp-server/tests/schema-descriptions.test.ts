@@ -1,6 +1,5 @@
 /**
- * Tool descriptions / schemas that must match the Extension's behaviour
- * (review 6.High, 3.A1, 5.7; WP5).
+ * Tool descriptions / schemas that must match the Extension's behaviour.
  */
 
 import { describe, expect, it } from 'vitest';

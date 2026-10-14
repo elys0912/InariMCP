@@ -681,7 +681,7 @@ export function checkDaemon(ctx: DoctorContext): CheckResult {
       return {
         id,
         status: 'FAIL',
-        detail: `${ctx.baseUrl}/health does not answer as InariMCP (another program holds the port)`,
+        detail: `${ctx.baseUrl}/health does not answer as Inari MCP (another program holds the port)`,
         fix: `stop that program, or set ${ENV.FOX_HTTP_PORT} / ${ENV.FOX_WS_PORT} to free ports for both Claude Code and Firefox`,
       };
     case 'incompatible':
@@ -799,7 +799,7 @@ export function checkBrowsers(ctx: DoctorContext): CheckResult {
       id,
       status: 'WARN',
       detail: 'no browser connected',
-      fix: 'start Firefox with the InariMCP extension (a temporary add-on must be loaded again in about:debugging after each restart); see native-host.log',
+      fix: 'start Firefox with the Inari MCP extension (a temporary add-on must be loaded again in about:debugging after each restart); see native-host.log',
     };
   }
   if (nativeHosts !== undefined && nativeHosts > 1) {

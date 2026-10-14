@@ -22,8 +22,8 @@ export const REVIEWER_FIXTURES = path.join(path.dirname(fileURLToPath(import.met
  * (tests/scripts/reviewer-smoke.test.ts checks that they still match).
  */
 export const REVIEWER_PAGES = {
-  page1: { file: 'index.html', title: 'InariMCP reviewer smoke: page 1', heading: 'InariMCP reviewer smoke test' },
-  page2: { file: 'page2.html', title: 'InariMCP reviewer smoke: page 2', heading: 'Page 2' },
+  page1: { file: 'index.html', title: 'Inari MCP reviewer smoke: page 1', heading: 'Inari MCP reviewer smoke test' },
+  page2: { file: 'page2.html', title: 'Inari MCP reviewer smoke: page 2', heading: 'Page 2' },
 };
 
 /**

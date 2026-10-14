@@ -54,7 +54,7 @@ export function parseArgs(argv: readonly string[]): CliCommand {
 }
 
 export function helpText(): string {
-  return `InariMCP v${PACKAGE_VERSION} — MCP server for Firefox browser automation
+  return `Inari MCP v${PACKAGE_VERSION} — MCP server for Firefox browser automation
 
 Usage: node packages/mcp-server/dist/index.js [option]
 

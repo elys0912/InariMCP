@@ -66,7 +66,7 @@ describe('listScreenshots (2.A3)', () => {
   });
 });
 
-// R2-B C-3: a blank value was taken as a directory named ' ', and a relative
+// A blank value was taken as a directory named ' ', and a relative
 // one was left relative (unlike the Native Host's screenshot-store.ts).
 describe('getScreenshotsDir', () => {
   it('a blank FOX_SCREENSHOTS_DIR is unset: the default', () => {

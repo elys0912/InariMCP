@@ -188,7 +188,7 @@ describe('signed requests', () => {
 });
 
 describe('startup log', () => {
-  it('WP38 names the port actually bound, not the configured 0', async () => {
+  it('names the port actually bound, not the configured 0', async () => {
     const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     let lines: string[];
     try {
@@ -499,7 +499,7 @@ describe('daemon state seen by tool calls', () => {
     fail(new Error('Firefox did not launch'));
     for (const r of [await call, await approval]) {
       expect(r.status).toBe(500);
-      expect(r.json['error']).toBe('InariMCP daemon could not start: Firefox did not launch');
+      expect(r.json['error']).toBe('Inari MCP daemon could not start: Firefox did not launch');
     }
     // Later calls too, and /health keeps saying not ready.
     expect((await request('POST', '/mcp/call', headers, callBody)).json['error']).toContain('could not start');

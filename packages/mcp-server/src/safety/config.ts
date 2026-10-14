@@ -43,7 +43,7 @@ export const DEFAULT_CONFIG: SafetyConfig = {
   confirmReadSites: [],
   containerScope: {
     enabled: false,
-    containerName: 'InariMCP Agent',
+    containerName: 'Inari MCP Agent',
   },
 } as const;
 

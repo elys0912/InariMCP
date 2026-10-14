@@ -43,7 +43,7 @@ function fakeEvent() {
 }
 
 // ---------------------------------------------------------------------------
-// native-connection.ts (E-02, E-24)
+// native-connection.ts
 // ---------------------------------------------------------------------------
 
 function fakePort() {
@@ -90,7 +90,7 @@ const answerLast = (port: FakePort, reply: Record<string, unknown> = {}): void =
   port.onMessage.fire({ requestId: last.requestId, success: true, ...reply });
 };
 
-describe('native connection: a replaced port (E-02, E-24)', () => {
+describe('native connection: a replaced port', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -144,7 +144,7 @@ describe('native connection: a replaced port (E-02, E-24)', () => {
     // No third port: no second reconnect was started.
     await vi.advanceTimersByTimeAsync(60_000);
     expect(ports).toHaveLength(2);
-    // E-24: the caller's object is not given a requestId.
+    // The caller's object is not given a requestId.
     expect(message).toEqual({ action: 'status' });
   });
 
@@ -325,10 +325,10 @@ describe('setup state: overlapping refreshes (the newest answer wins)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// tab-wait.ts (E-07)
+// tab-wait.ts
 // ---------------------------------------------------------------------------
 
-describe('waitForNavigation: tab closed right after the navigation (E-07)', () => {
+describe('waitForNavigation: tab closed right after the navigation', () => {
   it('still succeeds, without a title', async () => {
     const onCompleted = fakeEvent();
     let gets = 0;
@@ -352,10 +352,10 @@ describe('waitForNavigation: tab closed right after the navigation (E-07)', () =
 });
 
 // ---------------------------------------------------------------------------
-// tabs.ts (E-10, E-11)
+// tabs.ts
 // ---------------------------------------------------------------------------
 
-describe('getAllTabs limit and findText query (E-10, E-11)', () => {
+describe('getAllTabs limit and findText query', () => {
   const tabs = [1, 2, 3].map((id) => ({ id, url: `https://t${id}.test/`, windowId: 1 }));
 
   beforeEach(() => {
@@ -393,10 +393,10 @@ describe('getAllTabs limit and findText query (E-10, E-11)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// listeners.ts (E-23)
+// listeners.ts
 // ---------------------------------------------------------------------------
 
-describe('runtime.onMessage: messages that are not objects (E-23)', () => {
+describe('runtime.onMessage: messages that are not objects', () => {
   it.each([null, undefined, 'text', 42])('%j is ignored without throwing', (message) => {
     const onMessage = fakeEvent();
     useFakeBrowser({
@@ -416,10 +416,10 @@ describe('runtime.onMessage: messages that are not objects (E-23)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// popup/setup-status.ts (E-14)
+// popup/setup-status.ts
 // ---------------------------------------------------------------------------
 
-describe('popup status reply (E-14)', () => {
+describe('popup status reply', () => {
   it('a reply with a setup state is that state', () => {
     expect(setupStateOfReply({ success: true, setup: { kind: 'ready', relays: 2 } }))
       .toEqual({ kind: 'ready', relays: 2 });
@@ -454,7 +454,7 @@ describe('isApprovedSite: trailing dot (the same host with or without it)', () =
   });
 });
 
-describe('clipping never splits a surrogate pair (E-17)', () => {
+describe('clipping never splits a surrogate pair', () => {
   const FOX = '\u{1F98A}'; // 2 code units
 
   it('clipText', () => {

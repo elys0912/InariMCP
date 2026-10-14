@@ -468,7 +468,7 @@ describe('daemon authentication copy', () => {
     ));
   });
 
-  it('isLoopbackHost and MAX_PORT agree with @inari-mcp/shared (R2-A V-6, S12)', () => {
+  it('isLoopbackHost and MAX_PORT agree with @inari-mcp/shared', () => {
     const hosts = [
       'localhost', 'LOCALHOST', ' localhost ', '127.0.0.1', '127.1.2.3', '[::1]', '::1', '::ffff:127.0.0.1',
       '[::FFFF:127.0.0.1]', ' 127.0.0.1	', '0.0.0.0', '', '::', '128.0.0.1', '127.0.0', '10.0.0.1',
@@ -485,7 +485,7 @@ describe('daemon authentication copy', () => {
     expect(httpEndpoint({ FOX_HTTP_PORT: String(MAX_PORT + 1) }).port).toBe(8785);
   });
 
-  it('httpEndpoint treats an empty or blank variable as unset like @inari-mcp/shared (R2-A R-2, R3 N-1)', () => {
+  it('httpEndpoint treats an empty or blank variable as unset like @inari-mcp/shared', () => {
     const emptyEnv = { FOX_HOST: '', FOX_HTTP_PORT: '' };
     const blankEnv = { FOX_HOST: ' ', FOX_HTTP_PORT: ' ' };
     const paddedEnv = { FOX_HOST: ' 127.0.0.2 ', FOX_HTTP_PORT: ' 9001 ' };

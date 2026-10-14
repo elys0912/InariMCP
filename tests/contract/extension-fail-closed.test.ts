@@ -84,7 +84,7 @@ describe('containerScope', () => {
   });
 });
 
-describe('E-03 URL rule fields that are not arrays', () => {
+describe('URL rule fields that are not arrays', () => {
   const NOT_ARRAYS: [string, unknown][] = [['a string', 'https://a.example'], ['an object', {}], ['null', null], ['a number', 1]];
 
   for (const field of ['confirmReadUrlRules', 'blockedUrlRules', 'allowedUrlRules']) {
@@ -252,7 +252,7 @@ describe('a host rule path with a query or fragment', () => {
   });
 });
 
-describe('E-16 action names from the Native Host', () => {
+describe('action names from the Native Host', () => {
   it('a name outside the wire table is unknown when it comes from the host', () => {
     expect(resolveWireAction('getPageInfo', true)).toEqual({ kind: 'unknown', wireName: 'getPageInfo' });
     expect(resolveWireAction('status', true)).toEqual({ kind: 'unknown', wireName: 'status' });

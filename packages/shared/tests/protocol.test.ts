@@ -62,7 +62,7 @@ describe('parseBrowserResponse', () => {
   });
 });
 
-describe('util helpers (R2-A)', () => {
+describe('util helpers', () => {
   it('errnoCode returns a string code only', () => {
     expect(errnoCode(Object.assign(new Error('x'), { code: 'ENOENT' }))).toBe('ENOENT');
     expect(errnoCode({ code: 1 })).toBeUndefined();

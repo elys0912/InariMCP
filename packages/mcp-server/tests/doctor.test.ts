@@ -583,7 +583,7 @@ describe('doctor: safety-config (the daemon\'s own validator)', () => {
     return file;
   }
 
-  // R2-B S-1 / R-5: an unknown key used to be a WARN ("ignored keys") while
+  // An unknown key used to be a WARN ("ignored keys") while
   // the daemon dropped it; the daemon now refuses the file, so does the doctor.
   it('an unknown key → FAIL naming it; the fix says every tool is refused', async () => {
     writeSafety('{ "readonly": true }');
@@ -652,7 +652,7 @@ describe('doctor: screenshots and logs', () => {
     expect(s.fix).toContain('set the same FOX_SCREENSHOTS_DIR for Firefox');
   });
 
-  // R2-B C-3 / L-5: a blank value is unset, as the daemon reads it.
+  // A blank value is unset, as the daemon reads it.
   it('a blank FOX_SCREENSHOTS_DIR → OK with the default directory', async () => {
     process.env['FOX_SCREENSHOTS_DIR'] = '  ';
     const s = byId(await runChecks(deps(undefined)), 'screenshots');
@@ -794,7 +794,7 @@ describe('doctor: token, powershell, foreign daemons', () => {
     }));
     const d = byId(results, 'daemon');
     expect(d.status).toBe('FAIL');
-    expect(d.detail).toContain('does not answer as InariMCP');
+    expect(d.detail).toContain('does not answer as Inari MCP');
     expect(d.fix).toContain('FOX_HTTP_PORT');
     expect(byId(results, 'browsers')).toMatchObject({ status: 'SKIP' });
     expect(byId(results, 'token')).toMatchObject({ status: 'OK' });
@@ -845,7 +845,7 @@ describe('doctor: runDoctor', () => {
     const code = await runDoctor(deps({ token: TOKEN }, { platform: 'linux' }));
     expect(code).toBe(1);
     const out = written.join('');
-    expect(out).toContain(`InariMCP doctor v${PACKAGE_VERSION} (linux, node v${process.versions.node})`);
+    expect(out).toContain(`Inari MCP doctor v${PACKAGE_VERSION} (linux, node v${process.versions.node})`);
     // Ids are padded to the longest one ('native-messaging'), fix lines line up with the details.
     expect(out).toMatch(/^FAIL {2}token {13}the daemon is running/m);
     expect(out).toMatch(/^ {24}fix: end the process listening on port /m);

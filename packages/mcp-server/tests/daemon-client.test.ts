@@ -110,7 +110,7 @@ describe('DaemonClient against an impostor', () => {
     servers.push(s);
     const result = await client(portOf(s)).callTool('fox_safety_status', {});
     expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toMatch(/is not the InariMCP daemon/);
+    expect(JSON.stringify(result.content)).toMatch(/is not the Inari MCP daemon/);
     expect(seen.every((line) => line === 'GET /health')).toBe(true);
   });
 

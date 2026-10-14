@@ -95,7 +95,7 @@ export function formatResults(results: readonly CheckResult[]): string {
 /** Print the report; resolves with the exit code. */
 export async function runDoctor(deps: DoctorDeps = defaultDoctorDeps()): Promise<number> {
   const results = await runChecks(deps);
-  process.stdout.write(`InariMCP doctor v${PACKAGE_VERSION} (${deps.platform}, node v${deps.nodeVersion})\n\n`);
+  process.stdout.write(`Inari MCP doctor v${PACKAGE_VERSION} (${deps.platform}, node v${deps.nodeVersion})\n\n`);
   process.stdout.write(formatResults(results));
   return results.some((r) => r.status === 'FAIL') ? 1 : 0;
 }
