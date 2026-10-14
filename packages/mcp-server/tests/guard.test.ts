@@ -2,9 +2,11 @@ import * as fs from 'node:fs';
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { BROWSER_ACTIONS, type BrowserCommand, type BrowserResponse } from '@inari-mcp/shared';
-import { SafetyGuard, targetUrlOf, type DenialDecision } from '../src/safety/guard.js';
+import { APPROVAL_POLICY, SafetyGuard, targetUrlOf, type DenialDecision } from '../src/safety/guard.js';
 import { DEFAULT_CONFIG, getAuditLogPath, type LoadedSafetyConfig } from '../src/safety/config.js';
 import { createToolHandler } from '../src/tools/handlers.js';
+import { answerFromElicitation } from '../src/tools/approval-flow.js';
+import { callSchemaFor, resolveOperation } from '../src/tools/operations.js';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 
@@ -23,7 +25,6 @@ function guard(overrides: Partial<LoadedSafetyConfig> = {}): SafetyGuard {
     ...DEFAULT_CONFIG,
     auditLog: false,
     maxActionsPerMinute: 0,
-    protectedUrlPatterns: [],
     ...overrides,
   });
 }
@@ -31,10 +32,197 @@ function guard(overrides: Partial<LoadedSafetyConfig> = {}): SafetyGuard {
 const decision = (g: SafetyGuard, tool: string, args: Record<string, unknown>) =>
   g.check(tool, args)?.safetyDecision ?? null;
 
+/** The URL the human would be asked about (undefined: no approval needed). */
+const approvalUrl = (g: SafetyGuard, tool: string, args: Record<string, unknown>) =>
+  g.check(tool, args)?.elicitation?.url;
+
+// ---------------------------------------------------------------------------
+// Decision #9: acting tools always ask; reads ask only on confirm_read_sites
+// ---------------------------------------------------------------------------
+
+/** Every operation, by what the guard must do with it (written out, not derived from the schemas). */
+const ACTING: ReadonlyArray<[tool: string, args: Record<string, unknown>]> = [
+  ['fox_click', { selector: '#a' }],
+  ['fox_type', { text: 'x', selector: '#q' }],
+  ['fox_type', { text: 'x', selector: '#q', pressEnter: true }],
+  ['fox_set_value', { selector: '#v', value: '1' }],
+  ['fox_select_option', { selector: 'select', value: 'a' }],
+  ['fox_press_key', { key: 'Enter' }],
+  ['fox_navigate', { action: 'back' }],
+  ['fox_navigate', { action: 'forward' }],
+  ['fox_navigate', { action: 'refresh' }],
+  ['fox_navigate', { action: 'hard_refresh' }],
+  ['fox_close_tab', { tabId: 1 }],
+  ['fox_handle_dialog', { action: 'accept' }],
+  ['fox_run_workflow', { steps: [] }],
+];
+/** Acting tools whose `url` is the site they act on. */
+const ACTING_ON_URL: ReadonlyArray<string> = ['fox_navigate', 'fox_create_tab', 'fox_open_in_container'];
+const READING: ReadonlyArray<[tool: string, args: Record<string, unknown>]> = [
+  ['fox_screenshot', {}],
+  ['fox_screenshot', { scope: 'full_page' }],
+  ['fox_screenshot', { scope: 'scroll_capture' }],
+  ['fox_snapshot', {}],
+  ['fox_get_elements', { selector: 'a' }],
+  ['fox_get_text', {}],
+  ['fox_find_text', { query: 'x' }],
+  ['fox_get_page_info', {}],
+  ['fox_audit_page', {}],
+];
+const NOT_PAGE_READS: ReadonlyArray<[tool: string, args: Record<string, unknown>]> = [
+  ['fox_screenshot', { scope: 'all_tabs' }],
+  ['fox_get_tabs', {}],
+  ['fox_list_containers', {}],
+  ['fox_hover', { selector: '#h' }],
+  ['fox_scroll', {}],
+  ['fox_highlight', { selector: '#h' }],
+  ['fox_switch_tab', { tabId: 1 }],
+  ['fox_wait_for_element', { selector: '#w' }],
+  ['fox_wait_for_network_idle', {}],
+  ['fox_wait_for_navigation', {}],
+  ['fox_wait_for_url', { url: 'https://other.test/' }],
+  ['fox_request_approval', { message: 'm' }],
+  ['fox_detect_captcha', {}],
+  ['fox_safety_status', {}],
+];
+
+/** Pages the target tab may be on: any site, a local page, a blank tab. */
+const PAGES = [
+  'https://plain.example.test/',
+  'https://bank.example.test/transfer',
+  'http://127.0.0.1:8080/form.html',
+  'file:///tmp/inari-test/page.html',
+  'about:blank',
+];
+
+/** A guard that knows the active tab (and tab 1) is on `page`. */
+function onPage(page: string, overrides: Partial<LoadedSafetyConfig> = {}): SafetyGuard {
+  const g = guard(overrides);
+  g.noteUrl({ tabs: [{ id: 1, url: page, active: true }] }, {}, 'fox_get_tabs');
+  return g;
+}
+
+describe('approval by tool class (decision #9)', () => {
+  it('the tables cover every operation', () => {
+    const listed = new Set([...ACTING, ...READING, ...NOT_PAGE_READS].map(([tool]) => tool).concat(ACTING_ON_URL));
+    expect(listed).toEqual(new Set(Object.keys(TOOL_SCHEMAS)));
+  });
+
+  describe.each(PAGES)('target tab on %s', (page) => {
+    it.each(ACTING)('%s %j asks the human for the tab\'s page', (tool, args) => {
+      expect(onPage(page).check(tool, args)).toMatchObject({
+        safetyDecision: 'confirmation_required',
+        layer: 7,
+        elicitation: { url: page, matchedPattern: null, toolName: tool },
+      });
+    });
+
+    it.each([...READING, ...NOT_PAGE_READS])('%s %j runs without asking', (tool, args) => {
+      expect(decision(onPage(page), tool, args)).toBeNull();
+    });
+  });
+
+  it.each(ACTING_ON_URL)('%s asks the human for the URL it goes to or opens', (tool) => {
+    const url = 'https://dest.example.test/a';
+    const g = onPage('https://plain.example.test/');
+    const args = tool === 'fox_open_in_container' ? { url, containerName: 'Work' } : { url };
+    expect(g.check(tool, args)).toMatchObject({
+      safetyDecision: 'confirmation_required',
+      elicitation: { url, matchedPattern: null },
+    });
+  });
+
+  it('a new tab without a URL is asked about as a blank tab', () => {
+    expect(approvalUrl(guard(), 'fox_create_tab', {})).toBe('about:blank');
+  });
+
+  it('an acting tool on a tab the guard has not seen asks without a URL (cannot be approved yet)', () => {
+    expect(guard().check('fox_click', { selector: '#a' })).toMatchObject({
+      safetyDecision: 'confirmation_required',
+      elicitation: { url: null },
+    });
+    expect(approvalUrl(onPage('https://plain.example.test/'), 'fox_click', { tabId: 9 })).toBeNull();
+  });
+
+  it('reads ask only on confirm_read_sites', () => {
+    const policy = { confirmReadSites: ['bank.example.test'] };
+    for (const [tool, args] of READING) {
+      expect(onPage('https://bank.example.test/transfer', policy).check(tool, args), tool).toMatchObject({
+        safetyDecision: 'confirmation_required',
+        layer: 4,
+        elicitation: { url: 'https://bank.example.test/transfer', matchedPattern: 'bank.example.test' },
+      });
+      expect(decision(onPage('https://online.bank.example.test/', policy), tool, args), tool)
+        .toBe('confirmation_required');
+      expect(decision(onPage('https://plain.example.test/', policy), tool, args), tool).toBeNull();
+      expect(decision(onPage('https://bank.example.test.attacker.test/', policy), tool, args), tool).toBeNull();
+      // The guard does not know the tab: left to the Extension (confirmReadUrlRules).
+      expect(decision(guard(policy), tool, args), tool).toBeNull();
+    }
+    for (const [tool, args] of NOT_PAGE_READS) {
+      expect(decision(onPage('https://bank.example.test/', policy), tool, args), tool).toBeNull();
+    }
+  });
+
+  it('an acting tool on a confirm_read_sites site is asked about as an action (no pattern)', () => {
+    expect(onPage('https://bank.example.test/', { confirmReadSites: ['bank.example.test'] })
+      .check('fox_click', { selector: '#a' })?.elicitation).toMatchObject({ matchedPattern: null });
+  });
+
+  it('a blocked site is refused before any approval, for acting and reading tools', () => {
+    const g = onPage('https://blocked.example.test/', { blockedUrlPatterns: ['blocked.example.test'] });
+    for (const [tool, args] of [...ACTING.filter(([t]) => t !== 'fox_close_tab'), ...READING]) {
+      expect(decision(g, tool, args), tool).toBe('blocked_url');
+    }
+    expect(decision(g, 'fox_navigate', { url: 'https://blocked.example.test/x' })).toBe('blocked_url');
+    expect(decision(g, 'fox_create_tab', { url: 'https://blocked.example.test/x' })).toBe('blocked_url');
+  });
+
+  it('the public tools get the same decisions', () => {
+    const call = (g: SafetyGuard, tool: string, raw: Record<string, unknown>) => {
+      const { op, args, label } = resolveOperation(tool, callSchemaFor(tool)!.parse(raw) as Record<string, unknown>);
+      return g.check(op, args, undefined, null, label)?.safetyDecision ?? null;
+    };
+    const g = onPage('https://plain.example.test/');
+    const r = onPage('https://bank.example.test/', { confirmReadSites: ['bank.example.test'] });
+    const cases: Array<[tool: string, args: Record<string, unknown>, plain: string | null, readSite: string | null]> = [
+      ['fox_read', { mode: 'text' }, null, 'confirmation_required'],
+      ['fox_read', { mode: 'info' }, null, 'confirmation_required'],
+      ['fox_find', { by: 'selector', selector: 'a' }, null, 'confirmation_required'],
+      ['fox_find', { by: 'text', text: 'x' }, null, 'confirmation_required'],
+      ['fox_screenshot', {}, null, 'confirmation_required'],
+      ['fox_tabs', { what: 'tabs' }, null, null],
+      ['fox_wait', { for: 'element', selector: '#w' }, null, null],
+      ['fox_interact', { action: 'scroll' }, null, null],
+      ['fox_tab', { action: 'switch', tabId: 1 }, null, null],
+      ['fox_safety_status', {}, null, null],
+      ['fox_tab', { action: 'create', url: 'https://plain.example.test/' }, 'confirmation_required', 'confirmation_required'],
+      ['fox_tab', { action: 'create', url: 'https://plain.example.test/', container: { name: 'Work' } },
+        'confirmation_required', 'confirmation_required'],
+      ['fox_tab', { action: 'close', tabId: 1 }, 'confirmation_required', 'confirmation_required'],
+      ['fox_set_value', { kind: 'select', selector: 's', option: { value: 'a' } }, 'confirmation_required', 'confirmation_required'],
+      ['fox_click', { selector: '#a' }, 'confirmation_required', 'confirmation_required'],
+      ['fox_navigate', { url: 'https://plain.example.test/x' }, 'confirmation_required', 'confirmation_required'],
+    ];
+    for (const [tool, args, plain, readSite] of cases) {
+      expect(call(g, tool, args), `${tool} ${JSON.stringify(args)}`).toBe(plain);
+      expect(call(r, tool, args), `${tool} ${JSON.stringify(args)} on a confirm_read_sites site`).toBe(readSite);
+    }
+  });
+
+  it('the default policy has no site lists and reports the fixed approval policy', () => {
+    expect(DEFAULT_CONFIG.confirmReadSites).toEqual([]);
+    expect(guard().status()).toMatchObject({ approvalPolicy: APPROVAL_POLICY, confirmReadSites: [] });
+    expect(guard().status()).not.toHaveProperty('protectedUrlPatterns');
+    expect(guard().status()).not.toHaveProperty('confirmProtectedActions');
+  });
+});
+
 describe('Layer 2-3 on the parsed target URL (2.B1)', () => {
+  // confirmation_required: the URL passed the lists (an acting tool then asks the human).
   it('an allowlist entry does not admit look-alike hosts or URLs that merely mention it', () => {
     const g = guard({ allowedUrlPatterns: ['example\\.test'] });
-    expect(decision(g, 'fox_navigate', { url: 'https://www.example.test/' })).toBeNull();
+    expect(decision(g, 'fox_navigate', { url: 'https://www.example.test/' })).toBe('confirmation_required');
     expect(decision(g, 'fox_navigate', { url: 'https://example.test.attacker.test/' })).toBe('not_allowlisted');
     expect(decision(g, 'fox_navigate', { url: 'https://attacker.test/?r=example.test' })).toBe('not_allowlisted');
   });
@@ -58,13 +246,7 @@ describe('Layer 2-3 on the parsed target URL (2.B1)', () => {
 
   it('about:blank is not subject to the allowlist', () => {
     const g = guard({ allowedUrlPatterns: ['example.test'] });
-    expect(decision(g, 'fox_create_tab', { url: 'about:blank' })).toBeNull();
-  });
-
-  it('protected patterns match by host', () => {
-    const g = guard({ protectedUrlPatterns: ['bank.test'] });
-    expect(decision(g, 'fox_navigate', { url: 'https://online.bank.test/' })).toBe('confirmation_required');
-    expect(decision(g, 'fox_navigate', { url: 'https://bank.test.attacker.test/' })).toBeNull();
+    expect(decision(g, 'fox_create_tab', { url: 'about:blank' })).toBe('confirmation_required');
   });
 });
 
@@ -82,49 +264,48 @@ describe('fail-closed configuration (2.B2)', () => {
     const g = guard({ blockedUrlPatterns: ['re:(unclosed'] });
     expect(decision(g, 'fox_screenshot', {})).toBe('config_error');
     expect(g.status().configError).toContain('blocked_url_patterns');
+    expect(guard({ confirmReadSites: ['re:(unclosed'] }).status().configError).toContain('confirm_read_sites');
   });
 
   it('a legacy regex only warns', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const g = guard({ protectedUrlPatterns: ['mychart\\.'] });
+      const g = guard({ confirmReadSites: ['mychart\\.'] });
       expect(g.status().configError).toBeNull();
-      expect(g.status().patternWarnings).toHaveLength(1);
+      expect(g.status().patternWarnings).toEqual([expect.stringMatching(/^confirm_read_sites 'mychart\\\.'/)]);
     } finally {
       stderr.mockRestore();
     }
   });
 });
 
-describe('per-tab URL tracking (2.B4)', () => {
-  const PROTECTED = { protectedUrlPatterns: ['bank.test'] };
-
+describe('per-tab URL tracking (2.B4): the page an approval is asked for', () => {
   it('keeps each tab URL apart', () => {
-    const g = guard(PROTECTED);
+    const g = guard();
     g.noteUrl({ url: 'https://bank.test/' }, { tabId: 1 }, 'fox_get_text');
     g.noteUrl({ url: 'https://news.test/' }, { tabId: 2 }, 'fox_get_text');
-    expect(decision(g, 'fox_click', { tabId: 1 })).toBe('confirmation_required');
-    expect(decision(g, 'fox_click', { tabId: 2 })).toBeNull();
-    // Nothing is known about the active tab yet: left to the Extension.
-    expect(decision(g, 'fox_click', {})).toBeNull();
+    expect(approvalUrl(g, 'fox_click', { tabId: 1 })).toBe('https://bank.test/');
+    expect(approvalUrl(g, 'fox_click', { tabId: 2 })).toBe('https://news.test/');
+    // Nothing is known about the active tab yet.
+    expect(approvalUrl(g, 'fox_click', {})).toBeNull();
   });
 
   it('commands without tabId track the active tab', () => {
-    const g = guard(PROTECTED);
+    const g = guard();
     g.noteUrl({ url: 'https://bank.test/' }, {}, 'fox_navigate');
     expect(g.urlFor()).toBe('https://bank.test/');
-    expect(decision(g, 'fox_click', {})).toBe('confirmation_required');
-    expect(decision(g, 'fox_click', { tabId: 7 })).toBeNull();
+    expect(approvalUrl(g, 'fox_click', {})).toBe('https://bank.test/');
+    expect(approvalUrl(g, 'fox_click', { tabId: 7 })).toBeNull();
   });
 
-  // Fs-09: such a page matches no URL pattern, so the protected check could not see it.
-  it('refuses acting tools on a tab without a host, and lets reading tools and about: / file: pages through', () => {
-    const g = guard(PROTECTED);
+  // Fs-09: such a page matches no URL pattern, and its approval could not name the site.
+  it('refuses acting tools on a tab without a host, lets reading tools through, and asks on about: / file: pages', () => {
+    const g = guard();
     const tabs = ['view-source:https://bank.test/', 'blob:https://bank.test/0b1c', 'data:text/html,<p>x</p>', 'about:blank', 'file:///tmp/a.html'];
     tabs.forEach((url, i) => g.noteUrl({ url }, { tabId: i + 1 }, 'fox_get_text'));
     const acting = tabs.map((_url, i) => decision(g, 'fox_click', { tabId: i + 1, selector: 'a' }));
     const reading = tabs.map((_url, i) => decision(g, 'fox_get_text', { tabId: i + 1 }));
-    expect(acting).toEqual(['blocked_scheme', 'blocked_scheme', 'blocked_scheme', null, null]);
+    expect(acting).toEqual(['blocked_scheme', 'blocked_scheme', 'blocked_scheme', 'confirmation_required', 'confirmation_required']);
     expect(reading).toEqual([null, null, null, null, null]);
     expect(g.check('fox_click', { tabId: 1 })?.error).toMatch(/a page without a host/);
   });
@@ -204,13 +385,13 @@ describe('per-tab URL tracking (2.B4)', () => {
 
   // WP-G S-3: headless results carry no tab id.
   it('a result without a tab id keeps the known active tab id', () => {
-    const g = guard(PROTECTED);
+    const g = guard();
     g.noteUrl({ tabs: [{ id: 2, url: 'https://a.test/', active: true }] }, {}, 'fox_get_tabs');
     g.noteUrl({ url: 'https://b.test/' }, { url: 'https://b.test/' }, 'fox_navigate');
     expect(g.urlFor(2)).toBe('https://b.test/');
     // The active tab named by its id: still the tab later calls without tabId act on.
     g.noteUrl({ url: 'https://bank.test/' }, { tabId: 2, url: 'https://bank.test/' }, 'fox_navigate');
-    expect(decision(g, 'fox_click', {})).toBe('confirmation_required');
+    expect(approvalUrl(g, 'fox_click', {})).toBe('https://bank.test/');
   });
 
   it('a new tab without a reported id becomes active under no known id', () => {
@@ -225,10 +406,10 @@ describe('per-tab URL tracking (2.B4)', () => {
 
   // WP-G O-1: what a backend that reports the tab id at the top level gets.
   it('a top-level tabId in a result names the active tab', () => {
-    const g = guard(PROTECTED);
+    const g = guard();
     g.noteUrl({ url: 'https://a.test/', tabId: 1 }, { url: 'https://a.test/' }, 'fox_navigate');
     g.noteUrl({ url: 'https://bank.test/' }, { tabId: 1, url: 'https://bank.test/' }, 'fox_navigate');
-    expect(decision(g, 'fox_click', {})).toBe('confirmation_required');
+    expect(approvalUrl(g, 'fox_click', {})).toBe('https://bank.test/');
   });
 });
 
@@ -252,8 +433,9 @@ describe('the reached URL and the tab URL against blocked/allowed lists (2.B3)',
     g.noteUrl({ url: 'https://blocked.test/' }, { tabId: 4 }, 'fox_click');
     expect(decision(g, 'fox_get_text', { tabId: 4 })).toBe('blocked_url');
     expect(decision(g, 'fox_click', { tabId: 4 })).toBe('blocked_url');
-    expect(decision(g, 'fox_navigate', { tabId: 4, url: 'https://fine.test/' })).toBeNull();
-    expect(decision(g, 'fox_close_tab', { tabId: 4 })).toBeNull();
+    // Leaving it is an acting call like any other: asked, not refused.
+    expect(decision(g, 'fox_navigate', { tabId: 4, url: 'https://fine.test/' })).toBe('confirmation_required');
+    expect(decision(g, 'fox_close_tab', { tabId: 4 })).toBe('confirmation_required');
     expect(decision(g, 'fox_get_tabs', {})).toBeNull();
   });
 
@@ -275,16 +457,22 @@ describe('the reached URL and the tab URL against blocked/allowed lists (2.B3)',
 });
 
 describe('confirmationFromBrowser', () => {
-  it('names the safety.json pattern rather than the regex sent to the Extension', () => {
-    const g = guard({ protectedUrlPatterns: ['bank.test'] });
-    const c = g.confirmationFromBrowser('fox_click', { tabId: 5 }, 'https://bank.test/', undefined, '^https?...');
-    expect(c.elicitation?.matchedPattern).toBe('bank.test');
+  it('an acting tool: asked for the page the browser reports, without a pattern', () => {
+    const g = guard();
+    const c = g.confirmationFromBrowser('fox_click', { tabId: 5 }, 'https://bank.test/', undefined, null);
+    expect(c).toMatchObject({ layer: 7, elicitation: { url: 'https://bank.test/', matchedPattern: null } });
     expect(g.urlFor(5)).toBe('https://bank.test/');
+  });
+
+  it('a read: names the confirm_read_sites entry', () => {
+    const g = guard({ confirmReadSites: ['bank.test'] });
+    const c = g.confirmationFromBrowser('fox_get_text', { tabId: 5 }, 'https://bank.test/', undefined, 'bank.test');
+    expect(c).toMatchObject({ layer: 4, elicitation: { url: 'https://bank.test/', matchedPattern: 'bank.test' } });
   });
 
   // WP-G P-2: the refused call closed nothing.
   it('a refused fox_close_tab leaves the tab and the active tab known', () => {
-    const g = guard({ protectedUrlPatterns: ['bank.test'] });
+    const g = guard();
     g.noteUrl({ url: 'https://bank.test/' }, { tabId: 2 }, 'fox_switch_tab');
     g.confirmationFromBrowser('fox_close_tab', { tabId: 2 }, 'https://bank.test/a', undefined, null);
     expect(g.urlFor(2)).toBe('https://bank.test/a');
@@ -302,11 +490,11 @@ describe('review follow-ups', () => {
   // WP-G P-1: only goto goes to its url (the call schema refuses the rest;
   // the guard does not rely on that).
   it("the url of fox_navigate back / forward / refresh is not a target: the tab URL is checked", () => {
-    const g = guard({ protectedUrlPatterns: ['bank.test'], blockedUrlPatterns: ['blocked.test'] });
+    const g = guard({ blockedUrlPatterns: ['blocked.test'] });
     g.noteUrl({ url: 'https://bank.test/' }, { tabId: 1 }, 'fox_click');
     g.noteUrl({ url: 'https://blocked.test/' }, { tabId: 2 }, 'fox_click');
-    expect(decision(g, 'fox_navigate', { tabId: 1, action: 'refresh', url: 'https://fine.test/' }))
-      .toBe('confirmation_required');
+    expect(approvalUrl(g, 'fox_navigate', { tabId: 1, action: 'refresh', url: 'https://fine.test/' }))
+      .toBe('https://bank.test/');
     expect(decision(g, 'fox_navigate', { tabId: 2, action: 'back', url: 'https://fine.test/' })).toBe('blocked_url');
   });
 
@@ -327,15 +515,6 @@ describe('review follow-ups', () => {
       'confirmation_required' | 'out_of_scope' | 'invalid_url' |
       'blocked_after_navigation' | 'config_error' | 'paused'
     >();
-  });
-
-  it('the default protected list covers mychart portals on any host label', () => {
-    const g = guard({ protectedUrlPatterns: DEFAULT_CONFIG.protectedUrlPatterns });
-    expect(decision(g, 'fox_click', { tabId: 1, url: 'https://www.mychart.clinic.test/' }))
-      .toBe('confirmation_required');
-    expect(decision(g, 'fox_click', { tabId: 1, url: 'https://mychart.clinic.test/' }))
-      .toBe('confirmation_required');
-    expect(decision(g, 'fox_click', { tabId: 1, url: 'https://notmychart.clinic.test/' })).toBeNull();
   });
 });
 
@@ -358,6 +537,15 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     return block && block.type === 'text' ? JSON.parse(block.text) as Record<string, unknown> : {};
   };
 
+  /** An acting call as the relay makes it: refused, approved by the human, retried with the token. */
+  async function approvedCall(tool: string, args: Record<string, unknown>): Promise<CallToolResult> {
+    const first = await createToolHandler(tool)(args);
+    const requestId = (details(first)['approval'] as { requestId?: string } | undefined)?.requestId;
+    if (requestId === undefined) throw new Error(`no approval request: ${JSON.stringify(first.content)}`);
+    const reply = answerFromElicitation(requestId, true);
+    return createToolHandler(tool)(args, { approvalToken: reply.approvalToken });
+  }
+
   afterEach(() => {
     vi.restoreAllMocks();
     testGuard.current = null;
@@ -367,22 +555,24 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     const g = handlerGuard();
     g.noteUrl({ url: 'https://d.test/' }, { tabId: 4 }, 'fox_get_text');
     stubBrowser({ success: true }); // no `data` at all
-    const result = await createToolHandler('fox_close_tab')({ tabId: 4 });
+    const result = await approvedCall('fox_close_tab', { tabId: 4 });
     expect(result.isError).toBeUndefined();
     expect(g.urlFor(4)).toBeNull();
   });
 
   it('records the URL a successful command reports', async () => {
     const g = handlerGuard();
+    g.noteUrl({ url: 'https://start.test/' }, { tabId: 2 }, 'fox_get_text');
     stubBrowser({ success: true, data: { url: 'https://landing.test/x' } });
-    await createToolHandler('fox_click')({ tabId: 2, selector: '#a' });
+    await approvedCall('fox_click', { tabId: 2, selector: '#a' });
     expect(g.urlFor(2)).toBe('https://landing.test/x');
   });
 
   it('withholds a result that ended on a blocked site and remembers where the tab is', async () => {
     const g = handlerGuard({ blockedUrlPatterns: ['blocked.test'] });
+    g.noteUrl({ url: 'https://start.test/' }, { tabId: 3 }, 'fox_get_text');
     stubBrowser({ success: true, data: { url: 'https://www.blocked.test/landing', text: 'secret' } });
-    const result = await createToolHandler('fox_click')({ tabId: 3, selector: '#go' });
+    const result = await approvedCall('fox_click', { tabId: 3, selector: '#go' });
     expect(result.isError).toBe(true);
     // The reached URL is in details.url, as for the Extension's blocked_url refusals.
     expect(details(result)).toMatchObject({
@@ -394,6 +584,17 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     // Noted first, so the pre-check refuses the next call on that tab.
     expect(g.urlFor(3)).toBe('https://www.blocked.test/landing');
     expect(decision(g, 'fox_get_text', { tabId: 3 })).toBe('blocked_url');
+  });
+
+  it('an acting call on an unknown tab is not sent and cannot be approved yet', async () => {
+    handlerGuard();
+    const send = vi.spyOn(getConnectionManager(), 'sendCommand');
+    const result = await createToolHandler('fox_click')({ tabId: 8, selector: '#a' });
+    expect(send).not.toHaveBeenCalled();
+    expect(result.isError).toBe(true);
+    expect(details(result)).toMatchObject({ decision: 'confirmation_required', confirmationRequired: true });
+    expect(details(result)).not.toHaveProperty('approval');
+    expect(JSON.stringify(result.content)).toContain('Call fox_tabs');
   });
 
   /** The audit log lines `run` adds (the log is under the isolated HOME). */
@@ -413,19 +614,27 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
   it('audits a call that ran once, and a browser failure as browser_error', async () => {
     handlerGuard({ auditLog: true });
     stubBrowser({ success: true, data: { url: 'https://fine.test/' } });
-    const ok = await auditLinesOf(() => createToolHandler('fox_click')({ tabId: 2, selector: '#a' }));
+    const ok = await auditLinesOf(() => createToolHandler('fox_screenshot')({ tabId: 2 }));
     expect(decisions(ok)).toEqual(['allowed']);
 
-    stubBrowser({ success: false, error: 'Element not found' });
-    const failed = await auditLinesOf(() => createToolHandler('fox_click')({ tabId: 2, selector: '#a' }));
+    stubBrowser({ success: false, error: 'Capture failed' });
+    const failed = await auditLinesOf(() => createToolHandler('fox_screenshot')({ tabId: 2, scope: 'full_page' }));
     expect(decisions(failed)).toEqual(['allowed', 'browser_error']);
-    expect(failed[1]).toMatchObject({ tool: 'fox_click', args: { tabId: 2, selector: '#a' } });
+    expect(failed[1]).toMatchObject({ tool: 'fox_screenshot', args: { tabId: 2, scope: 'full_page' } });
+  });
+
+  it('audits an acting call as asked, approved and allowed by the human', async () => {
+    const g = handlerGuard({ auditLog: true });
+    g.noteUrl({ url: 'https://fine.test/' }, { tabId: 2 }, 'fox_get_text');
+    stubBrowser({ success: true, data: { url: 'https://fine.test/' } });
+    const lines = await auditLinesOf(() => approvedCall('fox_click', { tabId: 2, selector: '#a' }));
+    expect(decisions(lines)).toEqual(['confirmation_required', 'approval_granted', 'allowed_by_human']);
   });
 
   it('writes no audit line with audit_log off', async () => {
     handlerGuard({ auditLog: false });
     stubBrowser({ success: false, error: 'Element not found' });
-    const lines = await auditLinesOf(() => createToolHandler('fox_click')({ selector: '#a' }));
+    const lines = await auditLinesOf(() => createToolHandler('fox_get_text')({ selector: '#a' }));
     expect(lines).toEqual([]);
   });
 
@@ -485,6 +694,13 @@ describe('rate limit counts only calls that would run (2.B7)', () => {
     expect(decision(g, 'fox_get_text', {})).toBeNull();
     expect(decision(g, 'fox_get_text', {})).toBe('rate_limited');
     expect(g.status().actionsInLastMinute).toBe(2);
+  });
+
+  it('a call waiting for approval does not use up the budget', () => {
+    const g = guard({ maxActionsPerMinute: 1 });
+    g.noteUrl({ url: 'https://a.test/' }, {}, 'fox_get_text');
+    expect(decision(g, 'fox_click', {})).toBe('confirmation_required');
+    expect(g.status().actionsInLastMinute).toBe(0);
   });
 });
 

@@ -1,7 +1,6 @@
 // refresh / reload_all / reload_by_url (L3).
 
 import { errorMessage } from "../error-message";
-import { findUrlRule, type CompiledUrlRule } from "../url-rule";
 import { isTabInScope } from "./container-scope";
 import { resolveTab, noTargetTab } from "./tab-target";
 import {
@@ -20,7 +19,7 @@ import type {
   ReloadAllOptions,
   ReloadByUrlOptions,
 } from "./types";
-import { violatesUrlLists, NO_URL_LISTS } from "./url-policy";
+import { violatesUrlLists, isApprovedTab, NO_URL_LISTS } from "./url-policy";
 
 export async function refreshTab(
   tabId: number | undefined,
@@ -58,8 +57,10 @@ export async function refreshTab(
 
 /**
  * Reload every tab `selects`, except tabs outside the container scope, tabs
- * on a blocked / not allowlisted site and tabs on a protected domain (only
- * their counts are reported, both always, as for screenshot all_tabs).
+ * on a blocked / not allowlisted site and tabs on any site but the one a
+ * human approved this call for (`approvedHost`; reloading is an acting
+ * command, url-policy.ts). Only the counts of excluded tabs are reported,
+ * both always, as for screenshot all_tabs.
  * The reloads are started together; a tab whose reload fails (e.g. closed
  * meanwhile) is reported with `reloaded: false` and its error, and does not
  * stop the others.
@@ -68,12 +69,12 @@ export async function reloadMatchingTabs(
   selects: (tab: browser.tabs.Tab) => boolean,
   bypassCache: boolean,
   scope: ScopeFilter | null,
-  protectedRules: CompiledUrlRule[],
+  approvedHost: string | undefined,
   lists: UrlLists,
 ): Promise<CommandResult> {
   const tabs = await browser.tabs.query({});
   const targets: browser.tabs.Tab[] = [];
-  let excludedProtected = 0;
+  let excludedUnapproved = 0;
   let excludedBlocked = 0;
 
   for (const tab of tabs) {
@@ -82,8 +83,8 @@ export async function reloadMatchingTabs(
       excludedBlocked++;
       continue;
     }
-    if (findUrlRule(tab.url, protectedRules) !== undefined) {
-      excludedProtected++;
+    if (!isApprovedTab(tab, approvedHost)) {
+      excludedUnapproved++;
       continue;
     }
     targets.push(tab);
@@ -119,7 +120,7 @@ export async function reloadMatchingTabs(
     tabs: results,
     bypassCache,
     // Both counts always (0 included); the reasons only when a tab was excluded.
-    excludedProtected,
+    excludedUnapproved,
     excludedBlocked,
     ...(excludedBlocked > 0
       ? {
@@ -127,11 +128,9 @@ export async function reloadMatchingTabs(
           "Tabs on sites refused by blocked_url_patterns / allowed_url_patterns in safety.json were not reloaded.",
       }
       : {}),
-    ...(excludedProtected > 0
+    ...(excludedUnapproved > 0
       ? {
-        excludedReason:
-          "Tabs matching protected_url_patterns in safety.json were not reloaded " +
-          "(set confirm_protected_actions to false to include them).",
+        excludedReason: "Tabs on other sites than the one a human approved for this call were not reloaded.",
       }
       : {}),
   };
@@ -140,7 +139,7 @@ export async function reloadMatchingTabs(
 export async function reloadAllTabs(
   options: ReloadAllOptions = {},
   scope: ScopeFilter | null = null,
-  protectedRules: CompiledUrlRule[] = [],
+  approvedHost: string | undefined = undefined,
   lists: UrlLists = NO_URL_LISTS,
 ): Promise<CommandResult> {
   try {
@@ -151,7 +150,7 @@ export async function reloadAllTabs(
       (tab) => !shouldSkipTab(tab.url) && (!urlPattern || urlMatches(tab.url, urlPattern)),
       options.bypassCache || false,
       scope,
-      protectedRules,
+      approvedHost,
       lists,
     );
   } catch (error) {
@@ -162,7 +161,7 @@ export async function reloadAllTabs(
 export async function reloadTabsByUrl(
   options: ReloadByUrlOptions,
   scope: ScopeFilter | null = null,
-  protectedRules: CompiledUrlRule[] = [],
+  approvedHost: string | undefined = undefined,
   lists: UrlLists = NO_URL_LISTS,
 ): Promise<CommandResult> {
   try {
@@ -180,7 +179,7 @@ export async function reloadTabsByUrl(
           : !!urlPattern && urlMatches(tab.url, urlPattern),
       options.bypassCache !== false,
       scope,
-      protectedRules,
+      approvedHost,
       lists,
     );
   } catch (error) {

@@ -65,7 +65,7 @@ const URLS = [
   'http://[::ffff:192.168.0.1]/', 'http://[::ffff:c0a8:1]/a', 'http://[fe80::1%25eth0]/',
 ];
 
-const LISTS: PatternListName[] = ['blocked', 'allowed', 'protected'];
+const LISTS: PatternListName[] = ['blocked', 'allowed', 'confirmRead'];
 
 describe('host / regex rules: Extension matcher = server matcher', () => {
   for (const list of LISTS) {
@@ -97,7 +97,6 @@ describe('blocked / allowed decision: Extension = guard', () => {
       ...DEFAULT_CONFIG,
       auditLog: false,
       maxActionsPerMinute: 0,
-      protectedUrlPatterns: [],
       blockedUrlPatterns: [...blockedSrc],
       allowedUrlPatterns: [...allowedSrc],
     });
@@ -121,7 +120,7 @@ describe('blocked / allowed decision: Extension = guard', () => {
 
 describe('hosts the URL parser rewrites, and a rule without `port`', () => {
   /** The single pattern of `source`, which must compile without a fatal issue. */
-  const only = (source: string, list: PatternListName = 'protected') => {
+  const only = (source: string, list: PatternListName = 'confirmRead') => {
     const { patterns, issues } = compileUrlPatterns([source], list);
     expect(issues.filter((i) => i.fatal), source).toEqual([]);
     return patterns[0]!;
@@ -159,11 +158,11 @@ describe('hosts the URL parser rewrites, and a rule without `port`', () => {
   });
 
   it('an IPv6 zone id is refused as a pattern and matches nothing as a URL', () => {
-    const { patterns, issues } = compileUrlPatterns(['[fe80::1%25eth0]'], 'protected');
+    const { patterns, issues } = compileUrlPatterns(['[fe80::1%25eth0]'], 'confirmRead');
     expect(patterns).toEqual([]);
     expect(issues.map((i) => i.fatal)).toEqual([true]);
     // The URL parser does not accept one either, so no host rule can match
-    // it; a protected regex rule still tests the raw URL (matchRaw), which
+    // it; a confirm-read regex rule still tests the raw URL (matchRaw), which
     // errs on the safe side.
     const zoned = 'http://[fe80::1%25eth0]/';
     for (const source of ['[::1]', 'example.test']) {
@@ -222,11 +221,10 @@ describe('R2-C fail-closed wire input', () => {
   });
 });
 
-describe('legacy form (older MCP Servers: protectedUrlPatterns strings)', () => {
-  it('a string is a regex over the raw URL, as before (flag i)', () => {
+describe('a plain string is no rule (the legacy string form is gone)', () => {
+  it('is counted as unusable, so the command is refused as config_error', () => {
     const { rules, invalid } = ext.compileUrlRules(['bank\\.test', '(']);
-    expect(invalid).toBe(1);
-    expect(ext.urlRuleMatches(rules[0]!, 'https://x.test/?next=BANK.test')).toBe(true);
-    expect(ext.urlRuleMatches(rules[0]!, 'https://other.test/')).toBe(false);
+    expect(rules).toEqual([]);
+    expect(invalid).toBe(2);
   });
 });

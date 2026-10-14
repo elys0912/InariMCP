@@ -333,10 +333,11 @@ describe('setup state: overlapping refreshes (A-04)', () => {
 // ---------------------------------------------------------------------------
 
 describe('reloadMatchingTabs: one failing tab (E-04)', () => {
+  // One site: reloading is an acting command, approved for one site.
   const tabs = [
-    { id: 1, url: 'https://a.test/' },
-    { id: 2, url: 'https://b.test/' },
-    { id: 3, url: 'https://c.test/' },
+    { id: 1, url: 'https://a.test/1' },
+    { id: 2, url: 'https://a.test/2' },
+    { id: 3, url: 'https://a.test/3' },
   ];
 
   it('reloads the other tabs and reports the failure per tab', async () => {
@@ -350,7 +351,7 @@ describe('reloadMatchingTabs: one failing tab (E-04)', () => {
         },
       },
     });
-    const result = await reloadMatchingTabs(() => true, false, null, [], NO_LISTS);
+    const result = await reloadMatchingTabs(() => true, false, null, 'a.test', NO_LISTS);
     expect(calls).toEqual([1, 2, 3]);
     expect(result).toMatchObject({
       success: true,
@@ -371,14 +372,14 @@ describe('reloadMatchingTabs: one failing tab (E-04)', () => {
         reload: () => { throw new Error('nope'); },
       },
     });
-    const result = await reloadMatchingTabs(() => true, false, null, [], NO_LISTS);
+    const result = await reloadMatchingTabs(() => true, false, null, 'a.test', NO_LISTS);
     expect(result).toMatchObject({ success: false, reloadedCount: 0, failedCount: 2 });
     expect(result.error).toMatch(/No tab could be reloaded/);
   });
 
   it('no failure: no failedCount', async () => {
     useFakeBrowser({ tabs: { query: async () => tabs, reload: async () => {} } });
-    const result = await reloadMatchingTabs(() => true, false, null, [], NO_LISTS);
+    const result = await reloadMatchingTabs(() => true, false, null, 'a.test', NO_LISTS);
     expect(result).toMatchObject({ success: true, reloadedCount: 3 });
     expect(result).not.toHaveProperty('failedCount');
   });

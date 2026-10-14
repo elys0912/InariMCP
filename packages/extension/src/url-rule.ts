@@ -1,7 +1,7 @@
 // InariMCP URL rules (background script)
 //
 // Matches the safety.json URL patterns the MCP Server attaches to a command
-// (BrowserCommand protectedUrlRules / blockedUrlRules / allowedUrlRules,
+// (BrowserCommand confirmReadUrlRules / blockedUrlRules / allowedUrlRules,
 // shared/src/protocol.ts WireUrlRuleSchema) against a tab URL, by the rules
 // of mcp-server src/safety/url-pattern.ts:
 //   host   the URL is parsed and its hostname (lower-case, no trailing dot)
@@ -16,9 +16,6 @@
 // This is a separate implementation of the same rules (url-pattern.ts is
 // not browser code; moving the rules to packages/shared is left for later);
 // tests/contract/url-rule.test.ts checks that both give the same result.
-//
-// A plain string is the legacy form (`protectedUrlPatterns` of older MCP
-// Servers): a regex over the raw URL, read as a regex rule with matchRaw.
 //
 // Imported by the background modules (bundled into dist/background.js). Keep
 // it dependency-free and without top-level side effects.
@@ -77,11 +74,8 @@ function isPortNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65535;
 }
 
-/** Validate one wire entry; a string is a legacy regex. null if unusable. */
+/** Validate one wire entry. null if unusable. */
 export function parseUrlRule(raw: unknown): UrlRule | null {
-  if (typeof raw === "string") {
-    return raw === "" ? null : { kind: "regex", source: raw, re: raw, matchRaw: true };
-  }
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.source !== "string") return null;

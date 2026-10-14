@@ -9,8 +9,8 @@
 // name are internal-only ("status": popup).
 //
 // Fail closed: an action that is not in the table gets UNKNOWN_ACTION, the
-// strictest row (single-tab checks, protected check up front) whose handler
-// refuses it.
+// strictest row (single-tab checks, approval required) whose handler refuses
+// it.
 //
 // Columns:
 //   scope           "tab"   targets one tab. handleCommand resolves the
@@ -27,12 +27,24 @@
 //                           requests are shown in the toolbar popup;
 //                           cancel_human_wait only withdraws a wait whose
 //                           command already passed the scope check).
-//   protectedCheck  "upfront" handleCommand refuses a target tab matching
-//                             `protectedUrlPatterns` before the handler runs
-//                             (unless the human approved that host).
-//                   "handler" the handler applies the patterns itself
-//                             (multi-tab actions skip protected tabs).
-//                   "none"    no existing tab to check.
+//   approval        Whether the action needs a human approval (url-policy.ts
+//                   checkApproval). Every action that changes page or browser
+//                   state needs one, whatever the MCP Server attached: the
+//                   server must send `approvedHost` for the site it acts on.
+//                   "act"        (tab) acts on the target tab: approved for
+//                                its site, checked before the handler runs.
+//                   "actOnUrl"   opens a URL (data.url, else a blank tab):
+//                                approved for that URL's site.
+//                   "actPerTab"  (self) multi-tab action: the handler acts
+//                                only on tabs on the approved site.
+//                   "read"       (tab) reads the target tab: refused before
+//                                the handler when it matches the attached
+//                                `confirmReadUrlRules` (unless approved for
+//                                its site).
+//                   "readPerTab" (self) multi-tab read: the handler skips
+//                                tabs matching those rules.
+//                   "none"       changes no page data (UI only, waits, tab
+//                                list, approvals, status).
 //   needsTabId      (tab only) an explicit tabId is required; the active tab
 //                   is not used as a fallback.
 //   skipUrlReport   (tab only) no URL report after the call (the tab is gone).
@@ -85,7 +97,10 @@ export interface ActionContext {
   target: browser.tabs.Tab | undefined;
   /** Container scope filter, null when container_scope is off. */
   scope: ScopeFilter | null;
-  protectedPatterns: CompiledUrlRule[];
+  /** confirm_read_sites rules attached by the MCP Server (`confirmReadUrlRules`). */
+  readRules: CompiledUrlRule[];
+  /** The site a human approved this one call for (`approvedHost`), if any. */
+  approvedHost: string | undefined;
   urlLists: UrlLists;
   /** fox_navigate with newTab, routed as createTab. */
   navigateInNewTab: boolean;
@@ -95,19 +110,19 @@ export type ActionHandler = (c: ActionContext) => Promise<CommandResult>;
 
 interface TabActionDescriptor {
   scope: "tab";
-  protectedCheck: "upfront";
+  approval: "act" | "actOnUrl" | "read" | "none";
   needsTabId?: true;
   skipUrlReport?: true;
   handler: ActionHandler;
 }
 interface SelfScopedActionDescriptor {
   scope: "self";
-  protectedCheck: "handler" | "none";
+  approval: "actOnUrl" | "actPerTab" | "readPerTab" | "none";
   handler: ActionHandler;
 }
 interface NoTabActionDescriptor {
   scope: "noTab";
-  protectedCheck: "none";
+  approval: "none";
   handler: ActionHandler;
 }
 export type ActionDescriptor = TabActionDescriptor | SelfScopedActionDescriptor | NoTabActionDescriptor;
@@ -156,96 +171,96 @@ async function status(c: ActionContext): Promise<CommandResult> {
 
 const ACTIONS = {
   // --- Page interaction ---
-  screenshot: { scope: "tab", protectedCheck: "upfront", handler: (c) => takeScreenshot(c.tabId, optionsOf<ScreenshotOptions>(c)) },
-  click: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("click") },
-  type: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("type") },
-  scroll: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("scroll") },
-  navigate: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateTo(c.tabId, optionsOf<{ url: string }>(c)) },
-  getPageInfo: { scope: "tab", protectedCheck: "upfront", handler: (c) => getPageInfo(c.tabId) },
-  getElements: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("getElements") },
-  highlight: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("highlight") },
-  waitForElement: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("waitForElement") },
+  screenshot: { scope: "tab", approval: "read", handler: (c) => takeScreenshot(c.tabId, optionsOf<ScreenshotOptions>(c)) },
+  click: { scope: "tab", approval: "act", handler: toContentScript("click") },
+  type: { scope: "tab", approval: "act", handler: toContentScript("type") },
+  scroll: { scope: "tab", approval: "none", handler: toContentScript("scroll") },
+  navigate: { scope: "tab", approval: "actOnUrl", handler: (c) => navigateTo(c.tabId, optionsOf<{ url: string }>(c)) },
+  getPageInfo: { scope: "tab", approval: "read", handler: (c) => getPageInfo(c.tabId) },
+  getElements: { scope: "tab", approval: "read", handler: toContentScript("getElements") },
+  highlight: { scope: "tab", approval: "none", handler: toContentScript("highlight") },
+  waitForElement: { scope: "tab", approval: "none", handler: toContentScript("waitForElement") },
 
   // --- Tab management ---
-  getTabs: { scope: "self", protectedCheck: "none", handler: (c) => getAllTabs(optionsOf<GetAllTabsOptions>(c), c.scope) },
+  getTabs: { scope: "self", approval: "none", handler: (c) => getAllTabs(optionsOf<GetAllTabsOptions>(c), c.scope) },
   createTab: {
     scope: "self",
-    protectedCheck: "none",
+    approval: "actOnUrl",
     handler: (c) =>
       c.navigateInNewTab
         ? navigateNewTab(optionsOf<{ url: string; waitForLoad?: boolean }>(c), c.scope)
         : createNewTab(optionsOf<{ url?: string; active?: boolean }>(c), c.scope),
   },
-  closeTab: { scope: "tab", protectedCheck: "upfront", needsTabId: true, skipUrlReport: true, handler: withTabId(closeTab) },
-  focusTab: { scope: "tab", protectedCheck: "upfront", needsTabId: true, handler: withTabId(focusTab) },
-  getTabInfo: { scope: "tab", protectedCheck: "upfront", needsTabId: true, handler: withTabId(getTabInfo) },
-  findTabs: { scope: "self", protectedCheck: "none", handler: (c) => findTabs(optionsOf<FindTabsOptions>(c), c.scope) },
+  closeTab: { scope: "tab", approval: "act", needsTabId: true, skipUrlReport: true, handler: withTabId(closeTab) },
+  focusTab: { scope: "tab", approval: "none", needsTabId: true, handler: withTabId(focusTab) },
+  getTabInfo: { scope: "tab", approval: "none", needsTabId: true, handler: withTabId(getTabInfo) },
+  findTabs: { scope: "self", approval: "none", handler: (c) => findTabs(optionsOf<FindTabsOptions>(c), c.scope) },
   screenshotAllTabs: {
     scope: "self",
-    protectedCheck: "handler",
-    handler: (c) => screenshotAllTabs(optionsOf<ScreenshotOptions>(c), c.scope, c.protectedPatterns, c.urlLists),
+    approval: "readPerTab",
+    handler: (c) => screenshotAllTabs(optionsOf<ScreenshotOptions>(c), c.scope, c.readRules, c.urlLists),
   },
 
   // --- Reload / navigation ---
-  refresh: { scope: "tab", protectedCheck: "upfront", handler: (c) => refreshTab(c.tabId, optionsOf<RefreshOptions>(c)) },
+  refresh: { scope: "tab", approval: "act", handler: (c) => refreshTab(c.tabId, optionsOf<RefreshOptions>(c)) },
   hardRefresh: {
     scope: "tab",
-    protectedCheck: "upfront",
+    approval: "act",
     handler: (c) => refreshTab(c.tabId, { ...optionsOf<RefreshOptions>(c), bypassCache: true }),
   },
   reloadAll: {
     scope: "self",
-    protectedCheck: "handler",
-    handler: (c) => reloadAllTabs(optionsOf<ReloadAllOptions>(c), c.scope, c.protectedPatterns, c.urlLists),
+    approval: "actPerTab",
+    handler: (c) => reloadAllTabs(optionsOf<ReloadAllOptions>(c), c.scope, c.approvedHost, c.urlLists),
   },
   reloadByUrl: {
     scope: "self",
-    protectedCheck: "handler",
-    handler: (c) => reloadTabsByUrl(optionsOf<ReloadByUrlOptions>(c), c.scope, c.protectedPatterns, c.urlLists),
+    approval: "actPerTab",
+    handler: (c) => reloadTabsByUrl(optionsOf<ReloadByUrlOptions>(c), c.scope, c.approvedHost, c.urlLists),
   },
-  goBack: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateHistory(c.tabId, "back") },
-  goForward: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateHistory(c.tabId, "forward") },
+  goBack: { scope: "tab", approval: "act", handler: (c) => navigateHistory(c.tabId, "back") },
+  goForward: { scope: "tab", approval: "act", handler: (c) => navigateHistory(c.tabId, "forward") },
 
   // --- Popup ---
-  status: { scope: "noTab", protectedCheck: "none", handler: status },
+  status: { scope: "noTab", approval: "none", handler: status },
 
   // --- Approval / human wait ---
-  requestApproval: { scope: "noTab", protectedCheck: "none", handler: (c) => requestApproval(c.message.requestId, c.data) },
+  requestApproval: { scope: "noTab", approval: "none", handler: (c) => requestApproval(c.message.requestId, c.data) },
   solveCaptcha: {
     scope: "tab",
-    protectedCheck: "upfront",
+    approval: "none",
     handler: (c) => trackHumanWait(c.message.requestId, c.tabId, (id) => solveCaptcha(id, optionsOf<{ detectOnly?: boolean }>(c))),
   },
-  cancelHumanWait: { scope: "noTab", protectedCheck: "none", handler: (c) => cancelHumanWait(c.data) },
+  cancelHumanWait: { scope: "noTab", approval: "none", handler: (c) => cancelHumanWait(c.data) },
 
   // --- Content script (form / input, wait / observe, text) ---
-  getValue: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("getValue") },
-  setValue: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("setValue") },
-  selectOption: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("selectOption") },
-  hover: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("hover") },
-  waitForChange: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("waitForChange") },
-  scrollAndCapture: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("scrollAndCapture") },
-  clickAndWait: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("clickAndWait") },
-  pressKey: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("pressKey") },
-  getText: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("getText") },
-  waitForNetworkIdle: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("waitForNetworkIdle") },
+  getValue: { scope: "tab", approval: "read", handler: toContentScript("getValue") },
+  setValue: { scope: "tab", approval: "act", handler: toContentScript("setValue") },
+  selectOption: { scope: "tab", approval: "act", handler: toContentScript("selectOption") },
+  hover: { scope: "tab", approval: "none", handler: toContentScript("hover") },
+  waitForChange: { scope: "tab", approval: "none", handler: toContentScript("waitForChange") },
+  scrollAndCapture: { scope: "tab", approval: "read", handler: toContentScript("scrollAndCapture") },
+  clickAndWait: { scope: "tab", approval: "act", handler: toContentScript("clickAndWait") },
+  pressKey: { scope: "tab", approval: "act", handler: toContentScript("pressKey") },
+  getText: { scope: "tab", approval: "read", handler: toContentScript("getText") },
+  waitForNetworkIdle: { scope: "tab", approval: "none", handler: toContentScript("waitForNetworkIdle") },
 
   // --- Tab waits ---
-  waitForNavigation: { scope: "tab", protectedCheck: "upfront", handler: (c) => waitForNavigation(c.tabId, c.data) },
-  waitForUrl: { scope: "tab", protectedCheck: "upfront", handler: (c) => waitForUrl(c.tabId, c.data) },
+  waitForNavigation: { scope: "tab", approval: "none", handler: (c) => waitForNavigation(c.tabId, c.data) },
+  waitForUrl: { scope: "tab", approval: "none", handler: (c) => waitForUrl(c.tabId, c.data) },
 
   // --- Containers / find (snake_case internal names) ---
-  list_containers: { scope: "self", protectedCheck: "none", handler: (c) => listContainers(c.scope) },
+  list_containers: { scope: "self", approval: "none", handler: (c) => listContainers(c.scope) },
   open_in_container: {
     scope: "self",
-    protectedCheck: "none",
+    approval: "actOnUrl",
     handler: (c) =>
       openInContainer(
         optionsOf<{ url: string; containerName?: string; cookieStoreId?: string; color?: string; icon?: string; active?: boolean }>(c),
         c.scope,
       ),
   },
-  find_text: { scope: "tab", protectedCheck: "upfront", handler: (c) => findText(c.target, c.data) },
+  find_text: { scope: "tab", approval: "read", handler: (c) => findText(c.target, c.data) },
 } as const satisfies Record<string, ActionDescriptor>;
 
 /** Internal action name handled by the background (a row of the table). */
@@ -259,7 +274,7 @@ export const ACTION_TABLE: ReadonlyMap<string, ActionDescriptor> = new Map<strin
 /** Row for an action not in the table: strictest checks, then refused. */
 export const UNKNOWN_ACTION: ActionDescriptor = {
   scope: "tab",
-  protectedCheck: "upfront",
+  approval: "act",
   handler: async (c) => ({ success: false, error: `Unknown action: ${c.action}` }),
 };
 

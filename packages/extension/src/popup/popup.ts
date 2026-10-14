@@ -245,8 +245,8 @@ function secondsLeft(view: ApprovalView): string {
 
 /** The countdown line under a request. */
 function approvalNoteText(view: ApprovalView): string {
-  return view.kind === 'protected_action'
-    ? t('approvalProtectedNote', secondsLeft(view))
+  return view.kind === 'tool_call'
+    ? t('approvalToolCallNote', secondsLeft(view))
     : t('approvalMessageNote', secondsLeft(view));
 }
 
@@ -269,10 +269,10 @@ function approvalCard(view: ApprovalView, onDecide: (id: string, approved: boole
 
   const title = document.createElement('p');
   title.className = 'approval-title';
-  title.textContent = view.kind === 'protected_action' ? t('approvalProtectedTitle') : t('approvalMessageTitle');
+  title.textContent = view.kind === 'tool_call' ? t('approvalToolCallTitle') : t('approvalMessageTitle');
   card.appendChild(title);
 
-  if (view.kind === 'protected_action') {
+  if (view.kind === 'tool_call') {
     card.appendChild(approvalRow(t('approvalSite'), view.host ?? ''));
     card.appendChild(approvalRow(t('approvalTool'), view.toolName ?? ''));
     if (view.url) card.appendChild(approvalRow(t('approvalPage'), view.url));

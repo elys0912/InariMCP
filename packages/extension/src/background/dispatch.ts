@@ -1,6 +1,6 @@
 // Command dispatcher (L4): one command from the Native Host or the popup,
-// through the checks (pause switch, container scope, URL lists, protected
-// domains) to its handler, and the response back over Native Messaging.
+// through the checks (pause switch, container scope, URL lists, human
+// approval) to its handler, and the response back over Native Messaging.
 // Which checks apply to an action, and its handler, come from the action
 // table (action-table.ts). While a command from the Native Host runs, the
 // toolbar badge shows it (setup-badge.ts).
@@ -13,7 +13,7 @@ import { postToHost } from "./native-connection";
 import { startHostCommand } from "./setup-badge";
 import { resolveTab } from "./tab-target";
 import type { NativeMessage, CommandResult, ScopeFilter } from "./types";
-import { parseUrlPolicy, hasUrlLists, checkListedTarget, checkProtectedTarget } from "./url-policy";
+import { parseUrlPolicy, hasUrlLists, checkListedTarget, checkApproval } from "./url-policy";
 import { resolveWireAction, toWireResponse } from "./wire";
 
 /**
@@ -73,7 +73,7 @@ const refused = (result: CommandResult): RefusedCommand => ({ kind: "refused", r
 /**
  * Every check before the handler: the action name, the container scope, the
  * URL rules attached by the MCP Server, the blocked / allowed lists and the
- * protected domains.
+ * human approval.
  */
 async function checkCommand(message: NativeMessage, source: CommandSource): Promise<CheckedCommand | RefusedCommand> {
   const { data } = message;
@@ -103,7 +103,7 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
 
   // Resolve the target tab of a single-tab action ONCE (explicit tabId, else
   // the active tab of the current window) and pin its id: the container
-  // scope check, the protected-domain check, the handler and the URL report
+  // scope check, the approval check, the handler and the URL report
   // then all see the same tab, even if the active tab changes meanwhile.
   // Undefined when it cannot be resolved -- the checks then fail closed and
   // the handler reports the missing tab.
@@ -149,9 +149,9 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
         "(Extension and MCP Server versions may not match).",
     });
   }
-  const protectedPatterns = policy.protectedRules;
+  const readRules = policy.readRules;
   const urlLists = policy.lists;
-  // Hostname a human approved for this one call (MCP Server approval token).
+  // Site a human approved for this one call (MCP Server approval token).
   const approvedHost = typeof message.approvedHost === "string" ? message.approvedHost : undefined;
 
   // blocked / allowed lists against the real URL of the target tab (the
@@ -163,17 +163,17 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
     if (refusal) return refused(refusal);
   }
 
-  // Protected-domain check against the real URL of the target tab (not the
-  // server's last-seen URL, which is shared by every session). The server
-  // attaches the patterns, when confirm_protected_actions is true, to
-  // single-tab captures and to every acting tool without a `url` argument.
-  // Only rows with protectedCheck "upfront" are checked here: the
-  // multi-tab actions (screenshot_all_tabs, reload_all, reload_by_url)
-  // apply the patterns in their handlers, and actions that
-  // act on no existing tab (new tab, tab list, approval, status) have no
-  // target to check.
-  if (protectedPatterns.length > 0 && entry?.protectedCheck === "upfront") {
-    const refusal = checkProtectedTarget(target, protectedPatterns, approvedHost);
+  // Human approval, against the real URL of the target tab (not the
+  // server's last-seen URL, which is shared by every session) or the URL the
+  // command opens. Acting rows need it always: the MCP Server cannot switch
+  // this off. Reading rows need it only on a tab matching the attached
+  // confirm_read_sites rules. The multi-tab rows (actPerTab, readPerTab)
+  // apply it in their handlers; "none" rows change no page data.
+  // A message without an action has no row: it is refused below
+  // (UNKNOWN_ACTION) without reaching a handler that acts.
+  const approval = entry?.approval;
+  if (approval === "act" || approval === "actOnUrl" || approval === "read") {
+    const refusal = checkApproval(approval, target, data, readRules, approvedHost);
     if (refusal) return refused(refusal);
   }
 
@@ -187,7 +187,8 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
       tabId,
       target,
       scope,
-      protectedPatterns,
+      readRules,
+      approvedHost,
       urlLists,
       navigateInNewTab,
     },

@@ -105,10 +105,11 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
     for (const tool of ['fox_navigate', 'fox_click']) {
       expect(g.check(tool, { url: 'https://example.test/' })?.safetyDecision).toBe('out_of_scope');
     }
-    // the same calls pass once the backend has containers again
+    // the same calls pass Layer 0 once the backend has containers again (an
+    // acting tool then asks the human, as on every site)
     vi.stubEnv('FOX_HEADLESS', '0');
     expect(g.check('fox_get_text', {})).toBeNull();
-    expect(g.check('fox_click', {})).toBeNull();
+    expect(g.check('fox_click', {})?.safetyDecision).toBe('confirmation_required');
   });
 
   it('fox_safety_status still works, so the refusal can be diagnosed', async () => {

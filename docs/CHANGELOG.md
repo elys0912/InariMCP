@@ -17,7 +17,6 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - Release tooling for addons.mozilla.org: `npm run pack:ext` builds the Extension zip, writes the SHA-256 of every file in it and runs `web-ext lint` (0 errors and 0 warnings required); `npm run pack:source` makes the source zip from the committed files. [`docs/BUILD.md`](./BUILD.md) tells a reviewer how to rebuild the add-on (Node.js 24, npm 11) and compare it with the submitted one. A GitHub Actions workflow builds, type-checks and tests on Ubuntu 24.04 ARM64.
 - Privacy policy: [docs/PRIVACY.md](./PRIVACY.md) ([日本語](./PRIVACY.ja.md)): what is read and sent, where it goes, what stays on your computer and for how long, how to delete it, consent and control, private browsing.
 - Material for the addons.mozilla.org listing ([docs/amo/listing.md](./amo/listing.md)) and the Notes for Reviewers ([docs/amo/reviewer-notes.md](./amo/reviewer-notes.md)).
-
 - `npm run smoke:reviewer` (`scripts/e2e/reviewer-smoke.mjs`) and [docs/amo/reviewer-smoke.md](amo/reviewer-smoke.md): a smoke test of the basic features (tabs, reading with masked fields, find, screenshot, a click approved in the popup) against a local test page on 127.0.0.1, with no Claude Code, account or internet access. `-- --headless` runs it without the extension. `scripts/e2e/tools-smoke.mjs` uses the same local pages instead of example.com.
 
 ### Changed
@@ -32,6 +31,10 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - Running Inari MCP needs Node.js 20 or later (`engines`, the installer and `--doctor`); the reproducible build for the AMO review uses Node.js 24.x and npm 11.x.
 - A refusal while the agent is paused reaches the MCP client as a safety refusal (`decision: "paused"`, text starting with `paused:`) instead of a browser error.
 - The extension's description and the popup footer use the name "Inari MCP for Firefox" and say that page content goes only to the native host on this computer.
+- Every acting tool asks the human before it runs, on every site: `fox_click`, `fox_type`, `fox_press_key`, `fox_set_value`, `fox_navigate`, `fox_tab` create / close (with or without a container) and `fox_handle_dialog`. One approval covers one call of that tool with those arguments on that site; a series of acting calls is asked call by call. Reading, waiting and UI-only tools (`fox_read`, `fox_find`, `fox_screenshot`, `fox_tabs`, `fox_wait`, `fox_interact`, `fox_tab` switch, …) run without asking. When the daemon has not yet seen the target tab's page, an acting call cannot be approved until `fox_tabs` is called.
+- The Firefox extension itself refuses an acting command that was not approved for the site of its tab (or of the URL it opens), whatever the daemon sends.
+- The approval prompt (MCP elicitation and the toolbar popup) asks "Allow this operation?" with the tool, the site and the arguments, instead of naming a protected site.
+- `fox_safety_status` reports `approvalPolicy` (which calls ask) and `confirmReadSites`, instead of `confirmProtectedActions` and `protectedUrlPatterns`.
 
 ### Removed
 
@@ -40,6 +43,7 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The `allow_script_execution` key of `safety.json` and the `FOX_ALLOW_SCRIPTS` / `CLAUDE_BROWSER_ALLOW_SCRIPTS` variables. A `safety.json` that still has the key is refused as an unknown key until the key is deleted.
 - The `logs` and `script` profiles of `FOX_CAPS` (an unknown profile name is ignored with a warning).
 - The "Inspect Element for InariMCP" context menu entry: it handed its result to nobody.
+- The protected-site list: `protected_url_patterns` (16 default sites: banks and other finance or payment services, `.gov`, patient portals) and `confirm_protected_actions` in `safety.json`. Acting tools ask on every site instead; list the sites where reads and screenshots should ask as well in the new `confirm_read_sites` (default empty). A `safety.json` that still has either key is refused as an unknown key until the key is deleted.
 
 ### Security
 

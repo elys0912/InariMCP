@@ -13,7 +13,7 @@
  * Tool execution over HTTP (POST /mcp/call, and its alias POST
  * /browser/command): zod validation against callSchemaFor(name) (tools/operations.ts) ->
  * createToolHandler (SafetyGuard.check, containerScope /
- * protectedUrlPatterns attachment, post-processing). Every tool is
+ * confirmReadUrlRules attachment, post-processing). Every tool is
  * reachable: FOX_CAPS is a per-session tools/list setting applied by each
  * relay, not a daemon-side restriction. Policy
  * restrictions live in the SafetyGuard (safety.json / FOX_READ_ONLY) and
@@ -24,7 +24,7 @@
  * When the caller goes away before the answer (relay abort / timeout), the
  * browser commands of that call are cancelled (runWithCallSignal).
  *
- * Human approval of protected-site actions (tools/approval-flow.ts):
+ * Human approval of tool calls (tools/approval-flow.ts):
  *  - POST /mcp/call may carry `approvalToken` next to `arguments` (never a
  *    tool argument, so the LLM does not see or pass it).
  *  - POST /approval/elicitation { requestId, approved } — the relay reports

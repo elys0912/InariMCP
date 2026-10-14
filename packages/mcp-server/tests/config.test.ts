@@ -50,10 +50,19 @@ describe('loadConfig (2.B2)', () => {
   });
 
   it('loads a valid file without configError', () => {
-    const cfg = load('{ "read_only": true, "blocked_url_patterns": ["blocked.test"] }');
+    const cfg = load('{ "read_only": true, "blocked_url_patterns": ["blocked.test"], "confirm_read_sites": ["bank.test"] }');
     expect(cfg.configError).toBeUndefined();
     expect(cfg.readOnly).toBe(true);
     expect(cfg.blockedUrlPatterns).toEqual(['blocked.test']);
+    expect(cfg.confirmReadSites).toEqual(['bank.test']);
+  });
+
+  it('writes confirm_read_sites (empty) and no protected-site keys as the defaults', () => {
+    load(null);
+    const written = JSON.parse(fs.readFileSync(path.join(dir, 'safety.json'), 'utf-8')) as Record<string, unknown>;
+    expect(written['confirm_read_sites']).toEqual([]);
+    expect(written).not.toHaveProperty('protected_url_patterns');
+    expect(written).not.toHaveProperty('confirm_protected_actions');
   });
 
   // R2-B S-1: an unknown key used to be dropped, so the setting the user meant
@@ -63,6 +72,9 @@ describe('loadConfig (2.B2)', () => {
     ['a key that does not exist', '{ "allow_scripts": false }', 'allow_scripts'],
     // InariMCP removed the script tools: their switch is no key any more.
     ['the removed allow_script_execution', '{ "allow_script_execution": true }', 'allow_script_execution'],
+    // Decision #9: acting tools always ask, so the protected-site list and its switch are gone.
+    ['the removed protected_url_patterns', '{ "protected_url_patterns": ["bank.test"] }', 'protected_url_patterns'],
+    ['the removed confirm_protected_actions', '{ "confirm_protected_actions": false }', 'confirm_protected_actions'],
     ['an unknown key in container_scope', '{ "container_scope": { "enable": true } }', 'enable'],
     ['a __proto__ key', '{ "__proto__": { "read_only": true } }', '__proto__'],
   ])('reports %s as configError, naming it', (_label, content, key) => {

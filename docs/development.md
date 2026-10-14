@@ -120,7 +120,8 @@ Preparation:
 
 1. `npm ci && npm run build`, then load the extension (as a temporary add-on, README: [Install the extension from AMO](../README.md#install-the-extension-from-amo)) and check the connection with `--doctor` (README: [Command line](../README.md#command-line)).
 2. For the headless runs, start the daemon with `FOX_HEADLESS=1` (README: [Headless mode](../README.md#headless-mode)); do not connect the extension at the same time.
-3. Add a test host to `protected_url_patterns` in `safety.json`, for example a local HTTP server under a name in the hosts file. Do not use a real bank or payment site.
+3. Add a test host to `confirm_read_sites` in `safety.json`, for example a local HTTP server under a name in the hosts file. Do not use a real bank or payment site.
+4. Every acting call (navigation, `fox_tab` create / close, `fox_set_value`, clicks, typing) asks for approval: approve it when a step below expects the call to run.
 
 Tool lists:
 
@@ -151,15 +152,18 @@ Earlier names (`FOX_CAPS=legacy`):
 | 3-2 | `fox_create_tab` `{url}` | the same as the create step of 2-2 |
 | 3-3 | the `audit.jsonl` line of 3-2 | `"tool": "fox_tab"`, `"legacyTool": "fox_create_tab"` |
 
-Protected site:
+Human approval:
 
 | # | Call | Expected |
 |---|---|---|
-| 4-1 | `fox_tab` `{action: "create", url: <protected URL>}` | you are asked (MCP elicitation or the toolbar popup); after approval the call runs once |
+| 4-1 | `fox_tab` `{action: "create", url}` | you are asked (MCP elicitation or the toolbar popup) whether to allow `fox_tab` on the URL's site, with the arguments; after approval the call runs once |
 | 4-2 | 4-1, declined | nothing runs; the result says it was declined |
-| 4-3 | on a protected page, `fox_interact` `{action: "scroll"}` (extension) | runs without asking (UI-only) |
-| 4-4 | on a protected page the daemon knows about, `fox_set_value` `{selector, value}` (extension) | you are asked (safety guard); after approval it runs |
-| 4-5 | open a protected page by hand, then 4-4 (the daemon does not know the URL) | the extension refuses with confirmation_required, you are asked, after approval it runs (the approved host reaches the extension) |
+| 4-3 | `fox_interact` `{action: "scroll"}`, `fox_read` `{mode: "text"}`, `fox_tab` `{action: "switch", tabId}` (extension) | run without asking |
+| 4-4 | on a page the daemon knows about, `fox_set_value` `{selector, value}` twice (extension) | you are asked each time; after each approval it runs once |
+| 4-5 | move the tab to another site by hand, then 4-4 (the daemon does not know the URL) | you are asked for the old site; after approval the extension refuses with confirmation_required, you are asked for the real site, after approval it runs (the approved site reaches the extension) |
 | 4-6 | 4-1 with the earlier name `fox_create_tab` (`FOX_CAPS=legacy`) | the same flow; the question names `fox_create_tab` |
+| 4-7 | `fox_read` `{mode: "text"}` on the test host of `confirm_read_sites`, then on another page | asked on the test host only |
+| 4-8 | right after the daemon started, `fox_click` `{tabId: <an existing tab>, selector}` | refused without asking: the result says the call cannot be approved yet and to call `fox_tabs` first |
+| 4-9 | a local test page (`file://`), `fox_click` `{selector}` (extension) | you are asked for the site `file:`; after approval it runs |
 
 Keep the steps that could not be checked on a real device separate in the report.

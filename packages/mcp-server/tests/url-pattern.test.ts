@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { compileUrlPatterns, normalizeUrl, type PatternListName } from '../src/safety/url-pattern.js';
-import { DEFAULT_CONFIG } from '../src/safety/config.js';
 
 function matcher(source: string, list: PatternListName = 'blocked') {
   const { patterns, issues } = compileUrlPatterns([source], list);
@@ -59,8 +58,8 @@ describe('host patterns', () => {
     expect(p('https://example.test/')).toBe(false);
   });
 
-  it('a blocked / protected path matches any spelling and continuation of it', () => {
-    for (const list of ['blocked', 'protected'] as const) {
+  it('a blocked / confirm-read path matches any spelling and continuation of it', () => {
+    for (const list of ['blocked', 'confirmRead'] as const) {
       const p = matcher('example.test/admin', list);
       for (const path of ['/admin', '/ADMIN', '//admin', '/%61dmin', '/admin;x', '/administrator', '/admin/x']) {
         expect(p(`https://example.test${path}`), `${list} ${path}`).toBe(true);
@@ -76,7 +75,7 @@ describe('host patterns', () => {
     const below = matcher('blocked.test/app/*');
     expect(below('https://blocked.test/app/x')).toBe(true);
     expect(below('https://blocked.test/other')).toBe(false);
-    for (const list of ['blocked', 'allowed', 'protected'] as const) {
+    for (const list of ['blocked', 'allowed', 'confirmRead'] as const) {
       expect(compileUrlPatterns(['blocked.test/a*b'], list).issues[0]?.fatal).toBe(true);
     }
   });
@@ -95,8 +94,8 @@ describe('host patterns', () => {
 });
 
 describe('re: patterns', () => {
-  it('in blocked / protected lists also test the raw URL (what the Extension sees)', () => {
-    const r = matcher('re:^https://bank\\.test/.*', 'protected');
+  it('in the blocked and confirm-read lists also test the raw URL (what the Extension sees)', () => {
+    const r = matcher('re:^https://bank\\.test/.*', 'confirmRead');
     expect(r('https://bank.test./x')).toBe(true);
     const allowed = matcher('re:^https://u@.*', 'allowed');
     expect(allowed('https://u@example.test/')).toBe(false);
@@ -110,7 +109,7 @@ describe('re: patterns', () => {
   });
 
   it('must match the whole URL, in every list (M3)', () => {
-    for (const list of ['blocked', 'allowed', 'protected'] as const) {
+    for (const list of ['blocked', 'allowed', 'confirmRead'] as const) {
       const host = matcher('re:example\\.com', list);
       expect(host('https://example.com.attacker.net/'), list).toBe(false);
       expect(host('https://attacker.net/?example.com'), list).toBe(false);
@@ -125,11 +124,10 @@ describe('re: patterns', () => {
     }
     const [p] = compileUrlPatterns(['re:^https://example\\.com/$'], 'allowed').patterns;
     expect(p!.wire).toMatchObject({ kind: 'regex', re: '^(?:https://example\\.com/)$' });
-    expect(p!.wireSource).toBe('^(?:https://example\\.com/)$');
   });
 
   it('are fatal when invalid, in every list', () => {
-    for (const list of ['blocked', 'allowed', 'protected'] as const) {
+    for (const list of ['blocked', 'allowed', 'confirmRead'] as const) {
       const { patterns, issues } = compileUrlPatterns(['re:(unclosed'], list);
       expect(patterns).toEqual([]);
       expect(issues[0]?.fatal).toBe(true);
@@ -154,8 +152,8 @@ describe('legacy regex patterns', () => {
     expect(patterns[0]!.test(miss)).toBe(false);
   });
 
-  it('other regexes keep their old meaning in blocked/protected, with a warning', () => {
-    const { patterns, issues } = compileUrlPatterns(['mychart\\.'], 'protected');
+  it('other regexes keep their old meaning in the blocked and confirm-read lists, with a warning', () => {
+    const { patterns, issues } = compileUrlPatterns(['mychart\\.'], 'confirmRead');
     expect(patterns[0]!.kind).toBe('legacy');
     expect(patterns[0]!.test('https://mychart.clinic.test/')).toBe(true);
     expect(issues).toHaveLength(1);
@@ -185,7 +183,7 @@ describe('other issues', () => {
       'https://example.test/login?next=1', 'example.test:8443/a?x', 'example.test/a%3Fx', 'example.test/a%23f',
       '[::1]/a?x',
     ];
-    for (const list of ['blocked', 'allowed', 'protected'] as const) {
+    for (const list of ['blocked', 'allowed', 'confirmRead'] as const) {
       for (const source of sources) {
         const { patterns, issues } = compileUrlPatterns([source], list);
         expect(patterns, `${list} ${source}`).toEqual([]);
@@ -213,7 +211,7 @@ describe('other issues', () => {
   it.each(['LOCALHOST', 'intranet/', 'intranet:8080', 'http://intranet', 'intranet/admin'])(
     'a single label written as %j warns as well',
     (source) => {
-      for (const list of ['blocked', 'protected'] as const) {
+      for (const list of ['blocked', 'confirmRead'] as const) {
         const { patterns, issues } = compileUrlPatterns([source], list);
         expect(patterns, `${list} ${source}`).toHaveLength(1);
         expect(issues.map((i) => [i.fatal, /not '.+\.com' or other names containing it/.test(i.message)]), `${list} ${source}`)
@@ -232,55 +230,14 @@ describe('other issues', () => {
   });
 });
 
-describe('wireSource (sent to the Extension, compiled there with flag i)', () => {
-  it('matches the same URLs as test() for host patterns', () => {
-    const { patterns } = compileUrlPatterns(
-      ['example.test', '*.sub.test', 'example.test/admin', '^https://exact\\.test/'],
-      'protected',
-    );
-    const urls = [
-      'https://example.test/', 'https://a.example.test/x', 'https://example.test.attacker.test/',
-      'https://attacker.test/?example.test', 'https://example.test@attacker.test/',
-      'https://sub.test/', 'https://a.sub.test/', 'https://example.test/admin/x',
-      'https://example.test/administrator', 'https://example.test:8443/admin',
-      'https://example.test//admin', 'https://EXAMPLE.test/ADMIN', 'https://exact.test/',
-      'https://www.exact.test/', 'http://exact.test/',
-    ];
-    for (const p of patterns) {
-      const re = new RegExp(p.wireSource, 'i');
-      for (const url of urls) {
-        expect(re.test(url), `${p.source} vs ${url}`).toBe(p.test(url));
-      }
+describe('the wire rule of a path (matched like test() by the Extension, tests/contract/url-rule.test.ts)', () => {
+  it('is loose in the blocked and confirm-read lists, strict in the allowlist', () => {
+    for (const list of ['blocked', 'confirmRead'] as const) {
+      const [p] = compileUrlPatterns(['example.test/admin'], list).patterns;
+      expect(p!.wire, list).toMatchObject({ kind: 'host', path: '/admin', pathMatch: 'loose' });
     }
-  });
-});
-
-describe('DEFAULT_CONFIG protectedUrlPatterns', () => {
-  it('compile without issues', () => {
-    expect(compileUrlPatterns(DEFAULT_CONFIG.protectedUrlPatterns, 'protected').issues).toEqual([]);
-  });
-});
-
-describe('wireSource vs test() for percent-encoded paths', () => {
-  // What test() gives for the same paths (all true, /%61dmin included) is in
-  // 'host patterns' above.
-  it('the legacy regex agrees with test() on plain spellings but matches percent escapes as written', () => {
-    const [p] = compileUrlPatterns(['example.test/admin'], 'blocked').patterns;
-    const re = new RegExp(p!.wireSource, 'i');
-    for (const path of ['/admin', '/ADMIN', '//admin', '/admin/x', '/administrator']) {
-      expect(re.test(`https://example.test${path}`), path).toBe(true);
-    }
-    // Percent escapes: only test() decodes them, so the Extension build that
-    // still uses wireSource lets /%61dmin through. The rule sent next to it
-    // (`wire`, matched like test() — tests/contract/url-rule.test.ts) does not.
-    expect(re.test('https://example.test/%61dmin')).toBe(false);
-    expect(p!.wire).toMatchObject({ kind: 'host', path: '/admin', pathMatch: 'loose' });
-  });
-
-  it('the legacy regex of an allowlist entry refuses the encoded spelling, as test() does', () => {
-    const [p] = compileUrlPatterns(['example.test/admin'], 'allowed').patterns;
-    const re = new RegExp(p!.wireSource, 'i');
-    expect(re.test('https://example.test/%61dmin')).toBe(false);
+    const [a] = compileUrlPatterns(['example.test/admin'], 'allowed').patterns;
+    expect(a!.wire).toMatchObject({ kind: 'host', path: '/admin', pathMatch: 'strict' });
   });
 });
 
@@ -298,7 +255,7 @@ describe('IPv6 and port patterns (L6)', () => {
   });
 
   it('an unusable IPv6 address or port is fatal in every list, not a legacy regex', () => {
-    for (const list of ['blocked', 'allowed', 'protected'] as const) {
+    for (const list of ['blocked', 'allowed', 'confirmRead'] as const) {
       for (const p of ['[::g]', 'example.test:0', 'example.test:70000', 'example.test:abc', '*.[::1]']) {
         const { patterns, issues } = compileUrlPatterns([p], list);
         expect(patterns, `${list} ${p}`).toEqual([]);
@@ -306,50 +263,16 @@ describe('IPv6 and port patterns (L6)', () => {
       }
     }
   });
-  it('a legacy regex after host: stays a legacy regex in blocked / protected', () => {
+  it('a legacy regex after host: stays a legacy regex in the blocked and confirm-read lists', () => {
     const { patterns, issues } = compileUrlPatterns(['localhost:\\d+'], 'blocked');
     expect(patterns[0]?.kind).toBe('legacy');
     expect(issues[0]?.fatal).toBe(false);
   });
-  it('wireSource matches the same URLs as test() for IPv6 and non-default ports', () => {
-    const { patterns } = compileUrlPatterns(['[::1]', 'example.test:8443'], 'blocked');
-    const urls = [
-      'http://[::1]:3000/', 'https://[::1]/', 'http://[::2]/', 'https://example.com:8443/',
-      'https://example.test:8443/x', 'https://example.test/x', 'https://a.example.test:8443/',
-      'https://attacker.test/?u=https://example.test:8443/',
-      'https://example.test:8443@attacker.test/',
-    ];
-    for (const p of patterns) {
-      const re = new RegExp(p.wireSource, 'i');
-      for (const url of urls) {
-        expect(re.test(url), `${p.source} vs ${url}`).toBe(p.test(url));
-      }
-    }
-  });
-
-  it('a default port is optional in wireSource, so it also matches the other scheme', () => {
-    const [p] = compileUrlPatterns(['example.test:443'], 'blocked').patterns;
-    const re = new RegExp(p!.wireSource, 'i');
-    expect(p!.test('https://example.test/')).toBe(true);
-    expect(re.test('https://example.test/')).toBe(true);
-    // The legacy regex cannot tell the scheme's default port apart: it
-    // over-matches here, which errs on the safe side for a blocked entry.
-    expect(p!.test('http://example.test/')).toBe(false);
-    expect(re.test('http://example.test/')).toBe(true);
-  });
-
   it('scheme, port and path together all have to match', () => {
     const [p] = compileUrlPatterns(['https://example.test:8443/admin'], 'blocked').patterns;
     expect(p!.wire).toMatchObject({
       kind: 'host', scheme: 'https', host: 'example.test', port: 8443, path: '/admin',
     });
-    const re = new RegExp(p!.wireSource, 'i');
-    const urls = [
-      'https://example.test:8443/admin', 'https://example.test:8443/admin/users',
-      'http://example.test:8443/admin', 'https://example.test/admin',
-      'https://example.test:8443/other', 'https://a.example.test:8443/admin',
-    ];
-    for (const url of urls) expect(re.test(url), url).toBe(p!.test(url));
     expect(p!.test('https://example.test:8443/admin/users')).toBe(true);
     expect(p!.test('http://example.test:8443/admin')).toBe(false);
     expect(p!.test('https://example.test/admin')).toBe(false);
@@ -357,12 +280,11 @@ describe('IPv6 and port patterns (L6)', () => {
   });
 
   it('a legacy regex with a character class keeps its old meaning', () => {
-    const { patterns, issues } = compileUrlPatterns(['[Bb]ank\\.test'], 'protected');
+    const { patterns, issues } = compileUrlPatterns(['[Bb]ank\\.test'], 'confirmRead');
     expect(patterns[0]!.kind).toBe('legacy');
     expect(issues[0]!.fatal).toBe(false);
     expect(patterns[0]!.test('https://bank.test/')).toBe(true);
     expect(patterns[0]!.test('https://Bank.test.attacker.test/')).toBe(true); // unanchored, as before
-    expect(patterns[0]!.wireSource).toBe('[Bb]ank\\.test');
     // The same source is fatal in the allowlist.
     expect(compileUrlPatterns(['[Bb]ank\\.test'], 'allowed').issues[0]!.fatal).toBe(true);
   });

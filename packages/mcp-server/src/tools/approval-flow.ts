@@ -57,7 +57,7 @@ function auditDecision(
   audit(
     request.target.toolName,
     { approvalId: request.id, host: request.target.host, via },
-    request.protectedUrl,
+    request.url,
     decision,
     transport,
   );
@@ -117,11 +117,11 @@ export function answerFromElicitation(
 /** `request_approval` data for the Extension's popup. */
 export function buildApprovalPrompt(request: ApprovalRequest, now = Date.now()): ApprovalPrompt {
   return {
-    kind: 'protected_action',
+    kind: 'tool_call',
     approvalId: request.id,
     toolName: request.target.toolName,
     host: request.target.host,
-    url: request.protectedUrl,
+    url: request.url,
     matchedPattern: request.matchedPattern,
     summary: request.summary,
     expiresAt: request.expiresAt,

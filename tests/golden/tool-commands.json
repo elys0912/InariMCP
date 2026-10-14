@@ -16,7 +16,7 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
+      "confirmReadUrlRules": [
         {
           "kind": "host",
           "source": "bank.example.test",
@@ -27,9 +27,6 @@
           "path": null,
           "pathMatch": "loose"
         }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
       ],
       "blockedUrlRules": [
         {
@@ -86,7 +83,7 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
+      "confirmReadUrlRules": [
         {
           "kind": "host",
           "source": "bank.example.test",
@@ -97,9 +94,6 @@
           "path": null,
           "pathMatch": "loose"
         }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
       ],
       "blockedUrlRules": [
         {
@@ -155,7 +149,7 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
+      "confirmReadUrlRules": [
         {
           "kind": "host",
           "source": "bank.example.test",
@@ -166,9 +160,6 @@
           "path": null,
           "pathMatch": "loose"
         }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
       ],
       "blockedUrlRules": [
         {
@@ -224,7 +215,7 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
+      "confirmReadUrlRules": [
         {
           "kind": "host",
           "source": "bank.example.test",
@@ -235,9 +226,6 @@
           "path": null,
           "pathMatch": "loose"
         }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
       ],
       "blockedUrlRules": [
         {
@@ -282,6 +270,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -339,6 +339,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -385,6 +397,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -434,6 +458,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -477,6 +513,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -526,6 +574,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -574,6 +634,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -627,6 +699,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -668,6 +752,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -712,6 +808,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -806,6 +914,7 @@
     "args": {
       "url": "https://plain.example.test/"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "navigate",
       "data": {
@@ -817,7 +926,8 @@
       },
       "containerScope": {
         "containerName": "Golden Agent"
-      }
+      },
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -834,6 +944,7 @@
       "newTab": true,
       "waitForLoad": false
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "navigate",
       "data": {
@@ -845,7 +956,8 @@
       },
       "containerScope": {
         "containerName": "Golden Agent"
-      }
+      },
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -859,6 +971,7 @@
     "args": {
       "action": "back"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "go_back",
       "data": {
@@ -870,21 +983,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -908,7 +1006,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -923,6 +1022,7 @@
       "action": "forward",
       "tabId": 2
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "go_forward",
       "tabId": 2,
@@ -935,21 +1035,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -973,7 +1058,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -988,6 +1074,7 @@
       "action": "refresh",
       "bypassCache": true
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "refresh",
       "data": {
@@ -999,21 +1086,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1037,7 +1109,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1051,6 +1124,7 @@
     "args": {
       "action": "hard_refresh"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "hard_refresh",
       "data": {
@@ -1062,21 +1136,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1100,7 +1159,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1109,13 +1169,31 @@
     "headless": "default"
   },
   {
-    "id": "navigate/protected",
+    "id": "navigate/read_site",
     "tool": "fox_navigate",
     "args": {
       "url": "https://bank.example.test/transfer"
     },
-    "command": null,
-    "refusal": "fox_navigate targets a protected site ('https://bank.example.test/transfer' matches pattern 'bank.example.test' in safety.json). This is a guard against unintended actions on sensitive sites (banking, payments, health, government). Human confirmation is required via MCP elicitation."
+    "approval": "bank.example.test",
+    "command": {
+      "action": "navigate",
+      "data": {
+        "action": "goto",
+        "url": "https://bank.example.test/transfer",
+        "newTab": false,
+        "waitForLoad": true,
+        "bypassCache": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "approvedHost": "bank.example.test"
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:navigate"
   },
   {
     "id": "navigate/blocked",
@@ -1132,6 +1210,7 @@
     "args": {
       "selector": "#b"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "click",
       "data": {
@@ -1142,21 +1221,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1180,7 +1244,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1195,6 +1260,7 @@
       "text": "OK",
       "doubleClick": true
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "click",
       "data": {
@@ -1205,21 +1271,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1243,7 +1294,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1260,6 +1312,7 @@
       "rightClick": true,
       "tabId": 2
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "click",
       "tabId": 2,
@@ -1272,21 +1325,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1310,7 +1348,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1324,6 +1363,7 @@
     "args": {
       "xpath": "//a"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "click",
       "data": {
@@ -1334,21 +1374,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1372,7 +1397,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1387,6 +1413,7 @@
       "text": "abc",
       "selector": "#q"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "type",
       "data": {
@@ -1400,21 +1427,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1438,7 +1450,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1456,6 +1469,7 @@
       "pressEnter": true,
       "delay": 0
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "type",
       "data": {
@@ -1469,21 +1483,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1507,7 +1506,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1522,6 +1522,7 @@
       "text": "y",
       "name": "n"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "type",
       "data": {
@@ -1535,21 +1536,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1573,7 +1559,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1589,6 +1576,7 @@
       "id": "i",
       "tabId": 3
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "type",
       "tabId": 3,
@@ -1603,21 +1591,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1641,7 +1614,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1665,6 +1639,7 @@
     "args": {
       "key": "Enter"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "press_key",
       "data": {
@@ -1678,21 +1653,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1716,7 +1676,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1736,6 +1697,7 @@
       "meta": true,
       "tabId": 2
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "press_key",
       "tabId": 2,
@@ -1751,21 +1713,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1789,7 +1736,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1806,6 +1754,7 @@
       "text": "Name",
       "id": "q"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "press_key",
       "data": {
@@ -1822,21 +1771,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1860,7 +1794,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1875,6 +1810,7 @@
       "selector": "#v",
       "value": "1"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "set_value",
       "data": {
@@ -1885,21 +1821,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1923,7 +1844,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -1939,6 +1861,7 @@
       "value": "2",
       "tabId": 2
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "set_value",
       "tabId": 2,
@@ -1950,21 +1873,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -1988,7 +1896,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -2003,6 +1912,7 @@
       "selector": "select",
       "value": "a"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "select_option",
       "data": {
@@ -2012,21 +1922,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -2050,7 +1945,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -2065,6 +1961,7 @@
       "selector": "select",
       "text": "A"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "select_option",
       "data": {
@@ -2074,21 +1971,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -2112,7 +1994,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -2128,6 +2011,7 @@
       "index": 2,
       "tabId": 2
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "select_option",
       "tabId": 2,
@@ -2138,21 +2022,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -2176,7 +2045,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -2516,6 +2386,7 @@
     "id": "create_tab/default",
     "tool": "fox_create_tab",
     "args": {},
+    "approval": "about:",
     "command": {
       "action": "create_tab",
       "data": {
@@ -2524,7 +2395,8 @@
       },
       "containerScope": {
         "containerName": "Golden Agent"
-      }
+      },
+      "approvedHost": "about:"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -2539,6 +2411,7 @@
       "url": "https://plain.example.test/",
       "active": false
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "create_tab",
       "data": {
@@ -2547,7 +2420,8 @@
       },
       "containerScope": {
         "containerName": "Golden Agent"
-      }
+      },
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -2556,13 +2430,28 @@
     "headless": "dispatch:create_tab"
   },
   {
-    "id": "create_tab/protected",
+    "id": "create_tab/read_site",
     "tool": "fox_create_tab",
     "args": {
       "url": "https://bank.example.test/transfer"
     },
-    "command": null,
-    "refusal": "fox_create_tab targets a protected site ('https://bank.example.test/transfer' matches pattern 'bank.example.test' in safety.json). This is a guard against unintended actions on sensitive sites (banking, payments, health, government). Human confirmation is required via MCP elicitation."
+    "approval": "bank.example.test",
+    "command": {
+      "action": "create_tab",
+      "data": {
+        "url": "https://bank.example.test/transfer",
+        "active": true
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "approvedHost": "bank.example.test"
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:create_tab"
   },
   {
     "id": "close_tab/default",
@@ -2570,6 +2459,7 @@
     "args": {
       "tabId": 7
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "close_tab",
       "tabId": 7,
@@ -2577,21 +2467,7 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ]
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -2999,7 +2875,7 @@
     "headless": "dispatch:wait_for_url"
   },
   {
-    "id": "wait_for_url/protected",
+    "id": "wait_for_url/read_site",
     "tool": "fox_wait_for_url",
     "args": {
       "url": "https://bank.example.test/transfer"
@@ -3057,6 +2933,7 @@
         }
       ]
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "run_workflow",
       "data": {
@@ -3074,21 +2951,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -3112,7 +2974,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -3133,6 +2996,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -3182,6 +3057,18 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -3219,6 +3106,7 @@
     "args": {
       "action": "accept"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "handle_dialog",
       "data": {
@@ -3228,21 +3116,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -3266,7 +3139,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -3281,6 +3155,7 @@
       "action": "dismiss",
       "tabId": 2
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "handle_dialog",
       "tabId": 2,
@@ -3291,21 +3166,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -3329,7 +3189,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -3345,6 +3206,7 @@
       "promptText": "p",
       "timeout": 1000
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "handle_dialog",
       "data": {
@@ -3355,21 +3217,6 @@
       "containerScope": {
         "containerName": "Golden Agent"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "blockedUrlRules": [
         {
           "kind": "host",
@@ -3393,7 +3240,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -3614,6 +3462,7 @@
       "url": "https://plain.example.test/",
       "containerName": "Work"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "open_in_container",
       "data": {
@@ -3623,7 +3472,8 @@
       },
       "containerScope": {
         "containerName": "Golden Agent"
-      }
+      },
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,
@@ -3639,6 +3489,7 @@
       "cookieStoreId": "firefox-container-1",
       "active": false
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "open_in_container",
       "data": {
@@ -3648,7 +3499,8 @@
       },
       "containerScope": {
         "containerName": "Golden Agent"
-      }
+      },
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,

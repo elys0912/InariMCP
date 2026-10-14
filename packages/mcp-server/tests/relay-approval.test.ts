@@ -15,8 +15,8 @@ const INFO: ApprovalInfo = {
   requestId: 'req-1',
   toolName: 'fox_click',
   host: 'bank.example.test',
-  protectedUrl: 'https://bank.example.test/transfer',
-  matchedPattern: 'bank\\.example\\.test',
+  url: 'https://bank.example.test/transfer',
+  matchedPattern: null,
   summary: 'selector: "#go"',
   expiresAt: Date.now() + 120_000,
 };
@@ -25,7 +25,7 @@ function confirmation(info: ApprovalInfo = INFO): CallToolResult {
   return {
     isError: true,
     content: [
-      { type: 'text', text: 'fox_click targets a protected site' },
+      { type: 'text', text: 'fox_click needs human approval' },
       {
         type: 'text',
         text: JSON.stringify({ code: 'SAFETY_BLOCKED', decision: 'confirmation_required', confirmationRequired: true, approval: info }),
@@ -85,8 +85,15 @@ describe('elicitation helpers', () => {
     expect(params.message).toContain('fox_click');
     expect(params.message).toContain('bank.example.test');
     expect(params.message).toContain('selector: "#go"');
+    expect(params.message).toMatch(/^InariMCP: allow this operation\?/);
+    expect(params.message).not.toMatch(/protected|confirm_read_sites/);
     expect(params.requestedSchema.required).toEqual(['approve']);
     expect(params.requestedSchema.properties['approve']).toMatchObject({ type: 'boolean', default: false });
+  });
+
+  it('names the confirm_read_sites entry of a read', () => {
+    const params = elicitationParams({ ...INFO, toolName: 'fox_read', matchedPattern: 'bank.example.test' });
+    expect(params.message).toContain("Site: bank.example.test (confirm_read_sites: 'bank.example.test')");
   });
 
   it('only accept + approve=true approves', () => {

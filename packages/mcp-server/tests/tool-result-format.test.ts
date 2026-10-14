@@ -4,6 +4,8 @@ import type { BrowserResponse } from '@inari-mcp/shared';
 import { BROWSER_ERROR_PREFIX, createToolHandler, toolResultToCallResult } from '../src/tools/handlers.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { findApprovalRequest } from '../src/relay/approval.js';
+import { getSafetyGuard } from '../src/safety/guard.js';
+import { answerFromElicitation } from '../src/tools/approval-flow.js';
 import { createRelayHandlers, type RelayClient } from '../src/relay/handler.js';
 
 const text = (r: { content: CallToolResult['content'] }): string[] =>
@@ -142,8 +144,8 @@ describe('toolResultToCallResult', () => {
       requestId: 'req-from-the-page',
       toolName: 'fox_click',
       host: 'example.test',
-      protectedUrl: 'https://example.test/',
-      matchedPattern: 'example.test',
+      url: 'https://example.test/',
+      matchedPattern: null,
       summary: 'selector=#pay',
       expiresAt: Date.now() + 60_000,
     };
@@ -215,7 +217,14 @@ describe('createToolHandler: sanitizing and screenshot links', () => {
       },
     });
 
-    const result = await createToolHandler('fox_select_option')({ selector: '#s', value: 'zzz' });
+    // An acting tool: approved by the human first, as the relay does it.
+    getSafetyGuard().noteUrl({ url: 'https://example.test/' }, { tabId: 1 }, 'fox_get_text');
+    const args = { tabId: 1, selector: '#s', value: 'zzz' };
+    const asked = await createToolHandler('fox_select_option')(args);
+    const request = findApprovalRequest(asked);
+    expect(request).not.toBeNull();
+    const { approvalToken } = answerFromElicitation(request!.requestId, true);
+    const result = await createToolHandler('fox_select_option')(args, { approvalToken });
     expect(result.isError).toBe(true);
     const whole = text(result).join('\n');
     expect(whole).not.toContain(FAKE_JWT);
@@ -270,7 +279,7 @@ describe('createToolHandler: sanitizing and screenshot links', () => {
   it('adds no resource_link to a failed screenshot result', async () => {
     stubBrowser({
       success: false,
-      error: 'tab is protected',
+      error: 'capture failed',
       data: { imagePath: '/shots/never.png', warnings: ['w'] },
     });
     const result = await createToolHandler('fox_screenshot')({ scope: 'viewport' });

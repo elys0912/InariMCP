@@ -1,5 +1,6 @@
 /**
- * URL patterns of safety.json (blocked / allowed / protected_url_patterns).
+ * URL patterns of safety.json (blocked_url_patterns / allowed_url_patterns /
+ * confirm_read_sites).
  *
  * A pattern is matched against the parsed URL, never against the raw string,
  * so `example.com.attacker.net`, `https://example.com@attacker.net/` or a
@@ -29,7 +30,8 @@
  *   - simple ones are read as the equivalent host pattern: `paypal\.com`
  *     (host and subdomains), `\.gov(/|$)` (subdomains only),
  *     `^https://a\.example/` (that host only, as the anchor meant);
- *   - any other legacy regex keeps its old meaning in blocked/protected lists
+ *   - any other legacy regex keeps its old meaning in the blocked and
+ *     confirm-read lists
  *     (over-matching errs on the safe side there), with a warning;
  *   - in the allowed list it is an error: an unanchored allowlist regex is
  *     exactly the bypass this module exists to close.
@@ -38,14 +40,21 @@
  * them, IDN hosts become punycode). Each list errs towards refusing:
  *   - allowed: the path matches as written (case-sensitive, at a segment
  *     boundary: /admin does not cover /administrator);
- *   - blocked / protected: the path matches any continuation after
+ *   - blocked / confirm-read: the path matches any continuation after
  *     percent-escapes are decoded, repeated slashes collapsed and case
  *     folded (/admin covers /ADMIN, //admin, /%61dmin, /admin;x, /administrator).
  */
 
 import type { WireUrlRule } from '@inari-mcp/shared';
 
-export type PatternListName = 'blocked' | 'allowed' | 'protected';
+export type PatternListName = 'blocked' | 'allowed' | 'confirmRead';
+
+/** The safety.json key of each list (messages). */
+export const PATTERN_LIST_KEYS: { readonly [K in PatternListName]: string } = {
+  blocked: 'blocked_url_patterns',
+  allowed: 'allowed_url_patterns',
+  confirmRead: 'confirm_read_sites',
+};
 
 export interface UrlPattern {
   /** The pattern as written in safety.json. */
@@ -54,17 +63,11 @@ export interface UrlPattern {
   test(url: string): boolean;
   /**
    * The same pattern as a URL rule for the Extension (BrowserCommand
-   * `protectedUrlRules` / `blockedUrlRules` / `allowedUrlRules`), which
+   * `confirmReadUrlRules` / `blockedUrlRules` / `allowedUrlRules`), which
    * matches it like test() (extension/src/url-rule.ts, contract test
    * tests/contract/url-rule.test.ts).
    */
   readonly wire: WireUrlRule;
-  /**
-   * Legacy: equivalent regex source for Extension builds that only know
-   * `protectedUrlPatterns` and test `new RegExp(source, 'i')` against the
-   * raw tab URL (percent-escapes not decoded).
-   */
-  readonly wireSource: string;
 }
 
 export interface PatternIssue {
@@ -129,10 +132,6 @@ const HOST_FORM_RE =
 
 const REGEX_META_RE = /[\\^$()[\]{}|+?*]/;
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-}
-
 /** `example.com` → 'example.com' (punycode, lower-case) or null if not a host. */
 function canonicalHost(host: string): string | null {
   if (host.startsWith('.') || host.endsWith('.') || host.includes('..')) return null;
@@ -164,13 +163,6 @@ const HOST_MATCHES: { readonly [K in HostSpec['hosts']]: (h: string, host: strin
   tree: (h, host) => h === host || h.endsWith(`.${host}`),
 };
 
-/** The same in wireSource: what may precede the host. */
-const SUBDOMAIN_RE: { readonly [K in HostSpec['hosts']]: string } = {
-  exact: '',
-  sub: '(?:[^/?#@]+\\.)',
-  tree: '(?:[^/?#@]+\\.)?',
-};
-
 /** Why a host-form pattern is unusable, or a spec. */
 type ParseResult = HostSpec | { error: string } | null;
 
@@ -191,7 +183,7 @@ function parseHostForm(s: string): ParseResult {
   let path: string | null = m[5] ?? null;
   // The path is compared with the URL's path only, which never holds a query
   // or fragment: such a pattern would match nothing. `%3F` / `%23` are refused
-  // too, since blocked / protected paths are compared decoded and the wire
+  // too, since blocked / confirm-read paths are compared decoded and the wire
   // rule must not carry a `?` / `#` (the Extension refuses such a rule).
   if (path !== null && /[?#]|%3f|%23/i.test(path)) {
     return {
@@ -247,7 +239,7 @@ function convertLegacy(s: string): HostSpec | null {
 }
 
 /**
- * Path as compared by blocked/protected entries: percent-escapes decoded,
+ * Path as compared by blocked / confirm-read entries: percent-escapes decoded,
  * repeated slashes collapsed, lower case, so `/%61dmin`, `//admin` and
  * `/ADMIN` all read as `/admin`.
  */
@@ -263,7 +255,7 @@ function loosePath(pathname: string): string {
 
 function hostPattern(source: string, spec: HostSpec, list: PatternListName): UrlPattern {
   // Each list errs towards refusing: an allowed entry matches its path
-  // exactly (case-sensitive, at a segment boundary); a blocked or protected
+  // exactly (case-sensitive, at a segment boundary); a blocked or confirm-read
   // entry matches any path that starts with it once normalised.
   const strictPath = list === 'allowed';
   const path = spec.path;
@@ -282,27 +274,6 @@ function hostPattern(source: string, spec: HostSpec, list: PatternListName): Url
     return !pathBoundary || actual.length === wantPath.length || actual[wantPath.length] === '/';
   };
 
-  const scheme = spec.scheme !== null ? escapeRegex(spec.scheme) : '[a-z][a-z0-9+.-]*';
-  const sub = SUBDOMAIN_RE[spec.hosts];
-  let tail: string;
-  if (wantPath === null) {
-    tail = '(?:[/?#]|$)';
-  } else {
-    // Repeated slashes as in loosePath(); percent-escapes cannot be decoded
-    // in a regex and are matched as written.
-    const pathRe = wantPath.split('/').map(escapeRegex).join('\\/+');
-    tail = pathRe + (pathBoundary ? '(?:[/?#]|$)' : '');
-  }
-  // A default port does not appear in the URL, so it is optional here (with
-  // no scheme in the pattern this also lets e.g. :443 match http://…/, which
-  // errs on the safe side for the lists this legacy form serves).
-  const port =
-    spec.port === null ? '(?::\\d+)?'
-      : Object.values(DEFAULT_PORTS).includes(spec.port) ? `(?::${spec.port})?`
-        : `:${spec.port}`;
-  const wireSource =
-    `^${scheme}:\\/\\/(?:[^/?#]*@)?${sub}${escapeRegex(spec.host)}\\.?${port}${tail}`;
-
   const wire: WireUrlRule = {
     kind: 'host',
     source,
@@ -314,7 +285,7 @@ function hostPattern(source: string, spec: HostSpec, list: PatternListName): Url
     pathMatch: strictPath ? 'strict' : 'loose',
   };
 
-  return { source, kind: 'host', test, wire, wireSource };
+  return { source, kind: 'host', test, wire };
 }
 
 /**
@@ -347,15 +318,14 @@ function regexPattern(
   return {
     source,
     kind,
-    // Allowed: the normalised URL only. Blocked / protected: either form
-    // (the Extension tests the raw tab URL with wireSource).
+    // Allowed: the normalised URL only. Blocked / confirm-read: either form
+    // (over-matching errs on the safe side there).
     test: (raw: string) => {
       const n = normalizeUrl(raw);
       if (n === null) return list !== 'allowed' && re.test(raw);
       return re.test(n.normalized) || (list !== 'allowed' && re.test(raw));
     },
     wire: { kind: 'regex', source, re: regexSource, matchRaw: list !== 'allowed' },
-    wireSource: regexSource,
   };
 }
 

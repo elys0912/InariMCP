@@ -407,7 +407,7 @@ const OPERATIONS = {
   fox_screenshot: {
     name: 'fox_screenshot',
     description:
-      'Take a screenshot. scope: viewport (visible area; a background tab given by tabId is captured without switching to it; a discarded tab fails), full_page (entire scrollable page; falls back to the visible area when it cannot, fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls the page and returns the interactive elements visible at each position). Images are saved to files and returned as resource_link, never as base64; saveToFile=false captures nothing, includeData has no effect, and the same filename overwrites the file. Headless: viewport and full_page only.',
+      'Take a screenshot. scope: viewport (visible area; a background tab given by tabId is captured without switching to it; a discarded tab fails), full_page (entire scrollable page; falls back to the visible area when it cannot, fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on sites listed in confirm_read_sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls the page and returns the interactive elements visible at each position). Images are saved to files and returned as resource_link, never as base64; saveToFile=false captures nothing, includeData has no effect, and the same filename overwrites the file. Headless: viewport and full_page only.',
     inputSchema: foxScreenshotSchema,
     classification: 'observe',
   },
@@ -600,7 +600,7 @@ const OPERATIONS = {
   fox_request_approval: {
     name: 'fox_request_approval',
     description:
-      'Ask the human at the browser a yes/no question and wait for the answer. Shown in the InariMCP toolbar popup in Firefox (badge + OS notification), never in the page. The answer is for you only: it does not unlock protected-site actions — those ask the human on their own when you call the tool. Unavailable in headless mode.',
+      'Ask the human at the browser a yes/no question and wait for the answer. Shown in the InariMCP toolbar popup in Firefox (badge + OS notification), never in the page. The answer is for you only: it approves no tool call — acting tools ask the human on their own when you call them. Unavailable in headless mode.',
     inputSchema: foxRequestApprovalSchema,
     classification: 'human',
   },
@@ -636,7 +636,7 @@ const OPERATIONS = {
   fox_safety_status: {
     name: 'fox_safety_status',
     description:
-      'Show the active safety guard policy: read-only mode, protected/blocked/allowed URL patterns, rate-limit state, and audit log location.',
+      'Show the active safety guard policy: which calls ask the human for approval, read-only mode, blocked/allowed URL patterns and confirm_read_sites, rate-limit state, and audit log location.',
     inputSchema: foxSafetyStatusSchema,
     classification: 'observe',
     tabIndependent: true,

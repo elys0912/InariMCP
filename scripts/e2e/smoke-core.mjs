@@ -136,3 +136,24 @@ export function formatTable(columns, rows) {
 
   return [pad(cells[0]), rule, ...cells.slice(1).map(pad)].join('\n');
 }
+
+/**
+ * The approval request of a call answered `confirmation_required` (every
+ * acting tool asks the human first): `details.approval.requestId` of its
+ * JSON block, or undefined when the call needs no approval or cannot be
+ * approved.
+ *
+ * @param {{isError: boolean, content: any[]}} r  interpretCallResponse()
+ * @returns {string|undefined}
+ */
+export function approvalRequestId(r) {
+  if (!r.isError) return undefined;
+  for (const block of r.content) {
+    if (!block || block.type !== 'text') continue;
+    let parsed;
+    try { parsed = JSON.parse(block.text); } catch { continue; }
+    const id = parsed?.confirmationRequired === true ? parsed.approval?.requestId : undefined;
+    if (typeof id === 'string' && id !== '') return id;
+  }
+  return undefined;
+}

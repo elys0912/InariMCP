@@ -115,7 +115,7 @@ function openConsentPage(): Promise<browser.tabs.Tab> {
 /**
  * A command for the dispatcher (`target: "background"`). Only the
  * Extension's own pages (the popup) may drive it directly. Content scripts
- * could otherwise call every handler without the containerScope / protectedUrlPatterns the MCP Server
+ * could otherwise call every handler without the containerScope and URL rules the MCP Server
  * attaches (Layer 0 bypass).
  */
 function runPageCommand(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): boolean {

@@ -5,10 +5,11 @@ import type { AuditDecision } from './audit.js';
 import { checkHeadlessContainerScope } from './container.js';
 import { grantCoversDenial } from './approval.js';
 import type { ApprovalGrant } from './approval.js';
-import { compileUrlPatterns, normalizeUrl } from './url-pattern.js';
+import { PATTERN_LIST_KEYS, compileUrlPatterns, normalizeUrl } from './url-pattern.js';
 import type { PatternListName, UrlPattern } from './url-pattern.js';
 import {
-  OBSERVE_TOOLS,
+  ACTING_TOOLS,
+  PAGE_READ_TOOLS,
   TAB_INDEPENDENT_TOOLS,
   isOperationIn,
 } from '../tools/classification.js';
@@ -16,7 +17,10 @@ import { SAFETY_STATUS_TOOL, navigateGoesToUrl } from '../tools/schemas.js';
 import { isRecord } from '@inari-mcp/shared';
 
 // Derived from the tool schemas; re-exported for the existing importers.
-export { OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS };
+export { ACTING_TOOLS, PAGE_READ_TOOLS, TAB_INDEPENDENT_TOOLS };
+
+/** The page a new tab opened without a URL shows (the Extension opens the same). */
+const NEW_TAB_URL = 'about:blank';
 
 /**
  * The URL a call goes to or opens, or null when it acts on (or reads) a tab
@@ -59,9 +63,9 @@ export const LAYER = {
   rateLimit: 1,
   scheme: 2,
   lists: 3,
-  observe: 4,
+  readSites: 4,
   readOnly: 5,
-  protected: 7,
+  approval: 7,
 } as const;
 export type Layer = (typeof LAYER)[keyof typeof LAYER];
 
@@ -91,7 +95,7 @@ export interface CallLabel {
 /** The decisions a denial carries: those of the audit log that refuse. */
 export type DenialDecision = Exclude<
   AuditDecision,
-  'allowed' | 'allowed_by_human' | 'observed_on_protected_domain' | 'approval_granted' |
+  'allowed' | 'allowed_by_human' | 'approval_granted' |
   'approval_denied' | 'denied' | 'browser_error'
 >;
 
@@ -111,8 +115,9 @@ export const LAYER_OF: Readonly<Record<DenialDecision, Layer | null>> = {
   not_allowlisted: LAYER.lists,
   blocked_after_navigation: LAYER.lists,
   read_only: LAYER.readOnly,
-  // Layer 7, and the Layer 4 exception of a single-tab fox_screenshot.
-  confirmation_required: LAYER.protected,
+  // Layer 7 (acting tools). A read on a confirm_read_sites site reports
+  // Layer 4 in its own denial (_readSiteConfirmation).
+  confirmation_required: LAYER.approval,
 };
 
 export interface SafetyDenial {
@@ -124,9 +129,12 @@ export interface SafetyDenial {
   /** The URL the denial is about, when it names one (details.url of the tool result). */
   url?: string;
   confirmationRequired?: true;
+  /** What the human is asked to approve (confirmation_required only). */
   elicitation?: {
-    protectedUrl: string;
-    matchedPattern: string;
+    /** The URL the call acts on or reads; null when the guard does not know the tab's page. */
+    url: string | null;
+    /** The confirm_read_sites entry of a read; null for an acting tool. */
+    matchedPattern: string | null;
     toolName: string;
   };
 }
@@ -139,7 +147,8 @@ export interface SafetyStatus {
   /** Non-fatal pattern problems (legacy regex patterns etc.). */
   patternWarnings: string[];
   readOnly: boolean;
-  confirmProtectedActions: boolean;
+  /** Which calls ask the human first (APPROVAL_POLICY). */
+  approvalPolicy: string;
   allowPasswordTyping: boolean;
   maxActionsPerMinute: number;
   actionsInLastMinute: number;
@@ -147,10 +156,17 @@ export interface SafetyStatus {
   currentUrl: string | null;
   blockedUrlPatterns: string[];
   allowedUrlPatterns: string[];
-  protectedUrlPatterns: string[];
+  confirmReadSites: string[];
   configFile: string;
   auditLog: string | null;
 }
+
+/** fox_safety_status `approvalPolicy`: fixed, not a setting. */
+export const APPROVAL_POLICY =
+  'Every acting tool (click, type, set value, select, key press, navigation, opening and ' +
+  'closing tabs, container tabs, dialogs) asks the human before it runs, on every site, once ' +
+  'per call. Reading, waiting and UI-only tools run without asking, except reads and ' +
+  'screenshots of sites in confirm_read_sites.';
 
 /** The window of max_actions_per_minute. */
 const RATE_WINDOW_MS = 60_000;
@@ -181,7 +197,7 @@ export class SafetyGuard {
   private _activeTabId: number | null = null;
   private _blocked: UrlPattern[] = [];
   private _allowed: UrlPattern[] = [];
-  private _protected: UrlPattern[] = [];
+  private _confirmRead: UrlPattern[] = [];
   private _configError: string | null = null;
   private _patternWarnings: string[] = [];
 
@@ -199,7 +215,7 @@ export class SafetyGuard {
   /**
    * @param grant  A consumed human-approval token for this exact call
    *               (safety/approval.ts). It lifts only a Layer 4/7
-   *               `confirmation_required` for the approved host; every other
+   *               `confirmation_required` for the approved site; every other
    *               denial stands. A call the grant let through is audited
    *               as `allowed_by_human`; a grant that lifts nothing
    *               changes nothing.
@@ -247,14 +263,11 @@ export class SafetyGuard {
       );
     }
 
-    const isObserve = isOperationIn(OBSERVE_TOOLS, toolName);
     let decision: AuditDecision;
     if (denial !== null) {
       decision = denial.safetyDecision;
     } else if (liftedByHuman) {
       decision = 'allowed_by_human';
-    } else if (isObserve && this._matchedProtected(targetUrl ?? currentUrl) !== null) {
-      decision = 'observed_on_protected_domain';
     } else {
       decision = 'allowed';
     }
@@ -424,16 +437,18 @@ export class SafetyGuard {
   }
 
   /**
-   * Build the Layer 7-shaped confirmation result for a refusal the Extension
-   * made itself: the actual target tab of a capture or acting tool matched
-   * the `protectedUrlPatterns` attached to the command (safetyDecision
-   * "confirmation_required"). The server could not have caught this when
-   * its last-known URL for the tab was stale or unknown.
+   * Build the confirmation result for a refusal the Extension made itself
+   * (safetyDecision "confirmation_required"): the actual target tab of an
+   * acting tool is on a site the call was not approved for (the Extension
+   * requires an approval for every acting command), or a read's target tab
+   * matched the `confirmReadUrlRules` attached to the command. The server
+   * could not have known when its last-known URL for the tab was stale or
+   * unknown.
    *
-   * @param url  The protected tab's URL if the Extension reported it
+   * @param url  The target tab's URL if the Extension reported it
    *             (`data.url`); also recorded like noteUrl().
-   * @param matchedPattern  The pattern the Extension matched
-   *             (`data.matchedPattern`), if reported.
+   * @param matchedPattern  The confirm_read_sites entry the Extension
+   *             matched (`data.matchedPattern`), if reported.
    */
   confirmationFromBrowser(
     toolName: string,
@@ -446,26 +461,23 @@ export class SafetyGuard {
     const shown = label?.tool ?? toolName;
     if (url) this.noteRefusedUrl(url, args);
     const knownUrl = url ?? this.urlFor(this._tabIdArg(args));
-    const protectedUrl = knownUrl ?? '(target tab)';
-    const matched =
-      this._matchedProtected(knownUrl) ||
-      matchedPattern ||
-      '(protected_url_patterns)';
+    const acting = isOperationIn(ACTING_TOOLS, toolName);
+    const matched = acting ? null : this._matchedReadSite(knownUrl) ?? matchedPattern ?? null;
 
     this.recordAudit(toolName, args, 'confirmation_required', transport, label, knownUrl);
 
+    const page = knownUrl ?? '(target tab)';
     return {
       success: false,
       safetyDecision: 'confirmation_required',
-      layer: LAYER_OF.confirmation_required,
+      layer: acting ? LAYER.approval : LAYER.readSites,
       confirmationRequired: true,
-      elicitation: { protectedUrl, matchedPattern: matched, toolName: shown },
-      error:
-        `${shown} targets a protected site ('${protectedUrl}' matches ` +
-        `pattern '${matched}' in safety.json, as checked by the browser). ` +
-        'This is a guard against unintended actions on, or captures of, sensitive ' +
-        'sites (banking, payments, health, government). Human confirmation is ' +
-        'required via MCP elicitation.',
+      elicitation: { url: knownUrl, matchedPattern: matched, toolName: shown },
+      error: acting
+        ? `${shown} needs human approval for '${page}', where the browser reports the target ` +
+          'tab is. Every acting tool asks the human first, on every site.'
+        : `${shown} reads '${page}', which matches confirm_read_sites entry '${matched ?? '?'}' ` +
+          'in safety.json (as checked by the browser). Reading this site needs human approval.',
     };
   }
 
@@ -499,14 +511,14 @@ export class SafetyGuard {
       configError: this._configError,
       patternWarnings: [...this._patternWarnings],
       readOnly: this.config.readOnly,
-      confirmProtectedActions: this.config.confirmProtectedActions,
+      approvalPolicy: APPROVAL_POLICY,
       allowPasswordTyping: this.config.allowPasswordTyping,
       maxActionsPerMinute: this.config.maxActionsPerMinute,
       actionsInLastMinute: this._actionTimes.length,
       currentUrl: this._activeUrl,
       blockedUrlPatterns: this.config.blockedUrlPatterns,
       allowedUrlPatterns: this.config.allowedUrlPatterns,
-      protectedUrlPatterns: this.config.protectedUrlPatterns,
+      confirmReadSites: this.config.confirmReadSites,
       // The file loadConfig() read: a blank setting counts as unset.
       configFile: safetyConfigPath(),
       auditLog: this.config.auditLog ? getAuditLogPath() : null,
@@ -520,8 +532,6 @@ export class SafetyGuard {
     args: Record<string, unknown>,
     shown: string,
   ): SafetyDenial | null {
-    const isObserve = isOperationIn(OBSERVE_TOOLS, toolName);
-
     // Layer 0: Container scope (server-side part only).
     // The server cannot see tabs, so the per-tab cookieStoreId check is done
     // by the Extension using the `containerScope` that handlers.ts attaches
@@ -573,21 +583,22 @@ export class SafetyGuard {
       }
     }
 
-    // Layer 4: Observe tools pass through.
-    // Exception: a single-tab fox_screenshot on a protected domain captures
-    // sensitive page content, so it gets the same elicitation as Layer 7.
-    // (scope all_tabs is handled Extension-side: protected tabs are excluded.)
-    if (isObserve) {
-      if (toolName === 'fox_screenshot' && args['scope'] !== 'all_tabs') {
-        return this._protectedConfirmation(shown, targetUrl ?? currentUrl);
+    // Layer 4: tools that change no page data (read, wait, UI only) run
+    // without approval; a read of a tab on a confirm_read_sites site asks
+    // the human. scope all_tabs is handled by the Extension, which skips
+    // such tabs.
+    if (!isOperationIn(ACTING_TOOLS, toolName)) {
+      const capturesAllTabs = toolName === 'fox_screenshot' && args['scope'] === 'all_tabs';
+      if (isOperationIn(PAGE_READ_TOOLS, toolName) && !capturesAllTabs) {
+        return this._readSiteConfirmation(shown, targetUrl ?? currentUrl);
       }
       return null;
     }
 
     // Layer 2 for acting tools: a tab on a page without a host
-    // (view-source:, blob:, data:, ...) matches no URL pattern, so Layer 7
-    // could not tell such a page of a protected site from any other. Acting
-    // there is refused; the reading tools above stay allowed.
+    // (view-source:, blob:, data:, ...) matches no URL pattern, and a Layer 7
+    // approval could name only its scheme, not the site it shows or carries.
+    // Acting there is refused; the reading tools above stay allowed.
     if (targetUrl === null && currentUrl !== null && !isOperationIn(TAB_INDEPENDENT_TOOLS, toolName) &&
       isHostlessPage(currentUrl)) {
       return this._deny(
@@ -609,45 +620,64 @@ export class SafetyGuard {
       );
     }
 
-    // Layer 7: Protected domain confirmation (MCP elicitation)
-    return this._protectedConfirmation(shown, targetUrl ?? currentUrl);
+    // Layer 7: every acting tool asks the human, on every site.
+    return this._actionConfirmation(shown, this._approvalUrl(toolName, targetUrl, currentUrl, args));
   }
 
   /**
-   * Layer 7: require human confirmation (MCP elicitation) when `checkUrl`
-   * (the target URL, or the tab's last-known URL) matches
-   * protected_url_patterns. No-op when confirmProtectedActions is false.
+   * The URL an acting call is approved for: the URL it goes to or opens,
+   * about:blank for a new tab without one, else the target tab's last-known
+   * URL (null when the guard has not seen it).
+   */
+  private _approvalUrl(
+    toolName: string,
+    targetUrl: string | null,
+    currentUrl: string | null,
+    args: Record<string, unknown>,
+  ): string | null {
+    if (targetUrl !== null) return targetUrl;
+    if (opensNewTab(toolName, args)) return NEW_TAB_URL;
+    return currentUrl;
+  }
+
+  /**
+   * Layer 7: an acting tool needs a human approval (MCP elicitation or the
+   * Extension's popup) for the site of `url`. With `url` null the guard does
+   * not know the target tab's page, so the call cannot be approved yet
+   * (tools/handlers.ts tells the caller to list the tabs first).
    * `shown`: the tool name the caller used (messages, elicitation).
    */
-  private _protectedConfirmation(
-    shown: string,
-    checkUrl: string | null,
-  ): SafetyDenial | null {
-    if (!this.config.confirmProtectedActions) {
-      return null;
-    }
-    if (checkUrl === null) {
-      return null;
-    }
-    const matched = this._matchedProtected(checkUrl);
-    if (!matched) {
-      return null;
-    }
+  private _actionConfirmation(shown: string, url: string | null): SafetyDenial {
     return {
       success: false,
       safetyDecision: 'confirmation_required',
-      layer: LAYER_OF.confirmation_required,
+      layer: LAYER.approval,
       confirmationRequired: true,
-      elicitation: {
-        protectedUrl: checkUrl,
-        matchedPattern: matched,
-        toolName: shown,
-      },
+      elicitation: { url, matchedPattern: null, toolName: shown },
       error:
-        `${shown} targets a protected site ('${checkUrl}' matches ` +
-        `pattern '${matched}' in safety.json). This is a guard against ` +
-        'unintended actions on sensitive sites (banking, payments, health, government). ' +
-        'Human confirmation is required via MCP elicitation.',
+        `${shown} needs human approval` + (url !== null ? ` for '${url}'` : '') +
+        '. Every acting tool (input, navigation, tabs) asks the human first, on every site.',
+    };
+  }
+
+  /**
+   * Layer 4: a read of a tab whose URL (`checkUrl`: the target URL, or the
+   * tab's last-known URL) matches confirm_read_sites needs human approval.
+   * Null when it does not match or the URL is unknown (the Extension then
+   * checks the real tab with the attached confirmReadUrlRules).
+   */
+  private _readSiteConfirmation(shown: string, checkUrl: string | null): SafetyDenial | null {
+    const matched = this._matchedReadSite(checkUrl);
+    if (checkUrl === null || matched === null) return null;
+    return {
+      success: false,
+      safetyDecision: 'confirmation_required',
+      layer: LAYER.readSites,
+      confirmationRequired: true,
+      elicitation: { url: checkUrl, matchedPattern: matched, toolName: shown },
+      error:
+        `${shown} reads '${checkUrl}', which matches confirm_read_sites entry '${matched}' ` +
+        'in safety.json. Reading this site needs human approval.',
     };
   }
 
@@ -689,9 +719,9 @@ export class SafetyGuard {
     return null;
   }
 
-  private _matchedProtected(url: string | null): string | null {
+  private _matchedReadSite(url: string | null): string | null {
     if (!url) return null;
-    for (const pattern of this._protected) {
+    for (const pattern of this._confirmRead) {
       if (pattern.test(url)) return pattern.source;
     }
     return null;
@@ -731,7 +761,7 @@ export class SafetyGuard {
     const compile = (sources: string[], list: PatternListName): UrlPattern[] => {
       const { patterns, issues } = compileUrlPatterns(sources, list);
       for (const issue of issues) {
-        const line = `${list}_url_patterns '${issue.pattern}': ${issue.message}`;
+        const line = `${PATTERN_LIST_KEYS[list]} '${issue.pattern}': ${issue.message}`;
         if (issue.fatal) {
           errors.push(line);
         } else {
@@ -743,7 +773,7 @@ export class SafetyGuard {
     };
     this._blocked = compile(this.config.blockedUrlPatterns, 'blocked');
     this._allowed = compile(this.config.allowedUrlPatterns, 'allowed');
-    this._protected = compile(this.config.protectedUrlPatterns, 'protected');
+    this._confirmRead = compile(this.config.confirmReadSites, 'confirmRead');
 
     // An unusable pattern must not silently narrow the policy (a dropped
     // blocked entry, an allowlist that loses its only entry): fail closed.

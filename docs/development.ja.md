@@ -120,7 +120,8 @@ CIはパッケージをアップロードしない（Actionsのストレージ�
 
 1. `npm ci && npm run build`を実行し、拡張機能を読み込み（一時的なアドオンとして。README: [AMOから拡張機能を入れる](../README.ja.md#amoから拡張機能を入れる)）、`--doctor`で接続を確認する（README: [コマンドライン](../README.ja.md#コマンドライン)）。
 2. ヘッドレスでの確認では、`FOX_HEADLESS=1`でdaemonを起動する（README: [ヘッドレスモード](../README.ja.md#ヘッドレスモード)）。拡張機能は同時に接続しない。
-3. `safety.json`の`protected_url_patterns`にテスト用のホストを加える。たとえば、hostsファイルで名前を付けたローカルのHTTPサーバー。実在の銀行や決済のサイトは使わない。
+3. `safety.json`の`confirm_read_sites`にテスト用のホストを加える。たとえば、hostsファイルで名前を付けたローカルのHTTPサーバー。実在の銀行や決済のサイトは使わない。
+4. 操作系の呼び出し（遷移、`fox_tab`のcreate / close、`fox_set_value`、クリック、入力）はすべて承認を求める。下の手順で呼び出しが動くことを期待しているときは承認する。
 
 ツール一覧:
 
@@ -151,15 +152,18 @@ CIはパッケージをアップロードしない（Actionsのストレージ�
 | 3-2 | `fox_create_tab` `{url}` | 2-2のcreateの手順と同じ |
 | 3-3 | 3-2の`audit.jsonl`の行 | `"tool": "fox_tab"`、`"legacyTool": "fox_create_tab"` |
 
-保護対象サイト:
+人による承認:
 
 | # | 呼び出し | 期待する結果 |
 |---|---|---|
-| 4-1 | `fox_tab` `{action: "create", url: <protected URL>}` | 確認を求められる（MCP elicitationかツールバーのポップアップ）。承認すると呼び出しが1回動く |
+| 4-1 | `fox_tab` `{action: "create", url}` | URLのサイトでの`fox_tab`を許可するか、引数と一緒に尋ねられる（MCP elicitationかツールバーのポップアップ）。承認すると呼び出しが1回動く |
 | 4-2 | 4-1を拒否する | 何も動かない。結果に拒否されたと出る |
-| 4-3 | 保護対象のページで`fox_interact` `{action: "scroll"}`（拡張機能） | 確認なしで動く（UIだけ） |
-| 4-4 | daemonが把握している保護対象のページで`fox_set_value` `{selector, value}`（拡張機能） | 確認を求められる（安全ガード）。承認すると動く |
-| 4-5 | 保護対象のページを手で開いてから4-4（daemonはそのURLを知らない） | 拡張機能がconfirmation_requiredで拒否し、確認を求められ、承認すると動く（承認したホストが拡張機能に届く） |
+| 4-3 | `fox_interact` `{action: "scroll"}`、`fox_read` `{mode: "text"}`、`fox_tab` `{action: "switch", tabId}`（拡張機能） | 尋ねずに動く |
+| 4-4 | daemonが把握しているページで`fox_set_value` `{selector, value}`を2回（拡張機能） | 毎回尋ねられる。承認するたびに1回動く |
+| 4-5 | タブを手で別のサイトへ移してから4-4（daemonはそのURLを知らない） | 前のサイトについて尋ねられる。承認すると拡張機能がconfirmation_requiredで拒否し、実際のサイトについて尋ねられ、承認すると動く（承認したサイトが拡張機能に届く） |
 | 4-6 | 4-1を以前の名前`fox_create_tab`で行う（`FOX_CAPS=legacy`） | 同じ流れ。確認の質問に`fox_create_tab`が出る |
+| 4-7 | `confirm_read_sites`のテスト用ホストで`fox_read` `{mode: "text"}`、続けて別のページで同じ呼び出し | テスト用ホストでだけ尋ねられる |
+| 4-8 | daemonを起動した直後に`fox_click` `{tabId: <あるタブ>, selector}` | 尋ねずに拒否される。結果に、まだ承認できないこと、先に`fox_tabs`を呼ぶことが出る |
+| 4-9 | ローカルのテスト用ページ（`file://`）で`fox_click` `{selector}`（拡張機能） | サイト`file:`について尋ねられる。承認すると動く |
 
 実機で確認できなかった手順は、報告の中で別にしておく。

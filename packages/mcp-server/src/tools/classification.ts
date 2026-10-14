@@ -8,14 +8,12 @@ import { OPERATION_NAMES, TOOL_SCHEMAS, isOperationName } from './schemas.js';
 import type { OperationName, ToolClassification, ToolDefinition } from './schemas.js';
 
 /**
- * Classes the guard lets through without the read-only (Layer 5) and
- * protected-domain (Layer 7) checks. None of them changes page data.
+ * Classes that change page or browser state (input, navigation, tabs): the
+ * guard asks the human for every call of them, on every site.
  */
-const GUARD_PASS_THROUGH: ReadonlySet<ToolClassification> = new Set<ToolClassification>([
-  'observe',
-  'interact',
-  'wait',
-  'human',
+const ACTING_CLASSES: ReadonlySet<ToolClassification> = new Set<ToolClassification>([
+  'act',
+  'workflow',
 ]);
 
 function namesWhere(pred: (def: ToolDefinition) => boolean): ReadonlySet<OperationName> {
@@ -30,9 +28,21 @@ export function isOperationIn(set: ReadonlySet<OperationName>, name: string): bo
   return isOperationName(name) && set.has(name);
 }
 
-/** Tools the guard treats as observation (see GUARD_PASS_THROUGH). */
-export const OBSERVE_TOOLS: ReadonlySet<OperationName> = namesWhere((def) =>
-  GUARD_PASS_THROUGH.has(def.classification),
+/**
+ * Tools that change page or browser state (ACTING_CLASSES): human approval
+ * for every call, and refused in read-only mode. Every other class (observe,
+ * interact, wait, human) changes no page data and runs without approval.
+ */
+export const ACTING_TOOLS: ReadonlySet<OperationName> = namesWhere((def) =>
+  ACTING_CLASSES.has(def.classification),
+);
+
+/**
+ * Tools that read the content of a tab (class observe, not tab-independent):
+ * on a site of confirm_read_sites they ask the human first.
+ */
+export const PAGE_READ_TOOLS: ReadonlySet<OperationName> = namesWhere((def) =>
+  def.classification === 'observe' && def.tabIndependent !== true,
 );
 
 /**
