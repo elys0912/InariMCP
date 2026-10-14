@@ -116,7 +116,7 @@ The 41 earlier tools became 21 (README: [Tool name migration](../README.md#tool-
 
 Preparation:
 
-1. `npm ci && npm run build`, then load the extension (README: [Load the extension in Firefox](../README.md#load-the-extension-in-firefox)) and check the connection with `--doctor` (README: [Command line](../README.md#command-line)).
+1. `npm ci && npm run build`, then load the extension (as a temporary add-on, README: [Install the extension from AMO](../README.md#install-the-extension-from-amo)) and check the connection with `--doctor` (README: [Command line](../README.md#command-line)).
 2. For the headless runs, start the daemon with `FOX_HEADLESS=1` (README: [Headless mode](../README.md#headless-mode)); do not connect the extension at the same time.
 3. Add a test host to `protected_url_patterns` in `safety.json`, for example a local HTTP server under a name in the hosts file. Do not use a real bank or payment site.
 

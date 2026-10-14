@@ -116,7 +116,7 @@ CIはパッケージをアップロードしない（Actionsのストレージ�
 
 準備:
 
-1. `npm ci && npm run build`を実行し、拡張機能を読み込み（README: [Firefoxへの拡張機能の読み込み](../README.ja.md#firefoxへの拡張機能の読み込み)）、`--doctor`で接続を確認する（README: [コマンドライン](../README.ja.md#コマンドライン)）。
+1. `npm ci && npm run build`を実行し、拡張機能を読み込み（一時的なアドオンとして。README: [AMOから拡張機能を入れる](../README.ja.md#amoから拡張機能を入れる)）、`--doctor`で接続を確認する（README: [コマンドライン](../README.ja.md#コマンドライン)）。
 2. ヘッドレスでの確認では、`FOX_HEADLESS=1`でdaemonを起動する（README: [ヘッドレスモード](../README.ja.md#ヘッドレスモード)）。拡張機能は同時に接続しない。
 3. `safety.json`の`protected_url_patterns`にテスト用のホストを加える。たとえば、hostsファイルで名前を付けたローカルのHTTPサーバー。実在の銀行や決済のサイトは使わない。
 

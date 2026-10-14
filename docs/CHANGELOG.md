@@ -15,6 +15,8 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The badge shows `●` while a command from the MCP client runs. The badge states have one order: not allowed, paused, approval count, running, setup state.
 - README: a Permissions section lists what each of the nine extension permissions is used for and where (`cookies` reads no cookie; it is what Firefox requires to open a tab in a container), and that the agent can create a Firefox container.
 - Release tooling for addons.mozilla.org: `npm run pack:ext` builds the Extension zip, writes the SHA-256 of every file in it and runs `web-ext lint` (0 errors and 0 warnings required); `npm run pack:source` makes the source zip from the committed files. [`docs/BUILD.md`](./BUILD.md) tells a reviewer how to rebuild the add-on (Node.js 24, npm 11) and compare it with the submitted one. A GitHub Actions workflow builds, type-checks and tests on Ubuntu 24.04 ARM64.
+- Privacy policy: [docs/PRIVACY.md](./PRIVACY.md) ([日本語](./PRIVACY.ja.md)): what is read and sent, where it goes, what stays on your computer and for how long, how to delete it, consent and control, private browsing.
+- Material for the addons.mozilla.org listing ([docs/amo/listing.md](./amo/listing.md)) and the Notes for Reviewers ([docs/amo/reviewer-notes.md](./amo/reviewer-notes.md)).
 
 ### Changed
 
@@ -23,6 +25,8 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - `manifest.json`: `incognito` is `not_allowed` (the extension never sees private-browsing tabs), and `data_collection_permissions` declares `websiteContent` and `browsingActivity` (page content, screenshots and URLs are sent to the local native host and from there to the MCP client).
 - `fox_wait` with `for: "network_idle"`: the counting hooks on the page's `fetch` and `XMLHttpRequest.prototype.send` are installed when the wait starts and removed when it ends (before, they stayed until the page unloaded). They count requests and record nothing about them. Requests already running when the call starts are not seen.
 - Screenshots saved under a `filename` you chose are now deleted after `FOX_SCREENSHOT_RETENTION_DAYS` (default 30) like the others; the Native Host lists them in `.named-screenshots` in the screenshots directory and never deletes any other file there.
+- README: installation now starts from addons.mozilla.org (1. the extension from AMO, 2. the native host, 3. the MCP client), and the top of the README says what is sent and what is needed. The "WIP", "AMO listing not planned" and "install the unlisted .xpi from GitHub Releases" statements are gone. New sections: Privacy and Links.
+- The extension's description and the popup footer use the name "Inari MCP for Firefox" and say that page content goes only to the native host on this computer.
 
 ### Removed
 
