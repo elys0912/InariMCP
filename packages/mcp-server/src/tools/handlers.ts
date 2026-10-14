@@ -189,8 +189,9 @@ function buildCommandData(
  * fox_wait_for_url, fox_wait_for_navigation (and the Extension's
  * reload_by_url / find_tabs). A case-insensitive part needs a
  * character class such as `[Ee]xample`. Each must also pass the limits of
- * shared/src/url-pattern-limit.ts (length, no repeated group containing a
- * repeat), which the Extension checks again.
+ * shared/src/url-pattern-limit.ts (length, a repeated group that holds a
+ * quantifier or `|`, the number and weight of the quantifiers and `|`, m of
+ * `{n,m}`), which the Extension checks again.
  */
 const REGEX_ARGUMENTS = ['urlPattern'] as const;
 
