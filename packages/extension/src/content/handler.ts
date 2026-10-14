@@ -1,7 +1,9 @@
 // Message dispatch of the content script: one message from the background
 // (content.ts), either the abort of the running commands (the pause switch)
-// or one command to its handler.
+// or one command to its handler -- an acting one only while the page is still
+// on the origin it was approved on.
 
+import { approvalOriginOf } from "../site-origin";
 import { abortRunningCommands, beginCommand } from "./abort";
 import { solveCaptcha } from "./captcha";
 import { ABORT_REQUEST_TYPE } from "./constants";
@@ -24,7 +26,7 @@ import {
   getText,
 } from "./inspect";
 import { cancelHumanWait } from "./overlay";
-import type { ContentMessage } from "./types";
+import type { ContentEnvelope, ContentMessage } from "./types";
 import {
   waitForElement,
   waitForChange,
@@ -50,14 +52,36 @@ function abortCommands(): Record<string, unknown> {
 }
 
 /**
+ * An acting command carries the origin it was approved on (the background's
+ * check of the tab's URL, background/dispatch.ts). The tab may have gone to
+ * another page since: the command is then refused here, just before it would
+ * act, with the page's URL, so that the MCP Server can ask the human about it.
+ */
+function refuseOffOrigin(approvedOrigin: unknown): Record<string, unknown> | null {
+  if (approvedOrigin === undefined) return null;
+  const url = window.location.href;
+  if (typeof approvedOrigin === "string" && approvalOriginOf(url) === approvedOrigin) return null;
+
+  return {
+    success: false,
+    safetyDecision: "confirmation_required",
+    error: "Human approval required: the tab left the approved site before the command ran",
+    url,
+  };
+}
+
+/**
  * One runtime message from the background. content.ts takes any message as
  * a request; a command's options are read defensively by its handler.
  */
 export async function handleRequest(request: unknown): Promise<Record<string, unknown>> {
   if (isAbortRequest(request)) return abortCommands();
+  const message = request as ContentMessage & ContentEnvelope;
+  const refusal = refuseOffOrigin(message.approvedOrigin);
+  if (refusal) return refusal;
 
   beginCommand();
-  return handleMessage(request as ContentMessage);
+  return handleMessage(message);
 }
 
 export async function handleMessage(

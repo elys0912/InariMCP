@@ -174,6 +174,15 @@ export interface ContentOptionsByAction {
 /** Action name of a background → content message. */
 export type ContentAction = keyof ContentOptionsByAction;
 
+/** What the background puts next to a command's options (action-table.ts toContentScript). */
+export interface ContentEnvelope {
+  /**
+   * Acting commands only: the origin (scheme://host[:port], site-origin.ts)
+   * of the page the human approval was checked on.
+   */
+  approvedOrigin?: string;
+}
+
 /**
  * A background → content message as the background builds it: the action
  * and the command's data, not checked against the action's options.

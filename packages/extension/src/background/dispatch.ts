@@ -7,6 +7,7 @@
 // toolbar badge shows it (setup-badge.ts).
 
 import { errorMessage } from "../error-message";
+import { approvalOriginOf } from "../site-origin";
 import type { CompiledUrlRule } from "../url-rule";
 import { describeAction, UNKNOWN_ACTION, type ActionContext, type ActionDescriptor } from "./action-table";
 import { parseContainerScope, enforceContainerScope, outOfScope } from "./container-scope";
@@ -139,10 +140,22 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
       scope: scope.filter,
       readRules: policy.readRules,
       approvedHost: policy.approvedHost,
+      approvedOrigin: approvedOriginFor(route.entry, target),
       urlLists: policy.urlLists,
       navigateInNewTab: route.navigateInNewTab,
     },
   };
+}
+
+/**
+ * The origin an acting command on the target tab was approved on: the
+ * approval check passed for that tab's URL. The content script runs the
+ * command only while its page is still there, so a tab that went elsewhere
+ * after the check is not acted on. Undefined for the other rows.
+ */
+function approvedOriginFor(entry: ActionDescriptor | undefined, target: browser.tabs.Tab | undefined): string | undefined {
+  if (entry?.approval !== "act" || target === undefined) return undefined;
+  return approvalOriginOf(target.url) ?? undefined;
 }
 
 /** The action a command runs: its internal name and its row of the action table. */

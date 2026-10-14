@@ -101,6 +101,11 @@ export interface ActionContext {
   readRules: CompiledUrlRule[];
   /** The site a human approved this one call for (`approvedHost`), if any. */
   approvedHost: string | undefined;
+  /**
+   * "act" rows: the origin (scheme, host and port) of the target tab's URL
+   * the approval was checked on (site-origin.ts), else undefined.
+   */
+  approvedOrigin: string | undefined;
   urlLists: UrlLists;
   /** fox_navigate with newTab, routed as createTab. */
   navigateInNewTab: boolean;
@@ -130,9 +135,11 @@ export type ActionDescriptor = TabActionDescriptor | SelfScopedActionDescriptor 
 /**
  * Content-script-forwarded actions. Every command goes to the top frame
  * (sendToContentScript's default), never to whichever frame answers first.
+ * An acting command carries the origin it was approved on: the content
+ * script refuses it if its page is no longer there (content/handler.ts).
  */
 function toContentScript(action: ContentAction): ActionHandler {
-  return (c) => sendToContentScript(c.tabId, { ...c.data, action });
+  return (c) => sendToContentScript(c.tabId, { ...c.data, approvedOrigin: c.approvedOrigin, action });
 }
 
 /**
