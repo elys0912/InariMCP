@@ -12,6 +12,7 @@
     "tabs",
     "nativeMessaging",
     "notifications",
+    "storage",
     "<all_urls>",
     "contextMenus",
     "contextualIdentities",

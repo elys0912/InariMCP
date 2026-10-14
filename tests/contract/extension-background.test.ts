@@ -572,6 +572,7 @@ describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
         getURL: (p: string) => `moz-extension://inari${p}`,
         onMessage: { addListener: (fn: Listener) => { onMessage = fn; } },
         onMessageExternal: { addListener: (fn: Listener) => { onExternal = fn; } },
+        onInstalled: { addListener: () => {} },
       },
       tabs: {
         query: async () => { queries++; return []; },

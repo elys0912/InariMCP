@@ -2,11 +2,12 @@
  * InariMCP - Popup Script
  */
 
-import { t } from '../i18n';
+import { localizePage, t } from '../i18n';
 import { APPROVAL_MESSAGE, type ApprovalView } from '../approval';
 import { TOP_FRAME_ID } from '../background/constants';
 import type { ContentRequest } from '../content/types';
 import type { SetupState } from '../types/setup';
+import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, parseControlView, type ControlView } from '../user-control';
 import { setupStateOfReply, setupStateOfFailure } from './setup-status';
 
 interface StatusResponse {
@@ -384,12 +385,56 @@ async function decide(id: string, approved: boolean): Promise<void> {
   await refreshApprovals();
 }
 
-/** Fill every [data-i18n] element with its localized message. */
-function localizePage(): void {
-  document.documentElement.lang = browser.i18n.getUILanguage();
-  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => {
-    const key = el.dataset.i18n;
-    if (key) el.textContent = t(key);
+// ---------------------------------------------------------------------------
+// Consent and pause switch
+// ---------------------------------------------------------------------------
+//
+// The background holds both (user-control.ts). Without consent the popup
+// only offers to open the consent page again; with it, the pause switch.
+
+async function fetchControl(): Promise<ControlView | null> {
+  try {
+    return parseControlView(await browser.runtime.sendMessage({ type: CONTROL_MESSAGE.GET }));
+  } catch {
+    return null;
+  }
+}
+
+function renderControl(control: ControlView): void {
+  const granted = control.consent === 'granted';
+  setHidden('consent', granted);
+  setHidden('control', !granted);
+  const toggle = document.getElementById('pause-switch') as HTMLInputElement | null;
+  if (toggle) toggle.checked = control.paused;
+  setHidden('pause-note', !control.paused);
+  // Recheck would only report "Connecting..." without consent.
+  const recheck = document.getElementById('btn-test-connection') as HTMLButtonElement | null;
+  if (recheck) recheck.disabled = !granted;
+  if (!granted) updateStatus('disconnected', t('statusNoConsent'));
+}
+
+/** The pause switch: the background refuses or accepts commands from now on. */
+function setupPauseSwitch(): void {
+  const toggle = document.getElementById('pause-switch') as HTMLInputElement | null;
+  toggle?.addEventListener('change', async () => {
+    const reply = await browser.runtime
+      .sendMessage({ type: CONTROL_MESSAGE.SET_PAUSED, paused: toggle.checked })
+      .catch(() => null);
+    const control = parseControlView(reply);
+    if (control === null) {
+      toggle.checked = !toggle.checked;
+      showToast(t('toastPauseFailed'), 'error');
+      return;
+    }
+
+    renderControl(control);
+  });
+}
+
+/** Opens the consent page in a tab (the popup closes when the tab opens). */
+function setupConsentButton(): void {
+  document.getElementById('btn-open-consent')?.addEventListener('click', () => {
+    void browser.tabs.create({ url: browser.runtime.getURL(CONSENT_PAGE_PATH) }).then(() => window.close());
   });
 }
 
@@ -482,8 +527,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     void refreshStatus(os, true);
   });
   setupCopyCommandButton();
+  setupConsentButton();
+  setupPauseSwitch();
 
-  void refreshStatus(os, false);
+  // Without consent nothing connects: the status would only say
+  // "Connecting...". A failed query shows neither section.
+  const control = await fetchControl();
+  if (control !== null) renderControl(control);
+  if (control === null || control.consent === 'granted') void refreshStatus(os, false);
 
   // Pending approval requests: shown first, refreshed while the popup is open
   // (new requests arrive, others time out).

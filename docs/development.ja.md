@@ -37,14 +37,15 @@ npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefo
 
 ### 拡張機能（esbuild）
 
-`scripts/build-extension.mjs`は、拡張機能をesbuildで実行環境ごとに1つ、計3つの自己完結したIIFEのバンドルにし、静的ファイルをコピーする。
+`scripts/build-extension.mjs`は、拡張機能をesbuildで実行環境ごとに1つ、計4つの自己完結したIIFEのバンドルにし、静的ファイルをコピーする。
 
 | 入口 | バンドル | 読み込む側 |
 |---|---|---|
 | `src/background.ts` | `dist/background.js` | `manifest.json`の`background.scripts` |
 | `src/content.ts` | `dist/content.js` | `manifest.json`の`content_scripts` |
 | `src/popup/popup.ts` | `dist/popup/popup.js` | `dist/popup/popup.html`（`browser_action.default_popup`） |
-| `src/popup/popup.html`、`src/popup/popup.css`、`src/content.css` | `dist/`にコピー | |
+| `src/consent/consent.ts` | `dist/consent/consent.js` | `dist/consent/consent.html`（許可の画面。初回のインストール時にbackgroundが開く） |
+| `src/popup/popup.html`、`src/popup/popup.css`、`src/consent/consent.html`、`src/consent/consent.css`、`src/content.css` | `dist/`にコピー | |
 
 `manifest.json`が読み込むスクリプトは実行環境ごとに1本だけ。ビルドの詳細:
 

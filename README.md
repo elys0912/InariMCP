@@ -103,6 +103,14 @@ To try your own changes to the extension, load it as a temporary add-on instead:
 
 The InariMCP button appears in the toolbar. Its popup shows the connection state (see [Check the connection](#restart-and-check-the-connection)).
 
+### First-run permission
+
+Right after installation the extension opens a permission page in a new tab. It says what the add-on does, what it sends (page content, screenshots, URLs and the tab list, through the native host to the MCP client) and what it needs, and links to the [privacy policy](docs/PRIVACY.md). Until you press **Allow**, the extension does not connect to the native host and does nothing; with **Don't allow** it stays that way, and the badge shows `OFF`. To allow it later, open the toolbar popup and press "Open the permission page". The page is not shown again on updates.
+
+### Pausing the agent
+
+The toolbar popup has a **Pause agent actions** switch. While it is on, the extension refuses every command from the MCP client (the error starts with `paused`), withdraws the approval requests still waiting, and the badge shows `II`. Turn it off to let the agent work again. The switch is kept across restarts.
+
 ### Add to Claude Code
 
 `npm run setup -- --register-claude` registers InariMCP with Claude Code (`claude mcp add`, scope `user` by default — available from any project), with the absolute path of node. A registration that already points to this installation is left unchanged; one that points elsewhere is replaced after asking. Without `--register-claude`, or when `claude` is not on your `PATH`, the installer prints the command; run it yourself:
@@ -145,6 +153,11 @@ Replace `<INSTALL_PATH>` with the absolute path of your clone.
 | red `!`, "Setup needed" (native host failed / MCP server not responding) | the host is registered but does not start, or the daemon does not answer | re-run the installer, `npm run setup` (the popup's command also rebuilds; usual cause: Node.js was upgraded or moved); check the logs below |
 | red `!`, "Update needed" | the clone is older than the extension | `git pull`, rebuild, re-run the installer, restart Firefox |
 | amber number | approval requests waiting for you | open the popup and approve or deny |
+| grey `OFF` | not allowed yet: the extension does not connect | open the popup → "Open the permission page" → Allow ([First-run permission](#first-run-permission)) |
+| blue `II` | paused: commands from the MCP client are refused | turn off the pause switch in the popup ([Pausing the agent](#pausing-the-agent)) |
+| green `●` | the MCP client is operating Firefox right now | nothing (it goes away when the command ends) |
+
+The badge shows one state at a time, the first that applies: `OFF`, `II`, the approval count, `●`, then the setup state (`!` or nothing).
 
 4. Run the diagnostics: `node packages/mcp-server/dist/index.js --doctor` (see [Command line](#command-line)). It checks the build, the Firefox registration, the Claude Code registration, the daemon and the logs, and prints a fix for each problem.
 5. Ask Claude Code to call `fox_safety_status`. It shows the active safety policy (read-only mode, URL patterns, rate limit, audit log path) and warns when the running daemon was started with different settings than this session. It does not report whether a browser is connected.

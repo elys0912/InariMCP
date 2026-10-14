@@ -1,8 +1,9 @@
 /**
  * Extension background/setup-badge.ts: the setup state shown in the popup
  * and on the toolbar badge, from the Native Host connection state and its
- * `status` reply (native-connection.ts replaced by a mock). Pending approval
- * requests take precedence over the setup state on the badge.
+ * `status` reply (native-connection.ts and control-state.ts replaced by
+ * mocks). The badge shows one state at a time: not allowed yet, paused,
+ * pending approvals, a running command, then the setup state.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +18,15 @@ vi.mock('../../packages/extension/src/background/native-connection', () => ({
   sendToNativeHost: () => host.reply(),
 }));
 
-const { refreshSetupState, setPendingApprovalCount, BADGE_COLOR } =
+const control = vi.hoisted(() => ({
+  view: { consent: 'granted', paused: false } as { consent: 'undecided' | 'granted' | 'denied'; paused: boolean },
+}));
+
+vi.mock('../../packages/extension/src/background/control-state', () => ({
+  controlView: () => control.view,
+}));
+
+const { refreshSetupState, setPendingApprovalCount, startHostCommand, refreshBadge, badgeFor, BADGE_COLOR } =
   await import('../../packages/extension/src/background/setup-badge.ts');
 
 interface Badge { text: string[]; color: string[]; title: string[] }
@@ -27,6 +36,7 @@ beforeEach(() => {
   badge = { text: [], color: [], title: [] };
   host.status = { confirmed: true, portOpen: true, lastError: null };
   host.reply.mockReset();
+  control.view = { consent: 'granted', paused: false };
   (globalThis as { browser?: unknown }).browser = {
     i18n: { getMessage: (key: string) => `msg:${key}` },
     browserAction: {
@@ -111,5 +121,83 @@ describe('background/setup-badge.ts', () => {
     host.status = { confirmed: false, portOpen: false, lastError: 'boom' };
     await refreshSetupState();
     expect(badge.title.at(-1)).toBe('badgeHostError');
+  });
+});
+
+describe('background/setup-badge.ts: badge priority', () => {
+  const READY = { kind: 'ready', relays: 1 } as const;
+  const HOST_MISSING = { kind: 'hostMissing', error: 'No such native application' } as const;
+  const inputs = (overrides: Partial<Parameters<typeof badgeFor>[0]> = {}): Parameters<typeof badgeFor>[0] => ({
+    control: { consent: 'granted', paused: false },
+    pendingApprovals: 0,
+    activeHostCommands: 0,
+    setup: READY,
+    ...overrides,
+  });
+
+  it('not allowed yet comes before everything else, undecided or denied', () => {
+    for (const consent of ['undecided', 'denied'] as const) {
+      const all = inputs({ control: { consent, paused: true }, pendingApprovals: 2, activeHostCommands: 1, setup: HOST_MISSING });
+      expect(badgeFor(all)).toMatchObject({ text: 'msg:badgeTextNoConsent', title: 'msg:badgeNoConsent' });
+    }
+  });
+
+  it('paused comes before approvals, a running command and the setup state', () => {
+    const paused = inputs({ control: { consent: 'granted', paused: true }, pendingApprovals: 2, activeHostCommands: 1, setup: HOST_MISSING });
+    expect(badgeFor(paused)).toMatchObject({ text: 'msg:badgeTextPaused', title: 'msg:badgePaused' });
+  });
+
+  it('pending approvals come before a running command (request_approval is one)', () => {
+    expect(badgeFor(inputs({ pendingApprovals: 1, activeHostCommands: 1 }))).toMatchObject({ text: '1', title: 'msg:badgeApprovalPending' });
+  });
+
+  it('a running command comes before the setup state', () => {
+    expect(badgeFor(inputs({ activeHostCommands: 1, setup: HOST_MISSING }))).toMatchObject({ text: '●', title: 'msg:badgeActive' });
+    expect(badgeFor(inputs({ setup: HOST_MISSING }))).toEqual({ text: '!', color: BADGE_COLOR, title: 'msg:badgeSetupNeeded' });
+    expect(badgeFor(inputs())).toEqual({ text: '', color: BADGE_COLOR, title: 'InariMCP' });
+  });
+
+  it('each state has its own color', () => {
+    const colors = [
+      badgeFor(inputs({ control: { consent: 'undecided', paused: false } })).color,
+      badgeFor(inputs({ control: { consent: 'granted', paused: true } })).color,
+      badgeFor(inputs({ pendingApprovals: 1 })).color,
+      badgeFor(inputs({ activeHostCommands: 1 })).color,
+      badgeFor(inputs({ setup: HOST_MISSING })).color,
+    ];
+    expect(new Set(colors).size).toBe(colors.length);
+  });
+
+  it('a running command shows while it runs, then the badge goes back; finishing twice counts once', async () => {
+    host.status = { confirmed: false, portOpen: false, lastError: null };
+    await refreshSetupState();
+    const finishFirst = startHostCommand();
+    const finishSecond = startHostCommand();
+    expect(badge.text.at(-1)).toBe('●');
+    expect(badge.title.at(-1)).toBe('msg:badgeActive');
+
+    finishFirst();
+    finishFirst();
+    expect(badge.text.at(-1)).toBe('●');
+    finishSecond();
+    expect(badge.text.at(-1)).toBe('');
+    expect(badge.title.at(-1)).toBe('InariMCP');
+  });
+
+  it('refreshBadge draws a change of the consent or the pause switch', () => {
+    control.view = { consent: 'denied', paused: false };
+    refreshBadge();
+    expect(badge.text.at(-1)).toBe('msg:badgeTextNoConsent');
+
+    control.view = { consent: 'granted', paused: true };
+    refreshBadge();
+    expect(badge.text.at(-1)).toBe('msg:badgeTextPaused');
+  });
+
+  it('a badge that cannot be drawn does not throw into the caller', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    delete (globalThis as { browser?: { i18n?: unknown } }).browser!.i18n;
+    control.view = { consent: 'undecided', paused: false };
+    expect(() => startHostCommand()()).not.toThrow();
   });
 });

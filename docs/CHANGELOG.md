@@ -8,6 +8,12 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 
 ## Unreleased (0.1.0)
 
+### Added
+
+- First-run permission page: right after installation the extension asks, in a tab, whether Inari MCP for Firefox may connect (what it does, what it sends, what it needs, privacy policy). It does not connect to the native host until you allow it; until then the badge shows `OFF`, and the popup reopens the page. Needs the `storage` permission to remember the answer.
+- Pause switch in the toolbar popup: while on, every command from the MCP client is refused with an error starting with `paused`, pending approval requests are withdrawn, and the badge shows `II`.
+- The badge shows `●` while a command from the MCP client runs. The badge states have one order: not allowed, paused, approval count, running, setup state.
+
 ### Changed
 
 - Renamed from KitsuneMCP to Inari MCP for Firefox. Add-on ID `inari-mcp@elys0912.github.io`, host manifest `inari_mcp`, state directory `~/.inari-mcp`, npm packages `@inari-mcp/*`.

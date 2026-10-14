@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title data-i18n="consentPageTitle">Inari MCP for Firefox: permission</title>
+  <link rel="stylesheet" href="consent.css">
+</head>
+<body>
+  <!-- Opened once after install (and from the popup while not allowed).
+       Elements with data-i18n get their text from _locales (consent.ts). -->
+  <main class="consent">
+    <h1 data-i18n="consentHeading">Allow Inari MCP for Firefox to connect?</h1>
+
+    <section>
+      <h2 data-i18n="consentWhatTitle">What it does</h2>
+      <p data-i18n="consentWhatText">It lets an MCP client on this computer (such as Claude Code) operate Firefox: read pages, take screenshots, click, type and manage tabs.</p>
+    </section>
+
+    <section>
+      <h2 data-i18n="consentSendsTitle">What it sends</h2>
+      <p data-i18n="consentSendsText">The content of open pages, screenshots, URLs and the list of tabs, through the native host on this computer to the MCP client. The MCP client may pass them on to its AI provider.</p>
+    </section>
+
+    <section>
+      <h2 data-i18n="consentNeedsTitle">What you need</h2>
+      <p data-i18n="consentNeedsText">The InariMCP native host, installed separately on this computer (see the installation guide).</p>
+    </section>
+
+    <section>
+      <h2 data-i18n="consentDenyTitle">If you do not allow it</h2>
+      <p data-i18n="consentDenyText">The add-on does not connect to the native host and does nothing. You can allow it later from the toolbar button.</p>
+    </section>
+
+    <p><a id="privacy-link" target="_blank" rel="noopener noreferrer" data-i18n="consentPrivacy">Privacy policy</a></p>
+
+    <p id="consent-state" class="state" role="status"></p>
+
+    <div class="buttons">
+      <button id="btn-deny" class="btn-deny" data-i18n="consentDeny">Don't allow</button>
+      <button id="btn-allow" class="btn-allow" data-i18n="consentAllow">Allow</button>
+    </div>
+  </main>
+
+  <script src="consent.js"></script>
+</body>
+</html>

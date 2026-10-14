@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 // Builds packages/extension/dist with esbuild.
 //
-// Three bundles, one per execution context, each self-contained (IIFE):
-//   src/background.ts     -> dist/background.js     (manifest background)
-//   src/content.ts        -> dist/content.js        (manifest content script)
-//   src/popup/popup.ts    -> dist/popup/popup.js    (popup.html)
-// plus the static files popup.html / popup.css / content.css.
+// Four bundles, one per execution context, each self-contained (IIFE):
+//   src/background.ts       -> dist/background.js       (manifest background)
+//   src/content.ts          -> dist/content.js          (manifest content script)
+//   src/popup/popup.ts      -> dist/popup/popup.js      (popup.html)
+//   src/consent/consent.ts  -> dist/consent/consent.js  (consent.html, opened
+//                                                        by the background)
+// plus the static files popup.html / popup.css / consent.html / consent.css /
+// content.css.
 //
 // esbuild does not type-check: `npm run typecheck -w @inari-mcp/extension`
 // (tsc --noEmit) does, and `npm run build` of the extension runs it first.
@@ -90,6 +93,7 @@ const result = await build({
     { in: path.join(src, 'background.ts'), out: 'background' },
     { in: path.join(src, 'content.ts'), out: 'content' },
     { in: path.join(src, 'popup', 'popup.ts'), out: 'popup/popup' },
+    { in: path.join(src, 'consent', 'consent.ts'), out: 'consent/consent' },
   ],
   outdir: dist,
   bundle: true,
@@ -119,6 +123,8 @@ for (const [out, info] of Object.entries(result.metafile.outputs)) {
 for (const [from, to] of [
   ['popup/popup.html', 'popup/popup.html'],
   ['popup/popup.css', 'popup/popup.css'],
+  ['consent/consent.html', 'consent/consent.html'],
+  ['consent/consent.css', 'consent/consent.css'],
   ['content.css', 'content.css'],
 ]) {
   mkdirSync(path.dirname(path.join(dist, to)), { recursive: true });
@@ -128,7 +134,7 @@ for (const [from, to] of [
 // ESM sources are strict, but an IIFE bundle is a classic script: esbuild
 // keeps strict mode by emitting "use strict" (from the tsconfig's strict /
 // alwaysStrict). Fail if that ever stops.
-for (const out of ['background.js', 'content.js', 'popup/popup.js']) {
+for (const out of ['background.js', 'content.js', 'popup/popup.js', 'consent/consent.js']) {
   if (!readFileSync(path.join(dist, out), 'utf-8').startsWith('"use strict";')) {
     console.error(`build-extension: dist/${out} does not start with "use strict"`);
     process.exit(1);
