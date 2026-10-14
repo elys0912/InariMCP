@@ -8,9 +8,11 @@ import { z } from 'zod';
  * The single source of the tool classes; see tools/classification.ts for
  * what the SafetyGuard and the MCP annotations derive from it.
  *   - observe:  reads the page or browser state, changes nothing
- *   - interact: changes UI state only (hover, scroll, overlay, active tab),
- *               never page data; allowed in read-only mode
- *   - act:      changes page or browser state (input, navigation, tabs)
+ *   - interact: changes UI state only (scroll, overlay, active tab), never
+ *               page data, and returns no page content; allowed in
+ *               read-only mode
+ *   - act:      changes page or browser state (input, navigation, tabs,
+ *               and hover, which runs the page's own handlers)
  *   - wait / workflow / human: as named
  */
 export type ToolClassification =
@@ -90,6 +92,25 @@ const timeoutMs = z.number().int().positive().max(MAX_TIMEOUT_ARG_MS).optional()
 const URL_PATTERN_NOTE =
   'JavaScript regex, case-sensitive, unanchored (matches anywhere in the full URL); ' +
   'use [Ee]xample for a case-insensitive part.';
+
+/**
+ * The fields whose value the tools mask (shared/src/field-mask.ts), for the
+ * descriptions of the tools that return values.
+ */
+export const MASKED_FIELDS_NOTE =
+  'password, hidden, one-time-code and payment card (autocomplete cc-*) fields, and the options of such a select';
+
+/**
+ * Shared by the tools that take a CSS selector without asking the human to
+ * read (shared/src/field-mask.ts readSelectorProblem).
+ */
+export const READ_SELECTOR_NOTE =
+  'A selector that tests the value attribute (such as [value^="a"]) or uses :checked is refused: ' +
+  'it could tell a masked value one guess at a time.';
+
+/** Shared by the tools that find an element without reading it. */
+export const ELEMENT_LOCATION_NOTE =
+  "Returns at most the element's tag, generated selector and position, never its text, value or links.";
 
 // =========================================================================
 // Observe tools (read-only)
@@ -424,14 +445,17 @@ const OPERATIONS = {
   fox_get_elements: {
     name: 'fox_get_elements',
     description:
-      'List elements matching a CSS selector (querySelectorAll: the first `limit` matches, plus the total count). Per element: tag, id, classes, name, type, text (first 200 chars), value (password fields masked), href, src, placeholder, ariaLabel, role, disabled, checked, visible, position (viewport coordinates incl. centerX/centerY) and a generated CSS selector. Headless: tag, text and bounding box only, at most 50.',
+      'List elements matching a CSS selector (querySelectorAll: the first `limit` matches, plus the total count). Per element: tag, id, classes, name, type, text (first 200 chars), value, href, src, placeholder, ariaLabel, role, disabled, checked, visible, position (viewport coordinates incl. centerX/centerY) and a generated CSS selector. ' +
+      `Values of ${MASKED_FIELDS_NOTE} are masked, and so is the text of such an option. ${READ_SELECTOR_NOTE} ` +
+      'Headless: tag, text and bounding box only, at most 50.',
     inputSchema: foxGetElementsSchema,
     classification: 'observe',
   },
   fox_get_text: {
     name: 'fox_get_text',
     description:
-      'Extract the visible text content of the page or a specific element. Lighter-weight than a screenshot for reading page content.',
+      'Extract the visible text content of the page or a specific element. Lighter-weight than a screenshot for reading page content. ' +
+      `The text of a masked field reads as [MASKED] (masked: ${MASKED_FIELDS_NOTE}). ${READ_SELECTOR_NOTE}`,
     inputSchema: foxGetTextSchema,
     classification: 'observe',
   },
@@ -445,7 +469,8 @@ const OPERATIONS = {
   fox_get_page_info: {
     name: 'fox_get_page_info',
     description:
-      'Get an overview of the current page: URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, and h1-h3 headings. Password values are masked. Not in any FOX_CAPS profile. Headless: URL and title only.',
+      'Get an overview of the current page: URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, and h1-h3 headings. ' +
+      `Values of ${MASKED_FIELDS_NOTE} are masked. Not in any FOX_CAPS profile. Headless: URL and title only.`,
     inputSchema: foxGetPageInfoSchema,
     classification: 'observe',
   },
@@ -505,21 +530,23 @@ const OPERATIONS = {
   fox_hover: {
     name: 'fox_hover',
     description:
-      'Hover over an element to trigger hover effects, tooltips, or dropdown menus. Dispatches synthetic mouseenter / mouseover events (isTrusted=false): JavaScript hover handlers run, CSS :hover styles do not apply.',
+      'Hover over an element to trigger hover effects, tooltips, or dropdown menus. Dispatches synthetic mouseenter / mouseover events (isTrusted=false): JavaScript hover handlers run, CSS :hover styles do not apply. ' +
+      `Since the page's own handlers run, it asks the human first like the acting tools, and read-only mode refuses it. ${ELEMENT_LOCATION_NOTE}`,
     inputSchema: foxHoverSchema,
-    classification: 'interact',
+    classification: 'act',
+    annotations: { destructiveHint: false },
   },
   fox_scroll: {
     name: 'fox_scroll',
     description:
-      'Scroll the page or a specific element in any direction, or scroll a target element into view.',
+      `Scroll the page or a specific element in any direction, or scroll a target element into view. ${ELEMENT_LOCATION_NOTE} ${READ_SELECTOR_NOTE}`,
     inputSchema: foxScrollSchema,
     classification: 'interact',
   },
   fox_highlight: {
     name: 'fox_highlight',
     description:
-      'Highlight an element on the page with a colored overlay for visual debugging. Optionally show a label.',
+      `Highlight an element on the page with a colored overlay for visual debugging. Optionally show a label. ${ELEMENT_LOCATION_NOTE} ${READ_SELECTOR_NOTE}`,
     inputSchema: foxHighlightSchema,
     classification: 'interact',
   },
@@ -550,7 +577,7 @@ const OPERATIONS = {
   fox_wait_for_element: {
     name: 'fox_wait_for_element',
     description:
-      'Wait for an element matching a CSS selector to appear (and optionally become visible) on the page.',
+      `Wait for an element matching a CSS selector to appear (and optionally become visible) on the page. ${ELEMENT_LOCATION_NOTE} ${READ_SELECTOR_NOTE}`,
     inputSchema: foxWaitForElementSchema,
     classification: 'wait',
   },

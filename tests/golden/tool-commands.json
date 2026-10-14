@@ -2060,6 +2060,7 @@
     "args": {
       "selector": "#h"
     },
+    "approval": "plain.example.test",
     "command": {
       "action": "hover",
       "data": {
@@ -2091,7 +2092,8 @@
           "path": null,
           "pathMatch": "strict"
         }
-      ]
+      ],
+      "approvedHost": "plain.example.test"
     },
     "timeoutMs": {
       "extension": 30000,

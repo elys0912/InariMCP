@@ -193,7 +193,7 @@
   },
   {
     "name": "fox_get_elements",
-    "description": "[Deprecated: fox_get_elements is deprecated; use fox_find with by='selector'.] List elements matching a CSS selector (querySelectorAll: the first `limit` matches, plus the total count). Per element: tag, id, classes, name, type, text (first 200 chars), value (password fields masked), href, src, placeholder, ariaLabel, role, disabled, checked, visible, position (viewport coordinates incl. centerX/centerY) and a generated CSS selector. Headless: tag, text and bounding box only, at most 50.",
+    "description": "[Deprecated: fox_get_elements is deprecated; use fox_find with by='selector'.] List elements matching a CSS selector (querySelectorAll: the first `limit` matches, plus the total count). Per element: tag, id, classes, name, type, text (first 200 chars), value, href, src, placeholder, ariaLabel, role, disabled, checked, visible, position (viewport coordinates incl. centerX/centerY) and a generated CSS selector. Values of password, hidden, one-time-code and payment card (autocomplete cc-*) fields, and the options of such a select are masked, and so is the text of such an option. A selector that tests the value attribute (such as [value^=\"a\"]) or uses :checked is refused: it could tell a masked value one guess at a time. Headless: tag, text and bounding box only, at most 50.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -225,7 +225,7 @@
   },
   {
     "name": "fox_get_page_info",
-    "description": "[Deprecated: fox_get_page_info is deprecated; use fox_read with mode='info'.] Get an overview of the current page: URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, and h1-h3 headings. Password values are masked. Not in any FOX_CAPS profile. Headless: URL and title only.",
+    "description": "[Deprecated: fox_get_page_info is deprecated; use fox_read with mode='info'.] Get an overview of the current page: URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, and h1-h3 headings. Values of password, hidden, one-time-code and payment card (autocomplete cc-*) fields, and the options of such a select are masked. Not in any FOX_CAPS profile. Headless: URL and title only.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -279,7 +279,7 @@
   },
   {
     "name": "fox_get_text",
-    "description": "[Deprecated: fox_get_text is deprecated; use fox_read with mode='text'.] Extract the visible text content of the page or a specific element. Lighter-weight than a screenshot for reading page content.",
+    "description": "[Deprecated: fox_get_text is deprecated; use fox_read with mode='text'.] Extract the visible text content of the page or a specific element. Lighter-weight than a screenshot for reading page content. The text of a masked field reads as [MASKED] (masked: password, hidden, one-time-code and payment card (autocomplete cc-*) fields, and the options of such a select). A selector that tests the value attribute (such as [value^=\"a\"]) or uses :checked is refused: it could tell a masked value one guess at a time.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -349,7 +349,7 @@
   },
   {
     "name": "fox_highlight",
-    "description": "[Deprecated: fox_highlight is deprecated; use fox_interact with action='highlight'.] Highlight an element on the page with a colored overlay for visual debugging. Optionally show a label.",
+    "description": "[Deprecated: fox_highlight is deprecated; use fox_interact with action='highlight'.] Highlight an element on the page with a colored overlay for visual debugging. Optionally show a label. Returns at most the element's tag, generated selector and position, never its text, value or links. A selector that tests the value attribute (such as [value^=\"a\"]) or uses :checked is refused: it could tell a masked value one guess at a time.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -385,7 +385,7 @@
   },
   {
     "name": "fox_hover",
-    "description": "[Deprecated: fox_hover is deprecated; use fox_interact with action='hover'.] Hover over an element to trigger hover effects, tooltips, or dropdown menus. Dispatches synthetic mouseenter / mouseover events (isTrusted=false): JavaScript hover handlers run, CSS :hover styles do not apply.",
+    "description": "[Deprecated: fox_hover is deprecated; use fox_interact with action='hover'.] Hover over an element to trigger hover effects, tooltips, or dropdown menus. Dispatches synthetic mouseenter / mouseover events (isTrusted=false): JavaScript hover handlers run, CSS :hover styles do not apply. Since the page's own handlers run, it asks the human first like the acting tools, and read-only mode refuses it. Returns at most the element's tag, generated selector and position, never its text, value or links.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -771,7 +771,7 @@
   },
   {
     "name": "fox_scroll",
-    "description": "[Deprecated: fox_scroll is deprecated; use fox_interact with action='scroll'.] Scroll the page or a specific element in any direction, or scroll a target element into view.",
+    "description": "[Deprecated: fox_scroll is deprecated; use fox_interact with action='scroll'.] Scroll the page or a specific element in any direction, or scroll a target element into view. Returns at most the element's tag, generated selector and position, never its text, value or links. A selector that tests the value attribute (such as [value^=\"a\"]) or uses :checked is refused: it could tell a masked value one guess at a time.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1006,7 +1006,7 @@
   },
   {
     "name": "fox_wait_for_element",
-    "description": "[Deprecated: fox_wait_for_element is deprecated; use fox_wait with for='element'.] Wait for an element matching a CSS selector to appear (and optionally become visible) on the page.",
+    "description": "[Deprecated: fox_wait_for_element is deprecated; use fox_wait with for='element'.] Wait for an element matching a CSS selector to appear (and optionally become visible) on the page. Returns at most the element's tag, generated selector and position, never its text, value or links. A selector that tests the value attribute (such as [value^=\"a\"]) or uses :checked is refused: it could tell a masked value one guess at a time.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -323,10 +323,9 @@ export function getText(
   }
 
   const maxLength = options.maxLength || DEFAULTS.TEXT_MAX_LENGTH;
+  const shown = (element as HTMLElement).innerText || element.textContent || "";
   // A masked field read as itself (an option of a masked select, a masked textarea).
-  const text = isMaskedField(element)
-    ? MASKED_VALUE
-    : (element as HTMLElement).innerText || element.textContent || "";
+  const text = shown !== "" && isMaskedField(element) ? MASKED_VALUE : shown;
 
   return {
     text: clipText(text, maxLength),

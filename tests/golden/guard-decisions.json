@@ -464,11 +464,11 @@
   {
     "id": "hover/default",
     "tool": "fox_hover",
-    "default": null,
-    "readOnly": null,
-    "readSiteTab": null,
-    "localFileTab": null,
-    "unknownTab": null,
+    "default": "confirmation_required",
+    "readOnly": "read_only",
+    "readSiteTab": "confirmation_required",
+    "localFileTab": "confirmation_required",
+    "unknownTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
   },
