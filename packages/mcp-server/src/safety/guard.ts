@@ -161,7 +161,7 @@ export interface SafetyStatus {
   enabled: boolean;
   /** Set when safety.json could not be used; every tool is refused. */
   configError: string | null;
-  /** Non-fatal pattern problems (legacy regex patterns etc.). */
+  /** Non-fatal pattern problems (a dot-less host pattern in the blocked or confirm-read list). */
   patternWarnings: string[];
   readOnly: boolean;
   /** Which calls ask the human first (APPROVAL_POLICY). */

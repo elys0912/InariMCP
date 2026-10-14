@@ -135,40 +135,21 @@ describe('re: patterns', () => {
   });
 });
 
-describe('legacy regex patterns', () => {
+describe('a bare regex is no pattern', () => {
   it.each([
-    ['paypal\\.com', 'https://www.paypal.com/', 'https://paypal.com.attacker.test/'],
-    ['\\.gov(/|$)', 'https://irs.gov/', 'https://gov.attacker.test/'],
-    ['stripe\\.com/dashboard', 'https://stripe.com/dashboard/x', 'https://stripe.com/docs'],
-    ['^https://a\\.example/', 'https://a.example/x', 'http://a.example/x'],
-    ['^https://a\\.example/', 'https://a.example/x', 'https://sub.a.example/x'],
-    ['^https?://a\\.example(/|$)', 'http://a.example', 'https://sub.a.example/'],
-    ['\\.a\\.example', 'https://sub.a.example/', 'https://a.example/'],
-  ])('%s is read as a host pattern (%s yes, %s no)', (source, hit, miss) => {
-    const { patterns, issues } = compileUrlPatterns([source], 'allowed');
-    expect(issues).toEqual([]);
-    expect(patterns[0]!.kind).toBe('host');
-    expect(patterns[0]!.test(hit)).toBe(true);
-    expect(patterns[0]!.test(miss)).toBe(false);
+    'paypal\\.com', '\\.gov(/|$)', '^https://a\\.example/', 'mychart\\.', '(www\\.)?example\\.test',
+    '[Bb]ank\\.test', 'localhost:\\d+', 'example\\.test/a\\?x=1', '(unclosed',
+  ])('%s is fatal in every list', (source) => {
+    for (const list of ['blocked', 'allowed', 'confirmRead'] as const) {
+      const { patterns, issues } = compileUrlPatterns([source], list);
+      expect(patterns, `${list} ${source}`).toEqual([]);
+      expect(issues.map((i) => i.fatal), `${list} ${source}`).toEqual([true]);
+    }
   });
 
-  it('other regexes keep their old meaning in the blocked and confirm-read lists, with a warning', () => {
-    const { patterns, issues } = compileUrlPatterns(['mychart\\.'], 'confirmRead');
-    expect(patterns[0]!.kind).toBe('legacy');
-    expect(patterns[0]!.test('https://mychart.clinic.test/')).toBe(true);
-    expect(issues).toHaveLength(1);
-    expect(issues[0]!.fatal).toBe(false);
-  });
-
-  it('are fatal in the allowlist', () => {
-    const { patterns, issues } = compileUrlPatterns(['(www\\.)?example\\.test'], 'allowed');
-    expect(patterns).toEqual([]);
-    expect(issues[0]!.fatal).toBe(true);
-  });
-
-  it('are fatal when not a valid regex', () => {
-    const { issues } = compileUrlPatterns(['(unclosed'], 'blocked');
-    expect(issues[0]!.fatal).toBe(true);
+  it('says how to write it instead', () => {
+    expect(compileUrlPatterns(['paypal\\.com'], 'blocked').issues[0]!.message)
+      .toMatch(/^not a host pattern .*Rewrite it as a host pattern, or as "re:/);
   });
 });
 
@@ -191,13 +172,6 @@ describe('other issues', () => {
         expect(issues[0]!.message).toMatch(/cannot appear in a path/);
       }
     }
-  });
-
-  it('a legacy regex with an escaped ? stays a legacy regex', () => {
-    const { patterns, issues } = compileUrlPatterns(['example\\.test/a\\?x=1'], 'blocked');
-    expect(patterns[0]!.kind).toBe('legacy');
-    expect(issues.every((i) => !i.fatal)).toBe(true);
-    expect(patterns[0]!.test('https://example.test/a?x=1')).toBe(true);
   });
 
   it('a bare single label warns that it is not a substring match', () => {
@@ -254,7 +228,7 @@ describe('IPv6 and port patterns (L6)', () => {
     expect(std!.test('http://example.test/')).toBe(false);
   });
 
-  it('an unusable IPv6 address or port is fatal in every list, not a legacy regex', () => {
+  it('an unusable IPv6 address or port is fatal in every list', () => {
     for (const list of ['blocked', 'allowed', 'confirmRead'] as const) {
       for (const p of ['[::g]', 'example.test:0', 'example.test:70000', 'example.test:abc', '*.[::1]']) {
         const { patterns, issues } = compileUrlPatterns([p], list);
@@ -262,11 +236,6 @@ describe('IPv6 and port patterns (L6)', () => {
         expect(issues[0]?.fatal, `${list} ${p}`).toBe(true);
       }
     }
-  });
-  it('a legacy regex after host: stays a legacy regex in the blocked and confirm-read lists', () => {
-    const { patterns, issues } = compileUrlPatterns(['localhost:\\d+'], 'blocked');
-    expect(patterns[0]?.kind).toBe('legacy');
-    expect(issues[0]?.fatal).toBe(false);
   });
   it('scheme, port and path together all have to match', () => {
     const [p] = compileUrlPatterns(['https://example.test:8443/admin'], 'blocked').patterns;
@@ -277,15 +246,5 @@ describe('IPv6 and port patterns (L6)', () => {
     expect(p!.test('http://example.test:8443/admin')).toBe(false);
     expect(p!.test('https://example.test/admin')).toBe(false);
     expect(p!.test('https://example.test:8443/other')).toBe(false);
-  });
-
-  it('a legacy regex with a character class keeps its old meaning', () => {
-    const { patterns, issues } = compileUrlPatterns(['[Bb]ank\\.test'], 'confirmRead');
-    expect(patterns[0]!.kind).toBe('legacy');
-    expect(issues[0]!.fatal).toBe(false);
-    expect(patterns[0]!.test('https://bank.test/')).toBe(true);
-    expect(patterns[0]!.test('https://Bank.test.attacker.test/')).toBe(true); // unanchored, as before
-    // The same source is fatal in the allowlist.
-    expect(compileUrlPatterns(['[Bb]ank\\.test'], 'allowed').issues[0]!.fatal).toBe(true);
   });
 });

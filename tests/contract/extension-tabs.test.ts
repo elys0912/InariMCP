@@ -36,6 +36,9 @@ function installFakeBrowser(overrides: Record<string, unknown> = {}) {
     windowsUpdate: vi.fn(async () => ({})),
     createContainer: vi.fn(async () => ({ cookieStoreId: 'c-new' })),
     find: vi.fn(async () => ({ count: 2, rangeData: [{}, {}], rectData: [{ r: 1 }] })),
+    sendMessage: vi.fn<(id: number, message: unknown, options: unknown) => Promise<unknown>>(
+      async () => ({ success: true, hasMaskedFields: false }),
+    ),
   };
   (globalThis as { browser?: unknown }).browser = {
     tabs: {
@@ -43,6 +46,7 @@ function installFakeBrowser(overrides: Record<string, unknown> = {}) {
       create: spies.create,
       remove: spies.remove,
       update: spies.update,
+      sendMessage: spies.sendMessage,
     },
     windows: {
       getAll: async () => [{ id: 1, focused: true }, { id: 2, focused: false }, { id: 3, focused: false }],
@@ -131,5 +135,25 @@ describe('background/tabs.ts', () => {
     expect(r).toMatchObject({ success: true, count: 2, rectData: undefined });
     const withRects = await findText(TABS[0], { query: 'Buy', includeRectData: true });
     expect(withRects['rectData']).toEqual([{ r: 1 }]);
+  });
+
+  it('findText asks the top frame for masked fields first', async () => {
+    const spies = installFakeBrowser();
+    await findText(TABS[0], { query: 'Buy' });
+    expect(spies.sendMessage).toHaveBeenCalledWith(1, { action: 'hasMaskedFields' }, { frameId: 0 });
+  });
+
+  it.each([
+    ['the page shows a masked field', async () => ({ success: true, hasMaskedFields: true }), /masked|password/],
+    ['the answer has no flag', async () => ({ success: true }), /password/],
+    ['the page has no content script', async () => { throw new Error('Could not establish connection. Receiving end does not exist.'); },
+      /could not be checked.*cannot reach this page/],
+  ])('findText refuses the tab, without searching it, when %s', async (_when, answer, error) => {
+    const spies = installFakeBrowser();
+    spies.sendMessage.mockImplementation(answer);
+    const r = await findText(TABS[0], { query: '4' });
+    expect(r).toMatchObject({ success: false, error: expect.stringMatching(error) });
+    expect(r['error']).toMatch(/^find_text refused: /);
+    expect(spies.find).not.toHaveBeenCalled();
   });
 });

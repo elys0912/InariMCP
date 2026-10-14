@@ -1,5 +1,6 @@
 // Input: click, type, scroll, set / select values, hover, key presses.
 
+import { MASKED_VALUE } from "@inari-mcp/shared/field-mask";
 import { DEFAULTS, DELAYS, TIMEOUTS } from "./constants";
 import {
   findElement,
@@ -13,6 +14,7 @@ import {
   isInputElement,
   isButtonElement,
   isSelectElement,
+  isMaskedField,
   locatorWithoutText,
   hasLocator,
   assertNotPasswordField,
@@ -328,19 +330,19 @@ function scrollTowards(element: Element | null, direction: ScrollDirection, amou
 
 /**
  * fox_scroll. toElement first: scroll that element into view. Else scroll
- * the element of selector / xpath / id, or the window, by direction.
+ * the element of selector, or the window, by direction.
  * Kept as the reference behaviour (the headless backend follows it): a
  * selector that matches nothing scrolls the window, a toElement that matches
  * nothing falls through to the direction, and without a direction nothing
  * moves. `position` is always the measured {x, y} after the scroll.
  * A scroll is no read (no confirm_read_sites check): toElement returns
  * where the element is, not its content. Its selectors are checked by
- * handler.ts (READ_SELECTOR_FIELDS).
+ * handler.ts (READ_LOCATOR_FIELDS).
  */
 export async function performScroll(
   options: ScrollOptions,
 ): Promise<Record<string, unknown>> {
-  const element = options.selector || options.xpath || options.id ? findElement(options) : null;
+  const element = options.selector ? findElement({ selector: options.selector }) : null;
 
   if (options.toElement) {
     const targetElement = findElement({ selector: options.toElement });
@@ -487,9 +489,11 @@ export function selectOption(
 
   sel.dispatchEvent(new Event("change", { bubbles: true }));
 
+  // A masked select (a card expiry) answers as a read of it would.
+  const masked = isMaskedField(sel);
   return {
     selected: true,
-    value: sel.value,
-    text: sel.options[sel.selectedIndex]?.text,
+    value: masked ? MASKED_VALUE : sel.value,
+    text: masked ? MASKED_VALUE : sel.options[sel.selectedIndex]?.text,
   };
 }

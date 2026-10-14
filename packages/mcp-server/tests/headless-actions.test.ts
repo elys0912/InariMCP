@@ -217,6 +217,14 @@ describe('select_option', () => {
     expect(index['success']).toBe(false);
   });
 
+  real('a masked select answers with its options masked, chosen or listed', async () => {
+    await load('<select id="m" autocomplete="cc-exp-month"><option value="01">Jan</option><option value="02">Feb</option></select>');
+    expect(await browser.execute('select_option', undefined, { selector: '#m', index: 1 }))
+      .toMatchObject({ success: true, selected: true, value: '[MASKED]', text: '[MASKED]' });
+    const miss = await browser.execute('select_option', undefined, { selector: '#m', index: 9 });
+    expect(miss['availableOptions']).toEqual([{ value: '[MASKED]', text: '[MASKED]' }, { value: '[MASKED]', text: '[MASKED]' }]);
+  });
+
   real('text falls back to the trimmed option text, as on the Extension', async () => {
     await load('<select id="s"><option value="a"> Alpha </option><option value="b">Beta</option></select>');
     expect(await browser.execute('select_option', undefined, { selector: '#s', text: 'Alpha' }))

@@ -241,7 +241,7 @@ describe('approval by tool class (acting tools always ask)', () => {
 describe('Layer 2-3 on the parsed target URL (2.B1)', () => {
   // confirmation_required: the URL passed the lists (an acting tool then asks the human).
   it('an allowlist entry does not admit look-alike hosts or URLs that merely mention it', () => {
-    const g = guard({ allowedUrlPatterns: ['example\\.test'] });
+    const g = guard({ allowedUrlPatterns: ['example.test'] });
     expect(decision(g, 'fox_navigate', { url: 'https://www.example.test/' })).toBe('confirmation_required');
     expect(decision(g, 'fox_navigate', { url: 'https://example.test.attacker.test/' })).toBe('not_allowlisted');
     expect(decision(g, 'fox_navigate', { url: 'https://attacker.test/?r=example.test' })).toBe('not_allowlisted');
@@ -287,15 +287,19 @@ describe('fail-closed configuration (2.B2)', () => {
     expect(guard({ confirmReadSites: ['re:(unclosed'] }).status().configError).toContain('confirm_read_sites');
   });
 
-  it('a legacy regex only warns', () => {
+  it('a dot-less host pattern only warns', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      const g = guard({ confirmReadSites: ['mychart\\.'] });
+      const g = guard({ confirmReadSites: ['mychart'] });
       expect(g.status().configError).toBeNull();
-      expect(g.status().patternWarnings).toEqual([expect.stringMatching(/^confirm_read_sites 'mychart\\\.'/)]);
+      expect(g.status().patternWarnings).toEqual([expect.stringMatching(/^confirm_read_sites 'mychart'/)]);
     } finally {
       stderr.mockRestore();
     }
+  });
+
+  it('a bare regex puts the guard in the config-error state', () => {
+    expect(guard({ confirmReadSites: ['mychart\\.'] }).status().configError).toContain('not a host pattern');
   });
 });
 

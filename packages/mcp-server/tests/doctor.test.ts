@@ -233,7 +233,7 @@ describe('doctor', () => {
     const results = await runChecks(deps({
       token: TOKEN,
       health: { version: '0.0.1' },
-      info: { nativeHosts: 2, settings: { FOX_READ_ONLY: '1' } },
+      info: { nativeHosts: 2, effectiveSettings: { FOX_READ_ONLY: 'on' } },
     }));
     expect(byId(results, 'daemon')).toMatchObject({ status: 'WARN' });
     expect(byId(results, 'daemon').detail).toContain('v0.0.1');
@@ -488,7 +488,7 @@ describe('doctor: claude registrations', () => {
     writeClaudeConfig({
       projects: { [cwd]: { mcpServers: { 'inari-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: '1' } } } } },
     });
-    const results = await runChecks(deps({ token: TOKEN, info: { settings: { FOX_READ_ONLY: '1' } } }));
+    const results = await runChecks(deps({ token: TOKEN, info: { effectiveSettings: { FOX_READ_ONLY: 'on' } } }));
     expect(byId(results, 'settings')).toMatchObject({ status: 'OK' });
     expect(byId(results, 'settings').detail).toContain('the Claude Code registration env');
   });

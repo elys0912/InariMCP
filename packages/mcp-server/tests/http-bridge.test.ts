@@ -293,31 +293,22 @@ describe('request hygiene', () => {
   });
 });
 
-describe('POST /browser/command (alias of /mcp/call)', () => {
+describe('POST /mcp/call takes tool calls only', () => {
   const headers = { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' };
 
-  it('runs a tool call like /mcp/call', async () => {
+  it('POST /browser/command is no endpoint (404)', async () => {
     await start();
     const r = await request('POST', '/browser/command', headers, JSON.stringify({ name: 'fox_safety_status', arguments: {} }));
-    expect(r.status).toBe(200);
-    expect(r.json['success']).toBe(true);
+    expect(r.status).toBe(404);
   });
 
-  it('refuses a raw browser action (400) and points to the tool call form', async () => {
-    await start();
-    const r = await request('POST', '/browser/command', headers, JSON.stringify({ action: 'navigate', data: {} }));
-    expect(r.status).toBe(400);
-    expect(r.json['error']).toContain('Raw browser actions are no longer accepted');
-  });
-
-  it('on /mcp/call a raw action is only a missing tool name', async () => {
+  it('a raw browser action is only a missing tool name', async () => {
     await start();
     const r = await request('POST', '/mcp/call', headers, JSON.stringify({ action: 'navigate' }));
     expect(r.status).toBe(400);
     expect(r.json['error']).toBe('Missing tool name');
   });
 
-  // InariMCP (AMO): the earlier tool names of KitsuneMCP are no tools.
   it('an earlier tool name is an unknown tool (404), and GET /mcp/tools lists the public tools only', async () => {
     await start();
     const r = await request('POST', '/mcp/call', headers, JSON.stringify({ name: 'fox_get_tabs', arguments: {} }));

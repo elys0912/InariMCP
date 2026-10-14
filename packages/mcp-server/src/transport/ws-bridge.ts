@@ -170,15 +170,7 @@ function checkAuthFrame(raw: RawFrame, apiToken: string, serverNonce: string): A
   const frame = isRecord(msg) ? msg : {};
 
   if (frame['type'] !== 'auth' || frame['protocol'] !== AUTH_PROTOCOL) {
-    const legacy = typeof frame['token'] === 'string';
-    return {
-      ok: false,
-      code: POLICY_VIOLATION,
-      reason: legacy ? 'auth protocol mismatch' : 'auth required',
-      logText: legacy
-        ? 'plaintext token frame from an older Native Host (update it: this daemon uses challenge-response auth)'
-        : 'no valid auth frame',
-    };
+    return { ok: false, code: POLICY_VIOLATION, reason: 'auth required', logText: 'no valid auth frame' };
   }
 
   const clientNonce = frame['nonce'];

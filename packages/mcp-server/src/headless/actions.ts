@@ -14,6 +14,7 @@ import { z } from 'zod';
 import {
   BrowserActionSchema,
   isMaskedField,
+  MASKED_VALUE,
   maskedText,
   type BrowserAction,
   type MaskFieldInfo,
@@ -764,6 +765,7 @@ const selectOption: ActionHandler = async ({ page, args }) => {
   const info = await target.evaluate(
     (el, w) => {
       if (!(el instanceof HTMLSelectElement)) return { kind: 'not-select' as const };
+      const mask = { localName: el.localName, type: '', autocomplete: el.getAttribute('autocomplete') };
       const options = Array.from(el.options).map((o) => ({ value: o.value, text: o.text }));
       let idx = -1;
       if (w.value !== undefined) idx = options.findIndex((o) => o.value === w.value);
@@ -773,7 +775,7 @@ const selectOption: ActionHandler = async ({ page, args }) => {
         idx = options.findIndex((o) => o.text === text);
         if (idx < 0) idx = options.findIndex((o) => o.text.trim() === text.trim());
       }
-      return { kind: 'ok' as const, idx, options };
+      return { kind: 'ok' as const, idx, options, mask };
     },
     want,
     { timeout: SELECT_OPTION_TIMEOUT_MS },
@@ -781,14 +783,19 @@ const selectOption: ActionHandler = async ({ page, args }) => {
   if (info.kind === 'not-select') {
     return { success: false, error: `Element is not a <select>: ${selector}` };
   }
-  const picked = info.idx < 0 ? undefined : info.options[info.idx];
+  // A masked select (a card expiry) answers as a read of it would: the
+  // options of such a select are masked (shared/src/field-mask.ts).
+  const shown = isMaskedField(info.mask)
+    ? info.options.map(() => ({ value: MASKED_VALUE, text: MASKED_VALUE }))
+    : info.options;
+  const picked = info.idx < 0 ? undefined : shown[info.idx];
   if (picked === undefined) {
     const what = want.value !== undefined ? `value "${want.value}"`
       : want.index !== undefined ? `index ${want.index}` : `text "${want.text}"`;
     return {
       success: false,
       error: `No option matches ${what}`,
-      availableOptions: info.options.slice(0, AVAILABLE_OPTIONS_MAX),
+      availableOptions: shown.slice(0, AVAILABLE_OPTIONS_MAX),
     };
   }
   const chosen = await target.selectOption({ index: info.idx }, { timeout: SELECT_OPTION_TIMEOUT_MS });

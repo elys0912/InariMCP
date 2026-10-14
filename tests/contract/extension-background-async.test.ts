@@ -360,7 +360,7 @@ describe('getAllTabs limit and findText query (E-10, E-11)', () => {
 
   beforeEach(() => {
     useFakeBrowser({
-      tabs: { query: async () => tabs },
+      tabs: { query: async () => tabs, sendMessage: async () => ({ success: true, hasMaskedFields: false }) },
       windows: { getAll: async () => [{ id: 1, focused: true }] },
       find: { find: vi.fn(async () => ({ count: 2, rangeData: [] })) },
     });

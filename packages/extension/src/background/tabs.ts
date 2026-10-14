@@ -1,9 +1,9 @@
 // Tab management tools and find_text (L3).
 
 import { errorMessage } from "../error-message";
-import { DEFAULTS } from "./constants";
+import { DEFAULTS, TOP_FRAME_ID } from "./constants";
 import { isTabInScope, ensureScopeContainer } from "./container-scope";
-import { noTargetTab } from "./tab-target";
+import { contentScriptFailure, noTargetTab } from "./tab-target";
 import { urlPatternArg, urlMatches } from "./tab-wait";
 import type { GetAllTabsOptions, ScopeFilter, CommandResult } from "./types";
 
@@ -137,6 +137,31 @@ export async function focusTab(tabId: number): Promise<CommandResult> {
   }
 }
 
+/**
+ * find_text refuses a tab whose page shows a masked field
+ * (content/inspect.ts hasMaskedFields): Firefox's find may match the text
+ * in a form field, and the count would tell the field's value one guess at
+ * a time. Refused as well when the content script cannot be asked (the
+ * check is not made, so the search is not either). Null: no such field.
+ */
+async function maskedFieldsRefusal(tabId: number): Promise<CommandResult | null> {
+  try {
+    const answer = (await browser.tabs.sendMessage(tabId, { action: "hasMaskedFields" }, { frameId: TOP_FRAME_ID })) as
+      | { hasMaskedFields?: unknown }
+      | undefined;
+    if (answer?.hasMaskedFields === false) return null;
+    return {
+      success: false,
+      error:
+        "find_text refused: the page has a password, one-time-code or payment card field, whose value " +
+        "a search could guess one character at a time; read the page with fox_read instead",
+    };
+  } catch (error) {
+    const failure = contentScriptFailure(error);
+    return { ...failure, error: `find_text refused: the page could not be checked for masked fields. ${String(failure.error)}` };
+  }
+}
+
 /** find_text: browser.find on the target tab (resolved once by handleCommand). */
 export async function findText(
   target: browser.tabs.Tab | undefined,
@@ -152,6 +177,8 @@ export async function findText(
   const includeRectData = d.includeRectData === true;
 
   if (!target) return noTargetTab();
+  const refusal = await maskedFieldsRefusal(target.id);
+  if (refusal) return refusal;
   const findResult = await browser.find.find(findQuery, {
     tabId: target.id,
     caseSensitive,

@@ -4,7 +4,7 @@
  * lives in @inari-mcp/shared/node (also used by the Native Host).
  */
 
-import { ENV, ENV_DEFAULTS, isRecord } from '@inari-mcp/shared';
+import { ENV, isRecord } from '@inari-mcp/shared';
 import { isElicitationApprovalEnabled } from '../safety/approval.js';
 import {
   headlessStartupTimeoutMs,
@@ -65,30 +65,17 @@ type Env = Record<string, string | undefined>;
 /**
  * The effective value of every DAEMON_SETTINGS entry for `env`, so that
  * `FOX_HEADLESS=true`, `=1` and `=yes` compare equal.
- * 'current' follows this version's parsing; 'legacy' follows how a daemon
- * without `effectiveSettings` in /daemon/info read its environment (only `1`
- * turns read-only on).
  */
-export function effectiveDaemonSettings(
-  env: Env,
-  rules: 'current' | 'legacy' = 'current',
-): EffectiveDaemonSettings {
-  const cur = rules === 'current';
-  const pick = (key: string): string | undefined =>
-    // legacy: a raw `settings` from an old daemon holds '' for unset keys, which is "unset" here
-    cur ? resolveFoxEnv(env, key) : (env[key] || undefined);
+export function effectiveDaemonSettings(env: Env): EffectiveDaemonSettings {
+  const pick = (key: string): string => resolveFoxEnv(env, key) ?? '';
   const onOff = (v: boolean): string => (v ? 'on' : 'off');
   return {
-    FOX_HEADLESS: onOff(cur ? isHeadlessEnabled(env) : Boolean(env[ENV.FOX_HEADLESS])),
-    FOX_HEADLESS_STARTUP_TIMEOUT: String(
-      cur
-        ? headlessStartupTimeoutMs(env)
-        : Number(env[ENV.FOX_HEADLESS_STARTUP_TIMEOUT]) || ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT,
-    ),
-    FOX_EXECUTABLE: pick(ENV.FOX_EXECUTABLE) ?? '',
-    FOX_SCREENSHOTS_DIR: pick(ENV.FOX_SCREENSHOTS_DIR) ?? '',
-    FOX_SAFETY_CONFIG: pick(ENV.FOX_SAFETY_CONFIG) ?? '',
-    FOX_READ_ONLY: onOff(cur ? isTruthyEnv(pick(ENV.FOX_READ_ONLY)) : pick(ENV.FOX_READ_ONLY) === '1'),
+    FOX_HEADLESS: onOff(isHeadlessEnabled(env)),
+    FOX_HEADLESS_STARTUP_TIMEOUT: String(headlessStartupTimeoutMs(env)),
+    FOX_EXECUTABLE: pick(ENV.FOX_EXECUTABLE),
+    FOX_SCREENSHOTS_DIR: pick(ENV.FOX_SCREENSHOTS_DIR),
+    FOX_SAFETY_CONFIG: pick(ENV.FOX_SAFETY_CONFIG),
+    FOX_READ_ONLY: onOff(isTruthyEnv(resolveFoxEnv(env, ENV.FOX_READ_ONLY))),
     FOX_APPROVAL_ELICITATION: onOff(isElicitationApprovalEnabled(env)),
   };
 }
@@ -104,19 +91,15 @@ export function diffDaemonSettings(
   );
 }
 
-/** The daemon's effective settings from a /daemon/info body; older daemons only sent raw `settings`. */
+/**
+ * The daemon's effective settings from a /daemon/info body
+ * (`effectiveSettings`), or null when it has none. A setting it leaves out,
+ * or sends as no string, reads as unset (its default).
+ */
 export function daemonSettingsFromInfo(body: Record<string, unknown>): EffectiveDaemonSettings | null {
-  const raw = body['settings'];
-  const rawStrings: Env = {};
-  if (isRecord(raw)) {
-    for (const [k, v] of Object.entries(raw)) if (typeof v === 'string') rawStrings[k] = v;
-  } else if (!('effectiveSettings' in body)) {
-    return null;
-  }
-  const fallback = effectiveDaemonSettings(rawStrings, 'legacy');
   const eff = body['effectiveSettings'];
-  if (!isRecord(eff)) return fallback;
-  const out = { ...fallback };
+  if (!isRecord(eff)) return null;
+  const out = effectiveDaemonSettings({});
   for (const k of DAEMON_SETTINGS) {
     const v = eff[k];
     if (typeof v === 'string') out[k] = v;

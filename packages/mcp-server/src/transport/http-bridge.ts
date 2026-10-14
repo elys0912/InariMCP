@@ -10,8 +10,8 @@
  * every Claude Code session arrive here: each session's stdio relay
  * (relay/main.ts) forwards its MCP tools/call to POST /mcp/call.
  *
- * Tool execution over HTTP (POST /mcp/call, and its alias POST
- * /browser/command): zod validation against callSchemaFor(name) (tools/operations.ts) ->
+ * Tool execution over HTTP (POST /mcp/call): zod validation against
+ * callSchemaFor(name) (tools/operations.ts) ->
  * createToolHandler (SafetyGuard.check, containerScope /
  * confirmReadUrlRules attachment, post-processing). Every tool is
  * reachable: FOX_CAPS is a per-session tools/list setting applied by each
@@ -634,13 +634,8 @@ function routePost(
   res: http.ServerResponse,
   reply: Responder,
 ): void {
-  // /browser/command is kept as an alias of /mcp/call. It used to take
-  // a raw browser action and queue it unchecked; raw actions skipped
-  // SafetyGuard, containerScope and zod validation, and mapping an
-  // action back to a tool is ambiguous (screenshot ← viewport/full_page,
-  // navigate ← goto/back/forward/…). Both now take a tool call.
-  if (pathname === '/mcp/call' || pathname === '/browser/command') {
-    handleToolCall(ctx, pathname, data, req, res, reply);
+  if (pathname === '/mcp/call') {
+    handleToolCall(ctx, data, req, res, reply);
     return;
   }
 
@@ -714,26 +709,12 @@ function runTrackedCall<T>(
 }
 
 // ---------------------------------------------------------------------------
-// Tool call (POST /mcp/call, POST /browser/command)
+// Tool call (POST /mcp/call)
 // Body: { name: "fox_*", arguments?: {...} }
 // ---------------------------------------------------------------------------
 
-/** The tool name, or the 400 message when it is missing. */
-function toolNameOf(pathname: string, data: Record<string, unknown>): { name: string } | { error: string } {
-  const toolName = data['name'];
-  if (typeof toolName === 'string' && toolName) return { name: toolName };
-  if (pathname === '/browser/command' && typeof data['action'] === 'string') {
-    return {
-      error: 'Raw browser actions are no longer accepted. Send a tool call instead: ' +
-        '{ "name": "fox_<tool>", "arguments": { ... } } (see GET /mcp/tools).',
-    };
-  }
-  return { error: 'Missing tool name' };
-}
-
 function handleToolCall(
   ctx: BridgeContext,
-  pathname: string,
   data: Record<string, unknown>,
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -746,12 +727,11 @@ function handleToolCall(
     return;
   }
 
-  const named = toolNameOf(pathname, data);
-  if ('error' in named) {
-    reply.error(400, named.error);
+  const toolName = data['name'];
+  if (typeof toolName !== 'string' || toolName === '') {
+    reply.error(400, 'Missing tool name');
     return;
   }
-  const toolName = named.name;
 
   const schema = callSchemaFor(toolName);
   if (!schema || !ctx.registeredTools.has(toolName)) {

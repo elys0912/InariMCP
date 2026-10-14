@@ -25,16 +25,9 @@
  *                                        https://example.com.attacker.net/;
  *                                        end it with `.*` for "starts with".
  *
- * Earlier releases treated every pattern as an unanchored regex over the raw
- * URL. Such legacy patterns keep working where possible:
- *   - simple ones are read as the equivalent host pattern: `paypal\.com`
- *     (host and subdomains), `\.gov(/|$)` (subdomains only),
- *     `^https://a\.example/` (that host only, as the anchor meant);
- *   - any other legacy regex keeps its old meaning in the blocked and
- *     confirm-read lists
- *     (over-matching errs on the safe side there), with a warning;
- *   - in the allowed list it is an error: an unanchored allowlist regex is
- *     exactly the bypass this module exists to close.
+ * Anything else is an error in every list: a bare regex (`paypal\.com`) is
+ * no pattern, since an unanchored regex over the URL is exactly the bypass
+ * this module exists to close.
  *
  * Host and scheme compare case-insensitively (the URL parser lower-cases
  * them, IDN hosts become punycode). Each list errs towards refusing:
@@ -59,7 +52,7 @@ export const PATTERN_LIST_KEYS: { readonly [K in PatternListName]: string } = {
 export interface UrlPattern {
   /** The pattern as written in safety.json. */
   readonly source: string;
-  readonly kind: 'host' | 'regex' | 'legacy';
+  readonly kind: 'host' | 'regex';
   test(url: string): boolean;
   /**
    * The same pattern as a URL rule for the Extension (BrowserCommand
@@ -125,12 +118,9 @@ function effectivePort(url: URL): number | null {
 // ---------------------------------------------------------------------------
 
 // scheme, `*.`, host (a name, or an IPv6 address in brackets: a ':' inside
-// tells it from a regex character class), `:port` (validated below, so that
-// a bad one is an error rather than a legacy regex), path.
+// tells it from a regex character class), `:port` (validated below), path.
 const HOST_FORM_RE =
   /^(?:([a-z][a-z0-9+.-]*):\/\/)?(\*\.)?(\[[^\s/\]]*:[^\s/\]]*\]|[^\s/?#:@*\\^$()[\]{}|+]+)(?::([^\s/?#]*))?(\/[^\s]*)?$/i;
-
-const REGEX_META_RE = /[\\^$()[\]{}|+?*]/;
 
 /** `example.com` → 'example.com' (punycode, lower-case) or null if not a host. */
 function canonicalHost(host: string): string | null {
@@ -175,8 +165,6 @@ function parseHostForm(s: string): ParseResult {
   if (ipv6 && m[2] !== undefined) return { error: "'*.' cannot precede an IP address" };
   let port: number | null = null;
   if (m[4] !== undefined) {
-    // `localhost:\d+` and the like are legacy regexes, not a port.
-    if (!/^\d+$/.test(m[4]) && REGEX_META_RE.test(s)) return null;
     port = /^\d{1,5}$/.test(m[4]) ? Number(m[4]) : 0;
     if (port < 1 || port > 65535) return { error: `'${m[4]}' is not a valid port (1-65535)` };
   }
@@ -204,37 +192,6 @@ function parseHostForm(s: string): ParseResult {
     host,
     port,
     path,
-  };
-}
-
-/**
- * Read a legacy regex as a host pattern when that keeps its intent:
- * `\.` → `.`, `\/` → `/`, a trailing `(/|$)`, a leading `^https?://`
- * (then the host is exact, as the anchor meant) and a leading `\.` (then
- * subdomains only, as the old "any host ending in .x") are understood.
- */
-function convertLegacy(s: string): HostSpec | null {
-  let t = s;
-  let scheme: string | null = null;
-  const anchored = /^\^(https?)(\?)?:\\?\/\\?\//i.exec(t);
-  if (anchored) {
-    scheme = anchored[2] ? null : anchored[1].toLowerCase();
-    t = t.slice(anchored[0].length);
-  }
-  t = t.replace(/\((?:\/\|\$|\$\|\/)\)$/, '');
-  t = t.replace(/\\([./-])/g, '$1');
-  let subdomainsOnly = false;
-  if (!anchored && t.startsWith('.')) {
-    t = t.slice(1);
-    subdomainsOnly = true;
-  }
-  if (REGEX_META_RE.test(t)) return null;
-  const spec = parseHostForm(t);
-  if (spec === null || 'error' in spec) return null;
-  return {
-    ...spec,
-    scheme: spec.scheme ?? scheme,
-    hosts: anchored ? 'exact' : subdomainsOnly ? 'sub' : spec.hosts,
   };
 }
 
@@ -303,12 +260,7 @@ function anchorRegex(src: string): string {
   return `^(?:${inner})$`;
 }
 
-function regexPattern(
-  source: string,
-  regexSource: string,
-  kind: 'regex' | 'legacy',
-  list: PatternListName,
-): UrlPattern | { error: string } {
+function regexPattern(source: string, regexSource: string, list: PatternListName): UrlPattern | { error: string } {
   let re: RegExp;
   try {
     re = new RegExp(regexSource, 'i');
@@ -317,7 +269,7 @@ function regexPattern(
   }
   return {
     source,
-    kind,
+    kind: 'regex',
     // Allowed: the normalised URL only. Blocked / confirm-read: either form
     // (over-matching errs on the safe side there).
     test: (raw: string) => {
@@ -344,9 +296,8 @@ export function compileUrlPatterns(
     }
 
     if (s.startsWith('re:')) {
-      // Always a whole-URL match, in every list (the legacy branch below
-      // keeps its old unanchored meaning).
-      const compiled = regexPattern(source, anchorRegex(s.slice(3)), 'regex', list);
+      // Always a whole-URL match, in every list.
+      const compiled = regexPattern(source, anchorRegex(s.slice(3)), list);
       if ('error' in compiled) {
         issues.push({ pattern: source, message: `invalid regex: ${compiled.error}`, fatal: true });
       } else {
@@ -355,21 +306,16 @@ export function compileUrlPatterns(
       continue;
     }
 
-    const parsed = parseHostForm(s);
-    if (parsed !== null && 'error' in parsed) {
-      issues.push({ pattern: source, message: parsed.error, fatal: true });
+    const spec = parseHostForm(s);
+    if (spec !== null && 'error' in spec) {
+      issues.push({ pattern: source, message: spec.error, fatal: true });
       continue;
     }
-    const spec = parsed ?? (REGEX_META_RE.test(s) ? convertLegacy(s) : null);
     if (spec !== null) {
       patterns.push(hostPattern(source, spec, list));
       // A dot-less name written as a host pattern (any case, with or without
-      // a scheme, port or path; not a converted legacy regex) is easily
-      // mistaken for "any URL containing it".
-      if (
-        list !== 'allowed' && parsed !== null && !spec.host.includes('.') && !spec.host.startsWith('[') &&
-        spec.hosts === 'tree'
-      ) {
+      // a scheme, port or path) is easily mistaken for "any URL containing it".
+      if (list !== 'allowed' && !spec.host.includes('.') && !spec.host.startsWith('[') && spec.hosts === 'tree') {
         issues.push({
           pattern: source,
           message:
@@ -381,30 +327,13 @@ export function compileUrlPatterns(
       continue;
     }
 
-    if (list === 'allowed') {
-      issues.push({
-        pattern: source,
-        message:
-          'not a host pattern (e.g. "example.com", "*.example.com", "example.com/path"); ' +
-          'an allowlist entry that is a bare regex could match unintended URLs. ' +
-          'Rewrite it as a host pattern, or as "re:https://example\\.com/.*" (re: matches the whole URL)',
-        fatal: true,
-      });
-      continue;
-    }
-
-    const legacy = regexPattern(source, s, 'legacy', list);
-    if ('error' in legacy) {
-      issues.push({ pattern: source, message: `invalid pattern: ${legacy.error}`, fatal: true });
-      continue;
-    }
-    patterns.push(legacy);
     issues.push({
       pattern: source,
       message:
-        'legacy regex, matched anywhere in the URL; rewrite it as a host pattern ' +
-        'or as "re:" (which matches the whole URL)',
-      fatal: false,
+        'not a host pattern (e.g. "example.com", "*.example.com", "example.com/path"); ' +
+        'a bare regex could match unintended URLs. ' +
+        'Rewrite it as a host pattern, or as "re:https://example\\.com/.*" (re: matches the whole URL)',
+      fatal: true,
     });
   }
 

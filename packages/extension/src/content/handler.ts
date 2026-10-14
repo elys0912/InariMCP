@@ -2,7 +2,7 @@
 // (content.ts), either the abort of the running commands (the pause switch)
 // or one command to its handler -- not one sent before the latest pause, an
 // acting one only while the page is still on the origin it was approved on,
-// and a reading one only with selectors that cannot test a masked value.
+// and a reading one only with CSS selectors that cannot test a masked value.
 
 import { assertReadSelector } from "@inari-mcp/shared/field-mask";
 import { approvalOriginOf } from "../site-origin";
@@ -25,18 +25,19 @@ import {
   scrollAndCapture,
   captureFullPage,
   getText,
+  hasMaskedFields,
 } from "./inspect";
 import { cancelHumanWait } from "./overlay";
 import type { ContentAction, ContentEnvelope, ContentMessage, ContentOptionsByAction } from "./types";
 import { waitForElement, waitForNetworkIdle } from "./wait";
 
 /**
- * The CSS selector fields of the commands that run without a human
- * approval (reads, waits, scroll, highlight), checked here once for all of
- * them (shared/src/field-mask.ts readSelectorProblem) before any handler
- * uses them. A new such command gets a row here.
+ * The locator fields of the commands that run without a human approval
+ * (reads, waits, scroll, highlight): CSS selectors only, checked here once
+ * for all of them (shared/src/field-mask.ts readSelectorProblem) before any
+ * handler uses them. A new such command gets a row here.
  */
-const READ_SELECTOR_FIELDS: Partial<Record<ContentAction, readonly string[]>> = {
+const READ_LOCATOR_FIELDS: Partial<Record<ContentAction, readonly string[]>> = {
   getElements: ["selector"],
   getText: ["selector"],
   highlight: ["selector"],
@@ -44,11 +45,33 @@ const READ_SELECTOR_FIELDS: Partial<Record<ContentAction, readonly string[]>> = 
   waitForElement: ["selector"],
 };
 
-/** Refuse a reading command whose selector could test a masked value. */
-function assertReadSelectors(message: ContentMessage): void {
-  const fields = Object.hasOwn(READ_SELECTOR_FIELDS, message.action) ? READ_SELECTOR_FIELDS[message.action] : undefined;
-  for (const field of fields ?? []) {
-    const selector: unknown = Object.getOwnPropertyDescriptor(message, field)?.value;
+/**
+ * The other ways to find an element (types.ts FindElementOptions). The
+ * selector check cannot look into them -- an XPath such as
+ * `//input[starts-with(@value,'a')]` tests a value too -- so a reading
+ * command that carries one is refused. The MCP Server's schemas of these
+ * commands have none of them.
+ */
+const NON_SELECTOR_LOCATORS: readonly string[] = ["xpath", "text", "x", "y", "id", "name", "ariaLabel", "placeholder", "role"];
+
+function fieldValue(message: ContentMessage, field: string): unknown {
+  return Object.getOwnPropertyDescriptor(message, field)?.value;
+}
+
+/**
+ * Refuse a reading command that finds its element by anything but a CSS
+ * selector, or whose selector could test a masked value.
+ */
+function assertReadLocators(message: ContentMessage): void {
+  const fields = Object.hasOwn(READ_LOCATOR_FIELDS, message.action) ? READ_LOCATOR_FIELDS[message.action] : undefined;
+  if (fields === undefined) return;
+
+  const other = NON_SELECTOR_LOCATORS.find((field) => !fields.includes(field) && fieldValue(message, field) !== undefined);
+  if (other !== undefined) {
+    throw new Error(`Locator refused: ${message.action} finds its element by CSS selector only (got ${other})`);
+  }
+  for (const field of fields) {
+    const selector = fieldValue(message, field);
     if (typeof selector === "string") assertReadSelector(selector);
   }
 }
@@ -113,7 +136,7 @@ export async function handleRequest(request: unknown): Promise<Record<string, un
   const message = request as ContentMessage & ContentEnvelope;
   const refusal = refuseSentBeforeAbort(message.pauseCount) ?? refuseOffOrigin(message.approvedOrigin);
   if (refusal) return refusal;
-  assertReadSelectors(message);
+  assertReadLocators(message);
 
   beginCommand();
   return handleMessage(message);
@@ -138,6 +161,7 @@ const CONTENT_HANDLERS: { [A in ContentAction]: (options: ContentOptionsByAction
   selectOption,
   pressKey,
   getText,
+  hasMaskedFields,
   solveCaptcha,
   cancelHumanWait,
 };

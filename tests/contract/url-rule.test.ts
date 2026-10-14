@@ -70,8 +70,8 @@ const LISTS: PatternListName[] = ['blocked', 'allowed', 'confirmRead'];
 describe('host / regex rules: Extension matcher = server matcher', () => {
   for (const list of LISTS) {
     it(`${list} list`, () => {
-      // Patterns that are an error in this list (bare regex in allowed) are
-      // never sent: the guard fails closed instead.
+      // Patterns that are an error (a bare regex) are never sent: the guard
+      // fails closed instead.
       const { patterns } = compileUrlPatterns(PATTERNS, list);
       expect(patterns.length).toBeGreaterThan(5);
       for (const p of patterns) {
@@ -89,7 +89,7 @@ describe('host / regex rules: Extension matcher = server matcher', () => {
 
 describe('blocked / allowed decision: Extension = guard', () => {
   it.each([
-    ['blocked only', ['example.test', 'paypal\\.test'], []],
+    ['blocked only', ['example.test', 'paypal.test'], []],
     ['allowed only', [], ['example.test/admin', '*.sub.test']],
     ['both', ['example.test/admin'], ['example.test']],
   ] as const)('%s', (_label, blockedSrc, allowedSrc) => {

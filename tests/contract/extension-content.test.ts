@@ -350,6 +350,12 @@ describe('fox_type / fox_click targets', () => {
     expect(unknown).toContain('No such option');
     expect(ok).toMatchObject({ selected: true, value: '1' });
   });
+
+  real('selectOption on a masked select answers with the value and text masked', async () => {
+    await load('<select id="m" autocomplete="cc-exp-month"><option value="01">Jan</option><option value="02">Feb</option></select>');
+    const r = await run<Record<string, unknown>>(`return f.input.selectOption({ selector: '#m', index: 1 });`);
+    expect(r).toEqual({ selected: true, value: '[MASKED]', text: '[MASKED]' });
+  });
 });
 
 describe('waitForNetworkIdle', () => {
@@ -556,6 +562,14 @@ describe('options of a masked select, selectors that test a value, and what the 
     );
     for (const message of r.refused) expect(message).toContain('Selector refused');
     expect(r.plain).toBe(1);
+  });
+
+  real('find_text asks whether the page shows a masked field; a hidden input does not count', async () => {
+    await load('<input id="h" type="hidden" name="csrf" value="secret"><input id="q" name="q">');
+    const hiddenOnly = await run<{ hasMaskedFields: unknown }>('return f.inspect.hasMaskedFields();');
+    await load('<input id="c" autocomplete="cc-number" value="4111"><input id="q" name="q">');
+    const card = await run<{ hasMaskedFields: unknown }>('return f.inspect.hasMaskedFields();');
+    expect([hiddenOnly.hasMaskedFields, card.hasMaskedFields]).toEqual([false, true]);
   });
 
   real('wait, hover, highlight and scroll toElement return tag, selector and position only', async () => {

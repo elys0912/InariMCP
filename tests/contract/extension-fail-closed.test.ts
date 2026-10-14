@@ -208,6 +208,19 @@ describe('the content script checks the selectors of every reading command once'
   ])('%s %j is refused before its handler runs', async (action, fields) => {
     await expect(handleRequest({ action, ...fields })).rejects.toThrow(/^Selector refused: /);
   });
+
+  it.each([
+    ['getText', { xpath: "//input[@name='csrf'][starts-with(@value,'a')]" }, 'xpath'],
+    ['getText', { selector: 'body', text: 'Card' }, 'text'],
+    ['highlight', { id: 'card' }, 'id'],
+    ['waitForElement', { name: 'cc-number' }, 'name'],
+    ['waitForElement', { x: 1, y: 1 }, 'x'],
+    ['scroll', { xpath: '//input', direction: 'down' }, 'xpath'],
+    ['scroll', { ariaLabel: 'Card number', direction: 'down' }, 'ariaLabel'],
+  ])('%s %j finds by something else than a CSS selector: refused', async (action, fields, field) => {
+    await expect(handleRequest({ action, ...fields }))
+      .rejects.toThrow(`Locator refused: ${action} finds its element by CSS selector only (got ${field})`);
+  });
 });
 
 describe('hover runs the page\'s own handlers, so it acts', () => {

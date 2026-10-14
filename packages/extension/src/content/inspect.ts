@@ -5,6 +5,7 @@ import { maskedText } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
 import { DEFAULTS, HIGHLIGHT_STYLE, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
 import {
+  isInputElement,
   isMaskedField,
   isVisible,
   generateSelector,
@@ -315,6 +316,23 @@ export function captureFullPage(): Record<string, unknown> {
     viewportHeight: window.innerHeight,
     viewportWidth: window.innerWidth,
   };
+}
+
+/**
+ * Whether the page shows a field whose value is masked (dom.ts
+ * isMaskedField), asked by find_text before it searches the tab
+ * (background/tabs.ts findText): Firefox's find may match the text in a
+ * form field too, and its match count would then tell a masked value one
+ * guess at a time. A hidden input is left out: it is not shown, so find
+ * cannot match it.
+ */
+export function hasMaskedFields(): Record<string, unknown> {
+  const fields = Array.from(document.querySelectorAll("input, textarea, select"));
+  const shownMasked = fields.some(
+    (field) => isMaskedField(field) && !(isInputElement(field) && field.type.toLowerCase() === "hidden"),
+  );
+
+  return { hasMaskedFields: shownMasked };
 }
 
 export function getText(

@@ -68,8 +68,12 @@ export interface TypeOptions extends FindElementOptions {
 
 export type ScrollDirection = "up" | "down" | "left" | "right" | "top" | "bottom";
 
-/** fox_scroll arguments (the server schema: direction, amount, selector, toElement). */
-export interface ScrollOptions extends Pick<FindElementOptions, "selector" | "xpath" | "id"> {
+/**
+ * fox_scroll arguments (the server schema: direction, amount, selector,
+ * toElement). Its element is found by CSS selector only (handler.ts
+ * READ_LOCATOR_FIELDS).
+ */
+export interface ScrollOptions extends Pick<FindElementOptions, "selector"> {
   toElement?: string;
   direction?: ScrollDirection;
   amount?: number;
@@ -154,6 +158,7 @@ export interface ContentOptionsByAction {
   selectOption: SelectOptionOptions;
   pressKey: PressKeyOptions;
   getText: TextOptions;
+  hasMaskedFields: NoOptions;
   solveCaptcha: CaptchaOptions;
   cancelHumanWait: NoOptions;
 }
