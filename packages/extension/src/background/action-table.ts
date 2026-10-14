@@ -35,8 +35,6 @@
 //                                its site, checked before the handler runs.
 //                   "actOnUrl"   opens a URL (data.url, else a blank tab):
 //                                approved for that URL's site.
-//                   "actPerTab"  (self) multi-tab action: the handler acts
-//                                only on tabs on the approved site.
 //                   "read"       (tab) reads the target tab: refused before
 //                                the handler when it matches the attached
 //                                `confirmReadUrlRules` (unless approved for
@@ -58,30 +56,19 @@ import { trackHumanWait, solveCaptcha, cancelHumanWait } from "./human-wait";
 import { hostStatus, recheckHost } from "./native-connection";
 import { navigateTo, navigateNewTab, navigateHistory } from "./navigation";
 import { getPageInfo } from "./page-actions";
-import { refreshTab, reloadAllTabs, reloadTabsByUrl } from "./reload";
+import { refreshTab } from "./reload";
 import { takeScreenshot, screenshotAllTabs } from "./screenshot";
 import { refreshSetupState } from "./setup-badge";
 import { sendToContentScript } from "./tab-target";
 import { waitForNavigation, waitForUrl } from "./tab-wait";
-import {
-  getAllTabs,
-  createNewTab,
-  closeTab,
-  focusTab,
-  getTabInfo,
-  findTabs,
-  findText,
-} from "./tabs";
+import { getAllTabs, createNewTab, closeTab, focusTab, findText } from "./tabs";
 import type {
   NativeMessage,
   CommandResult,
   ScopeFilter,
   ScreenshotOptions,
   GetAllTabsOptions,
-  FindTabsOptions,
   RefreshOptions,
-  ReloadAllOptions,
-  ReloadByUrlOptions,
   UrlLists,
 } from "./types";
 
@@ -117,7 +104,7 @@ interface TabActionDescriptor {
 }
 interface SelfScopedActionDescriptor {
   scope: "self";
-  approval: "actOnUrl" | "actPerTab" | "readPerTab" | "none";
+  approval: "actOnUrl" | "readPerTab" | "none";
   handler: ActionHandler;
 }
 interface NoTabActionDescriptor {
@@ -193,8 +180,6 @@ const ACTIONS = {
   },
   closeTab: { scope: "tab", approval: "act", needsTabId: true, skipUrlReport: true, handler: withTabId(closeTab) },
   focusTab: { scope: "tab", approval: "none", needsTabId: true, handler: withTabId(focusTab) },
-  getTabInfo: { scope: "tab", approval: "none", needsTabId: true, handler: withTabId(getTabInfo) },
-  findTabs: { scope: "self", approval: "none", handler: (c) => findTabs(optionsOf<FindTabsOptions>(c), c.scope) },
   screenshotAllTabs: {
     scope: "self",
     approval: "readPerTab",
@@ -207,16 +192,6 @@ const ACTIONS = {
     scope: "tab",
     approval: "act",
     handler: (c) => refreshTab(c.tabId, { ...optionsOf<RefreshOptions>(c), bypassCache: true }),
-  },
-  reloadAll: {
-    scope: "self",
-    approval: "actPerTab",
-    handler: (c) => reloadAllTabs(optionsOf<ReloadAllOptions>(c), c.scope, c.approvedHost, c.urlLists),
-  },
-  reloadByUrl: {
-    scope: "self",
-    approval: "actPerTab",
-    handler: (c) => reloadTabsByUrl(optionsOf<ReloadByUrlOptions>(c), c.scope, c.approvedHost, c.urlLists),
   },
   goBack: { scope: "tab", approval: "act", handler: (c) => navigateHistory(c.tabId, "back") },
   goForward: { scope: "tab", approval: "act", handler: (c) => navigateHistory(c.tabId, "forward") },
@@ -234,13 +209,10 @@ const ACTIONS = {
   cancelHumanWait: { scope: "noTab", approval: "none", handler: (c) => cancelHumanWait(c.data) },
 
   // --- Content script (form / input, wait / observe, text) ---
-  getValue: { scope: "tab", approval: "read", handler: toContentScript("getValue") },
   setValue: { scope: "tab", approval: "act", handler: toContentScript("setValue") },
   selectOption: { scope: "tab", approval: "act", handler: toContentScript("selectOption") },
   hover: { scope: "tab", approval: "none", handler: toContentScript("hover") },
-  waitForChange: { scope: "tab", approval: "none", handler: toContentScript("waitForChange") },
   scrollAndCapture: { scope: "tab", approval: "read", handler: toContentScript("scrollAndCapture") },
-  clickAndWait: { scope: "tab", approval: "act", handler: toContentScript("clickAndWait") },
   pressKey: { scope: "tab", approval: "act", handler: toContentScript("pressKey") },
   getText: { scope: "tab", approval: "read", handler: toContentScript("getText") },
   waitForNetworkIdle: { scope: "tab", approval: "none", handler: toContentScript("waitForNetworkIdle") },

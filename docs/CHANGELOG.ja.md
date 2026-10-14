@@ -45,6 +45,7 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - `FOX_CAPS` のプロファイル `logs` と `script` を削除した（知らないプロファイル名は警告を出して無視する）。
 - コンテキストメニューの「InariMCP で要素を調べる」を削除した。結果をどこにも渡していなかった。
 - 保護対象サイトの一覧を削除した：`safety.json` の `protected_url_patterns`（既定の 16 件：銀行などの金融・決済のサービス、`.gov`、患者ポータル）と `confirm_protected_actions`。代わりに操作系ツールはどのサイトでも尋ねる。読み取りとスクリーンショットでも尋ねたいサイトは、新しい `confirm_read_sites`（既定は空）に書く。どちらかのキーが残った `safety.json` は、知らないキーとして、キーを消すまで使えない。
+- どのツールも送らないブラウザコマンド `get_tab_info`、`find_tabs`、`get_value`、`reload_all`、`reload_by_url`、`wait_for_change`、`click_and_wait` を削除した。拡張機能もヘッドレスのバックエンドもこれらを処理しない。
 
 ### セキュリティ
 

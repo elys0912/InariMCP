@@ -106,14 +106,6 @@ function checkReadSite(
 }
 
 /**
- * Whether a multi-tab handler may act on this tab (reload_all,
- * reload_by_url): only a tab on the site a human approved.
- */
-export function isApprovedTab(tab: browser.tabs.Tab, approvedHost: string | undefined): boolean {
-  return isApprovedHost(tab.url, approvedHost);
-}
-
-/**
  * Whether a multi-tab read must skip this tab (screenshot_all_tabs): it
  * matches the attached confirm_read_sites rules.
  */

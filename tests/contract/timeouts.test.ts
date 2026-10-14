@@ -154,7 +154,6 @@ describe('5. daemon waits longer than the extension-side fallbacks', () => {
   it.each([
     ['solve_captcha', 'CAPTCHA'],
     ['wait_for_element', 'WAIT_ELEMENT'],
-    ['wait_for_change', 'DEFAULT'],
     ['wait_for_network_idle', 'NETWORK_IDLE'],
   ] as const)('%s: daemon base > content.ts TIMEOUTS.%s', (action, key) => {
     expect(content[key]).toBeTypeOf('number');

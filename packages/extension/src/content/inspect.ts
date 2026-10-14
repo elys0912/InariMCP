@@ -1,26 +1,20 @@
 // Observation and display: page info, element lists, highlight, scroll
-// snapshots, full-page dimensions, values and text.
+// snapshots, full-page dimensions and text.
 
-import { MASKED_VALUE } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
 import { DEFAULTS, HIGHLIGHT_STYLE, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
 import {
-  isMaskedField,
   isVisible,
   generateSelector,
   getElementInfo,
   findElement,
   sleep,
-  notFoundError,
-  isTextInput,
-  isSelectElement,
   shownValue,
 } from "./dom";
 import type {
   ElementInfo,
   HighlightOptions,
   ScrollCaptureOptions,
-  FindElementOptions,
   TextOptions,
 } from "./types";
 
@@ -277,27 +271,6 @@ export function captureFullPage(): Record<string, unknown> {
     viewportHeight: window.innerHeight,
     viewportWidth: window.innerWidth,
   };
-}
-
-export function getValue(
-  options: FindElementOptions,
-): Record<string, unknown> {
-  const element = findElement(options);
-  if (!element) throw notFoundError(options);
-
-  let value: string | null;
-
-  if (isMaskedField(element)) {
-    value = MASKED_VALUE;
-  } else if (isTextInput(element)) {
-    value = element.value;
-  } else if (isSelectElement(element)) {
-    value = element.options[element.selectedIndex]?.value ?? null;
-  } else {
-    value = element.textContent;
-  }
-
-  return { value, element: getElementInfo(element) };
 }
 
 export function getText(

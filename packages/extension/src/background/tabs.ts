@@ -1,12 +1,11 @@
 // Tab management tools and find_text (L3).
 
 import { errorMessage } from "../error-message";
-import type { ContentRequest } from "../content/types";
-import { DEFAULTS, TOP_FRAME_ID } from "./constants";
+import { DEFAULTS } from "./constants";
 import { isTabInScope, ensureScopeContainer } from "./container-scope";
 import { noTargetTab } from "./tab-target";
 import { urlPatternArg, urlMatches } from "./tab-wait";
-import type { GetAllTabsOptions, ScopeFilter, CommandResult, FindTabsOptions } from "./types";
+import type { GetAllTabsOptions, ScopeFilter, CommandResult } from "./types";
 
 export async function getAllTabs(
   options: GetAllTabsOptions = {},
@@ -82,98 +81,6 @@ export async function getAllTabs(
         discarded: tabs.filter((t) => t.discarded).length,
         audible: tabs.filter((t) => t.audible).length,
       },
-    };
-  } catch (error) {
-    return { success: false, error: errorMessage(error) };
-  }
-}
-
-export async function getTabInfo(tabId: number): Promise<CommandResult> {
-  try {
-    const tab = await browser.tabs.get(tabId);
-    const win = await browser.windows.get(tab.windowId);
-
-    let pageInfo: unknown = null;
-    try {
-      pageInfo = await browser.tabs.sendMessage(
-        tabId,
-        { action: "getPageInfo" } satisfies ContentRequest,
-        { frameId: TOP_FRAME_ID },
-      );
-    } catch {
-      pageInfo = { error: "Content script not available" };
-    }
-
-    return {
-      success: true,
-      tab: {
-        id: tab.id,
-        url: tab.url ?? "",
-        title: tab.title ?? "",
-        active: tab.active,
-        windowId: tab.windowId,
-        index: tab.index,
-        pinned: tab.pinned,
-        status: tab.status,
-        discarded: tab.discarded,
-        audible: tab.audible,
-        favIconUrl: tab.favIconUrl,
-      },
-      window: {
-        id: win.id,
-        focused: win.focused,
-        state: win.state,
-        type: win.type,
-      },
-      pageInfo,
-    };
-  } catch (error) {
-    return { success: false, error: errorMessage(error) };
-  }
-}
-
-export async function findTabs(
-  options: FindTabsOptions,
-  scope: ScopeFilter | null = null,
-): Promise<CommandResult> {
-  try {
-    const tabs = await browser.tabs.query({});
-    let filtered = tabs.filter((t) => isTabInScope(t, scope));
-
-    const prefix = options.url;
-    if (prefix) {
-      filtered = filtered.filter((t) => t.url?.startsWith(prefix));
-    }
-    const patternArg = urlPatternArg(options.urlPattern);
-    if (!patternArg.ok) return patternArg.result;
-    const urlPattern = patternArg.pattern;
-    if (urlPattern) {
-      filtered = filtered.filter((t) => urlMatches(t.url, urlPattern));
-    }
-    if (options.title) {
-      const titleLower = options.title.toLowerCase();
-      filtered = filtered.filter((t) =>
-        t.title?.toLowerCase().includes(titleLower),
-      );
-    }
-    if (options.active !== undefined) {
-      filtered = filtered.filter((t) => t.active === options.active);
-    }
-    if (options.audible !== undefined) {
-      filtered = filtered.filter((t) => t.audible === options.audible);
-    }
-
-    return {
-      success: true,
-      tabs: filtered.map((t) => ({
-        id: t.id,
-        url: t.url,
-        title: t.title,
-        active: t.active,
-        windowId: t.windowId,
-        status: t.status,
-      })),
-      count: filtered.length,
     };
   } catch (error) {
     return { success: false, error: errorMessage(error) };

@@ -40,15 +40,12 @@ const WIRE_ACTIONS = {
 
   // --- Tab management ---
   get_tabs: "getTabs",
-  get_tab_info: "getTabInfo",
-  find_tabs: "findTabs",
   screenshot_all_tabs: "screenshotAllTabs",
   create_tab: "createTab",
   close_tab: "closeTab",
   focus_tab: "focusTab",
 
   // --- Form / input ---
-  get_value: "getValue",
   set_value: "setValue",
   select_option: "selectOption",
   hover: "hover",
@@ -56,16 +53,12 @@ const WIRE_ACTIONS = {
   // --- Reload / navigation ---
   refresh: "refresh",
   hard_refresh: "hardRefresh",
-  reload_all: "reloadAll",
-  reload_by_url: "reloadByUrl",
   go_back: "goBack",
   go_forward: "goForward",
 
   // --- Wait / observe ---
-  wait_for_change: "waitForChange",
   wait_for_network_idle: "waitForNetworkIdle",
   scroll_and_capture: "scrollAndCapture",
-  click_and_wait: "clickAndWait",
 
   // --- Keyboard / text ---
   press_key: "pressKey",

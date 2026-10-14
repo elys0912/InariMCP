@@ -8,11 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   closeTab,
   createNewTab,
-  findTabs,
   findText,
   focusTab,
   getAllTabs,
-  getTabInfo,
 } from '../../packages/extension/src/background/tabs.ts';
 
 type Tab = browser.tabs.Tab;
@@ -45,12 +43,9 @@ function installFakeBrowser(overrides: Record<string, unknown> = {}) {
       create: spies.create,
       remove: spies.remove,
       update: spies.update,
-      get: async (id: number) => TABS.find((t) => t.id === id) ?? Promise.reject(new Error(`Invalid tab ID: ${id}`)),
-      sendMessage: async () => { throw new Error('Could not establish connection. Receiving end does not exist.'); },
     },
     windows: {
       getAll: async () => [{ id: 1, focused: true }, { id: 2, focused: false }, { id: 3, focused: false }],
-      get: async (id: number) => ({ id, focused: true, state: 'normal', type: 'normal' }),
       update: spies.windowsUpdate,
     },
     contextualIdentities: { query: async () => [], create: spies.createContainer },
@@ -89,22 +84,12 @@ describe('background/tabs.ts', () => {
     expect(none).toMatchObject({ success: true, totalTabs: 0, windowCount: 0 });
   });
 
-  it('getAllTabs / findTabs filter by a case-sensitive urlPattern and refuse an invalid one', async () => {
+  it('getAllTabs filters by a case-sensitive urlPattern and refuses an invalid one', async () => {
     installFakeBrowser();
     const r = await getAllTabs({ currentWindowOnly: false, urlPattern: '/b$' });
     expect((r['tabs'] as { id: number }[]).map((t) => t.id)).toEqual([2]);
     expect((await getAllTabs({ currentWindowOnly: false, urlPattern: 'APP' }))['totalTabs']).toBe(0);
     expect(await getAllTabs({ urlPattern: '(' })).toMatchObject({ success: false, error: expect.stringMatching(/^Invalid urlPattern/) });
-    expect(await findTabs({ urlPattern: '[' })).toMatchObject({ success: false });
-  });
-
-  it('findTabs combines url prefix, title (any case), active and the scope', async () => {
-    installFakeBrowser();
-    expect((await findTabs({ url: 'https://app.' }))['count']).toBe(2);
-    expect((await findTabs({ title: 'MAIL' }))['count']).toBe(1);
-    expect((await findTabs({ title: 'mail' }, SCOPE))['count']).toBe(0);
-    const active = await findTabs({ active: true }, SCOPE);
-    expect((active['tabs'] as { id: number }[]).map((t) => t.id)).toEqual([1]);
   });
 
   it('createNewTab puts the tab into the scope container, creating it when missing', async () => {
@@ -129,16 +114,11 @@ describe('background/tabs.ts', () => {
     expect(await closeTab(99)).toEqual({ success: false, error: 'Invalid tab ID: 99' });
   });
 
-  it('focusTab activates the tab and focuses its window; getTabInfo survives a missing content script', async () => {
+  it('focusTab activates the tab and focuses its window', async () => {
     const spies = installFakeBrowser();
     expect(await focusTab(2)).toEqual({ success: true });
     expect(spies.update).toHaveBeenCalledWith(2, { active: true });
     expect(spies.windowsUpdate).toHaveBeenCalledWith(2, { focused: true });
-
-    const info = await getTabInfo(1);
-    expect(info).toMatchObject({ success: true, tab: { id: 1, url: 'https://app.example.test/a' }, window: { id: 1 } });
-    expect(info['pageInfo']).toEqual({ error: 'Content script not available' });
-    expect(await getTabInfo(99)).toMatchObject({ success: false, error: 'Invalid tab ID: 99' });
   });
 
   it('findText searches the pinned tab, and fails without one', async () => {

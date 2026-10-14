@@ -167,8 +167,8 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
   // server's last-seen URL, which is shared by every session) or the URL the
   // command opens. Acting rows need it always: the MCP Server cannot switch
   // this off. Reading rows need it only on a tab matching the attached
-  // confirm_read_sites rules. The multi-tab rows (actPerTab, readPerTab)
-  // apply it in their handlers; "none" rows change no page data.
+  // confirm_read_sites rules. The multi-tab row (readPerTab) applies it in
+  // its handler; "none" rows change no page data.
   // A message without an action has no row: it is refused below
   // (UNKNOWN_ACTION) without reaching a handler that acts.
   const approval = entry?.approval;

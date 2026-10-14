@@ -1,13 +1,12 @@
 /**
  * Extension background: asynchronous edges and small input checks of R2-C
- * WP-B (review E-02, E-04, E-07, E-10, E-11, E-14, E-17, E-23, E-24, A-04,
+ * WP-B (review E-02, E-07, E-10, E-11, E-14, E-17, E-23, E-24, A-04,
  * A-05). The modules are imported directly with a fake `browser` global;
  * modules with state (native-connection.ts, setup-badge.ts) are loaded
  * afresh per test (vi.resetModules).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { reloadMatchingTabs } from '../../packages/extension/src/background/reload.ts';
 import { waitForNavigation } from '../../packages/extension/src/background/tab-wait.ts';
 import { getAllTabs, findText } from '../../packages/extension/src/background/tabs.ts';
 import { registerListeners } from '../../packages/extension/src/background/listeners.ts';
@@ -18,8 +17,6 @@ import {
   setupStateOfReply,
   setupStateOfFailure,
 } from '../../packages/extension/src/popup/setup-status.ts';
-
-const NO_LISTS = { blocked: [], allowed: [], allowlistActive: false };
 
 const useFakeBrowser = (fake: unknown): void => {
   (globalThis as { browser?: unknown }).browser = fake;
@@ -325,63 +322,6 @@ describe('setup state: overlapping refreshes (A-04)', () => {
     requests[1]!.deferred.resolve(READY);
     expect(await second).toMatchObject({ kind: 'ready' });
     expect(badgeTexts.at(-1)).toBe('');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// reload.ts (E-04)
-// ---------------------------------------------------------------------------
-
-describe('reloadMatchingTabs: one failing tab (E-04)', () => {
-  // One site: reloading is an acting command, approved for one site.
-  const tabs = [
-    { id: 1, url: 'https://a.test/1' },
-    { id: 2, url: 'https://a.test/2' },
-    { id: 3, url: 'https://a.test/3' },
-  ];
-
-  it('reloads the other tabs and reports the failure per tab', async () => {
-    const calls: number[] = [];
-    useFakeBrowser({
-      tabs: {
-        query: async () => tabs,
-        reload: async (id: number) => {
-          calls.push(id);
-          if (id === 2) throw new Error('Invalid tab ID: 2');
-        },
-      },
-    });
-    const result = await reloadMatchingTabs(() => true, false, null, 'a.test', NO_LISTS);
-    expect(calls).toEqual([1, 2, 3]);
-    expect(result).toMatchObject({
-      success: true,
-      reloadedCount: 2,
-      failedCount: 1,
-      tabs: [
-        { id: 1, reloaded: true },
-        { id: 2, reloaded: false, error: 'Invalid tab ID: 2' },
-        { id: 3, reloaded: true },
-      ],
-    });
-  });
-
-  it('fails when every reload failed', async () => {
-    useFakeBrowser({
-      tabs: {
-        query: async () => tabs.slice(0, 2),
-        reload: () => { throw new Error('nope'); },
-      },
-    });
-    const result = await reloadMatchingTabs(() => true, false, null, 'a.test', NO_LISTS);
-    expect(result).toMatchObject({ success: false, reloadedCount: 0, failedCount: 2 });
-    expect(result.error).toMatch(/No tab could be reloaded/);
-  });
-
-  it('no failure: no failedCount', async () => {
-    useFakeBrowser({ tabs: { query: async () => tabs, reload: async () => {} } });
-    const result = await reloadMatchingTabs(() => true, false, null, 'a.test', NO_LISTS);
-    expect(result).toMatchObject({ success: true, reloadedCount: 3 });
-    expect(result).not.toHaveProperty('failedCount');
   });
 });
 

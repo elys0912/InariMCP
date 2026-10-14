@@ -1,22 +1,19 @@
 // Constants of the content script modules (no side effects).
 
 export const TIMEOUTS = {
-  DEFAULT: 10_000,
   WAIT_ELEMENT: 10_000,
   NETWORK_IDLE: 10_000,
   CAPTCHA: 180_000,
   SCROLL_STEP: 500,
   /** fox_type: all per-character delays together (see typingDelay). */
   TYPING_BUDGET: 10_000,
-  /** fox_click_and_wait without waitTimeout. */
-  CLICK_AND_WAIT: 5_000,
   /** fox_highlight without duration. */
   HIGHLIGHT: 3_000,
 } as const;
 
 /** Pauses and poll intervals (ms). */
 export const DELAYS = {
-  /** Poll interval of waitForElement (default), waitForNetworkIdle and clickAndWait. */
+  /** Poll interval of waitForElement (default) and waitForNetworkIdle. */
   POLL: 100,
   /** After scrollIntoView, before acting on the element (click, type, hover). */
   SCROLL_INTO_VIEW: 100,
@@ -30,8 +27,6 @@ export const DELAYS = {
   CAPTCHA_POLL: 1_000,
   /** fox_wait_for_network_idle without idleTime: no request this long. */
   NETWORK_IDLE_TIME: 500,
-  /** clickAndWait without waitForSelector: no new DOM change this long ends the wait. */
-  CLICK_SETTLE: 500,
 } as const;
 
 /** Defaults of tool arguments the command does not give. */
@@ -70,8 +65,6 @@ export const LIMITS = {
   TEXT_MATCHES: 50,
   /** Classes of one element in a generated selector. */
   SELECTOR_CLASSES: 2,
-  /** clickAndWait: changes returned. */
-  CLICK_WAIT_CHANGES: 20,
   /** scroll_and_capture: the page counts as scrolled to the end this close (px). */
   SCROLL_END_SLACK: 10,
 } as const;

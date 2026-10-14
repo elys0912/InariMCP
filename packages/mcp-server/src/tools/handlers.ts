@@ -184,9 +184,8 @@ function buildCommandData(
 /**
  * Arguments the backends compile with `new RegExp()`, always without flags
  * (case-sensitive) on both backends: fox_get_tabs, fox_screenshot all_tabs,
- * fox_wait_for_url, fox_wait_for_navigation (and the Extension's
- * reload_by_url / find_tabs). A case-insensitive part needs a
- * character class such as `[Ee]xample`. Each must also pass the limits of
+ * fox_wait_for_url, fox_wait_for_navigation. A case-insensitive part needs
+ * a character class such as `[Ee]xample`. Each must also pass the limits of
  * shared/src/url-pattern-limit.ts (length, no repeated group containing a
  * repeat), which the Extension checks again.
  */
