@@ -36,6 +36,10 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - Firefox の拡張機能も、タブ（または開く URL）のサイトについて承認されていない操作系のコマンドを、daemon が何を送ってきても拒否するようにした。
 - 承認の確認（MCP elicitation とツールバーのポップアップ）を、保護対象サイトの名前ではなく、ツール・サイト・引数を示して「この操作を許可しますか」と尋ねる形にした。
 - `fox_safety_status` は `confirmProtectedActions` と `protectedUrlPatterns` の代わりに、`approvalPolicy`（どの呼び出しで尋ねるか）と `confirmReadSites` を返す。
+- 一時停止のスイッチは、実行中の命令も止める：MCP クライアントにはすぐ `paused` の拒否が返り、ページでの入力・待ち・`scroll_capture` は次の段で止まる。
+- 起動時に保存した一時停止の状態を読めなかったときは、一時停止した状態で始める。スイッチを保存できなかったときは、ポップアップにそう出る（その切り替えは Firefox を再起動するまで有効）。
+- `scope: "scroll_capture"` の `fox_screenshot` は、`maxScrolls` と `delay` の指定にかかわらず、1 段 2 秒まで・50 段まで、かつ合計 25 秒に収まる段数までにした。
+- `fox_request_approval`：ポップアップで同時に待てる質問を 3 件までにし、それを超えた質問はすぐ拒否する。ポップアップはツールの呼び出しの承認を質問より先に出す。
 
 ### 削除
 
@@ -52,3 +56,4 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - `FOX_HOST` がループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）でなければ daemon は起動しないようにした。従来は警告をログに出して、平文の HTTP・WebSocket をネットワークに開いていた。
 - ホストの無いページ（`view-source:`、`blob:`、`data:` など。`about:` と `file:` は除く）にあるタブでは、ページを操作するツールを拒否するようにした。こうしたページには `safety.json` のどの URL パターンも一致しない。読み取るツールは動く。
 - 引数 `urlPattern` が 256 文字を超えるとき、または繰り返す括弧の中に繰り返しがあるとき（`(a+)+` など）は、コンパイルする前に拒否するようにした（daemon と拡張機能の両方で）。1 つのパターンで拡張機能のバックグラウンドページが止まらないようにするため。
+- 拡張機能は、承認を確かめたときの origin（scheme・host・port）にタブがまだあるときだけ、承認済みの操作（`fox_click`、`fox_type`、`fox_press_key`、`fox_set_value` など）をページで実行する。その間にタブが別のページへ移っていたら拒否し、今のページについて改めて承認を求める。

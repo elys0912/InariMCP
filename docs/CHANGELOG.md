@@ -36,6 +36,10 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The Firefox extension itself refuses an acting command that was not approved for the site of its tab (or of the URL it opens), whatever the daemon sends.
 - The approval prompt (MCP elicitation and the toolbar popup) asks "Allow this operation?" with the tool, the site and the arguments, instead of naming a protected site.
 - `fox_safety_status` reports `approvalPolicy` (which calls ask) and `confirmReadSites`, instead of `confirmProtectedActions` and `protectedUrlPatterns`.
+- The pause switch also stops a command that is still running: the MCP client gets the `paused` refusal at once, and typing, waiting or `scroll_capture` in the page stops at its next step.
+- When the extension cannot read the saved pause switch at startup, it starts paused. When it cannot save the switch, the popup says so (the change then holds until Firefox restarts).
+- `fox_screenshot` with `scope: "scroll_capture"` takes at most 50 steps of at most 2 s each, and no more steps than fit in 25 s, whatever `maxScrolls` and `delay` ask for.
+- `fox_request_approval`: at most 3 questions wait in the popup at once; another one is refused at once. The popup shows the approval requests of tool calls before the questions.
 
 ### Removed
 
@@ -52,3 +56,4 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The daemon refuses to start when `FOX_HOST` is not a loopback address (127.0.0.0/8, `::1`, `localhost`), instead of logging a warning and serving plain HTTP / WebSocket to the network.
 - Tools that act on a page are refused on a tab without a host (`view-source:`, `blob:`, `data:`, …; `about:` and `file:` excepted), which no URL pattern of `safety.json` can match. Reading tools still work there.
 - A `urlPattern` argument longer than 256 characters, or with a repeated group that contains a repeat (such as `(a+)+`), is refused before it is compiled, by the daemon and again by the extension, so one pattern cannot stall the extension's background page.
+- The extension runs an approved acting command in the page (`fox_click`, `fox_type`, `fox_press_key`, `fox_set_value`, …) only while the tab is still on the origin (scheme, host and port) the approval was checked on. When the tab went elsewhere in between, the command is refused, and the approval is asked again for the page the tab is on now.

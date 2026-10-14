@@ -151,7 +151,7 @@ Right after installation the extension opens a permission page in a new tab. It 
 
 ### Pausing the agent
 
-The toolbar popup has a **Pause agent actions** switch. While it is on, the extension refuses every command from the MCP client (the error starts with `paused`), withdraws the approval requests still waiting, and the badge shows `II`. Turn it off to let the agent work again. The switch is kept across restarts.
+The toolbar popup has a **Pause agent actions** switch. While it is on, the extension refuses every command from the MCP client (the error starts with `paused`), withdraws the approval requests still waiting, and the badge shows `II`. A command still running when you turn it on gets the same answer at once, and its typing, waiting or scrolling in the page stops at the next step. Turn it off to let the agent work again. The switch is kept across restarts; if Firefox cannot save it, the popup says so, and after a restart the last saved state is back.
 
 ### Restart and check the connection
 
