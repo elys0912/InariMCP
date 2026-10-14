@@ -13,6 +13,16 @@ export interface FindElementOptions {
   role?: string;
 }
 
+/** An element's box in viewport coordinates, with its center. */
+export interface ElementPosition {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+}
+
 export interface ElementInfo {
   tag: string;
   id: string | null;
@@ -29,15 +39,15 @@ export interface ElementInfo {
   disabled: boolean;
   checked: boolean;
   visible: boolean;
-  position: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    centerX: number;
-    centerY: number;
-  };
+  position: ElementPosition;
   selector: string;
+}
+
+/** An element without its content: tag, generated selector and position (dom.ts getElementLocation). */
+export interface ElementLocation {
+  tag: string;
+  selector: string;
+  position: ElementPosition;
 }
 
 export interface ClickOptions extends FindElementOptions {

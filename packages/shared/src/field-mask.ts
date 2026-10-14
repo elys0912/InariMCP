@@ -182,3 +182,15 @@ export function readSelectorProblem(selector: string): string | null {
   }
   return null;
 }
+
+/**
+ * Refuse the CSS selector of a reading command (readSelectorProblem), before
+ * it is used: the Extension's content script and the headless backend.
+ * Nothing to check without a selector.
+ */
+export function assertReadSelector(selector: string | undefined): void {
+  if (selector === undefined) return;
+
+  const problem = readSelectorProblem(selector);
+  if (problem !== null) throw new Error(`Selector refused: ${problem}`);
+}

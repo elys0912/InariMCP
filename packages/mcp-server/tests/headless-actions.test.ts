@@ -309,6 +309,45 @@ describe('reading the page (H-3, H-7, H-8, H-15)', () => {
   });
 });
 
+describe('options of a masked select and selectors that test a value, as on the Extension', () => {
+  const CARD =
+    '<select id="m" autocomplete="cc-exp-month"><option value="01">01</option><option value="05" selected>05</option></select>' +
+    '<select id="c" autocomplete="country"><option value="jp">Japan</option></select>' +
+    '<input id="h" type="hidden" name="csrf" value="secret">';
+
+  real('get_elements and get_text mask the text of an option of a masked select only', async () => {
+    await load(CARD);
+    const found = await browser.execute('get_elements', undefined, { selector: 'option', limit: 50 });
+    expect((found['elements'] as Array<{ text: string }>).map((e) => e.text)).toEqual(['[MASKED]', '[MASKED]', 'Japan']);
+    expect(await browser.execute('get_text', undefined, { selector: '#m option', maxLength: 100 }))
+      .toMatchObject({ success: true, text: '[MASKED]' });
+    expect(await browser.execute('get_text', undefined, { selector: '#c option', maxLength: 100 }))
+      .toMatchObject({ success: true, text: 'Japan' });
+  });
+
+  real('the reading commands refuse a selector with [value…] or :checked before using it', async () => {
+    await load(CARD);
+    const refused = [
+      await browser.execute('get_elements', undefined, { selector: 'input[name=csrf][value^="s"]', limit: 50 }),
+      await browser.execute('get_text', undefined, { selector: '#m option:checked', maxLength: 100 }),
+      await browser.execute('wait_for_element', undefined, { selector: '[VALUE="secret"]', timeout: 300, visible: false }),
+      await browser.execute('highlight', undefined, { selector: 'option:checked', duration: 200 }),
+      await browser.execute('scroll', undefined, { toElement: 'input[value]', amount: 100 }),
+    ];
+    for (const r of refused) {
+      expect(r).toMatchObject({ success: false });
+      expect(String(r['error'])).toContain('Selector refused');
+    }
+  });
+
+  real('scroll toElement returns where the element is, not its text', async () => {
+    await load('<div style="height:3000px"></div><p id="t">page text</p>');
+    const r = await browser.execute('scroll', undefined, { toElement: '#t', amount: 100 });
+    expect(r).toMatchObject({ success: true, element: { tag: 'p' } });
+    expect(JSON.stringify(r)).not.toContain('page text');
+  });
+});
+
 describe('history and waits (H-13)', () => {
   // A wait holds the lock, so the navigation it waits for is started by a
   // timer in the page before the wait is sent.

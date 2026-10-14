@@ -1,5 +1,6 @@
 // Input: click, type, scroll, set / select values, hover, key presses.
 
+import { assertReadSelector } from "@inari-mcp/shared/field-mask";
 import { DEFAULTS, DELAYS, TIMEOUTS } from "./constants";
 import {
   findElement,
@@ -8,6 +9,7 @@ import {
   locatorOf,
   sleep,
   getElementInfo,
+  getElementLocation,
   isTextInput,
   isInputElement,
   isButtonElement,
@@ -332,10 +334,15 @@ function scrollTowards(element: Element | null, direction: ScrollDirection, amou
  * selector that matches nothing scrolls the window, a toElement that matches
  * nothing falls through to the direction, and without a direction nothing
  * moves. `position` is always the measured {x, y} after the scroll.
+ * A scroll is no read (no confirm_read_sites check): toElement returns
+ * where the element is, not its content.
  */
 export async function performScroll(
   options: ScrollOptions,
 ): Promise<Record<string, unknown>> {
+  assertReadSelector(options.selector);
+  assertReadSelector(options.toElement);
+
   const element = options.selector || options.xpath || options.id ? findElement(options) : null;
 
   if (options.toElement) {
@@ -343,7 +350,7 @@ export async function performScroll(
     if (targetElement) {
       targetElement.scrollIntoView({ behavior: "smooth", block: "center" });
       await sleep(DELAYS.SCROLL_TO_ELEMENT);
-      return { scrolled: true, element: getElementInfo(targetElement), position: scrollPosition(null) };
+      return { scrolled: true, element: getElementLocation(targetElement), position: scrollPosition(null) };
     }
   }
 
@@ -378,6 +385,11 @@ export function setValue(
   return { set: true, element: getElementInfo(element) };
 }
 
+/**
+ * fox_interact hover: runs the page's own hover handlers, so it is an acting
+ * command (approved for the site). It returns where the element is, not
+ * its content.
+ */
 export async function hoverElement(
   options: FindElementOptions,
 ): Promise<Record<string, unknown>> {
@@ -406,7 +418,7 @@ export async function hoverElement(
     }),
   );
 
-  return { hovered: true, element: getElementInfo(element) };
+  return { hovered: true, element: getElementLocation(element) };
 }
 
 export function pressKey(

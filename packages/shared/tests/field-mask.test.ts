@@ -9,6 +9,7 @@ import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  assertReadSelector,
   isMaskedField,
   MASKED_VALUE,
   readSelectorProblem,
@@ -100,5 +101,13 @@ describe('readSelectorProblem', () => {
   it('says what was refused and what to use instead', () => {
     expect(readSelectorProblem('[value="a"]')).toMatch(/value attribute.*id, name, type or position/);
     expect(readSelectorProblem('option:checked')).toMatch(/:checked/);
+  });
+});
+
+describe('assertReadSelector', () => {
+  it('throws the reason for a refused selector, and passes the others and a missing one', () => {
+    expect(() => assertReadSelector('input[value^="a"]')).toThrow(/^Selector refused: it tests the value attribute/);
+    expect(() => assertReadSelector('#login')).not.toThrow();
+    expect(() => assertReadSelector(undefined)).not.toThrow();
   });
 });

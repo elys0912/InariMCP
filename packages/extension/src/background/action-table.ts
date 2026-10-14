@@ -43,8 +43,11 @@
 //                                its site).
 //                   "readPerTab" (self) multi-tab read: the handler skips
 //                                tabs matching those rules.
-//                   "none"       changes no page data (UI only, waits, tab
-//                                list, approvals, status).
+//                   "none"       changes no page data and returns no text,
+//                                value or link of the page (UI only, waits,
+//                                tab list, approvals, status): about an
+//                                element only its tag, selector and
+//                                position.
 //   needsTabId      (tab only) an explicit tabId is required; the active tab
 //                   is not used as a fallback.
 //   skipUrlReport   (tab only) no URL report after the call (the tab is gone).
@@ -193,7 +196,7 @@ const ACTIONS = {
   },
   closeTab: { scope: "tab", approval: "act", needsTabId: true, skipUrlReport: true, handler: withTabId(closeTab) },
   focusTab: { scope: "tab", approval: "none", needsTabId: true, handler: withTabId(focusTab) },
-  getTabInfo: { scope: "tab", approval: "none", needsTabId: true, handler: withTabId(getTabInfo) },
+  getTabInfo: { scope: "tab", approval: "read", needsTabId: true, handler: withTabId(getTabInfo) },
   findTabs: { scope: "self", approval: "none", handler: (c) => findTabs(optionsOf<FindTabsOptions>(c), c.scope) },
   screenshotAllTabs: {
     scope: "self",
@@ -237,7 +240,8 @@ const ACTIONS = {
   getValue: { scope: "tab", approval: "read", handler: toContentScript("getValue") },
   setValue: { scope: "tab", approval: "act", handler: toContentScript("setValue") },
   selectOption: { scope: "tab", approval: "act", handler: toContentScript("selectOption") },
-  hover: { scope: "tab", approval: "none", handler: toContentScript("hover") },
+  // The page's own hover handlers run: acting, though no input is given.
+  hover: { scope: "tab", approval: "act", handler: toContentScript("hover") },
   waitForChange: { scope: "tab", approval: "none", handler: toContentScript("waitForChange") },
   scrollAndCapture: { scope: "tab", approval: "read", handler: toContentScript("scrollAndCapture") },
   clickAndWait: { scope: "tab", approval: "act", handler: toContentScript("clickAndWait") },

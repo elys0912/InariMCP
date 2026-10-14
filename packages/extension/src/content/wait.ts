@@ -1,7 +1,8 @@
 // Waits: element, DOM change, network idle, click and wait.
 
+import { assertReadSelector } from "@inari-mcp/shared/field-mask";
 import { DELAYS, LIMITS, TIMEOUTS } from "./constants";
-import { findElement, isVisible, getElementInfo, sleep } from "./dom";
+import { findElement, isVisible, getElementInfo, getElementLocation, sleep } from "./dom";
 import { performClick } from "./input";
 import { activeRequestCount, beginNetworkCount, interceptionStatus } from "./page-hooks";
 import type {
@@ -12,9 +13,15 @@ import type {
   ClickAndWaitOptions,
 } from "./types";
 
+/**
+ * fox_wait for an element. A wait is no read (no confirm_read_sites check):
+ * it returns where the element is, not its content.
+ */
 export async function waitForElement(
   options: WaitOptions,
 ): Promise<Record<string, unknown>> {
+  assertReadSelector(options.selector);
+
   const timeout = options.timeout || TIMEOUTS.WAIT_ELEMENT;
   const interval = options.interval || DELAYS.POLL;
   const startTime = Date.now();
@@ -23,7 +30,7 @@ export async function waitForElement(
     const element = findElement(options);
     if (element) {
       if (!options.visible || isVisible(element)) {
-        return { found: true, element: getElementInfo(element) };
+        return { found: true, element: getElementLocation(element) };
       }
     }
     await sleep(interval);

@@ -522,6 +522,55 @@ describe('password fields on the extension path', () => {
   });
 });
 
+describe('options of a masked select, selectors that test a value, and what the non-reads return', () => {
+  real('fox_find and fox_read text mask an option of a masked select (value and text) and a cc-name field', async () => {
+    await load(
+      '<select id="m" autocomplete="cc-exp-month"><option value="secret-1" selected>secret-2</option></select>' +
+      '<select id="c" autocomplete="country"><option value="jp">Japan</option></select>' +
+      '<input id="n" autocomplete="cc-name" value="secret-3">',
+    );
+    const r = await run<{ options: unknown[]; text: unknown; name: unknown }>(
+      `return {
+         options: f.inspect.getElements({ selector: 'option' }).elements.map((e) => [e.value, e.text]),
+         text: f.inspect.getText({ selector: '#m option' }).text,
+         name: f.inspect.getElements({ selector: '#n' }).elements[0].value,
+       };`,
+    );
+    expect(r).toEqual({ options: [['[MASKED]', '[MASKED]'], ['jp', 'Japan']], text: '[MASKED]', name: '[MASKED]' });
+  });
+
+  real('the reading commands refuse a selector with [value…] or :checked before using it', async () => {
+    await load('<input id="h" type="hidden" name="csrf" value="secret"><select id="m"><option selected>a</option></select>');
+    const messages = await run<string[]>(
+      `const refused = async (call) => { try { await call(); return 'ran'; } catch (e) { return e.message; } };
+       return [
+         await refused(() => f.inspect.getElements({ selector: 'input[name=csrf][value^="s"]' })),
+         await refused(() => f.inspect.getText({ selector: '#m option:checked' })),
+         await refused(() => f.inspect.highlightElement({ selector: '[value]', duration: 0 })),
+         await refused(() => f.wait.waitForElement({ selector: 'option:CHECKED', timeout: 200 })),
+         await refused(() => f.input.performScroll({ toElement: 'input[VALUE]' })),
+         await refused(() => f.input.performScroll({ selector: ':checked', direction: 'down' })),
+       ];`,
+    );
+    for (const message of messages) expect(message).toContain('Selector refused');
+  });
+
+  real('wait, hover, highlight and scroll toElement return tag, selector and position only', async () => {
+    await load('<a id="a" href="https://example.test/secret-1">secret-2</a>');
+    const r = await run<{ keys: string[][]; json: string }>(
+      `const results = [
+         await f.wait.waitForElement({ selector: '#a', timeout: 1000 }),
+         await f.input.hoverElement({ selector: '#a' }),
+         f.inspect.highlightElement({ selector: '#a', duration: 0 }),
+         await f.input.performScroll({ toElement: '#a' }),
+       ];
+       return { keys: results.map((x) => Object.keys(x.element).sort()), json: JSON.stringify(results) };`,
+    );
+    expect(r.keys).toEqual(Array(4).fill(['position', 'selector', 'tag']));
+    expect(r.json).not.toContain('secret');
+  });
+});
+
 describe('WP44 highlight and overlay banner timers (E-05, E-06, A-07)', () => {
   real('E-05 the timer of an earlier highlight does not remove the next one', async () => {
     await load('<div id="a">A</div><div id="b">B</div>');

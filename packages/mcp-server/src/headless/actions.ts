@@ -11,7 +11,14 @@
 
 import type { BrowserContext, ElementHandle, Page } from 'playwright';
 import { z } from 'zod';
-import { BrowserActionSchema, isMaskedField, MASKED_VALUE, type BrowserAction, type MaskFieldInfo } from '@inari-mcp/shared';
+import {
+  assertReadSelector,
+  BrowserActionSchema,
+  isMaskedField,
+  MASKED_VALUE,
+  type BrowserAction,
+  type MaskFieldInfo,
+} from '@inari-mcp/shared';
 import { screenshotStem } from '@inari-mcp/shared/node';
 import { countOccurrences, filterAriaSnapshot, parseArgs } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
@@ -209,15 +216,25 @@ function boundedWait<T>(bound: Bound, timeout: number, what: string, wait: (ms: 
 
 /**
  * What the masked-value rule (shared/src/field-mask.ts) reads from an
- * element, as the Extension's content/dom.ts isMaskedField does. Runs in
- * the page.
+ * element (an <option>: with its <select>), as the Extension's
+ * content/dom.ts isMaskedField does. Runs in the page.
  */
 function maskFieldInfo(el: Element): MaskFieldInfo {
-  return {
-    localName: el.localName,
-    type: el.localName === 'input' ? (el as HTMLInputElement).type : '',
-    autocomplete: el.getAttribute('autocomplete'),
-  };
+  const read = (e: Element): MaskFieldInfo => ({
+    localName: e.localName,
+    type: e.localName === 'input' ? (e as HTMLInputElement).type : '',
+    autocomplete: e.getAttribute('autocomplete'),
+  });
+  const info = read(el);
+  if (el.localName !== 'option') return info;
+
+  const select = el.closest('select');
+  return { ...info, select: select === null ? null : read(select) };
+}
+
+/** `text` as the tools return it: MASKED_VALUE for a masked field that has text (as content/dom.ts shownText). */
+function shownText(text: string, info: MaskFieldInfo): string {
+  return text !== '' && isMaskedField(info) ? MASKED_VALUE : text;
 }
 
 /**
@@ -401,14 +418,18 @@ const scrollArgs = z.object({
 
 interface ScrollPosition { x: number; y: number }
 
+/**
+ * Where the element is, not its content: a scroll is no read (no
+ * confirm_read_sites check), as on the Extension.
+ */
 interface ScrolledTo {
-  element: { tag: string; text: string; box: { x: number; y: number; width: number; height: number } };
+  element: { tag: string; box: { x: number; y: number; width: number; height: number } };
   position: ScrollPosition;
 }
 
 /** Bring the element `toElement` into view; null when nothing matches. */
 function scrollToElement(page: Page, toElement: string): Promise<ScrolledTo | null> {
-  return page.evaluate(({ sel, maxText }) => {
+  return page.evaluate((sel) => {
     const el = document.querySelector(sel);
     if (!el) return null;
     el.scrollIntoView({ block: 'center', behavior: 'instant' });
@@ -416,12 +437,11 @@ function scrollToElement(page: Page, toElement: string): Promise<ScrolledTo | nu
     return {
       element: {
         tag: el.tagName.toLowerCase(),
-        text: (el.textContent ?? '').trim().slice(0, maxText),
         box: { x: r.x, y: r.y, width: r.width, height: r.height },
       },
       position: { x: window.scrollX, y: window.scrollY },
     };
-  }, { sel: toElement, maxText: ELEMENT_TEXT_MAX_CHARS });
+  }, toElement);
 }
 
 interface ScrolledBy {
@@ -464,6 +484,9 @@ function scrollBy(page: Page, selector: string | null, direction: ScrollDirectio
 
 const scroll: ActionHandler = async ({ page, args }) => {
   const { toElement, direction, amount, selector } = parseArgs(scrollArgs, args, 'scroll');
+  assertReadSelector(selector);
+  assertReadSelector(toElement);
+
   const warnings: string[] = [];
   if (toElement) {
     const found = await scrollToElement(page, toElement);
@@ -506,6 +529,8 @@ const highlightArgs = selectorArgs.extend({ duration: z.number() });
 
 const highlight: ActionHandler = async ({ page, args }) => {
   const { selector, duration } = parseArgs(highlightArgs, args, 'highlight');
+  assertReadSelector(selector);
+
   await page.$eval(
     selector,
     (el, { ms, outline }) => {
@@ -528,26 +553,45 @@ const getPageInfo: ActionHandler = async ({ page }) => {
 // --- get_elements ---
 const getElementsArgs = selectorArgs.extend({ limit: z.number() });
 
+interface FoundElement {
+  tag: string;
+  text: string;
+  box: { x: number; y: number; width: number; height: number } | null;
+}
+
+/** Tag, text and box of a found element. Runs in the page. */
+function describeElement(e: Element, maxText: number): FoundElement {
+  const r = e.getBoundingClientRect();
+  return {
+    tag: e.tagName.toLowerCase(),
+    text: (e instanceof HTMLElement ? e.innerText : e.textContent ?? '').slice(0, maxText),
+    // null for an element without a box (display: none), as boundingBox() answered.
+    box: e.getClientRects().length === 0 ? null : { x: r.x, y: r.y, width: r.width, height: r.height },
+  };
+}
+
+/** describeElement, its text masked by the masked-value rule. */
+async function describeShown(handle: ElementHandle): Promise<FoundElement> {
+  const [found, info] = await Promise.all([
+    handle.evaluate(describeElement, ELEMENT_TEXT_MAX_CHARS),
+    handle.evaluate(maskFieldInfo),
+  ]);
+  return { ...found, text: shownText(found.text, info) };
+}
+
 const getElements: ActionHandler = async ({ page, args }) => {
   const { selector, limit } = parseArgs(getElementsArgs, args, 'get_elements');
-  // One round trip; `count` is every match, as on the Extension (content/inspect.ts getElements).
-  const found = await page.$$eval(
-    selector,
-    (els, { max, maxText }) => ({
-      count: els.length,
-      elements: els.slice(0, max).map((e) => {
-        const r = e.getBoundingClientRect();
-        return {
-          tag: e.tagName.toLowerCase(),
-          text: (e instanceof HTMLElement ? e.innerText : e.textContent ?? '').slice(0, maxText),
-          // null for an element without a box (display: none), as boundingBox() answered.
-          box: e.getClientRects().length === 0 ? null : { x: r.x, y: r.y, width: r.width, height: r.height },
-        };
-      }),
-    }),
-    { max: Math.max(0, Math.min(limit, GET_ELEMENTS_MAX)), maxText: ELEMENT_TEXT_MAX_CHARS },
-  );
-  return { success: true, elements: found.elements, count: found.count };
+  assertReadSelector(selector);
+
+  // `count` is every match, as on the Extension (content/inspect.ts getElements).
+  const handles = await page.$$(selector);
+  try {
+    const shown = handles.slice(0, Math.max(0, Math.min(limit, GET_ELEMENTS_MAX)));
+    const elements = await Promise.all(shown.map(describeShown));
+    return { success: true, elements, count: handles.length };
+  } finally {
+    await Promise.all(handles.map((h) => h.dispose()));
+  }
 };
 
 // --- wait_for_element ---
@@ -555,6 +599,8 @@ const waitForElementArgs = selectorArgs.merge(timeoutArgs).extend({ visible: z.b
 
 const waitForElement: ActionHandler = async (c) => {
   const { selector, timeout, visible } = parseArgs(waitForElementArgs, c.args, 'wait_for_element');
+  assertReadSelector(selector);
+
   await boundedWait(c, timeout, 'wait_for_element', (ms) =>
     c.page.waitForSelector(selector, { timeout: ms, state: visible ? 'visible' : 'attached' }));
   return { success: true };
@@ -781,7 +827,12 @@ const getTextArgs = z.object({ selector: z.string().optional(), maxLength: z.num
 
 const getText: ActionHandler = async ({ page, args }) => {
   const { selector, maxLength } = parseArgs(getTextArgs, args, 'get_text');
-  const text = await page.innerText(selector || 'body', { timeout: ELEMENT_TIMEOUT_MS });
+  assertReadSelector(selector);
+
+  const target = selector || 'body';
+  const innerText = await page.innerText(target, { timeout: ELEMENT_TIMEOUT_MS });
+  // A masked field read as itself (an option of a masked select), as on the Extension.
+  const text = shownText(innerText, await page.$eval(target, maskFieldInfo));
   const truncated = text.length > maxLength;
   return {
     success: true,

@@ -55,18 +55,20 @@ describe('BROWSER_ACTIONS ⇔ WIRE_ACTION_MAP', () => {
 
   // Decision #9 / Fo-07: the Extension itself requires a human approval for
   // every action that changes page or browser state, whatever the MCP Server
-  // attached; reads check confirm_read_sites; the rest changes no page data.
+  // attached (hover too: the page's own handlers run); reads, getTabInfo
+  // included, check confirm_read_sites; the rest changes no page data and
+  // returns no page content.
   it('every action that changes page or browser state needs an approval', () => {
     const rows = (pred: (approval: string) => boolean): string[] =>
       [...ACTION_TABLE].filter(([, d]) => pred(d.approval)).map(([name]) => name).sort();
     expect(rows((a) => a === 'act')).toEqual([
-      'click', 'clickAndWait', 'closeTab', 'goBack', 'goForward', 'hardRefresh', 'pressKey', 'refresh',
+      'click', 'clickAndWait', 'closeTab', 'goBack', 'goForward', 'hardRefresh', 'hover', 'pressKey', 'refresh',
       'selectOption', 'setValue', 'type',
     ]);
     expect(rows((a) => a === 'actOnUrl')).toEqual(['createTab', 'navigate', 'open_in_container']);
     expect(rows((a) => a === 'actPerTab')).toEqual(['reloadAll', 'reloadByUrl']);
     expect(rows((a) => a === 'read')).toEqual([
-      'find_text', 'getElements', 'getPageInfo', 'getText', 'getValue', 'screenshot', 'scrollAndCapture',
+      'find_text', 'getElements', 'getPageInfo', 'getTabInfo', 'getText', 'getValue', 'screenshot', 'scrollAndCapture',
     ]);
     expect(rows((a) => a === 'readPerTab')).toEqual(['screenshotAllTabs']);
   });

@@ -1,7 +1,7 @@
 // Observation and display: page info, element lists, highlight, scroll
 // snapshots, full-page dimensions, values and text.
 
-import { MASKED_VALUE } from "@inari-mcp/shared/field-mask";
+import { assertReadSelector, MASKED_VALUE } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
 import { DEFAULTS, HIGHLIGHT_STYLE, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
 import {
@@ -9,11 +9,13 @@ import {
   isVisible,
   generateSelector,
   getElementInfo,
+  getElementLocation,
   findElement,
   sleep,
   notFoundError,
   isTextInput,
   isSelectElement,
+  shownText,
   shownValue,
 } from "./dom";
 import type {
@@ -43,7 +45,7 @@ export function getPageInfo(): Record<string, unknown> {
         type: htmlEl.type || null,
         id: el.id || null,
         name: htmlEl.name || null,
-        text: clipText(el.textContent?.trim() ?? "", LIMITS.PAGE_INFO_TEXT) || null,
+        text: shownText(el, LIMITS.PAGE_INFO_TEXT),
         href: (el as HTMLAnchorElement).href || null,
         value: shownValue(el, htmlEl.value, LIMITS.PAGE_INFO_TEXT),
         placeholder: htmlEl.placeholder || null,
@@ -103,6 +105,8 @@ export function getElements(options: {
   selector?: string;
   limit?: number;
 }): Record<string, unknown> {
+  assertReadSelector(options.selector);
+
   const elements: ElementInfo[] = [];
   const selector = options.selector || "*";
   const limit = options.limit || DEFAULTS.ELEMENTS_LIMIT;
@@ -132,9 +136,15 @@ function removeHighlight(): void {
   }
 }
 
+/**
+ * fox_interact highlight. UI only and no read (no confirm_read_sites
+ * check): it returns where the element is, not its content.
+ */
 export function highlightElement(
   options: HighlightOptions,
 ): Record<string, unknown> {
+  assertReadSelector(options.selector);
+
   removeHighlight();
 
   const element = findElement(options);
@@ -182,7 +192,7 @@ export function highlightElement(
     highlightTimer = setTimeout(removeHighlight, options.duration || TIMEOUTS.HIGHLIGHT);
   }
 
-  return { highlighted: true, element: getElementInfo(element) };
+  return { highlighted: true, element: getElementLocation(element) };
 }
 
 function getVisibleInteractiveElements(): Record<string, unknown>[] {
@@ -303,6 +313,8 @@ export function getValue(
 export function getText(
   options: TextOptions,
 ): Record<string, unknown> {
+  assertReadSelector(options.selector);
+
   let element: Element = document.body;
   if (options.selector) {
     const found = findElement(options);
@@ -311,8 +323,10 @@ export function getText(
   }
 
   const maxLength = options.maxLength || DEFAULTS.TEXT_MAX_LENGTH;
-  const text =
-    (element as HTMLElement).innerText || element.textContent || "";
+  // A masked field read as itself (an option of a masked select, a masked textarea).
+  const text = isMaskedField(element)
+    ? MASKED_VALUE
+    : (element as HTMLElement).innerText || element.textContent || "";
 
   return {
     text: clipText(text, maxLength),

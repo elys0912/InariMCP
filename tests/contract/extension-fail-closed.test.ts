@@ -9,9 +9,11 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { BrowserCommandSchema } from '@inari-mcp/shared';
+import { ACTION_TABLE } from '../../packages/extension/src/background/action-table.ts';
 import { handleCommand } from '../../packages/extension/src/background/dispatch.ts';
-import { checkApproval } from '../../packages/extension/src/background/url-policy.ts';
+import { checkApproval, isReadConfirmTab } from '../../packages/extension/src/background/url-policy.ts';
 import { resolveWireAction } from '../../packages/extension/src/background/wire.ts';
+import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG } from '../../packages/mcp-server/src/safety/config.js';
 
@@ -154,6 +156,55 @@ describe('Fo-07 acting commands need an approval of their site', () => {
   it('a tab that cannot be resolved fails closed', () => {
     expect(checkApproval('act', undefined, {}, [], 'app.example.test')).toMatchObject({ success: false });
     expect(checkApproval('act', undefined, {}, [], 'app.example.test')).not.toHaveProperty('safetyDecision');
+  });
+});
+
+describe('reads checked against confirm_read_sites', () => {
+  const rules = compileUrlRules([hostRule('bank.test')]).rules;
+  const readerOf = (url: string): string => `about:reader?url=${encodeURIComponent(url)}`;
+
+  it.each([
+    ['a tab on the site', 'https://bank.test/a', true],
+    ['the source view of a page of the site', 'view-source:https://bank.test/a', true],
+    ['the reader view of a page of the site', readerOf('https://bank.test/a'), true],
+    ['the source view of that reader view', `view-source:${readerOf('https://bank.test/a')}`, true],
+    ['a tab on another site', 'https://shop.test/', false],
+    ['the source view of another site', 'view-source:https://shop.test/', false],
+    ['the reader view of another site', readerOf('https://shop.test/'), false],
+  ])('%s → asks: %s', (_what, url, asks) => {
+    const result = checkApproval('read', { id: 1, url } as browser.tabs.Tab, {}, rules, undefined);
+    if (asks) expect(result).toMatchObject({ success: false, safetyDecision: 'confirmation_required', url });
+    else expect(result).toBeNull();
+  });
+
+  it('a tab whose URL is unknown is refused, when there are rules to check', () => {
+    const noUrl = { id: 1 } as browser.tabs.Tab;
+    const refused = checkApproval('read', noUrl, {}, rules, undefined);
+    expect(refused).toMatchObject({ success: false, error: expect.stringContaining('confirm_read_sites') });
+    expect(refused).not.toHaveProperty('safetyDecision');
+    expect(checkApproval('read', noUrl, {}, [], undefined)).toBeNull();
+  });
+
+  it('screenshot all_tabs skips the same tabs, and a tab whose URL is unknown', () => {
+    const skips = (url: string | undefined): boolean => isReadConfirmTab({ id: 1, url } as browser.tabs.Tab, rules);
+    expect([skips('view-source:https://bank.test/'), skips(undefined), skips('https://shop.test/')]).toEqual([true, true, false]);
+    expect(isReadConfirmTab({ id: 1 } as browser.tabs.Tab, [])).toBe(false);
+  });
+
+  it('get_tab_info, which returns the page info, is a read', () => {
+    expect(ACTION_TABLE.get('getTabInfo')?.approval).toBe('read');
+  });
+});
+
+describe('hover runs the page\'s own handlers, so it acts', () => {
+  it('is refused without the approval of the tab\'s site and runs with it', async () => {
+    installBrowser();
+    expect(await handleCommand({ action: 'hover', data: { selector: '#a' } }, 'host'))
+      .toMatchObject({ success: false, safetyDecision: 'confirmation_required' });
+    expect(sent).toEqual([]);
+    expect(await handleCommand({ action: 'hover', data: { selector: '#a' }, approvedHost: 'app.example.test' }, 'host'))
+      .toMatchObject({ success: true });
+    expect(sent).toHaveLength(1);
   });
 });
 
