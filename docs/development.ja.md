@@ -63,9 +63,11 @@ npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefo
 |---|---|---|
 | `@inari-mcp/shared` | zodスキーマ（プロトコル、アクション、Native Hostのメッセージ）、アクション名、定数（`ENV`など）、小さなユーティリティ。Node.jsのAPIは使わない（`packages/shared/tests/browser-safe.test.ts`で確認） | daemon、中継、Native Host。拡張機能はzodを引き込まないexportだけ |
 | `@inari-mcp/shared/action-names` | ブラウザコマンドのアクション名。zodなし | 拡張機能 |
+| `@inari-mcp/shared/field-mask` | 値を伏せる（`[MASKED]`にする）フォーム欄の規則。importなし | 拡張機能（ヘッドレスは`@inari-mcp/shared`から使う） |
+| `@inari-mcp/shared/url-pattern-limit` | 引数`urlPattern`の長さと形の制限。importなし | 拡張機能（daemonは`@inari-mcp/shared`から使う） |
 | `@inari-mcp/shared/node` | Node.jsのプロセス用の共通処理（下表） | daemon、中継、Native Host、doctor |
 
-拡張機能は`@inari-mcp/shared`を`dist/`ではなくソース（`packages/shared/src`）からバンドルする。解決できるのは`@inari-mcp/shared`と`@inari-mcp/shared/action-names`だけで、それ以外のサブパス（`/node`を含む）はビルドエラーになる。拡張機能の`tsconfig.json`も同じ2つの名前をソースに対応させている。Vitestも3つのimportをすべてソースに解決するので、テストにビルドは要らない。
+拡張機能は`@inari-mcp/shared`を`dist/`ではなくソース（`packages/shared/src`）からバンドルする。解決できるのは`@inari-mcp/shared`、`@inari-mcp/shared/action-names`、`@inari-mcp/shared/field-mask`、`@inari-mcp/shared/url-pattern-limit`だけで、それ以外のサブパス（`/node`を含む）はビルドエラーになる。拡張機能の`tsconfig.json`も同じ4つの名前をソースに対応させている。Vitestも5つのimportをすべてソースに解決するので、テストにビルドは要らない。
 
 `@inari-mcp/shared/node`のモジュール（`packages/shared/src/node/`）:
 

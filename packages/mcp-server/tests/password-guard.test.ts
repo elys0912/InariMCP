@@ -84,6 +84,11 @@ describe('invalidRegexArgument (5.10)', () => {
     expect(invalidRegexArgument({ urlPattern: '*.example' })).toMatch(/^Invalid urlPattern/);
   });
 
+  it('refuses a urlPattern over the limits of shared url-pattern-limit.ts (Fs-04)', () => {
+    expect(invalidRegexArgument({ urlPattern: '(a+)+$' })).toMatch(/^Invalid urlPattern: a repeated group/);
+    expect(invalidRegexArgument({ urlPattern: 'a'.repeat(257) })).toMatch(/^Invalid urlPattern: longer than 256/);
+  });
+
   it('accepts valid or absent patterns', () => {
     expect(invalidRegexArgument({ urlPattern: '^https://a\\.test/' })).toBeNull();
     expect(invalidRegexArgument({})).toBeNull();

@@ -11,7 +11,7 @@
 
 import type { BrowserContext, ElementHandle, Page } from 'playwright';
 import { z } from 'zod';
-import { BrowserActionSchema, type BrowserAction } from '@inari-mcp/shared';
+import { BrowserActionSchema, isMaskedField, isRecord, MASKED_VALUE, type BrowserAction, type MaskFieldInfo } from '@inari-mcp/shared';
 import { screenshotStem } from '@inari-mcp/shared/node';
 import { countOccurrences, filterAriaSnapshot, parseArgs } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
@@ -200,11 +200,21 @@ function boundedWait<T>(bound: Bound, timeout: number, what: string, wait: (ms: 
 }
 
 // ---------------------------------------------------------------------------
-// Password guard
+// Masked values and the password guard
 // ---------------------------------------------------------------------------
 
-/** get_value's answer for a password field, as on the Extension (content/inspect.ts getValue). */
-const PASSWORD_VALUE_MASK = '[MASKED]';
+/**
+ * What the masked-value rule (shared/src/field-mask.ts) reads from an
+ * element, as the Extension's content/dom.ts isMaskedField does. Runs in
+ * the page.
+ */
+function maskFieldInfo(el: Element): MaskFieldInfo {
+  return {
+    localName: el.localName,
+    type: el.localName === 'input' ? (el as HTMLInputElement).type : '',
+    autocomplete: el.getAttribute('autocomplete'),
+  };
+}
 
 /**
  * Password guard: refuse a password field unless the command carries
@@ -620,7 +630,7 @@ const getValue: ActionHandler = async ({ page, args }) => {
   // As on the Extension (content/inspect.ts getValue): a <label> is read as
   // itself (its text), not as its control.
   const label = await el.evaluate((e) => e instanceof HTMLLabelElement);
-  if (!label && await el.evaluate(isPasswordElement)) return { success: true, value: PASSWORD_VALUE_MASK };
+  if (!label && isMaskedField(await el.evaluate(maskFieldInfo))) return { success: true, value: MASKED_VALUE };
   const value = await el.evaluate((e): string | null => {
     if (e instanceof HTMLInputElement || e instanceof HTMLTextAreaElement) return e.value;
     if (e instanceof HTMLSelectElement) return e.options[e.selectedIndex]?.value ?? null;

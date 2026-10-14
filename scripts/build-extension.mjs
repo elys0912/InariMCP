@@ -38,6 +38,8 @@ const sharedSrc = path.join(root, 'packages', 'shared', 'src');
 const SHARED_ENTRIES = new Map([
   ['@inari-mcp/shared', path.join(sharedSrc, 'index.ts')],
   ['@inari-mcp/shared/action-names', path.join(sharedSrc, 'action-names.ts')],
+  ['@inari-mcp/shared/field-mask', path.join(sharedSrc, 'field-mask.ts')],
+  ['@inari-mcp/shared/url-pattern-limit', path.join(sharedSrc, 'url-pattern-limit.ts')],
 ]);
 
 /** Resolve @inari-mcp/shared[/...] to SHARED_ENTRIES, refuse the rest. */

@@ -59,8 +59,8 @@
  *  - Host header must be `localhost`, an IP literal or the configured host
  *    (a DNS-rebinding page always uses some other name).
  *  - OPTIONS returns 403 (no CORS headers — all callers are local processes)
- *  - Listens on 127.0.0.1 unless FOX_HOST says otherwise (daemon/main.ts
- *    warns about non-loopback addresses)
+ *  - Listens on 127.0.0.1, or the loopback address FOX_HOST names (daemon/main.ts
+ *    refuses to start with any other)
  */
 
 import * as http from 'node:http';

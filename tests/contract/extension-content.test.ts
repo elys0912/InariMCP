@@ -17,7 +17,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
-import { build } from 'esbuild';
+import { build, type Plugin } from 'esbuild';
 import { firefox, type Browser, type BrowserContext, type Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CAPTCHA_BANNER_ID } from '../../packages/extension/src/content/constants.ts';
@@ -52,10 +52,21 @@ beforeAll(async () => {
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
+/** `@inari-mcp/shared/<entry>` from its sources, as scripts/build-extension.mjs resolves it (no build needed). */
+const sharedSources: Plugin = {
+  name: 'shared-sources',
+  setup(b) {
+    b.onResolve({ filter: /^@inari-mcp\/shared\/[a-z-]+$/ }, (args) => ({
+      path: fileURLToPath(new URL(`../../packages/shared/src/${args.path.slice('@inari-mcp/shared/'.length)}.ts`, import.meta.url)),
+    }));
+  },
+};
+
 /** The content modules, bundled like scripts/build-extension.mjs does. */
 async function bundleSource(contents: string): Promise<string> {
   const out = await build({
     stdin: { contents, resolveDir: ROOT, sourcefile: 'entry.ts', loader: 'ts' },
+    plugins: [sharedSources],
     bundle: true,
     format: 'iife',
     target: ['firefox115'],
@@ -453,6 +464,35 @@ describe('password fields on the extension path', () => {
     expect(r.found).toEqual(MASKED_VIEW);
     expect(r.values).toEqual(MASKED_VIEW);
     expect(JSON.stringify(r)).not.toContain('pw-secret');
+  });
+
+  // Decision #4 / Fo-03: hidden, one-time code and payment card fields too
+  // (rule: shared/src/field-mask.ts).
+  real('fox_read info, fox_find and get_value mask hidden, one-time code and card fields', async () => {
+    await load(
+      '<form id="g">' +
+      '<input id="h" type="hidden" value="secret-1">' +
+      '<input id="o" type="text" autocomplete="one-time-code" value="secret-2">' +
+      '<input id="n" type="text" autocomplete="cc-number" value="secret-3">' +
+      '<input id="v" type="text" autocomplete="section-pay CC-CSC" value="secret-4">' +
+      '<select id="m" autocomplete="cc-exp-month"><option value="secret-5" selected>05</option></select>' +
+      '<input id="u" type="text" autocomplete="name" value="user-1">' +
+      '</form>',
+    );
+    const r = await run<{ forms: View; values: View; found: View }>(
+      `const byId = (list) => Object.fromEntries(list.map((e) => [e.id, e.value]));
+       const ids = ['h', 'o', 'n', 'v', 'm', 'u'];
+       return {
+         forms: byId(f.inspect.getPageInfo().forms[0].fields),
+         values: Object.fromEntries(ids.map((id) => [id, f.inspect.getValue({ id }).value])),
+         found: byId(f.inspect.getElements({ selector: 'input, select' }).elements),
+       };`,
+    );
+    const masked = { h: '[MASKED]', o: '[MASKED]', n: '[MASKED]', v: '[MASKED]', m: '[MASKED]', u: 'user-1' };
+    expect(r.forms).toEqual(masked);
+    expect(r.values).toEqual(masked);
+    expect(r.found).toEqual(masked);
+    expect(JSON.stringify(r)).not.toContain('secret');
   });
 
   real('fox_type and fox_set_value refuse every password field unless allowPassword', async () => {

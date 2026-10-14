@@ -32,6 +32,8 @@ import { configDefaults, defineConfig } from 'vitest/config';
 const sharedSrc = fileURLToPath(new URL('./packages/shared/src/index.ts', import.meta.url));
 const sharedNodeSrc = fileURLToPath(new URL('./packages/shared/src/node/index.ts', import.meta.url));
 const sharedActionNamesSrc = fileURLToPath(new URL('./packages/shared/src/action-names.ts', import.meta.url));
+const sharedFieldMaskSrc = fileURLToPath(new URL('./packages/shared/src/field-mask.ts', import.meta.url));
+const sharedUrlPatternLimitSrc = fileURLToPath(new URL('./packages/shared/src/url-pattern-limit.ts', import.meta.url));
 
 /**
  * Test files that drive a real headless Firefox (Playwright). They run in
@@ -47,6 +49,8 @@ export default defineConfig({
     alias: [
       { find: /^@inari-mcp\/shared\/node$/, replacement: sharedNodeSrc },
       { find: /^@inari-mcp\/shared\/action-names$/, replacement: sharedActionNamesSrc },
+      { find: /^@inari-mcp\/shared\/field-mask$/, replacement: sharedFieldMaskSrc },
+      { find: /^@inari-mcp\/shared\/url-pattern-limit$/, replacement: sharedUrlPatternLimitSrc },
       { find: /^@inari-mcp\/shared$/, replacement: sharedSrc },
     ],
   },

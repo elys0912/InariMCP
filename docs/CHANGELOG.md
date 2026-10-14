@@ -22,3 +22,12 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The `allow_script_execution` key of `safety.json` and the `FOX_ALLOW_SCRIPTS` / `CLAUDE_BROWSER_ALLOW_SCRIPTS` variables. A `safety.json` that still has the key is refused as an unknown key until the key is deleted.
 - The `logs` and `script` profiles of `FOX_CAPS` (an unknown profile name is ignored with a warning).
 - The "Inspect Element for InariMCP" context menu entry: it handed its result to nobody.
+- Screenshots saved under a `filename` you chose are now deleted after `FOX_SCREENSHOT_RETENTION_DAYS` (default 30) like the others; the Native Host lists them in `.named-screenshots` in the screenshots directory and never deletes any other file there.
+- README: a Permissions section lists what each of the nine extension permissions is used for and where (`cookies` reads no cookie; it is what Firefox requires to open a tab in a container), and that the agent can create a Firefox container.
+
+### Security
+
+- Values are masked as `[MASKED]` in more fields, on the extension and in headless mode alike: besides password fields, `type="hidden"` fields and fields whose `autocomplete` is `one-time-code`, `cc-number`, `cc-csc`, `cc-exp`, `cc-exp-month` or `cc-exp-year` (`current-password` / `new-password` as before). `allow_password_typing` still only allows typing into password fields and unmasks nothing.
+- The daemon refuses to start when `FOX_HOST` is not a loopback address (127.0.0.0/8, `::1`, `localhost`), instead of logging a warning and serving plain HTTP / WebSocket to the network.
+- Tools that act on a page are refused on a tab without a host (`view-source:`, `blob:`, `data:`, …; `about:` and `file:` excepted), which no URL pattern of `safety.json` can match. Reading tools still work there.
+- A `urlPattern` argument longer than 256 characters, or with a repeated group that contains a repeat (such as `(a+)+`), is refused before it is compiled, by the daemon and again by the extension, so one pattern cannot stall the extension's background page.

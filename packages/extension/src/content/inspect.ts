@@ -1,10 +1,11 @@
 // Observation and display: page info, element lists, highlight, scroll
 // snapshots, full-page dimensions, values and text.
 
+import { MASKED_VALUE } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
 import { DEFAULTS, HIGHLIGHT_STYLE, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
 import {
-  isPasswordField,
+  isMaskedField,
   isVisible,
   generateSelector,
   getElementInfo,
@@ -13,7 +14,7 @@ import {
   notFoundError,
   isTextInput,
   isSelectElement,
-  truncatedValue,
+  shownValue,
 } from "./dom";
 import type {
   ElementInfo,
@@ -44,7 +45,7 @@ export function getPageInfo(): Record<string, unknown> {
         name: htmlEl.name || null,
         text: clipText(el.textContent?.trim() ?? "", LIMITS.PAGE_INFO_TEXT) || null,
         href: (el as HTMLAnchorElement).href || null,
-        value: isPasswordField(el) ? "[MASKED]" : truncatedValue(htmlEl.value, LIMITS.PAGE_INFO_TEXT),
+        value: shownValue(el, htmlEl.value, LIMITS.PAGE_INFO_TEXT),
         placeholder: htmlEl.placeholder || null,
         ariaLabel: el.getAttribute("aria-label"),
         position: {
@@ -85,7 +86,7 @@ export function getPageInfo(): Record<string, unknown> {
             id: el.id,
             placeholder: inp.placeholder,
             required: inp.required,
-            value: isPasswordField(el) ? "[MASKED]" : truncatedValue(inp.value, LIMITS.FORM_FIELD_VALUE),
+            value: shownValue(el, inp.value, LIMITS.FORM_FIELD_VALUE),
           };
         }),
     })),
@@ -286,8 +287,8 @@ export function getValue(
 
   let value: string | null;
 
-  if (isPasswordField(element)) {
-    value = "[MASKED]";
+  if (isMaskedField(element)) {
+    value = MASKED_VALUE;
   } else if (isTextInput(element)) {
     value = element.value;
   } else if (isSelectElement(element)) {
