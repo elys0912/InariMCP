@@ -176,7 +176,7 @@ describe('runDaemon when the HTTP port is already taken (singleton lock)', () =>
   });
 });
 
-describe('runDaemon with a FOX_HOST that is not a loopback address (Po-09)', () => {
+describe('runDaemon with a FOX_HOST that is not a loopback address (plain HTTP stays on this machine)', () => {
   it('exits 1 before listening, with the reason in the log', async () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     const free = await closedPort();

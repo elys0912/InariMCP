@@ -1,13 +1,13 @@
 /**
  * Extension: messages between the background and content scripts. A
- * command's data cannot replace the action the background checked (WP45
- * A-03): content messages are built as `{ ...data, action }`.
+ * command's data cannot replace the action the background checked:
+ * content messages are built as `{ ...data, action }`.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
 import { handleCommand } from '../../packages/extension/src/background/dispatch.ts';
 
-describe('A-03 data.action does not replace the content action', () => {
+describe('data.action does not replace the content action', () => {
   afterEach(() => {
     delete (globalThis as { browser?: unknown }).browser;
   });

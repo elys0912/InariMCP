@@ -1,7 +1,8 @@
 /**
- * field-mask.ts: the one rule of which field values both backends mask,
- * and the selectors the reading tools refuse. The backends' use of it is
- * checked in a page: tests/contract/extension-content.test.ts and
+ * field-mask.ts: the one rule of which field values both backends mask
+ * (password, hidden, one-time code and payment card fields), and the
+ * selectors the reading tools refuse. The backends' use of it is checked in
+ * a page: tests/contract/extension-content.test.ts and
  * packages/mcp-server/tests/headless-actions.test.ts.
  */
 

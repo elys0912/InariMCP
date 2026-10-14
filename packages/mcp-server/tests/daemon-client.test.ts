@@ -76,7 +76,7 @@ describe('DaemonClient against the real daemon', () => {
 });
 
 describe('DaemonClient against an impostor', () => {
-  // A-KM-03: the call body (arguments, approval token) went out before the answer was checked.
+  // The call body (arguments, approval token) must not go out before the answer is checked.
   it('sends no call to a /health without a valid proof: only nonce-carrying /health requests', async () => {
     const { port, seen } = await impostor();
     const c = client(port);
@@ -239,7 +239,7 @@ describe('DaemonClient: refused signature (X-3 / L-4)', () => {
   });
 });
 
-describe('DaemonClient: approvals to an impostor (D-KM-02)', () => {
+describe('DaemonClient: approvals to an impostor (nothing is sent before the daemon proves the token)', () => {
   it('sends neither the elicitation answer nor the browser request to a /health without a valid proof', async () => {
     const { port, seen } = await impostor();
     const c = client(port);
@@ -300,7 +300,7 @@ describe('DaemonClient.stopDaemon: failures', () => {
     expect(r.message).toMatch(/no API token at .*api_token/);
   });
 
-  // D-KM-02: the signed stop request went out before the proof was checked.
+  // The signed stop request must not go out before the proof is checked.
   it('sends no stop request to a /health without a valid proof', async () => {
     const { port, seen } = await impostor();
     const r = await client(port).stopDaemon();
@@ -366,7 +366,7 @@ async function slowFirstHealth(target: number, delayMs: number): Promise<{ port:
   return { port: portOf(s), seen };
 }
 
-describe('DaemonClient: slow /health (D-KM-03)', () => {
+describe('DaemonClient: slow /health (a busy daemon is not taken for a missing one)', () => {
   // Longer than the first wait for /health (HEALTH_PROBE_TIMEOUT_MS, 2 s), shorter than the second.
   const BUSY_DELAY_MS = 2_500;
 

@@ -29,6 +29,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserCommand } from '@inari-mcp/shared';
 import { OPERATION_NAMES } from '../../packages/mcp-server/src/tools/schemas.js';
 import { createToolHandler } from '../../packages/mcp-server/src/tools/handlers.js';
@@ -39,8 +40,7 @@ import { callSchemaFor, resolveOperation } from '../../packages/mcp-server/src/t
 import { PUBLIC_TOOL_NAMES } from '../../packages/mcp-server/src/tools/public-tools.js';
 import { headlessRoute } from '../../packages/mcp-server/src/headless/actions.js';
 import { getSafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
-import { answerFromElicitation } from '../../packages/mcp-server/src/tools/approval-flow.js';
-import { findApprovalRequest } from '../../packages/mcp-server/src/relay/approval.js';
+import { callApproving } from '../../packages/mcp-server/tests/helpers/approval.js';
 
 const UPDATE = process.env['UPDATE_GOLDEN'] === '1';
 const GOLDEN_DIR = fileURLToPath(new URL('../golden/', import.meta.url));
@@ -238,40 +238,49 @@ function noteCaseTabs(): void {
   }, {}, 'fox_get_tabs');
 }
 
+/** The first line of a result's first text block: the refusal message ('' without one). */
+function firstLine(result: CallToolResult): string {
+  const first = result.content[0];
+  return first && first.type === 'text' ? (first.text.split('\n')[0] ?? '') : '';
+}
+
+/** The golden fields of the one command a call sent. */
+function commandFields(command: BrowserCommand): Pick<CommandEntry, 'command' | 'timeoutMs' | 'headless'> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to leave requestId out of the entry
+  const { requestId: _requestId, ...rest } = command;
+  return {
+    command: rest,
+    timeoutMs: {
+      extension: resolveCommandTimeout(command, 'native-host'),
+      headless: resolveCommandTimeout(command, 'headless'),
+    },
+    headless: headlessTarget(command.action),
+  };
+}
+
+/** One call as its golden entry. An acting call is approved by the human and retried with the token. */
+async function recordCommand({ id, tool, raw, args }: Call): Promise<CommandEntry> {
+  noteCaseTabs();
+  sent.length = 0;
+  const { result, request } = await callApproving(createToolHandler(tool), args, () => {
+    if (sent.length > 0) throw new Error(`${id}: sent before the approval`);
+  });
+  if (sent.length > 1) throw new Error(`${id}: ${sent.length} commands sent`);
+
+  const command = sent[0];
+  const entry: CommandEntry = {
+    id, tool, args: raw, ...(request !== null ? { approval: request.host } : {}), command: null,
+  };
+  if (command) Object.assign(entry, commandFields(command));
+  else if (result.isError) entry.refusal = firstLine(result);
+
+  return plain(entry);
+}
+
 async function recordCommands(calls: Call[]): Promise<CommandEntry[]> {
   const entries: CommandEntry[] = [];
-  for (const { id, tool, raw, args } of calls) {
-    noteCaseTabs();
-    sent.length = 0;
-    const handler = createToolHandler(tool);
-    let result = await handler(args);
-    // An acting call: the human approves it, and it is retried with the token.
-    const request = findApprovalRequest(result);
-    if (request !== null) {
-      if (sent.length > 0) throw new Error(`${id}: sent before the approval`);
-      const { approvalToken } = answerFromElicitation(request.requestId, true);
-      result = await handler(args, { approvalToken });
-    }
-    if (sent.length > 1) throw new Error(`${id}: ${sent.length} commands sent`);
-    const command = sent[0];
-    const entry: CommandEntry = {
-      id, tool, args: raw, ...(request !== null ? { approval: request.host } : {}), command: null,
-    };
-    if (command) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to leave requestId out of the entry
-      const { requestId: _requestId, ...rest } = command;
-      entry.command = rest;
-      entry.timeoutMs = {
-        extension: resolveCommandTimeout(command, 'native-host'),
-        headless: resolveCommandTimeout(command, 'headless'),
-      };
-      entry.headless = headlessTarget(command.action);
-    } else if (result.isError) {
-      const first = result.content[0];
-      entry.refusal = first && first.type === 'text' ? first.text.split('\n')[0] : '';
-    }
-    entries.push(plain(entry));
-  }
+  for (const call of calls) entries.push(await recordCommand(call));
+
   return entries;
 }
 

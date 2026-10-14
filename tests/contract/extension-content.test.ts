@@ -192,7 +192,7 @@ describe('3.A13 text locator', () => {
   });
 });
 
-// Fo-10 / Po-13: the "inspect element" menu entry handed its result to
+// The "inspect element" menu entry handed its result to
 // nobody, so InariMCP removed it with the contextmenu listener it needed.
 describe('no "inspect element" context menu', () => {
   it('the menu has the screenshot entry only; content.ts listens for no contextmenu event', () => {
@@ -436,8 +436,8 @@ describe('element kinds in an XHTML document (tagName is lower case there)', () 
   });
 });
 
-// B-KM-02: the Extension's own masking and refusal, run in a page. A-KM-05:
-// fox_read info's forms looked at type="password" only. B-KM-05: autocomplete
+// The Extension's own masking and refusal, run in a page. fox_read info's
+// forms look at autocomplete as well as type="password", and autocomplete
 // is a case-insensitive token list.
 describe('password fields on the extension path', () => {
   const FORM =
@@ -467,7 +467,7 @@ describe('password fields on the extension path', () => {
     expect(JSON.stringify(r)).not.toContain('pw-secret');
   });
 
-  // Decision #4 / Fo-03: hidden, one-time code and payment card fields too
+  // Hidden, one-time code and payment card fields too
   // (rule: shared/src/field-mask.ts).
   real('fox_read info and fox_find mask hidden, one-time code and card fields', async () => {
     await load(
@@ -574,7 +574,7 @@ describe('options of a masked select, selectors that test a value, and what the 
   });
 });
 
-describe('WP44 highlight and overlay banner timers (E-05, E-06, A-07)', () => {
+describe('highlight and overlay banner timers', () => {
   real('E-05 the timer of an earlier highlight does not remove the next one', async () => {
     await load('<div id="a">A</div><div id="b">B</div>');
     const r = await run<Record<string, number>>(
@@ -654,7 +654,7 @@ describe('WP44 highlight and overlay banner timers (E-05, E-06, A-07)', () => {
     expect(r[2]).toEqual({ success: true, cancelled: true });
   });
 
-  real('A-07 the captcha wait and cancel_human_wait use the same banner id (CAPTCHA_BANNER_ID)', async () => {
+  real('the captcha wait and cancel_human_wait use the same banner id (CAPTCHA_BANNER_ID)', async () => {
     await load('<div class="g-recaptcha"></div>');
     const r = await run<Record<string, unknown>>(
       `const id = ${JSON.stringify(CAPTCHA_BANNER_ID)};

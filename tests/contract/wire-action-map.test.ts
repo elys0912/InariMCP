@@ -42,34 +42,46 @@ describe('BROWSER_ACTIONS ⇔ WIRE_ACTION_MAP', () => {
     expect(internalOnly).toEqual(['status']); // popup
   });
 
-  it('an action outside the table fails closed (strictest row, refused)', async () => {
-    for (const name of ['noSuchAction', 'constructor', '__proto__', 'eval_chain']) {
+  describe('an action outside the table fails closed', () => {
+    it.each(['noSuchAction', 'constructor', '__proto__', 'eval_chain'])('%s gets the UNKNOWN_ACTION row', (name) => {
       expect(describeAction(name)).toBe(UNKNOWN_ACTION);
-    }
-    expect(UNKNOWN_ACTION).toMatchObject({ scope: 'tab', approval: 'act' });
-    await expect(UNKNOWN_ACTION.handler({ action: 'noSuchAction' } as never)).resolves.toEqual({
-      success: false,
-      error: 'Unknown action: noSuchAction',
+    });
+
+    it('UNKNOWN_ACTION is the strictest row: a tab and an approval of the action', () => {
+      expect(UNKNOWN_ACTION).toMatchObject({ scope: 'tab', approval: 'act' });
+    });
+
+    it('UNKNOWN_ACTION refuses to run', async () => {
+      await expect(UNKNOWN_ACTION.handler({ action: 'noSuchAction' } as never)).resolves.toEqual({
+        success: false,
+        error: 'Unknown action: noSuchAction',
+      });
     });
   });
 
-  // Decision #9 / Fo-07: the Extension itself requires a human approval for
-  // every action that changes page or browser state, whatever the MCP Server
-  // attached (hover too: the page's own handlers run); reads check
-  // confirm_read_sites; the rest changes no page data and returns no page
-  // content.
-  it('every action that changes page or browser state needs an approval', () => {
-    const rows = (pred: (approval: string) => boolean): string[] =>
-      [...ACTION_TABLE].filter(([, d]) => pred(d.approval)).map(([name]) => name).sort();
-    expect(rows((a) => a === 'act')).toEqual([
-      'click', 'closeTab', 'goBack', 'goForward', 'hardRefresh', 'hover', 'pressKey', 'refresh', 'selectOption',
-      'setValue', 'type',
-    ]);
-    expect(rows((a) => a === 'actOnUrl')).toEqual(['createTab', 'navigate', 'open_in_container']);
-    expect(rows((a) => a === 'read')).toEqual([
-      'find_text', 'getElements', 'getPageInfo', 'getText', 'screenshot', 'scrollAndCapture',
-    ]);
-    expect(rows((a) => a === 'readPerTab')).toEqual(['screenshotAllTabs']);
+  // The Extension itself requires a human approval for every action that
+  // changes page or browser state, whatever the MCP Server attached (hover
+  // too: the page's own handlers run), so a server that skips asking still
+  // cannot act; reads check confirm_read_sites; the rest changes no page data
+  // and returns no page content.
+  describe('every action that changes page or browser state needs an approval', () => {
+    /** The rows of the action table with the approval check `kind`, sorted by name. */
+    const rows = (kind: string): string[] =>
+      [...ACTION_TABLE].filter(([, d]) => d.approval === kind).map(([name]) => name).sort();
+
+    it.each([
+      ['act', [
+        'click', 'closeTab', 'goBack', 'goForward', 'hardRefresh', 'hover', 'pressKey', 'refresh',
+        'selectOption', 'setValue', 'type',
+      ]],
+      ['actOnUrl', ['createTab', 'navigate', 'open_in_container']],
+      ['read', [
+        'find_text', 'getElements', 'getPageInfo', 'getText', 'screenshot', 'scrollAndCapture',
+      ]],
+      ['readPerTab', ['screenshotAllTabs']],
+    ])('approval %s: %j', (kind, names) => {
+      expect(rows(kind)).toEqual(names);
+    });
   });
 
   // InariMCP (AMO): no wire name runs code given as a string or records the

@@ -6,9 +6,56 @@
 /** Code points of a response body quoted in an error. */
 const BODY_EXCERPT_LENGTH = 80;
 
+/**
+ * How long the add-on's toolbar popup waits for the human to approve a call
+ * (BROWSER_APPROVAL_WAIT_MS of packages/mcp-server/src/tools/approval-flow.ts;
+ * the scripts cannot import the TypeScript sources).
+ */
+export const POPUP_APPROVAL_WAIT_MS = 60_000;
+
 /** First `n` code points of `s` with whitespace runs collapsed (never splits a surrogate pair). */
 export function truncate(s, n = 120) {
   return Array.from(String(s ?? '').replace(/\s+/g, ' ')).slice(0, n).join('');
+}
+
+/** `text` parsed as JSON, or undefined when it is not one JSON document. */
+export function parseJsonOrUndefined(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The answer of a call that failed before any tool result came back.
+ *
+ * @param {string} text  what went wrong
+ * @returns {{isError: true, text: string, data: undefined, content: []}}
+ */
+export function failure(text) {
+  return { isError: true, text, data: undefined, content: [] };
+}
+
+/** Whether `value` is a JSON object (not null, not an array). */
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** The content blocks of a tool result (none when it has no array). */
+function contentOf(result) {
+  return Array.isArray(result.content) ? result.content : [];
+}
+
+/**
+ * The JSON text blocks of `content` that ask for human approval
+ * (`confirmationRequired: true`), parsed.
+ */
+function confirmationBlocks(content) {
+  return content
+    .filter((block) => block?.type === 'text')
+    .map((block) => parseJsonOrUndefined(block.text))
+    .filter((parsed) => parsed?.confirmationRequired === true);
 }
 
 /**
@@ -24,25 +71,23 @@ export function truncate(s, n = 120) {
  * @returns {{isError: boolean, text: string, data: any, content: any[]}}
  */
 export function interpretCallResponse(res) {
-  if (!res) return { isError: true, text: 'no answer from the daemon', data: undefined, content: [] };
+  if (!res) return failure('no answer from the daemon');
+
   const bodyText = res.body.toString('utf8');
-  let outer;
-  try {
-    outer = JSON.parse(bodyText);
-  } catch {
-    return { isError: true, text: `HTTP ${res.status}: not JSON: ${truncate(bodyText, BODY_EXCERPT_LENGTH)}`, data: undefined, content: [] };
-  }
+  const excerpt = truncate(bodyText, BODY_EXCERPT_LENGTH);
+  // JSON.parse never gives undefined, so undefined means "not JSON".
+  const outer = parseJsonOrUndefined(bodyText);
+  if (outer === undefined) return failure(`HTTP ${res.status}: not JSON: ${excerpt}`);
+
   const ok = res.status >= 200 && res.status < 300;
-  const isObject = outer !== null && typeof outer === 'object' && !Array.isArray(outer);
+  const isObject = isPlainObject(outer);
   if (!ok || !isObject) {
-    const why = isObject && typeof outer.error === 'string' ? outer.error : truncate(bodyText, BODY_EXCERPT_LENGTH);
-    return { isError: true, text: `HTTP ${res.status}: ${why}`, data: undefined, content: [] };
+    const why = isObject && typeof outer.error === 'string' ? outer.error : excerpt;
+    return failure(`HTTP ${res.status}: ${why}`);
   }
-  const result = outer.result;
-  if (result === null || typeof result !== 'object' || Array.isArray(result)) {
-    return { isError: true, text: `HTTP ${res.status}: no result in ${truncate(bodyText, BODY_EXCERPT_LENGTH)}`, data: undefined, content: [] };
-  }
-  const interpreted = interpretToolResult(result);
+  if (!isPlainObject(outer.result)) return failure(`HTTP ${res.status}: no result in ${excerpt}`);
+
+  const interpreted = interpretToolResult(outer.result);
   return { ...interpreted, isError: outer.success === false || interpreted.isError };
 }
 
@@ -54,11 +99,10 @@ export function interpretCallResponse(res) {
  * @returns {{isError: boolean, text: string, data: any, content: any[]}}
  */
 export function interpretToolResult(result) {
-  const content = Array.isArray(result.content) ? result.content : [];
+  const content = contentOf(result);
   const text = content.filter((c) => c && c.type === 'text').map((c) => c.text).join('\n');
-  let data;
-  try { data = JSON.parse(text); } catch { data = undefined; }
-  return { isError: Boolean(result.isError), text, data, content };
+
+  return { isError: Boolean(result.isError), text, data: parseJsonOrUndefined(text), content };
 }
 
 /**
@@ -70,15 +114,7 @@ export function interpretToolResult(result) {
  * @param {{isError?: boolean, content?: any[]}} result
  */
 export function needsApproval(result) {
-  const content = Array.isArray(result.content) ? result.content : [];
-  return content.some((block) => {
-    if (block?.type !== 'text') return false;
-    try {
-      return JSON.parse(block.text)?.confirmationRequired === true;
-    } catch {
-      return false;
-    }
-  });
+  return confirmationBlocks(contentOf(result)).length > 0;
 }
 
 /**
@@ -148,12 +184,8 @@ export function formatTable(columns, rows) {
  */
 export function approvalRequestId(r) {
   if (!r.isError) return undefined;
-  for (const block of r.content) {
-    if (!block || block.type !== 'text') continue;
-    let parsed;
-    try { parsed = JSON.parse(block.text); } catch { continue; }
-    const id = parsed?.confirmationRequired === true ? parsed.approval?.requestId : undefined;
-    if (typeof id === 'string' && id !== '') return id;
-  }
-  return undefined;
+
+  return confirmationBlocks(r.content)
+    .map((details) => details.approval?.requestId)
+    .find((id) => typeof id === 'string' && id !== '');
 }

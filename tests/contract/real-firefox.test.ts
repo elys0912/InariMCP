@@ -1,6 +1,6 @@
 /**
- * A-KM-07: the real-browser tests were skipped whenever Firefox could not be
- * launched, on CI as well, so `npm test` passed without running them.
+ * The real-browser tests must not be skipped on CI when Firefox cannot be
+ * launched: `npm test` would pass without running them.
  */
 
 import * as fs from 'node:fs';
@@ -23,7 +23,7 @@ describe('real-browser tests without Firefox', () => {
     expect(() => skipOrFailWithoutFirefox(launchError, {})).not.toThrow();
   });
 
-  // D-KM-04: without a CI that sets `CI`, nothing made the tests run.
+  // Without a CI that sets `CI`, nothing else would make the tests run.
   it('INARI_REQUIRE_FIREFOX makes them required without CI, by the same rule as CI', () => {
     expect(REQUIRE_FIREFOX_ENV).toBe('INARI_REQUIRE_FIREFOX');
     expect(requiresFirefox({ INARI_REQUIRE_FIREFOX: '1' })).toBe(true);

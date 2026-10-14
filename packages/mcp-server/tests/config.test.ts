@@ -37,7 +37,7 @@ describe('loadConfig (2.B2)', () => {
     ['invalid JSON', '{ "read_only": true,'],
     ['not an object', '[]'],
     ['a schema violation', '{ "max_actions_per_minute": "many" }'],
-    // R2-C A-02: an empty container name would attach a scope the Extension
+    // An empty container name would attach a scope the Extension
     // cannot use; with the scope off it is still a broken setting.
     ['an empty container name', '{ "container_scope": { "enabled": true, "container_name": "" } }'],
     ['an empty container name (scope off)', '{ "container_scope": { "enabled": false, "container_name": "" } }'],
@@ -72,7 +72,7 @@ describe('loadConfig (2.B2)', () => {
     ['a key that does not exist', '{ "allow_scripts": false }', 'allow_scripts'],
     // InariMCP removed the script tools: their switch is no key any more.
     ['the removed allow_script_execution', '{ "allow_script_execution": true }', 'allow_script_execution'],
-    // Decision #9: acting tools always ask, so the protected-site list and its switch are gone.
+    // Acting tools always ask the human, so the protected-site list and its switch are gone.
     ['the removed protected_url_patterns', '{ "protected_url_patterns": ["bank.test"] }', 'protected_url_patterns'],
     ['the removed confirm_protected_actions', '{ "confirm_protected_actions": false }', 'confirm_protected_actions'],
     ['an unknown key in container_scope', '{ "container_scope": { "enable": true } }', 'enable'],

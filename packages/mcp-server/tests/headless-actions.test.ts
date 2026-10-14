@@ -445,7 +445,7 @@ describe('screenshot', () => {
     expect(path.dirname(String(unnamed['imagePath']))).toBe(dir);
   });
 
-  // A-KM-06: Playwright took the format from the extension and refused a name without one.
+  // Playwright would take the format from the file name's extension and refuse a name without one.
   real('always saves a PNG named as the Extension path does, whatever the extension', async () => {
     await load('<p>x</p>');
     const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);

@@ -200,7 +200,7 @@ describe('R2-C fail-closed wire input', () => {
     expect(ext.compileUrlRules([])).toEqual({ rules: [], invalid: 0 });
   });
 
-  it('A-01: a host rule whose path holds a query or fragment is unusable', () => {
+  it('a host rule whose path holds a query or fragment is unusable', () => {
     for (const pathMatch of ['strict', 'loose'] as const) {
       for (const path of ['/a?x=1', '/a#f', '/?', '/#']) {
         expect(ext.parseUrlRule(hostWire(path, pathMatch)), `${pathMatch} ${path}`).toBeNull();
@@ -212,7 +212,7 @@ describe('R2-C fail-closed wire input', () => {
 
   // That the server refuses `? # %3F %23` in a path is checked by
   // packages/mcp-server/tests/url-pattern.test.ts.
-  it('A-01: percent-escapes of other characters still decode into a rule the Extension can use', () => {
+  it('percent-escapes of other characters still decode into a rule the Extension can use', () => {
     for (const list of LISTS) {
       const { patterns } = compileUrlPatterns([...PATTERNS, 'example.test/%61dmin'], list);
       const { invalid } = ext.compileUrlRules(patterns.map((p) => JSON.parse(JSON.stringify(p.wire))));

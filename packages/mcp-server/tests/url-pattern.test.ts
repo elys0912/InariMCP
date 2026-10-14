@@ -177,7 +177,7 @@ describe('other issues', () => {
     expect(compileUrlPatterns(['  '], 'blocked').issues[0]!.fatal).toBe(true);
   });
 
-  it('R2-C A-01: a query or fragment in a host pattern path is fatal in every list', () => {
+  it('a query or fragment in a host pattern path is fatal in every list', () => {
     const sources = [
       'example.test/a?x=1', 'example.test/a#f', 'example.test/?x=1', 'example.test/#top',
       'https://example.test/login?next=1', 'example.test:8443/a?x', 'example.test/a%3Fx', 'example.test/a%23f',
@@ -193,7 +193,7 @@ describe('other issues', () => {
     }
   });
 
-  it('R2-C A-01: a legacy regex with an escaped ? stays a legacy regex', () => {
+  it('a legacy regex with an escaped ? stays a legacy regex', () => {
     const { patterns, issues } = compileUrlPatterns(['example\\.test/a\\?x=1'], 'blocked');
     expect(patterns[0]!.kind).toBe('legacy');
     expect(issues.every((i) => !i.fatal)).toBe(true);

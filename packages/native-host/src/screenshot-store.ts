@@ -116,6 +116,21 @@ function removeIfOlder(filePath: string, days: number, now: number): boolean {
 }
 
 /**
+ * Rewrite NAMED_INDEX with the names of `indexedNames` whose file is still
+ * in `dir`. Nothing to do for an empty index. Never throws.
+ */
+function rewriteNamedIndex(dir: string, indexedNames: ReadonlySet<string>): void {
+  if (indexedNames.size === 0) return;
+
+  const kept = [...indexedNames].filter((name) => fs.existsSync(path.join(dir, name)));
+  try {
+    fs.writeFileSync(path.join(dir, NAMED_INDEX), kept.map((name) => `${name}\n`).join(''), { mode: PRIVATE_FILE_MODE });
+  } catch {
+    // Rewritten at the next start.
+  }
+}
+
+/**
  * Delete the screenshots this module saved (generated names, and the
  * caller-chosen names in NAMED_INDEX) that are older than `days`
  * (0 = keep all), and drop the names of files no longer there from the
@@ -123,28 +138,24 @@ function removeIfOlder(filePath: string, days: number, now: number): boolean {
  */
 export function pruneScreenshots(days: number = retentionDays(), now: number = Date.now()): number {
   if (days <= 0) return 0;
+
   const dir = getScreenshotsDir();
-  let names: string[];
+  let entries: string[];
   try {
-    names = fs.readdirSync(dir);
+    entries = fs.readdirSync(dir);
   } catch {
     // directory does not exist yet
     return 0;
   }
-  const named = readNamedIndex(dir);
+
+  const indexedNames = readNamedIndex(dir);
   let removed = 0;
-  for (const name of names) {
-    if (!GENERATED_NAME_RE.test(name) && !named.has(name)) continue;
+  for (const name of entries) {
+    if (!GENERATED_NAME_RE.test(name) && !indexedNames.has(name)) continue;
     if (removeIfOlder(path.join(dir, name), days, now)) removed++;
   }
-  if (named.size > 0) {
-    const kept = [...named].filter((name) => fs.existsSync(path.join(dir, name)));
-    try {
-      fs.writeFileSync(path.join(dir, NAMED_INDEX), kept.map((name) => `${name}\n`).join(''), { mode: PRIVATE_FILE_MODE });
-    } catch {
-      // Rewritten at the next start.
-    }
-  }
+  rewriteNamedIndex(dir, indexedNames);
+
   return removed;
 }
 
