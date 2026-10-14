@@ -1,6 +1,7 @@
 /**
  * field-mask.ts: the one rule of which field values both backends mask
- * (decision #4, Fo-03). The backends' use of it is checked in a page:
+ * (password, hidden, one-time code and payment card fields). The backends'
+ * use of it is checked in a page:
  * tests/contract/extension-content.test.ts and
  * packages/mcp-server/tests/headless-actions.test.ts.
  */

@@ -129,7 +129,7 @@ describe('processMessage replies (shared/host-messages.ts)', () => {
   });
 });
 
-// B-KM-04: every Extension answer to a server command passes through here.
+// Every Extension answer to a server command passes through here.
 describe('server command → Extension → response to the server', () => {
   const PNG_URL = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]).toString('base64')}`;
   /** Above the 1 MB Native Messaging limit (host → extension). */

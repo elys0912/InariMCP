@@ -16,7 +16,7 @@ describe('isPasswordElement', () => {
     ['password input', fakeElement('input', 'password'), true],
     ['current-password', fakeElement('input', 'text', 'current-password'), true],
     ['new-password', fakeElement('input', 'text', 'new-password'), true],
-    // B-KM-05: autocomplete is a space-separated, case-insensitive token list
+    // The autocomplete attribute is a space-separated, case-insensitive token list
     ['current-password with webauthn', fakeElement('input', 'text', 'current-password webauthn'), true],
     ['section- and new-password', fakeElement('input', 'text', 'section-login  new-password'), true],
     ['Current-Password', fakeElement('input', 'text', 'Current-Password'), true],
@@ -84,7 +84,7 @@ describe('invalidRegexArgument (5.10)', () => {
     expect(invalidRegexArgument({ urlPattern: '*.example' })).toMatch(/^Invalid urlPattern/);
   });
 
-  it('refuses a urlPattern over the limits of shared url-pattern-limit.ts (Fs-04)', () => {
+  it('refuses a urlPattern over the limits of shared url-pattern-limit.ts (no regex that backtracks for minutes)', () => {
     expect(invalidRegexArgument({ urlPattern: '(a+)+$' })).toMatch(/^Invalid urlPattern: a repeated group/);
     expect(invalidRegexArgument({ urlPattern: 'a'.repeat(257) })).toMatch(/^Invalid urlPattern: longer than 256/);
   });

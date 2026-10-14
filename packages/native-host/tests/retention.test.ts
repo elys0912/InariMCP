@@ -73,7 +73,7 @@ describe('pruneScreenshots', () => {
     expect(pruneScreenshots(30)).toBe(1);
   });
 
-  it('prunes files saved under a caller-chosen name after the same period (Fo-15)', () => {
+  it('prunes files saved under a caller-chosen name after the same period (no saved screenshot outlives it)', () => {
     const old = saveScreenshot(PNG_URL, 'checkout-page');
     const recent = saveScreenshot(PNG_URL, 'landing');
     const t = new Date(Date.now() - 40 * DAY);

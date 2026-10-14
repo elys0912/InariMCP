@@ -1,10 +1,9 @@
 /**
- * R2-C WP-A: the Extension's dispatcher fails closed on safety metadata it
- * cannot use (review E-01 / A-02, E-03, A-01, E-16). A command whose
- * containerScope or URL rules are there but unusable is refused with
- * safetyDecision "config_error" before any handler runs; the MCP Server
- * refuses the settings that would produce them. Runs handleCommand
- * (background/dispatch.ts) against a fake `browser`.
+ * The Extension's dispatcher fails closed on safety metadata it cannot use.
+ * A command whose containerScope or URL rules are there but unusable is
+ * refused with safetyDecision "config_error" before any handler runs; the
+ * MCP Server refuses the settings that would produce them. Runs
+ * handleCommand (background/dispatch.ts) against a fake `browser`.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -45,7 +44,7 @@ afterEach(() => {
 const hostRule = (host: string, path: string | null = null): Record<string, unknown> =>
   ({ kind: 'host', source: host, scheme: null, hosts: 'tree', host, port: null, path, pathMatch: 'loose' });
 
-describe('E-01 / A-02 containerScope', () => {
+describe('containerScope', () => {
   it.each([
     ['an empty name', { containerName: '' }],
     ['a string', 'agent'],
@@ -111,9 +110,9 @@ describe('E-03 URL rule fields that are not arrays', () => {
   });
 });
 
-// Fo-07: whether an acting command needs a human approval is the Extension's
+// Whether an acting command needs a human approval is the Extension's
 // own rule, not a value the host sends: with nothing attached it is refused.
-describe('Fo-07 acting commands need an approval of their site', () => {
+describe('acting commands need an approval of their site', () => {
   it('a click without approvedHost is refused before the handler runs, naming the tab URL', async () => {
     installBrowser();
     const result = await handleCommand({ action: 'click', data: { selector: '#a' } }, 'host');
@@ -157,7 +156,7 @@ describe('Fo-07 acting commands need an approval of their site', () => {
   });
 });
 
-describe('A-01 a host rule path with a query or fragment', () => {
+describe('a host rule path with a query or fragment', () => {
   it.each(['confirmReadUrlRules', 'blockedUrlRules', 'allowedUrlRules'])('in %s is refused as config_error', async (field) => {
     installBrowser();
     const result = await handleCommand({ action: 'get_page_info', [field]: [hostRule('app.example.test', '/page?x=1')] }, 'host');

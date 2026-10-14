@@ -227,7 +227,7 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
     expect(sent).toEqual([]);
   });
 
-  // B-KM-03: approvedHost lets one approved call through on exactly that host.
+  // approvedHost lets one approved call through on exactly that host.
   describe('approvedHost (a human approved this call for one hostname)', () => {
     const subdomainTab = fakeTab({ id: 4, url: 'https://pay.bank.example.test/', cookieStoreId: 'c-agent' });
     // An acting command: the Extension asks for the approval itself, no rule attached.

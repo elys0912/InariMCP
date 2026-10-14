@@ -208,7 +208,7 @@ describe('get_value', () => {
     expect(await browser.execute('get_value', undefined, { selector: '#t' })).toMatchObject({ success: true, value: 'plain' });
   });
 
-  // Decision #4 / Fo-03: the rule of shared/src/field-mask.ts, as on the Extension.
+  // The rule of shared/src/field-mask.ts, as on the Extension (one rule for both backends).
   real('masks hidden, one-time code and card fields as the Extension does', async () => {
     await load('<input id="h" type="hidden" value="secret"><input id="o" autocomplete="one-time-code" value="secret">' +
       '<input id="n" autocomplete="cc-number" value="secret"><input id="v" autocomplete="section-pay CC-CSC" value="secret">' +
@@ -399,7 +399,7 @@ describe('screenshot', () => {
     expect(path.dirname(String(unnamed['imagePath']))).toBe(dir);
   });
 
-  // A-KM-06: Playwright took the format from the extension and refused a name without one.
+  // Playwright would take the format from the file name's extension and refuse a name without one.
   real('always saves a PNG named as the Extension path does, whatever the extension', async () => {
     await load('<p>x</p>');
     const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);

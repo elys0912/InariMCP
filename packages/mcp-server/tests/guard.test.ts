@@ -38,7 +38,7 @@ const approvalUrl = (g: SafetyGuard, tool: string, args: Record<string, unknown>
   g.check(tool, args)?.elicitation?.url;
 
 // ---------------------------------------------------------------------------
-// Decision #9: acting tools always ask; reads ask only on confirm_read_sites
+// Acting tools always ask the human; reads ask only on confirm_read_sites
 // ---------------------------------------------------------------------------
 
 /** Every operation, by what the guard must do with it (written out, not derived from the schemas). */
@@ -103,7 +103,7 @@ function onPage(page: string, overrides: Partial<LoadedSafetyConfig> = {}): Safe
   return g;
 }
 
-describe('approval by tool class (decision #9)', () => {
+describe('approval by tool class (acting tools always ask)', () => {
   it('the tables cover every operation', () => {
     const listed = new Set([...ACTING, ...READING, ...NOT_PAGE_READS].map(([tool]) => tool).concat(ACTING_ON_URL));
     expect(listed).toEqual(new Set(Object.keys(TOOL_SCHEMAS)));

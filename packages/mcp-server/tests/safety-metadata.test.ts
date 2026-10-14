@@ -216,7 +216,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
     expect(details(result)['approval']).toBeUndefined();
   });
 
-  // Fo-07: the Extension refuses an acting command approved for another site
+  // The Extension refuses an acting command approved for another site
   // than the one its tab is on (the guard's URL was stale): a new request
   // names the site the browser reports.
   it('an acting command refused by the Extension opens a request for the reported site', async () => {

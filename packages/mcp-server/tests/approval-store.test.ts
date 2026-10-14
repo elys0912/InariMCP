@@ -72,7 +72,7 @@ describe('approval target helpers', () => {
     expect(summarizeArgs({})).toBe('(no arguments)');
   });
 
-  // A-KM-01: a cut summary let the human approve what they were not shown.
+  // A cut summary would let the human approve what they were not shown.
   it('summarizeArgs gives null instead of cutting a value or the whole summary', () => {
     expect(summarizeArgs({ script: 'x'.repeat(SUMMARY_VALUE_MAX - 1) })).toBeNull();
     // counted in UTF-16 units, as the popup clips: 80 emoji are 82 code points but 162 units
@@ -89,7 +89,7 @@ describe('approval target helpers', () => {
     expect(summary).not.toContain('…');
   });
 
-  // B-KM-01: bidi overrides, zero-width and tag characters, U+2028 / U+2029.
+  // Characters that hide or reorder text: bidi overrides, zero-width and tag characters, U+2028 / U+2029.
   it('summarizeArgs shows invisible and reordering characters as escapes, with a warning', () => {
     const summary = summarizeArgs({
       script: 'safe()\u202E;)(yenom_dnes',

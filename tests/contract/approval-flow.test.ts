@@ -214,8 +214,8 @@ describe('without approval, acting tools are refused', () => {
     expect(browser.received).toEqual([]);
   });
 
-  // A-KM-01: the human would approve arguments they were not shown in full.
-  // D-KM-01 / D-KM-05: a URL cannot be split, so the LLM is told how the length is counted and
+  // The human would approve arguments they were not shown in full.
+  // A URL cannot be split, so the LLM is told how the length is counted and
   // that such a value cannot be approved, not only to shorten it.
   it('arguments too long to show in full: no approval request, the LLM is told the length cannot be approved', async () => {
     const before = getApprovalStore().pendingCount;

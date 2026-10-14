@@ -1,6 +1,7 @@
 /**
- * url-pattern-limit.ts: what a urlPattern may be before it is compiled
- * (Fs-04 / Fo-12). Patterns of the usual shape keep working.
+ * url-pattern-limit.ts: what a urlPattern may be before it is compiled (a
+ * regex that backtracks for minutes would stall every tool). Patterns of the
+ * usual shape keep working.
  */
 
 import * as fs from 'node:fs';

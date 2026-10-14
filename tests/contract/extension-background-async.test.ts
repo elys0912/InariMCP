@@ -1,9 +1,8 @@
 /**
- * Extension background: asynchronous edges and small input checks of R2-C
- * WP-B (review E-02, E-04, E-07, E-10, E-11, E-14, E-17, E-23, E-24, A-04,
- * A-05). The modules are imported directly with a fake `browser` global;
- * modules with state (native-connection.ts, setup-badge.ts) are loaded
- * afresh per test (vi.resetModules).
+ * Extension background: asynchronous edges and small input checks. The
+ * modules are imported directly with a fake `browser` global; modules with
+ * state (native-connection.ts, setup-badge.ts) are loaded afresh per test
+ * (vi.resetModules).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -257,10 +256,10 @@ describe('native connection: a replaced port (E-02, E-24)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// setup-badge.ts (A-04)
+// setup-badge.ts
 // ---------------------------------------------------------------------------
 
-describe('setup state: overlapping refreshes (A-04)', () => {
+describe('setup state: overlapping refreshes (the newest answer wins)', () => {
   type Deferred = { resolve(v: unknown): void; reject(e: Error): void };
 
   async function loadSetupBadge() {
@@ -500,10 +499,10 @@ describe('popup status reply (E-14)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// approval.ts (A-05) and text clipping (E-17)
+// approval.ts and text clipping
 // ---------------------------------------------------------------------------
 
-describe('isApprovedHost: trailing dot (A-05)', () => {
+describe('isApprovedHost: trailing dot (the same host with or without it)', () => {
   it('a hostname with a trailing dot is the approved host', () => {
     expect(isApprovedHost('https://bank.example.test./x', 'bank.example.test')).toBe(true);
     expect(isApprovedHost('https://bank.example.test/x', 'bank.example.test.')).toBe(true);

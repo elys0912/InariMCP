@@ -40,7 +40,7 @@ describe('tool sets derived from the schemas', () => {
     }
   });
 
-  // Decision #9: the tools that change page or browser state, each asked about.
+  // Every tool that changes page or browser state asks the human first.
   it('put the acting tools in ACTING_TOOLS', () => {
     expect([...ACTING_TOOLS].sort()).toEqual([
       'fox_click', 'fox_close_tab', 'fox_create_tab', 'fox_handle_dialog', 'fox_navigate',

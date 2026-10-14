@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isLoopbackHost } from '../src/utils/endpoint.js';
 
-describe('isLoopbackHost (FOX_HOST check, Po-09)', () => {
+describe('isLoopbackHost (FOX_HOST check: plain HTTP stays on this machine)', () => {
   it.each(['127.0.0.1', '127.1.2.3', 'localhost', 'LOCALHOST', '::1', '[::1]'])('%s is loopback', (h) => {
     expect(isLoopbackHost(h)).toBe(true);
   });
