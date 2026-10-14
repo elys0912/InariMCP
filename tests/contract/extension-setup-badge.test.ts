@@ -53,45 +53,63 @@ afterEach(() => {
 });
 
 describe('background/setup-badge.ts', () => {
-  it('before the host answered: connecting, then hostMissing / hostError from the last error', async () => {
-    host.status = { confirmed: false, portOpen: false, lastError: null };
-    expect(await refreshSetupState()).toEqual({ kind: 'connecting' });
-    expect(badge.text.at(-1)).toBe('');
-    expect(badge.title.at(-1)).toBe('InariMCP');
+  describe('before the host answered', () => {
+    it('without an error it is connecting, with a plain badge', async () => {
+      host.status = { confirmed: false, portOpen: false, lastError: null };
+      expect(await refreshSetupState()).toEqual({ kind: 'connecting' });
+      expect(badge.text.at(-1)).toBe('');
+      expect(badge.title.at(-1)).toBe('InariMCP');
+    });
 
-    host.status.lastError = 'No such native application inari_mcp';
-    expect(await refreshSetupState()).toMatchObject({ kind: 'hostMissing' });
-    expect(badge.text.at(-1)).toBe('!');
-    expect(badge.title.at(-1)).toBe('msg:badgeSetupNeeded');
+    it('a missing native application is hostMissing, with the setup badge', async () => {
+      host.status = { confirmed: false, portOpen: false, lastError: 'No such native application inari_mcp' };
+      expect(await refreshSetupState()).toMatchObject({ kind: 'hostMissing' });
+      expect(badge.text.at(-1)).toBe('!');
+      expect(badge.title.at(-1)).toBe('msg:badgeSetupNeeded');
+    });
 
-    host.status.lastError = 'Native host has exited.';
-    expect(await refreshSetupState()).toEqual({ kind: 'hostError', error: 'Native host has exited.' });
-    expect(host.reply).not.toHaveBeenCalled();
+    it('another error is a hostError, without asking the host', async () => {
+      host.status = { confirmed: false, portOpen: false, lastError: 'Native host has exited.' };
+      expect(await refreshSetupState()).toEqual({ kind: 'hostError', error: 'Native host has exited.' });
+      expect(host.reply).not.toHaveBeenCalled();
+    });
   });
 
-  it('maps the status reply to ready / noSession / daemonDown / hostOutdated', async () => {
+  describe('the status reply', () => {
     const url = 'http://127.0.0.1:1/';
-    host.reply.mockResolvedValueOnce({ mcp_server: { url, available: true, relays: 2 } });
-    expect(await refreshSetupState()).toEqual({ kind: 'ready', serverUrl: url, relays: 2 });
-    expect(badge.text.at(-1)).toBe('');
 
-    host.reply.mockResolvedValueOnce({ mcp_server: { url, available: true, relays: 0 }, claude_register_command: 'claude mcp add x' });
-    expect(await refreshSetupState()).toEqual({ kind: 'noSession', serverUrl: url, registerCommand: 'claude mcp add x' });
-    expect(badge.text.at(-1)).toBe('!');
+    it.each([
+      ['ready', { mcp_server: { url, available: true, relays: 2 } }, { kind: 'ready', serverUrl: url, relays: 2 }],
+      [
+        'noSession',
+        { mcp_server: { url, available: true, relays: 0 }, claude_register_command: 'claude mcp add x' },
+        { kind: 'noSession', serverUrl: url, registerCommand: 'claude mcp add x' },
+      ],
+      ['daemonDown', { mcp_server: { url, available: false, relays: null } }, { kind: 'daemonDown', serverUrl: url }],
+      // Native Hosts before 0.1.2 send no `relays` field at all
+      ['hostOutdated', { mcp_server: { url, available: true } }, { kind: 'hostOutdated', serverUrl: url }],
+    ])('maps to %s', async (_kind, reply, expected) => {
+      host.reply.mockResolvedValueOnce(reply);
+      expect(await refreshSetupState()).toEqual(expected);
+    });
 
-    host.reply.mockResolvedValueOnce({ mcp_server: { url, available: false, relays: null } });
-    expect(await refreshSetupState()).toEqual({ kind: 'daemonDown', serverUrl: url });
-
-    // Native Hosts before 0.1.2 send no `relays` field at all
-    host.reply.mockResolvedValueOnce({ mcp_server: { url, available: true } });
-    expect(await refreshSetupState()).toEqual({ kind: 'hostOutdated', serverUrl: url });
-    expect(badge.title.at(-1)).toBe('msg:badgeHostOutdated');
+    it.each([
+      ['ready', { mcp_server: { url, available: true, relays: 2 } }, 'text', ''],
+      ['noSession', { mcp_server: { url, available: true, relays: 0 }, claude_register_command: 'claude mcp add x' }, 'text', '!'],
+      ['hostOutdated', { mcp_server: { url, available: true } }, 'title', 'msg:badgeHostOutdated'],
+    ] as const)('%s draws the badge %s %j', async (_kind, reply, part, expected) => {
+      host.reply.mockResolvedValueOnce(reply);
+      await refreshSetupState();
+      expect(badge[part].at(-1)).toBe(expected);
+    });
   });
 
-  it('a failed or unanswered status request is a hostError', async () => {
+  it('a failed status request is a hostError', async () => {
     host.reply.mockRejectedValueOnce(new Error('Request timeout'));
     expect(await refreshSetupState()).toEqual({ kind: 'hostError', error: 'Request timeout' });
+  });
 
+  it('an unanswered status request times out as a hostError', async () => {
     vi.useFakeTimers();
     host.reply.mockReturnValueOnce(new Promise(() => {}));
     const pending = refreshSetupState();
@@ -135,11 +153,9 @@ describe('background/setup-badge.ts: badge priority', () => {
     ...overrides,
   });
 
-  it('not allowed yet comes before everything else, undecided or denied', () => {
-    for (const consent of ['undecided', 'denied'] as const) {
-      const all = inputs({ control: { consent, paused: true }, pendingApprovals: 2, activeHostCommands: 1, setup: HOST_MISSING });
-      expect(badgeFor(all)).toMatchObject({ text: 'msg:badgeTextNoConsent', title: 'msg:badgeNoConsent' });
-    }
+  it.each(['undecided', 'denied'] as const)('not allowed yet (%s) comes before everything else', (consent) => {
+    const all = inputs({ control: { consent, paused: true }, pendingApprovals: 2, activeHostCommands: 1, setup: HOST_MISSING });
+    expect(badgeFor(all)).toMatchObject({ text: 'msg:badgeTextNoConsent', title: 'msg:badgeNoConsent' });
   });
 
   it('paused comes before approvals, a running command and the setup state', () => {
@@ -153,7 +169,13 @@ describe('background/setup-badge.ts: badge priority', () => {
 
   it('a running command comes before the setup state', () => {
     expect(badgeFor(inputs({ activeHostCommands: 1, setup: HOST_MISSING }))).toMatchObject({ text: '●', title: 'msg:badgeActive' });
+  });
+
+  it('the setup state shows last, when nothing else does', () => {
     expect(badgeFor(inputs({ setup: HOST_MISSING }))).toEqual({ text: '!', color: BADGE_COLOR, title: 'msg:badgeSetupNeeded' });
+  });
+
+  it('a ready setup with nothing else shows no badge text', () => {
     expect(badgeFor(inputs())).toEqual({ text: '', color: BADGE_COLOR, title: 'InariMCP' });
   });
 

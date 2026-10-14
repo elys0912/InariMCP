@@ -5,14 +5,15 @@ import { BROWSER_ACTIONS, type BrowserCommand, type BrowserResponse } from '@ina
 import { APPROVAL_POLICY, SafetyGuard, targetUrlOf, type DenialDecision } from '../src/safety/guard.js';
 import { DEFAULT_CONFIG, getAuditLogPath, type LoadedSafetyConfig } from '../src/safety/config.js';
 import { createToolHandler } from '../src/tools/handlers.js';
-import { answerFromElicitation } from '../src/tools/approval-flow.js';
 import { callSchemaFor, resolveOperation } from '../src/tools/operations.js';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
 import { getConnectionManager } from '../src/connection/manager.js';
+import { callWithApprovalToken } from './helpers/approval.js';
+import { useGuard } from './helpers/guard.js';
 
 /**
  * The guard handlers.ts works with: the process-wide one, unless a test puts
- * its own policy in `current` (there is no setter for the singleton).
+ * its own policy in `current` (helpers/guard.ts useGuard()).
  */
 const testGuard = vi.hoisted(() => ({ current: null as SafetyGuard | null }));
 vi.mock('../src/safety/guard.js', async (importOriginal) => {
@@ -144,24 +145,38 @@ describe('approval by tool class (decision #9)', () => {
     expect(approvalUrl(onPage('https://plain.example.test/'), 'fox_click', { tabId: 9 })).toBeNull();
   });
 
-  it('reads ask only on confirm_read_sites', () => {
+  describe('reads ask only on confirm_read_sites', () => {
     const policy = { confirmReadSites: ['bank.example.test'] };
-    for (const [tool, args] of READING) {
-      expect(onPage('https://bank.example.test/transfer', policy).check(tool, args), tool).toMatchObject({
+
+    it.each(READING)('%s %j on a listed site asks the human, naming the entry', (tool, args) => {
+      expect(onPage('https://bank.example.test/transfer', policy).check(tool, args)).toMatchObject({
         safetyDecision: 'confirmation_required',
         layer: 4,
         elicitation: { url: 'https://bank.example.test/transfer', matchedPattern: 'bank.example.test' },
       });
-      expect(decision(onPage('https://online.bank.example.test/', policy), tool, args), tool)
-        .toBe('confirmation_required');
-      expect(decision(onPage('https://plain.example.test/', policy), tool, args), tool).toBeNull();
-      expect(decision(onPage('https://bank.example.test.attacker.test/', policy), tool, args), tool).toBeNull();
-      // The guard does not know the tab: left to the Extension (confirmReadUrlRules).
-      expect(decision(guard(policy), tool, args), tool).toBeNull();
-    }
-    for (const [tool, args] of NOT_PAGE_READS) {
-      expect(decision(onPage('https://bank.example.test/', policy), tool, args), tool).toBeNull();
-    }
+    });
+
+    it.each(READING)('%s %j on a subdomain of a listed site asks the human', (tool, args) => {
+      expect(decision(onPage('https://online.bank.example.test/', policy), tool, args)).toBe('confirmation_required');
+    });
+
+    describe.each([
+      ['another site', 'https://plain.example.test/'],
+      ['a host that only starts with a listed one', 'https://bank.example.test.attacker.test/'],
+    ])('on %s', (_label, page) => {
+      it.each(READING)('%s %j runs without asking', (tool, args) => {
+        expect(decision(onPage(page, policy), tool, args)).toBeNull();
+      });
+    });
+
+    it.each(READING)('%s %j on a tab the guard does not know is left to the Extension', (tool, args) => {
+      // The Extension checks the tab against confirmReadUrlRules.
+      expect(decision(guard(policy), tool, args)).toBeNull();
+    });
+
+    it.each(NOT_PAGE_READS)('%s %j reads no page, so a listed site asks nothing', (tool, args) => {
+      expect(decision(onPage('https://bank.example.test/', policy), tool, args)).toBeNull();
+    });
   });
 
   it('an acting tool on a confirm_read_sites site is asked about as an action (no pattern)', () => {
@@ -178,13 +193,11 @@ describe('approval by tool class (decision #9)', () => {
     expect(decision(g, 'fox_create_tab', { url: 'https://blocked.example.test/x' })).toBe('blocked_url');
   });
 
-  it('the public tools get the same decisions', () => {
+  describe('the public tools get the same decisions', () => {
     const call = (g: SafetyGuard, tool: string, raw: Record<string, unknown>) => {
       const { op, args, label } = resolveOperation(tool, callSchemaFor(tool)!.parse(raw) as Record<string, unknown>);
       return g.check(op, args, undefined, null, label)?.safetyDecision ?? null;
     };
-    const g = onPage('https://plain.example.test/');
-    const r = onPage('https://bank.example.test/', { confirmReadSites: ['bank.example.test'] });
     const cases: Array<[tool: string, args: Record<string, unknown>, plain: string | null, readSite: string | null]> = [
       ['fox_read', { mode: 'text' }, null, 'confirmation_required'],
       ['fox_read', { mode: 'info' }, null, 'confirmation_required'],
@@ -204,10 +217,17 @@ describe('approval by tool class (decision #9)', () => {
       ['fox_click', { selector: '#a' }, 'confirmation_required', 'confirmation_required'],
       ['fox_navigate', { url: 'https://plain.example.test/x' }, 'confirmation_required', 'confirmation_required'],
     ];
-    for (const [tool, args, plain, readSite] of cases) {
-      expect(call(g, tool, args), `${tool} ${JSON.stringify(args)}`).toBe(plain);
-      expect(call(r, tool, args), `${tool} ${JSON.stringify(args)} on a confirm_read_sites site`).toBe(readSite);
-    }
+
+    const onPlainSite = cases.map(([tool, args, plain]) => [tool, args, plain] as const);
+    it.each(onPlainSite)('%s %j on a plain site: %s', (tool, args, plain) => {
+      expect(call(onPage('https://plain.example.test/'), tool, args)).toBe(plain);
+    });
+
+    const onReadSite = cases.map(([tool, args, , readSite]) => [tool, args, readSite] as const);
+    it.each(onReadSite)('%s %j on a confirm_read_sites site: %s', (tool, args, readSite) => {
+      const g = onPage('https://bank.example.test/', { confirmReadSites: ['bank.example.test'] });
+      expect(call(g, tool, args)).toBe(readSite);
+    });
   });
 
   it('the default policy has no site lists and reports the fixed approval policy', () => {
@@ -298,16 +318,38 @@ describe('per-tab URL tracking (2.B4): the page an approval is asked for', () =>
     expect(approvalUrl(g, 'fox_click', { tabId: 7 })).toBeNull();
   });
 
-  // Fs-09: such a page matches no URL pattern, and its approval could not name the site.
-  it('refuses acting tools on a tab without a host, lets reading tools through, and asks on about: / file: pages', () => {
-    const g = guard();
-    const tabs = ['view-source:https://bank.test/', 'blob:https://bank.test/0b1c', 'data:text/html,<p>x</p>', 'about:blank', 'file:///tmp/a.html'];
-    tabs.forEach((url, i) => g.noteUrl({ url }, { tabId: i + 1 }, 'fox_get_text'));
-    const acting = tabs.map((_url, i) => decision(g, 'fox_click', { tabId: i + 1, selector: 'a' }));
-    const reading = tabs.map((_url, i) => decision(g, 'fox_get_text', { tabId: i + 1 }));
-    expect(acting).toEqual(['blocked_scheme', 'blocked_scheme', 'blocked_scheme', 'confirmation_required', 'confirmation_required']);
-    expect(reading).toEqual([null, null, null, null, null]);
-    expect(g.check('fox_click', { tabId: 1 })?.error).toMatch(/a page without a host/);
+  describe('a tab on a page without a host', () => {
+    /** A guard that knows tab 1 is on `url`. */
+    const onTab = (url: string): SafetyGuard => {
+      const g = guard();
+      g.noteUrl({ url }, { tabId: 1 }, 'fox_get_text');
+      return g;
+    };
+
+    // Such a page matches no URL pattern, and its approval could not name the site.
+    it.each([
+      ['view-source:https://bank.test/', 'blocked_scheme'],
+      ['blob:https://bank.test/0b1c', 'blocked_scheme'],
+      ['data:text/html,<p>x</p>', 'blocked_scheme'],
+      ['about:blank', 'confirmation_required'],
+      ['file:///tmp/a.html', 'confirmation_required'],
+    ])('an acting tool on %s: %s (about: / file: pages are asked about)', (url, expected) => {
+      expect(decision(onTab(url), 'fox_click', { tabId: 1, selector: 'a' })).toBe(expected);
+    });
+
+    it.each([
+      'view-source:https://bank.test/',
+      'blob:https://bank.test/0b1c',
+      'data:text/html,<p>x</p>',
+      'about:blank',
+      'file:///tmp/a.html',
+    ])('a reading tool on %s runs without asking', (url) => {
+      expect(decision(onTab(url), 'fox_get_text', { tabId: 1 })).toBeNull();
+    });
+
+    it('the refusal says the page has no host', () => {
+      expect(onTab('view-source:https://bank.test/').check('fox_click', { tabId: 1 })?.error).toMatch(/a page without a host/);
+    });
   });
 
   it('a background tab does not become the active one', () => {
@@ -519,11 +561,9 @@ describe('review follow-ups', () => {
 });
 
 describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => {
-  function handlerGuard(overrides: Partial<LoadedSafetyConfig> = {}): SafetyGuard {
-    const g = guard(overrides);
-    testGuard.current = g;
-    return g;
-  }
+  /** The guard of the handlers, without a rate limit unless `overrides` sets one. */
+  const handlerGuard = (overrides: Partial<LoadedSafetyConfig> = {}): SafetyGuard =>
+    useGuard(testGuard, { maxActionsPerMinute: 0, ...overrides });
 
   /** Answer the next sendCommand() with `response`, without any browser. */
   function stubBrowser(response: Partial<BrowserResponse>): void {
@@ -537,15 +577,6 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     return block && block.type === 'text' ? JSON.parse(block.text) as Record<string, unknown> : {};
   };
 
-  /** An acting call as the relay makes it: refused, approved by the human, retried with the token. */
-  async function approvedCall(tool: string, args: Record<string, unknown>): Promise<CallToolResult> {
-    const first = await createToolHandler(tool)(args);
-    const requestId = (details(first)['approval'] as { requestId?: string } | undefined)?.requestId;
-    if (requestId === undefined) throw new Error(`no approval request: ${JSON.stringify(first.content)}`);
-    const reply = answerFromElicitation(requestId, true);
-    return createToolHandler(tool)(args, { approvalToken: reply.approvalToken });
-  }
-
   afterEach(() => {
     vi.restoreAllMocks();
     testGuard.current = null;
@@ -555,7 +586,7 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     const g = handlerGuard();
     g.noteUrl({ url: 'https://d.test/' }, { tabId: 4 }, 'fox_get_text');
     stubBrowser({ success: true }); // no `data` at all
-    const result = await approvedCall('fox_close_tab', { tabId: 4 });
+    const result = await callWithApprovalToken('fox_close_tab', { tabId: 4 });
     expect(result.isError).toBeUndefined();
     expect(g.urlFor(4)).toBeNull();
   });
@@ -564,7 +595,7 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     const g = handlerGuard();
     g.noteUrl({ url: 'https://start.test/' }, { tabId: 2 }, 'fox_get_text');
     stubBrowser({ success: true, data: { url: 'https://landing.test/x' } });
-    await approvedCall('fox_click', { tabId: 2, selector: '#a' });
+    await callWithApprovalToken('fox_click', { tabId: 2, selector: '#a' });
     expect(g.urlFor(2)).toBe('https://landing.test/x');
   });
 
@@ -572,7 +603,7 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     const g = handlerGuard({ blockedUrlPatterns: ['blocked.test'] });
     g.noteUrl({ url: 'https://start.test/' }, { tabId: 3 }, 'fox_get_text');
     stubBrowser({ success: true, data: { url: 'https://www.blocked.test/landing', text: 'secret' } });
-    const result = await approvedCall('fox_click', { tabId: 3, selector: '#go' });
+    const result = await callWithApprovalToken('fox_click', { tabId: 3, selector: '#go' });
     expect(result.isError).toBe(true);
     // The reached URL is in details.url, as for the Extension's blocked_url refusals.
     expect(details(result)).toMatchObject({
@@ -627,7 +658,7 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     const g = handlerGuard({ auditLog: true });
     g.noteUrl({ url: 'https://fine.test/' }, { tabId: 2 }, 'fox_get_text');
     stubBrowser({ success: true, data: { url: 'https://fine.test/' } });
-    const lines = await auditLinesOf(() => approvedCall('fox_click', { tabId: 2, selector: '#a' }));
+    const lines = await auditLinesOf(() => callWithApprovalToken('fox_click', { tabId: 2, selector: '#a' }));
     expect(decisions(lines)).toEqual(['confirmation_required', 'approval_granted', 'allowed_by_human']);
   });
 

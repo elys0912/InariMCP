@@ -3,11 +3,12 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserAction, BrowserCommand, BrowserResponse } from '@inari-mcp/shared';
 import { attachSafetyMetadata, createToolHandler } from '../src/tools/handlers.js';
 import { DEFAULT_CONFIG, type SafetyConfig } from '../src/safety/config.js';
-import { SafetyGuard } from '../src/safety/guard.js';
+import type { SafetyGuard } from '../src/safety/guard.js';
 import { getConnectionManager } from '../src/connection/manager.js';
-import { answerFromElicitation } from '../src/tools/approval-flow.js';
+import { callWithApprovalToken } from './helpers/approval.js';
+import { useGuard } from './helpers/guard.js';
 
-/** The guard handlers.ts works with (there is no setter for the singleton). */
+/** The guard handlers.ts works with (helpers/guard.ts useGuard()). */
 const testGuard = vi.hoisted(() => ({ current: null as SafetyGuard | null }));
 vi.mock('../src/safety/guard.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/safety/guard.js')>();
@@ -80,21 +81,23 @@ describe('attachSafetyMetadata: URL rules (WP5b)', () => {
     attachSafetyMetadata(cmd, config(lists), 'fox_click', { selector: '#a' });
     expect(cmd.blockedUrlRules?.map((r) => r.source)).toEqual(['blocked.example.test']);
     expect(cmd.allowedUrlRules).toEqual([expect.objectContaining({ host: 'example.test', pathMatch: 'strict' })]);
-    // fox_wait_for_url's url is not a target: the tab is checked.
-    const wait = command('wait_for_url');
-    attachSafetyMetadata(wait, config(lists), 'fox_wait_for_url', { url: 'https://x.test/' });
-    expect(wait.blockedUrlRules).toBeDefined();
-    // WP-G P-1: neither is the url of a fox_navigate that does not go to it.
-    const refresh = command('refresh');
-    attachSafetyMetadata(refresh, config(lists), 'fox_navigate', { action: 'refresh', url: 'https://x.test/' });
-    expect(refresh.blockedUrlRules).toBeDefined();
+  });
+
+  // A url argument that is not where the call goes: the tab's URL is checked.
+  it.each([
+    { label: 'fox_wait_for_url', action: 'wait_for_url', tool: 'fox_wait_for_url', args: { url: 'https://x.test/' } },
+    { label: 'fox_navigate refresh', action: 'refresh', tool: 'fox_navigate', args: { action: 'refresh', url: 'https://x.test/' } },
+  ] as const)('sends them to $label, whose url is not a target', ({ action, tool, args }) => {
+    const cmd = command(action);
+    attachSafetyMetadata(cmd, config(lists), tool, { ...args });
+    expect(cmd.blockedUrlRules).toBeDefined();
   });
 
   it.each([
-    ['a url target', 'navigate', 'fox_navigate', { url: 'https://x.test/' }, {}],
-    ['a tab-independent tool', 'close_tab', 'fox_close_tab', { tabId: 1 }, {}],
-    ['the guard disabled', 'click', 'fox_click', {}, { enabled: false }],
-  ] as const)('does not send them with %s', (_label, action, tool, args, overrides) => {
+    { label: 'a url target', action: 'navigate', tool: 'fox_navigate', args: { url: 'https://x.test/' }, overrides: {} },
+    { label: 'a tab-independent tool', action: 'close_tab', tool: 'fox_close_tab', args: { tabId: 1 }, overrides: {} },
+    { label: 'the guard disabled', action: 'click', tool: 'fox_click', args: {}, overrides: { enabled: false } },
+  ] as const)('does not send them with $label', ({ action, tool, args, overrides }) => {
     const cmd = command(action);
     attachSafetyMetadata(cmd, config({ ...lists, ...overrides }), tool, { ...args });
     expect(cmd.blockedUrlRules).toBeUndefined();
@@ -126,8 +129,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
   ];
 
   it.each(listCases)('%s is SAFETY_BLOCKED layer 3, and the URL is noted for the tab', async (decision, lists, url) => {
-    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, ...lists });
-    testGuard.current = g;
+    const g = useGuard(testGuard, lists);
     stubBrowser({ success: false, safetyDecision: decision, error: 'refused by the Extension', data: { url } });
 
     const result = await createToolHandler('fox_get_text')({ tabId: 2, selector: '#a' });
@@ -139,8 +141,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
   });
 
   it('out_of_scope is layer 0 and carries no URL', async () => {
-    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false });
-    testGuard.current = g;
+    const g = useGuard(testGuard);
     stubBrowser({
       success: false, safetyDecision: 'out_of_scope', error: 'tab is outside the container',
       data: { url: 'https://elsewhere.test/' },
@@ -156,8 +157,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
   // G-11: config_error (the Extension could not use the attached rules) is
   // audited as such, in no layer.
   it('config_error is SAFETY_BLOCKED without a layer and audited as config_error', async () => {
-    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false });
-    testGuard.current = g;
+    const g = useGuard(testGuard);
     const audit = vi.spyOn(g, 'recordAudit');
     stubBrowser({ success: false, safetyDecision: 'config_error', error: 'Refused: versions may not match' });
 
@@ -170,8 +170,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
   // The user's pause switch in the toolbar popup: a known refusal, in no
   // layer, audited as paused, with no "unknown safetyDecision" warning.
   it('paused is SAFETY_BLOCKED without a layer, audited as paused, and says the user paused the agent', async () => {
-    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false });
-    testGuard.current = g;
+    const g = useGuard(testGuard);
     const audit = vi.spyOn(g, 'recordAudit');
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     stubBrowser({ success: false, safetyDecision: 'paused', error: 'paused: the user paused agent actions' });
@@ -187,8 +186,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
 
   // G-11: a decision this server does not know is no silent `denied`.
   it('an unknown safetyDecision is refused as denied and reported on stderr', async () => {
-    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false });
-    testGuard.current = g;
+    const g = useGuard(testGuard);
     const audit = vi.spyOn(g, 'recordAudit');
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     stubBrowser({ success: false, safetyDecision: 'new_layer_9', error: 'refused' });
@@ -203,8 +201,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
   // G-21 (a): the Extension refused without reporting the tab's URL, and the
   // guard knows none either: nothing names a site to approve.
   it('confirmation_required without a known URL cannot be approved', async () => {
-    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, confirmReadSites: ['bank.test'] });
-    testGuard.current = g;
+    useGuard(testGuard, { confirmReadSites: ['bank.test'] });
     stubBrowser({ success: false, safetyDecision: 'confirmation_required', error: 'approval required', data: {} });
 
     const result = await createToolHandler('fox_get_text')({ selector: '#a' });
@@ -223,18 +220,14 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
   // than the one its tab is on (the guard's URL was stale): a new request
   // names the site the browser reports.
   it('an acting command refused by the Extension opens a request for the reported site', async () => {
-    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false });
-    testGuard.current = g;
+    const g = useGuard(testGuard);
     g.noteUrl({ url: 'https://a.example.test/' }, { tabId: 2 }, 'fox_get_text');
     stubBrowser({
       success: false, safetyDecision: 'confirmation_required', error: 'approval required',
       data: { url: 'https://b.example.test/x' },
     });
 
-    const first = await createToolHandler('fox_click')({ tabId: 2, selector: '#a' });
-    const requestId = (details(first)['approval'] as { requestId: string }).requestId;
-    const { approvalToken } = answerFromElicitation(requestId, true);
-    const result = await createToolHandler('fox_click')({ tabId: 2, selector: '#a' }, { approvalToken });
+    const result = await callWithApprovalToken('fox_click', { tabId: 2, selector: '#a' });
     expect(details(result)).toMatchObject({
       decision: 'confirmation_required',
       layer: 7,
