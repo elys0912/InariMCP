@@ -29,14 +29,23 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
+
 import { dataPaths, httpEndpoint, signPost } from '../lib/core.mjs';
 import { httpGet, httpPost } from '../lib/system.mjs';
-import { REVIEWER_FIXTURES, startFixtureServer } from './fixture-server.mjs';
-import { approvalRequestId, interpretCallResponse, truncate as short } from './smoke-core.mjs';
+import { REVIEWER_FIXTURES, REVIEWER_PAGES, startFixtureServer } from './fixture-server.mjs';
+import {
+  POPUP_APPROVAL_WAIT_MS,
+  approvalRequestId,
+  interpretCallResponse,
+  parseJsonOrUndefined,
+  truncate as short,
+} from './smoke-core.mjs';
 
 const CALL_TIMEOUT_MS = 60_000;
-/** The popup waits up to 60 s for the human (tools/approval-flow.ts BROWSER_APPROVAL_WAIT_MS). */
-const APPROVAL_TIMEOUT_MS = 75_000;
+/** Time for the daemon to reach the popup and to send its answer back. */
+const APPROVAL_ANSWER_MARGIN_MS = 15_000;
+/** POST /approval/browser: the popup's wait for the human, then the answer. */
+const APPROVAL_TIMEOUT_MS = POPUP_APPROVAL_WAIT_MS + APPROVAL_ANSWER_MARGIN_MS;
 
 const endpoint = httpEndpoint(process.env);
 const base = `http://${endpoint.host.includes(':') ? `[${endpoint.host}]` : endpoint.host}:${endpoint.port}`;
@@ -48,8 +57,7 @@ if (!existsSync(tokenPath)) {
 const apiToken = readFileSync(tokenPath, 'utf8').trim();
 
 const healthRes = await httpGet({ ...endpoint, urlPath: '/health' });
-let health;
-try { health = healthRes ? JSON.parse(healthRes.body.toString('utf8')) : undefined; } catch { health = undefined; }
+const health = healthRes ? parseJsonOrUndefined(healthRes.body.toString('utf8')) : undefined;
 if (!health?.browsers_connected) {
   console.error(`no browser connected (${base}/health: ${JSON.stringify(health) ?? 'no answer'})`);
   process.exit(1);
@@ -72,8 +80,7 @@ async function call(name, args = {}) {
   if (requestId === undefined) return first;
   console.log(`      ${name}: approve it in the InariMCP toolbar popup in Firefox`);
   const res = await post('/approval/browser', { requestId }, APPROVAL_TIMEOUT_MS);
-  let reply;
-  try { reply = res ? JSON.parse(res.body.toString('utf8')) : undefined; } catch { reply = undefined; }
+  const reply = res ? parseJsonOrUndefined(res.body.toString('utf8')) : undefined;
   if (typeof reply?.approvalToken !== 'string') {
     return { ...first, text: `not approved (${reply?.reason ?? reply?.error ?? 'no answer'}): ${first.text}` };
   }
@@ -90,9 +97,9 @@ function check(label, cond, detail = '') {
 const tabCount = (r) => (Array.isArray(r.data?.tabs) ? r.data.tabs.length : NaN);
 
 const fixtures = await startFixtureServer(REVIEWER_FIXTURES);
-const page1 = `${fixtures.baseUrl}index.html`;
-const page2 = `${fixtures.baseUrl}page2.html`;
-const heading = 'InariMCP reviewer smoke test';
+const page1 = `${fixtures.baseUrl}${REVIEWER_PAGES.page1.file}`;
+const page2 = `${fixtures.baseUrl}${REVIEWER_PAGES.page2.file}`;
+const heading = REVIEWER_PAGES.page1.heading;
 
 const tabs0 = await call('fox_get_tabs');
 const before = tabCount(tabs0);

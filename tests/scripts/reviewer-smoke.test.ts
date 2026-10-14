@@ -5,17 +5,37 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { REVIEWER_FIXTURES, startFixtureServer } from '../../scripts/e2e/fixture-server.mjs';
+import { REVIEWER_FIXTURES, REVIEWER_PAGES, startFixtureServer } from '../../scripts/e2e/fixture-server.mjs';
 import {
+  failure,
   fixtureFileFor,
   formFieldValues,
   formatTable,
   interpretToolResult,
   needsApproval,
+  parseJsonOrUndefined,
   parseReviewerSmokeArgs,
 } from '../../scripts/e2e/smoke-core.mjs';
+
+describe('smoke-core: parseJsonOrUndefined', () => {
+  it.each([
+    ['{"a":1}', { a: 1 }],
+    ['null', null],
+    ['', undefined],
+    ['Browser error: boom', undefined],
+  ])('reads %j as %j', (text, expected) => {
+    expect(parseJsonOrUndefined(text)).toEqual(expected);
+  });
+});
+
+describe('smoke-core: failure', () => {
+  it('is an error answer with the text and no tool result', () => {
+    expect(failure('no answer')).toEqual({ isError: true, text: 'no answer', data: undefined, content: [] });
+  });
+});
 
 describe('reviewer-smoke: interpretToolResult', () => {
   it('joins the text blocks and parses them as JSON', () => {
@@ -50,11 +70,13 @@ describe('reviewer-smoke: needsApproval', () => {
     expect(needsApproval(refusal({ confirmationRequired: true }))).toBe(true);
   });
 
-  it('is false for other refusals, plain errors and successes', () => {
-    expect(needsApproval(refusal({ decision: 'read_only' }))).toBe(false);
-    expect(needsApproval({ isError: true, content: [{ type: 'text', text: 'Browser error: confirmationRequired' }] })).toBe(false);
-    expect(needsApproval({ content: [{ type: 'text', text: '{"success":true}' }] })).toBe(false);
-    expect(needsApproval({})).toBe(false);
+  it.each([
+    ['another refusal', refusal({ decision: 'read_only' })],
+    ['a plain error', { isError: true, content: [{ type: 'text', text: 'Browser error: confirmationRequired' }] }],
+    ['a success', { content: [{ type: 'text', text: '{"success":true}' }] }],
+    ['a result without content', {}],
+  ])('is false for %s', (_label, result) => {
+    expect(needsApproval(result)).toBe(false);
   });
 });
 
@@ -105,10 +127,13 @@ describe('scripts/e2e/reviewer-smoke.mjs arguments (no daemon is started)', () =
   const script = path.resolve(__dirname, '..', '..', 'scripts', 'e2e', 'reviewer-smoke.mjs');
   const run = (args: string[]) => spawnSync(process.execPath, [script, ...args], { encoding: 'utf-8', timeout: 10_000 });
 
-  it('--help exits 0; an unknown argument such as --auto-approve exits 2', () => {
+  it('--help prints the usage and exits 0', () => {
     const help = run(['--help']);
     expect(help.status).toBe(0);
     expect(help.stdout).toContain('Usage: npm run smoke:reviewer');
+  });
+
+  it('an unknown argument such as --auto-approve is named and exits 2', () => {
     const bad = run(['--auto-approve']);
     expect(bad.status).toBe(2);
     expect(bad.stderr).toContain('unknown argument: --auto-approve');
@@ -124,6 +149,14 @@ describe('reviewer-smoke: formatTable', () => {
       '1   PASS',
       '10  FAIL',
     ]);
+  });
+});
+
+describe('reviewer-smoke: REVIEWER_PAGES', () => {
+  it.each(Object.values(REVIEWER_PAGES))('$file has the title and heading the scripts look for', (page) => {
+    const html = fs.readFileSync(path.join(REVIEWER_FIXTURES, page.file), 'utf-8');
+    expect(html).toContain(`<title>${page.title}</title>`);
+    expect(html).toContain(`<h1>${page.heading}</h1>`);
   });
 });
 

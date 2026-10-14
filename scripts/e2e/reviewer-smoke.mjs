@@ -42,8 +42,18 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
 import { dataPaths, httpEndpoint } from '../lib/core.mjs';
 import { httpGet, httpPost, stopDaemonGracefully } from '../lib/system.mjs';
-import { REVIEWER_FIXTURES, startFixtureServer } from './fixture-server.mjs';
-import { formFieldValues, formatTable, interpretToolResult, needsApproval, parseReviewerSmokeArgs, truncate } from './smoke-core.mjs';
+import { REVIEWER_FIXTURES, REVIEWER_PAGES, startFixtureServer } from './fixture-server.mjs';
+import {
+  POPUP_APPROVAL_WAIT_MS,
+  failure,
+  formFieldValues,
+  formatTable,
+  interpretToolResult,
+  needsApproval,
+  parseJsonOrUndefined,
+  parseReviewerSmokeArgs,
+  truncate,
+} from './smoke-core.mjs';
 
 const USAGE = `Usage: npm run smoke:reviewer [-- --headless]
        node scripts/e2e/reviewer-smoke.mjs [--headless]
@@ -64,9 +74,12 @@ Exit code: 0 = no check failed, 1 = a check failed, 2 = bad arguments.
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SERVER_ENTRY = path.join(ROOT, 'packages', 'mcp-server', 'dist', 'index.js');
 
-/** One tool call; an approval needs longer (the popup waits 60 s, the request expires after 120 s). */
+/** One tool call that asks nobody. */
 const CALL_TIMEOUT_MS = 90_000;
-const APPROVAL_CALL_TIMEOUT_MS = 180_000;
+/** The refused first call of an action, and the MCP server's round trips to the popup and back. */
+const APPROVAL_OVERHEAD_MS = 30_000;
+/** An action: the popup's wait for the human, then the approved call itself. */
+const APPROVAL_CALL_TIMEOUT_MS = POPUP_APPROVAL_WAIT_MS + CALL_TIMEOUT_MS + APPROVAL_OVERHEAD_MS;
 /** How long to wait for Firefox with the add-on to connect, and for a page to load. */
 const BROWSER_WAIT_MS = 30_000;
 const PAGE_WAIT_MS = 15_000;
@@ -79,11 +92,12 @@ const STDERR_TAIL_LINES = 30;
 const TABLE_DETAIL_LENGTH = 80;
 const LINE_DETAIL_LENGTH = 300;
 
-/** As in fixtures/reviewer/*.html. */
-const PAGE_1 = { file: 'index.html', title: 'InariMCP reviewer smoke: page 1', heading: 'InariMCP reviewer smoke test' };
-const PAGE_2 = { file: 'page2.html', title: 'InariMCP reviewer smoke: page 2' };
+const PAGE_1 = REVIEWER_PAGES.page1;
+const PAGE_2 = REVIEWER_PAGES.page2;
+/** As in fixtures/reviewer/index.html: the link to page 2, and the values of its password and hidden fields. */
 const LINK_TO_PAGE_2 = '#to-page-2';
 const SECRET_VALUES = { password: 'reviewer-smoke-password-value', hidden: 'reviewer-smoke-hidden-value' };
+/** MASKED_VALUE of packages/shared/src/field-mask.ts (the scripts cannot import the TypeScript sources). */
 const MASK = '[MASKED]';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -113,11 +127,7 @@ async function connectedBrowsers(endpoint) {
   const res = await httpGet({ ...endpoint, urlPath: '/health' });
   if (!res) return 0;
 
-  try {
-    return Number(JSON.parse(res.body.toString('utf8')).browsers_connected) || 0;
-  } catch {
-    return 0;
-  }
+  return Number(parseJsonOrUndefined(res.body.toString('utf8'))?.browsers_connected) || 0;
 }
 
 async function waitForBrowser(endpoint) {
@@ -144,18 +154,30 @@ function report(check, tool, result, detail = '') {
 }
 
 /**
- * Report a check of a call. A call the human did not approve is a FAIL
- * (SKIP in headless mode: nobody can be asked there).
+ * Report a check of a call: PASS when the call succeeded and `condition`
+ * (what the check looks for in the answer) holds; whether it passed. A call
+ * the human did not approve is a FAIL (SKIP in headless mode: nobody can be
+ * asked there).
+ *
+ * @param {{headless: boolean}} ctx
+ * @param {{check: string, tool: string, res: any, condition: boolean, detail: string}} outcome
  */
-function judge(ctx, check, tool, res, passed, detail) {
+function judge(ctx, { check, tool, res, condition, detail }) {
   if (res.approvalMissing) {
     if (ctx.headless) report(check, tool, 'SKIP', 'needs human approval; headless mode has no popup');
     else report(check, tool, 'FAIL', `not approved: ${res.text}`);
     return false;
   }
 
-  report(check, tool, passed ? 'PASS' : 'FAIL', passed ? detail : `${detail} ${res.isError ? res.text : ''}`.trim());
-  return passed;
+  const passed = !res.isError && condition;
+  if (passed) {
+    report(check, tool, 'PASS', detail);
+    return true;
+  }
+
+  const errorText = res.isError ? res.text : '';
+  report(check, tool, 'FAIL', `${detail} ${errorText}`.trim());
+  return false;
 }
 
 function printApprovalHint(ctx, tool) {
@@ -190,7 +212,8 @@ function checkMasked(ctx, info, type) {
 async function checkTabs(ctx) {
   const res = await ctx.call('fox_tabs', { what: 'tabs' });
   const tabs = res.data?.tabs;
-  judge(ctx, 'fox_tabs: list the tabs', 'fox_tabs', res, !res.isError && Array.isArray(tabs), `tabs=${tabs?.length}`);
+  const isList = Array.isArray(tabs);
+  judge(ctx, { check: 'fox_tabs: list the tabs', tool: 'fox_tabs', res, condition: isList, detail: `tabs=${tabs?.length}` });
 }
 
 /** Open page 1 in a new tab; its tab ID, or undefined. */
@@ -200,14 +223,15 @@ async function openTestPage(ctx) {
   const res = await ctx.call('fox_tab', { action: 'create', url, active: true }, APPROVAL_CALL_TIMEOUT_MS);
   // The Extension answers tab.id, headless tabId.
   const tabId = res.data?.tabId ?? res.data?.tab?.id;
-  const opened = judge(ctx, 'fox_tab create: open the local test page', 'fox_tab', res, !res.isError && Number.isInteger(tabId), url);
+  const hasTabId = Number.isInteger(tabId);
+  const opened = judge(ctx, { check: 'fox_tab create: open the local test page', tool: 'fox_tab', res, condition: hasTabId, detail: url });
 
   return opened ? tabId : undefined;
 }
 
 async function checkRead(ctx, tabId) {
   const info = await waitForPage(ctx, tabId, PAGE_1);
-  judge(ctx, 'fox_read: page 1 is loaded', 'fox_read', info, !info.isError && info.loaded, `title: ${info.data?.title}`);
+  judge(ctx, { check: 'fox_read: page 1 is loaded', tool: 'fox_read', res: info, condition: info.loaded, detail: `title: ${info.data?.title}` });
   checkMasked(ctx, info, 'password');
   checkMasked(ctx, info, 'hidden');
 }
@@ -215,14 +239,15 @@ async function checkRead(ctx, tabId) {
 async function checkFind(ctx, tabId) {
   const res = await ctx.call('fox_find', { by: 'text', text: PAGE_1.heading, tabId });
   const count = res.data?.count;
-  judge(ctx, 'fox_find: find the heading text', 'fox_find', res, !res.isError && count >= 1, `count=${count}`);
+  const found = count >= 1;
+  judge(ctx, { check: 'fox_find: find the heading text', tool: 'fox_find', res, condition: found, detail: `count=${count}` });
 }
 
 async function checkScreenshot(ctx, tabId) {
   const res = await ctx.call('fox_screenshot', { scope: 'viewport', tabId });
   const imagePath = res.data?.imagePath;
   const written = typeof imagePath === 'string' && existsSync(imagePath) && statSync(imagePath).size > 0;
-  judge(ctx, 'fox_screenshot: a PNG file is written', 'fox_screenshot', res, !res.isError && written, imagePath ?? '');
+  judge(ctx, { check: 'fox_screenshot: a PNG file is written', tool: 'fox_screenshot', res, condition: written, detail: imagePath ?? '' });
 }
 
 async function checkClick(ctx, tabId) {
@@ -240,10 +265,17 @@ async function checkClick(ctx, tabId) {
   // action cannot be approved until fox_tabs lists it).
   const res = await ctx.call('fox_click', { selector: LINK_TO_PAGE_2, tabId }, APPROVAL_CALL_TIMEOUT_MS);
   const check = ctx.headless ? 'fox_click: click "Go to page 2"' : 'fox_click: click "Go to page 2" (after your approval)';
-  if (!judge(ctx, check, 'fox_click', res, !res.isError, LINK_TO_PAGE_2)) return;
+  // The click itself has nothing to look for in its answer: it ran or not.
+  if (!judge(ctx, { check, tool: 'fox_click', res, condition: true, detail: LINK_TO_PAGE_2 })) return;
 
   const page2 = await waitForPage(ctx, tabId, PAGE_2);
-  judge(ctx, 'fox_click: the tab moved to page 2', 'fox_read', page2, !page2.isError && page2.loaded, page2.data?.url ?? '');
+  judge(ctx, {
+    check: 'fox_click: the tab moved to page 2',
+    tool: 'fox_read',
+    res: page2,
+    condition: page2.loaded,
+    detail: page2.data?.url ?? '',
+  });
 }
 
 /** Close the tab; whether it is gone. */
@@ -253,7 +285,7 @@ async function closeTestPage(ctx, tabId) {
   const after = await ctx.call('fox_tabs', { what: 'tabs' });
   const isGone = Array.isArray(after.data?.tabs) && !after.data.tabs.some((t) => t.id === tabId);
 
-  return judge(ctx, 'fox_tab close: close the test tab', 'fox_tab', res, !res.isError && isGone, `tabId=${tabId}`);
+  return judge(ctx, { check: 'fox_tab close: close the test tab', tool: 'fox_tab', res, condition: isGone, detail: `tabId=${tabId}` });
 }
 
 async function runChecks(ctx) {
@@ -299,7 +331,7 @@ function toolCaller(client) {
       const result = await client.callTool({ name, arguments: args }, undefined, { timeout });
       return { ...interpretToolResult(result), approvalMissing: needsApproval(result) };
     } catch (err) {
-      return { isError: true, text: err instanceof Error ? err.message : String(err), data: undefined, content: [], approvalMissing: false };
+      return { ...failure(err instanceof Error ? err.message : String(err)), approvalMissing: false };
     }
   };
 }
@@ -352,21 +384,25 @@ function printBrowserHelp() {
 Diagnose with: node packages/mcp-server/dist/index.js --doctor`);
 }
 
-function printSummary(stderrLines) {
+/** How many rows of the result table are PASS, FAIL and SKIP. */
+function countResults() {
   const count = (result) => rows.filter((r) => r.result === result).length;
+  return { pass: count('PASS'), fail: count('FAIL'), skip: count('SKIP') };
+}
+
+/** The result table and its counts; the MCP server's stderr tail when a check failed. */
+function printSummary(counts, stderrLines) {
   console.log('');
   console.log(formatTable({ n: '#', check: 'Check', tool: 'Tool', result: 'Result', detail: 'Detail' }, rows));
   console.log('');
-  console.log(`${count('PASS')} PASS, ${count('FAIL')} FAIL, ${count('SKIP')} SKIP`);
-  if (count('FAIL') > 0 && stderrLines.length > 0) {
+  console.log(`${counts.pass} PASS, ${counts.fail} FAIL, ${counts.skip} SKIP`);
+  if (counts.fail > 0 && stderrLines.length > 0) {
     console.log(`--- MCP server stderr (last ${stderrLines.length} lines) ---\n${stderrLines.join('\n')}`);
   }
-
-  return count('FAIL') === 0 && count('PASS') > 0;
 }
 
-async function main() {
-  const args = parseReviewerSmokeArgs(process.argv.slice(2));
+/** Exit code for --help, a bad argument or a missing prerequisite; null when the checks can run. */
+function exitBeforeRun(args) {
   if (args.error) {
     process.stderr.write(`reviewer-smoke: ${args.error}\n\n${USAGE}`);
     return 2;
@@ -375,19 +411,20 @@ async function main() {
     process.stdout.write(USAGE);
     return 0;
   }
+
   const problem = precheck(args.headless);
   if (problem) {
     console.error(problem);
     return 1;
   }
+  return null;
+}
 
-  const { endpoint, env } = await daemonSettings(args.headless);
-  console.log(`mode: ${args.headless ? 'headless (Playwright Firefox, no add-on)' : 'Firefox with the add-on'}`);
-  if (!args.headless && !(await waitForBrowser(endpoint))) {
-    printBrowserHelp();
-    return 1;
-  }
-
+/**
+ * Run the checks against the fixture pages through a new MCP server; the
+ * lines of its stderr kept for the report (none when it did not start).
+ */
+async function runSession(args, endpoint, env) {
   const fixtures = await startFixtureServer(REVIEWER_FIXTURES);
   console.log(`test page: ${fixtures.baseUrl}${PAGE_1.file}\n`);
   let session;
@@ -402,7 +439,27 @@ async function main() {
     await fixtures.close();
   }
 
-  return printSummary(session?.stderrLines ?? []) ? 0 : 1;
+  return session?.stderrLines ?? [];
+}
+
+async function main() {
+  const args = parseReviewerSmokeArgs(process.argv.slice(2));
+  const earlyExit = exitBeforeRun(args);
+  if (earlyExit !== null) return earlyExit;
+
+  const { endpoint, env } = await daemonSettings(args.headless);
+  console.log(`mode: ${args.headless ? 'headless (Playwright Firefox, no add-on)' : 'Firefox with the add-on'}`);
+  if (!args.headless && !(await waitForBrowser(endpoint))) {
+    printBrowserHelp();
+    return 1;
+  }
+
+  const stderrLines = await runSession(args, endpoint, env);
+  const counts = countResults();
+  printSummary(counts, stderrLines);
+  const passed = counts.fail === 0 && counts.pass > 0;
+
+  return passed ? 0 : 1;
 }
 
 process.exit(await main());

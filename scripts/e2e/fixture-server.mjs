@@ -18,6 +18,15 @@ import { fixtureFileFor } from './smoke-core.mjs';
 export const REVIEWER_FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'reviewer');
 
 /**
+ * The pages in REVIEWER_FIXTURES, with their <title> and <h1> as in the HTML
+ * (tests/scripts/reviewer-smoke.test.ts checks that they still match).
+ */
+export const REVIEWER_PAGES = {
+  page1: { file: 'index.html', title: 'InariMCP reviewer smoke: page 1', heading: 'InariMCP reviewer smoke test' },
+  page2: { file: 'page2.html', title: 'InariMCP reviewer smoke: page 2', heading: 'Page 2' },
+};
+
+/**
  * Serve the .html files of `dir`.
  * @param {string} dir
  * @returns {Promise<{baseUrl: string, close: () => Promise<void>}>}  baseUrl ends with '/'
