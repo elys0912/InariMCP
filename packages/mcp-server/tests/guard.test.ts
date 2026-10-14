@@ -468,14 +468,14 @@ describe('the reached URL and the tab URL against blocked/allowed lists (2.B3)',
 describe('confirmationFromBrowser', () => {
   it('an acting tool: asked for the page the browser reports, without a pattern', () => {
     const g = guard();
-    const c = g.confirmationFromBrowser('fox_click', { tabId: 5 }, 'https://bank.test/', undefined, null);
+    const c = g.confirmationFromBrowser('fox_click', { tabId: 5 }, { url: 'https://bank.test/' });
     expect(c).toMatchObject({ layer: 7, elicitation: { url: 'https://bank.test/', matchedPattern: null } });
     expect(g.urlFor(5)).toBe('https://bank.test/');
   });
 
   it('a read: names the confirm_read_sites entry', () => {
     const g = guard({ confirmReadSites: ['bank.test'] });
-    const c = g.confirmationFromBrowser('fox_get_text', { tabId: 5 }, 'https://bank.test/', undefined, 'bank.test');
+    const c = g.confirmationFromBrowser('fox_get_text', { tabId: 5 }, { url: 'https://bank.test/', matchedPattern: 'bank.test' });
     expect(c).toMatchObject({ layer: 4, elicitation: { url: 'https://bank.test/', matchedPattern: 'bank.test' } });
   });
 
@@ -483,7 +483,7 @@ describe('confirmationFromBrowser', () => {
   it('a refused fox_close_tab leaves the tab and the active tab known', () => {
     const g = guard();
     g.noteUrl({ url: 'https://bank.test/' }, { tabId: 2 }, 'fox_switch_tab');
-    g.confirmationFromBrowser('fox_close_tab', { tabId: 2 }, 'https://bank.test/a', undefined, null);
+    g.confirmationFromBrowser('fox_close_tab', { tabId: 2 }, { url: 'https://bank.test/a' });
     expect(g.urlFor(2)).toBe('https://bank.test/a');
     expect(g.urlFor()).toBe('https://bank.test/a');
   });

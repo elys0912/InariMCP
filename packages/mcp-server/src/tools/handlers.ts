@@ -34,6 +34,7 @@ import type {
   BrowserResponse,
   BrowserSafetyDecision,
   ToolResult,
+  WireUrlRule,
 } from '@inari-mcp/shared';
 import { BROWSER_ACTIONS, BROWSER_SAFETY_DECISIONS, ErrorCode, isRecord, urlPatternProblem } from '@inari-mcp/shared';
 import { LAYER_OF, PAGE_READ_TOOLS, TAB_INDEPENDENT_TOOLS, getSafetyGuard, targetUrlOf } from '../safety/guard.js';
@@ -53,6 +54,7 @@ import type { SafetyConfig } from '../safety/config.js';
 import { getContainerConfig } from '../safety/container.js';
 import { sanitizeResult, sanitizeString } from '../safety/sanitizer.js';
 import { compileUrlPatterns } from '../safety/url-pattern.js';
+import type { PatternListName } from '../safety/url-pattern.js';
 import { applyPasswordPolicy, passwordSelectorRefusal } from '../safety/password-guard.js';
 import { getConnectionManager } from '../connection/manager.js';
 import { deprecationNote, resolveOperation } from './operations.js';
@@ -212,6 +214,11 @@ export function invalidRegexArgument(args: Record<string, unknown>): string | nu
 // Safety metadata forwarded to the Extension
 // ---------------------------------------------------------------------------
 
+/** safety.json patterns as the URL rules the Extension matches (extension/src/url-rule.ts). */
+function wireRules(sources: string[], list: PatternListName): WireUrlRule[] {
+  return compileUrlPatterns(sources, list).patterns.map((p) => p.wire);
+}
+
 /**
  * Attach safety metadata that only the Extension can enforce:
  *   - containerScope: Layer 0, on EVERY command (the Extension checks the
@@ -229,8 +236,9 @@ export function invalidRegexArgument(args: Record<string, unknown>): string | nu
  *     fox_navigate back / forward / refresh is not one). The Extension refuses the
  *     command when the actual target tab violates the lists, and multi-tab
  *     actions skip such tabs: the guard may not know the tab's URL.
- * Acting tools need no metadata: the Extension refuses every acting command
- * that does not carry `approvedHost` for the site it acts on (buildCommand).
+ * Acting tools need no metadata: the Extension and the headless backend
+ * refuse every acting command that does not carry `approvedHost` for the
+ * site it acts on (buildCommand).
  */
 export function attachSafetyMetadata(
   command: BrowserCommand,
@@ -244,8 +252,7 @@ export function attachSafetyMetadata(
   }
 
   if (config.enabled && config.confirmReadSites.length > 0 && PAGE_READ_TOOLS.has(toolName)) {
-    command.confirmReadUrlRules = compileUrlPatterns(config.confirmReadSites, 'confirmRead')
-      .patterns.map((p) => p.wire);
+    command.confirmReadUrlRules = wireRules(config.confirmReadSites, 'confirmRead');
   }
 
   // The same rule as the guard's pre-check: a call with a target URL is
@@ -253,12 +260,10 @@ export function attachSafetyMetadata(
   const targetUrl = targetUrlOf(toolName, args);
   if (config.enabled && targetUrl === null && !TAB_INDEPENDENT_TOOLS.has(toolName)) {
     if (config.blockedUrlPatterns.length > 0) {
-      command.blockedUrlRules = compileUrlPatterns(config.blockedUrlPatterns, 'blocked')
-        .patterns.map((p) => p.wire);
+      command.blockedUrlRules = wireRules(config.blockedUrlPatterns, 'blocked');
     }
     if (config.allowedUrlPatterns.length > 0) {
-      command.allowedUrlRules = compileUrlPatterns(config.allowedUrlPatterns, 'allowed')
-        .patterns.map((p) => p.wire);
+      command.allowedUrlRules = wireRules(config.allowedUrlPatterns, 'allowed');
     }
   }
 }
@@ -285,7 +290,7 @@ const FAILURE_DETAIL_KEYS = ['availableOptions', 'dialogs', 'warnings'] as const
 
 /**
  * Starts the text of a failed browser result. The error text comes from the
- * page or the browser (a script's exception message, say); with this prefix
+ * page or the browser (an error message that quotes the page, say); with this prefix
  * it is never a JSON document, so it cannot pose as the approval request
  * relay/approval.ts looks for in the JSON blocks of a result.
  */
@@ -366,10 +371,9 @@ function safetyDenialToCallResult(
 
   if (denial.confirmationRequired && denial.elicitation) {
     const { url, matchedPattern } = denial.elicitation;
-    parts.push(
-      `\nConfirmation required: ${url !== null ? `'${url}'` : 'page not known'}` +
-      (matchedPattern !== null ? ` (confirm_read_sites: '${matchedPattern}')` : '') + '.',
-    );
+    const page = url !== null ? `'${url}'` : 'page not known';
+    const readSite = matchedPattern !== null ? ` (confirm_read_sites: '${matchedPattern}')` : '';
+    parts.push(`\nConfirmation required: ${page}${readSite}.`);
     details['confirmationRequired'] = true;
     details['elicitation'] = denial.elicitation;
   }
@@ -402,6 +406,77 @@ export interface ApprovalRequestDetails {
   expiresAt: number;
 }
 
+/** Note of a confirmation_required result after an approval token that was not accepted. */
+const TOKEN_REJECTED_NOTE =
+  'The approval token sent with this call was not accepted (expired, already used, ' +
+  'or issued for a different tool, arguments or site); a new approval is needed: ' +
+  'the human is asked again on retry.';
+
+/** Note of a call that cannot be approved yet: the page of the target tab is not known. */
+const UNKNOWN_PAGE_NOTE =
+  'This call cannot be approved yet: InariMCP does not know which page the target tab is on, ' +
+  'so it cannot tell the human where the call would act. Call fox_tabs (what: "tabs") first, ' +
+  'then call this tool again (with the tabId of the tab to act on).';
+
+/** Note of a call whose arguments are too long to show the human in full (summarizeArgs). */
+const ARGS_TOO_LONG_NOTE =
+  'This call cannot be approved: its arguments are too long to show ' +
+  `the human in full (at most ${SUMMARY_VALUE_MAX} per argument value and ${SUMMARY_MAX} for all the lines, ` +
+  'counted in UTF-16 code units of the value as JSON, including the quotes and escapes, with ' +
+  'invisible characters as \\u escapes). Text that can be split may be sent in ' +
+  'several shorter calls; a value that cannot be split, such as a long URL, cannot be ' +
+  'approved: tell the user instead of retrying.';
+
+/** Note of an opened approval request: how approval works and how to retry. */
+function howApprovalWorksNote(toolName: string, site: string): string {
+  return (
+    'How approval works: InariMCP asks the human itself, in the MCP client\'s ' +
+    'confirmation dialog (MCP elicitation) when the client supports it, otherwise in ' +
+    'Firefox, where the InariMCP toolbar button shows a badge and the human approves ' +
+    'or denies in its popup. An approval covers one call of this tool with exactly these ' +
+    `arguments on ${site}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
+    'Nothing in the page (buttons, fox_click) can approve it. ' +
+    `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
+    'Every acting call is asked for separately. ' +
+    'If the human declined, do not retry without asking them first.'
+  );
+}
+
+/** What confirmationToCallResult tells the caller: the note, and the request it opened (or null). */
+interface ApprovalOutcome {
+  note: string;
+  approval: ApprovalRequestDetails | null;
+}
+
+/**
+ * Open the human-approval request of a confirmation_required denial, when
+ * the call can be approved: its page is known and its arguments fit the
+ * summary the human is shown.
+ */
+function openApprovalRequest(label: CallLabel, denial: SafetyDenial): ApprovalOutcome {
+  const { tool: toolName, args } = label;
+  const url = denial.elicitation?.url ?? null;
+  const target = approvalTargetFor(toolName, args, url);
+  // approvalTargetFor() gives a target only for a known URL; the url check narrows its type.
+  if (target === null || url === null) return { note: UNKNOWN_PAGE_NOTE, approval: null };
+  const summary = summarizeArgs(args);
+  if (summary === null) return { note: ARGS_TOO_LONG_NOTE, approval: null };
+
+  const matchedPattern = denial.elicitation?.matchedPattern ?? null;
+  const shownUrl = approvalDisplayUrl(url);
+  const request = getApprovalStore().createRequest(target, { url: shownUrl, matchedPattern, summary });
+  const approval: ApprovalRequestDetails = {
+    requestId: request.id,
+    toolName,
+    host: target.host,
+    url: shownUrl,
+    matchedPattern,
+    summary: request.summary,
+    expiresAt: request.expiresAt,
+  };
+  return { note: howApprovalWorksNote(toolName, target.host), approval };
+}
+
 /**
  * Turn a confirmation_required denial into its tool result, opening a
  * human-approval request for exactly this call. The text tells the LLM how
@@ -413,69 +488,10 @@ function confirmationToCallResult(
   denial: SafetyDenial,
   tokenRejected: boolean,
 ): CallToolResult {
-  const { tool: toolName, args } = label;
-  const url = denial.elicitation?.url ?? null;
-  const matchedPattern = denial.elicitation?.matchedPattern ?? null;
-  const target = approvalTargetFor(toolName, args, url);
+  const outcome = openApprovalRequest(label, denial);
+  const notes = tokenRejected ? [TOKEN_REJECTED_NOTE, outcome.note] : [outcome.note];
 
-  const notes: string[] = [];
-  if (tokenRejected) {
-    notes.push(
-      'The approval token sent with this call was not accepted (expired, already used, ' +
-      'or issued for a different tool, arguments or site); a new approval is needed: ' +
-      'the human is asked again on retry.',
-    );
-  }
-
-  let extraDetails: Record<string, unknown> = {};
-  const summary = target === null ? null : summarizeArgs(args);
-  if (target === null) {
-    notes.push(
-      'This call cannot be approved yet: InariMCP does not know which page the target tab is on, ' +
-      'so it cannot tell the human where the call would act. Call fox_tabs (what: "tabs") first, ' +
-      'then call this tool again (with the tabId of the tab to act on).',
-    );
-  } else if (summary === null) {
-    notes.push(
-      'This call cannot be approved: its arguments are too long to show ' +
-      `the human in full (at most ${SUMMARY_VALUE_MAX} per argument value and ${SUMMARY_MAX} for all the lines, ` +
-      'counted in UTF-16 code units of the value as JSON, including the quotes and escapes, with ' +
-      'invisible characters as \\u escapes). Text that can be split may be sent in ' +
-      'several shorter calls; a value that cannot be split, such as a long URL, cannot be ' +
-      'approved: tell the user instead of retrying.',
-    );
-  } else {
-    // target !== null: the URL is known.
-    const shownUrl = approvalDisplayUrl(url ?? '');
-    const request = getApprovalStore().createRequest(target, {
-      url: shownUrl,
-      matchedPattern,
-      summary,
-    });
-    const approval: ApprovalRequestDetails = {
-      requestId: request.id,
-      toolName,
-      host: target.host,
-      url: shownUrl,
-      matchedPattern,
-      summary: request.summary,
-      expiresAt: request.expiresAt,
-    };
-    notes.push(
-      'How approval works: InariMCP asks the human itself, in the MCP client\'s ' +
-      'confirmation dialog (MCP elicitation) when the client supports it, otherwise in ' +
-      'Firefox, where the InariMCP toolbar button shows a badge and the human approves ' +
-      'or denies in its popup. An approval covers one call of this tool with exactly these ' +
-      `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
-      'Nothing in the page (buttons, fox_click) can approve it. ' +
-      `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
-      'Every acting call is asked for separately. ' +
-      'If the human declined, do not retry without asking them first.',
-    );
-    extraDetails = { approval };
-  }
-
-  const result = safetyDenialToCallResult(denial, extraDetails);
+  const result = safetyDenialToCallResult(denial, outcome.approval !== null ? { approval: outcome.approval } : {});
   const first = result.content[0];
   if (first && first.type === 'text') first.text += `\n\n${notes.join('\n')}`;
   return result;
@@ -707,8 +723,12 @@ function buildCommand({ guard, toolName, args }: CallContext, grant: ApprovalGra
     requestId: '', // Will be assigned by connectionManager.sendCommand()
   };
   attachSafetyMetadata(command, guard.config, toolName, args);
-  // The human approved this call for one site: the Extension runs an acting
-  // command (or a read of a confirm_read_sites site) only on that site.
+  // The human approved this call for one site: the Extension and the
+  // headless backend run an acting command (or a read of a
+  // confirm_read_sites site) only on that site. approvedHost names the site,
+  // not who approved: with FOX_APPROVAL_ELICITATION on (the default) the
+  // answer reaches the daemon over local HTTP, where a local process holding
+  // the API token can answer as well (README, Human approval).
   if (grant !== null) {
     command.approvedHost = grant.target.host;
   }
@@ -729,7 +749,12 @@ const BROWSER_REFUSAL_NOTES_URL: Readonly<Record<Exclude<BrowserSafetyDecision, 
   paused: false,
 };
 
-/** The tool result text of a refusal while the user has paused the agent. */
+/**
+ * The tool result text of a refusal while the user has paused the agent. It
+ * replaces the Extension's own text (dispatch.ts PAUSED_REFUSAL), which only
+ * says that the user paused: this one also tells the model that every call
+ * is refused until the switch is off, so that it stops retrying.
+ */
 const PAUSED_MESSAGE =
   'paused: The user paused the agent in the toolbar popup. Every call is refused until the user turns the pause switch off.';
 
@@ -737,6 +762,32 @@ const PAUSED_MESSAGE =
 function reportedUrlOf(response: BrowserResponse): string | null {
   const url = response.data?.['url'];
   return typeof url === 'string' && url ? url : null;
+}
+
+/** The confirm_read_sites entry a browser refusal reports (`data.matchedPattern`), or null. */
+function reportedPatternOf(response: BrowserResponse): string | null {
+  const pattern = response.data?.['matchedPattern'];
+  return typeof pattern === 'string' && pattern ? pattern : null;
+}
+
+/** The browser's own text of a refusal, else one that names the decision. */
+function browserRefusalText(response: BrowserResponse, decision: string): string {
+  return response.error ?? `Refused by browser safety check (${decision})`;
+}
+
+/** A browser refusal with a safetyDecision this server does not know: refused as `denied`. */
+function unknownRefusalToResult(
+  { guard, toolName, args, transport, label }: CallContext,
+  decision: string,
+  response: BrowserResponse,
+  refusedUrl: string | null,
+): CallToolResult {
+  process.stderr.write(
+    `[InariMCP] The browser refused ${label.tool} with an unknown safetyDecision ` +
+    `${JSON.stringify(decision)}; treated as denied.\n`,
+  );
+  guard.recordAudit(toolName, args, 'denied', transport, label, refusedUrl ?? undefined);
+  return safetyDenialToCallResult({ safetyDecision: 'denied', layer: null, error: browserRefusalText(response, decision) });
 }
 
 /**
@@ -758,30 +809,15 @@ function browserRefusalToResult(
 ): CallToolResult {
   const { guard, toolName, args, transport, label } = call;
   const refusedUrl = reportedUrlOf(response);
-
-  if (!isOneOf(BROWSER_SAFETY_DECISIONS, decision)) {
-    process.stderr.write(
-      `[InariMCP] The browser refused ${label.tool} with an unknown safetyDecision ` +
-      `${JSON.stringify(decision)}; treated as denied.\n`,
-    );
-    guard.recordAudit(toolName, args, 'denied', transport, label, refusedUrl ?? undefined);
-    return safetyDenialToCallResult({
-      safetyDecision: 'denied',
-      layer: null,
-      error: response.error ?? `Refused by browser safety check (${decision})`,
-    });
-  }
+  if (!isOneOf(BROWSER_SAFETY_DECISIONS, decision)) return unknownRefusalToResult(call, decision, response, refusedUrl);
 
   if (decision === 'confirmation_required') {
-    const reportedPattern = response.data?.['matchedPattern'];
-    const confirmation = guard.confirmationFromBrowser(
-      toolName,
-      args,
-      refusedUrl,
+    const confirmation = guard.confirmationFromBrowser(toolName, args, {
+      url: refusedUrl,
+      matchedPattern: reportedPatternOf(response),
       transport,
-      typeof reportedPattern === 'string' && reportedPattern ? reportedPattern : null,
       label,
-    );
+    });
     return confirmationToCallResult(label, confirmation, presented);
   }
 
@@ -792,12 +828,11 @@ function browserRefusalToResult(
   // The command was sent (the guard's `allowed` line stands); this line
   // records what the browser decided.
   guard.recordAudit(toolName, args, decision, transport, label, refusedUrl ?? undefined);
+  const error = decision === 'paused' ? PAUSED_MESSAGE : browserRefusalText(response, decision);
   return safetyDenialToCallResult({
     safetyDecision: decision,
     layer: LAYER_OF[decision],
-    error: decision === 'paused'
-      ? PAUSED_MESSAGE
-      : response.error ?? `Refused by browser safety check (${decision})`,
+    error,
     ...(notesUrl ? { url: refusedUrl } : {}),
   });
 }
@@ -839,7 +874,7 @@ function finishResult(
     ? { success: true, data: sanitizedData }
     : {
       success: false,
-      // Error text can carry page-derived content (script exceptions, URLs).
+      // Error text can carry page-derived content (messages that quote the page, URLs).
       error: sanitizeString(response.error ?? 'Browser command failed'),
       data: sanitizedData,
     };
