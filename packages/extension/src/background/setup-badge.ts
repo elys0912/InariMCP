@@ -6,6 +6,7 @@
 import { errorMessage } from "../error-message";
 import { t } from "../i18n";
 import type { SetupState } from "../types/setup";
+import { once } from "../once";
 import type { ControlView } from "../user-control";
 import { controlView } from "./control-state";
 import { hostStatus, sendToNativeHost } from "./native-connection";
@@ -21,7 +22,8 @@ const NATIVE_HOST_MISSING = /No such native application/i;
 const SETUP_STATUS_TIMEOUT_MS = 5_000;
 /** Matches the relay heartbeat, so a new session shows up within ~30 s. */
 export const SETUP_REFRESH_MS = 30_000;
-export const BADGE_COLOR = "#D9372B";
+/** Badge color of the setup state: "!" when the setup needs attention, else no text. */
+export const SETUP_BADGE_COLOR = "#D9372B";
 
 async function getSetupState(): Promise<SetupState> {
   const host = hostStatus();
@@ -95,7 +97,7 @@ let lastSetupState: SetupState = { kind: "connecting" };
 let pendingApprovalCount = 0;
 
 /** Commands from the Native Host being handled now (dispatch.ts). */
-let activeHostCommands = 0;
+let runningHostCommands = 0;
 
 /** approvals.ts: the number of pending approval requests changed. */
 export function setPendingApprovalCount(count: number): void {
@@ -108,16 +110,13 @@ export function setPendingApprovalCount(count: number): void {
  * marks its end; calling it again does nothing.
  */
 export function startHostCommand(): () => void {
-  activeHostCommands++;
+  runningHostCommands++;
   renderBadge();
 
-  let finished = false;
-  return () => {
-    if (finished) return;
-    finished = true;
-    activeHostCommands--;
+  return once(() => {
+    runningHostCommands--;
     renderBadge();
-  };
+  });
 }
 
 /** background.ts: the consent or the pause switch changed (control-state.ts). */
@@ -157,7 +156,7 @@ export interface BadgeView {
  * running command until the human answers.
  */
 export function badgeFor(inputs: BadgeInputs): BadgeView {
-  const { control, pendingApprovals, setup } = inputs;
+  const { control, pendingApprovals, activeHostCommands, setup } = inputs;
   if (control.consent !== "granted") {
     return { text: t("badgeTextNoConsent"), color: NO_CONSENT_BADGE_COLOR, title: t("badgeNoConsent") };
   }
@@ -168,7 +167,7 @@ export function badgeFor(inputs: BadgeInputs): BadgeView {
     const count = String(pendingApprovals);
     return { text: count, color: APPROVAL_BADGE_COLOR, title: t("badgeApprovalPending", count) };
   }
-  if (inputs.activeHostCommands > 0) {
+  if (activeHostCommands > 0) {
     return { text: ACTIVE_BADGE_TEXT, color: ACTIVE_BADGE_COLOR, title: t("badgeActive") };
   }
 
@@ -176,7 +175,7 @@ export function badgeFor(inputs: BadgeInputs): BadgeView {
   const titleKey = BADGE_TITLE_KEYS[setup.kind];
   return {
     text: attention ? "!" : "",
-    color: BADGE_COLOR,
+    color: SETUP_BADGE_COLOR,
     title: titleKey === null ? DEFAULT_TITLE : t(titleKey),
   };
 }
@@ -191,7 +190,7 @@ function renderBadge(): void {
     const badge = badgeFor({
       control: controlView(),
       pendingApprovals: pendingApprovalCount,
-      activeHostCommands,
+      activeHostCommands: runningHostCommands,
       setup: lastSetupState,
     });
     browser.browserAction.setBadgeBackgroundColor({ color: badge.color }).catch(() => {});
