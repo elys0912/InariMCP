@@ -85,7 +85,7 @@ describe('invalidRegexArgument (5.10)', () => {
   });
 
   it('refuses a urlPattern over the limits of shared url-pattern-limit.ts (Fs-04)', () => {
-    expect(invalidRegexArgument({ urlPattern: '(a+)+$' })).toMatch(/^Invalid urlPattern: a repeated group/);
+    expect(invalidRegexArgument({ urlPattern: '(a+)+$' })).toMatch(/^Invalid urlPattern: a repeated group contains a quantifier or \|/);
     expect(invalidRegexArgument({ urlPattern: 'a'.repeat(257) })).toMatch(/^Invalid urlPattern: longer than 256/);
   });
 

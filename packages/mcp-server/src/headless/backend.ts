@@ -1,9 +1,10 @@
 import type { Browser, BrowserContext, Page, Dialog } from 'playwright';
 import { z } from 'zod';
-import { ENV } from '@inari-mcp/shared';
+import { ENV, type BrowserCommand, type BrowserResponse } from '@inari-mcp/shared';
 import { headlessStartupTimeoutMs, resolveFoxEnv } from '../utils/headless-env.js';
 import { ignoredParamWarnings, parseArgs } from './helpers.js';
-import { headlessRoute, NO_TAB_ERROR, type DialogHost, type TabHost } from './actions.js';
+import { headlessRoute, NO_TAB_ERROR, type DialogHost, type HeadlessRoute, type TabHost } from './actions.js';
+import { commandApprovalOf, floorRefusal, type CommandApproval } from './approval-floor.js';
 import {
   ARM_TTL_MS,
   DIALOG_GRACE_MS,
@@ -54,6 +55,33 @@ interface ArmedDialog {
   promptText?: string;
   /** Date.now() value after which it no longer applies. */
   until: number;
+}
+
+/** One action to run: what execute() and runCommand() share. */
+interface HeadlessCall {
+  action: string;
+  tabId: number | undefined;
+  args: Record<string, unknown>;
+  ctx: CommandContext | undefined;
+}
+
+/** The routes run under the lock. */
+type LockedRoute = Exclude<HeadlessRoute, { kind: 'unlocked' }>;
+
+/**
+ * A result of runCommand() as the BrowserResponse the connection manager
+ * routes. A refusal of the approval floor carries its safetyDecision, as
+ * the Extension's does.
+ */
+function responseOf(requestId: string, result: Record<string, unknown>): BrowserResponse {
+  const decision = result['safetyDecision'];
+  return {
+    requestId,
+    success: result['success'] === true,
+    data: result,
+    error: typeof result['error'] === 'string' ? result['error'] : undefined,
+    ...(typeof decision === 'string' ? { safetyDecision: decision } : {}),
+  };
 }
 
 /** A closed gate: `promise` resolves once `open` is called. */
@@ -226,24 +254,52 @@ export class HeadlessBrowser {
   // -----------------------------------------------------------------------
 
   /**
-   * Run one action. `ctx` is the deadline and cancellation of the command
-   * (connection/manager.ts); by default the one of the command being sent.
-   * An action whose command was given up while it waited for the lock is
-   * not run: the caller has already been told it failed and may send it
-   * again.
+   * Run a command of the MCP Server (daemon/main.ts): the action behind the
+   * approval floor (approval-floor.ts), which is checked right before it
+   * runs, against the page it runs on. `ctx` as in execute().
    */
-  async execute(
+  async runCommand(
+    command: BrowserCommand,
+    ctx: CommandContext | undefined = currentCommandContext(),
+  ): Promise<BrowserResponse> {
+    const args = command.data ?? {};
+    const result = await this._execute(
+      { action: command.action, tabId: command.tabId, args, ctx },
+      commandApprovalOf(command),
+    );
+    return responseOf(command.requestId, result);
+  }
+
+  /**
+   * Run one action, without the approval floor: the tests drive the actions
+   * with it, the daemon runs every command through runCommand() (no other
+   * caller in src: headless-lifecycle.test.ts checks). `ctx` is
+   * the deadline and cancellation of the command (connection/manager.ts);
+   * by default the one of the command being sent. An action whose command
+   * was given up while it waited for the lock is not run: the caller has
+   * already been told it failed and may send it again.
+   *
+   * @internal
+   */
+  execute(
     action: string,
     tabId: number | undefined,
     args: Record<string, unknown>,
     ctx: CommandContext | undefined = currentCommandContext(),
   ): Promise<Record<string, unknown>> {
-    const deadline = ctx?.deadline ?? Infinity;
-    const signal = ctx?.signal;
+    return this._execute({ action, tabId, args, ctx }, null);
+  }
+
+  /** execute() and runCommand(); `approval` null: no floor. */
+  private async _execute(call: HeadlessCall, approval: CommandApproval | null): Promise<Record<string, unknown>> {
+    const { action, tabId, args, ctx } = call;
     const route = headlessRoute(action);
     // Not serialised: it waits for a dialog that a queued action may be about to open.
     if (route.kind === 'unlocked') {
-      const result = await this._run(action, () => route.run({ tabId, args, signal, dialogs: this._dialogHost }));
+      const result = await this._run(action, async () => {
+        return this._floorRefusal(call, this._urlOfTab(tabId), approval) ??
+          route.run({ tabId, args, signal: ctx?.signal, dialogs: this._dialogHost });
+      });
       return this._finish(action, tabId ?? this._activeTabId, args, result);
     }
 
@@ -252,26 +308,56 @@ export class HeadlessBrowser {
     this._lockChain = lock.promise;
     await prev;
     try {
-      if (signal?.aborted === true || Date.now() >= deadline) {
-        return { success: false, error: NOT_RUN_ERROR };
-      }
-      // The tab this action targets, fixed before it can change the active tab.
-      const target = tabId ?? this._activeTabId;
-      const result = await this._run(action, async () => {
-        const page = this._targetPage(tabId);
-        const base = { tabId, args, host: this._host, deadline, signal };
-        if (route.kind === 'dispatch' && !route.needsPage) return route.run({ ...base, page });
-        if (page === null) throw new Error(NO_TAB_ERROR);
-        if (route.kind === 'unsupported') {
-          return { success: false, error: `Unsupported headless action: ${action}` };
-        }
-        return route.run({ ...base, page });
-      });
-      if (route.kind === 'dispatch' && route.needsPage) this._reportTab(result, target);
-      return this._finish(action, target, args, result);
+      return await this._executeLocked(call, route, approval);
     } finally {
       lock.open();
     }
+  }
+
+  /** The part of _execute() that holds the lock. */
+  private async _executeLocked(
+    call: HeadlessCall,
+    route: LockedRoute,
+    approval: CommandApproval | null,
+  ): Promise<Record<string, unknown>> {
+    const { action, tabId, args, ctx } = call;
+    // The deadline and the cancellation of the command.
+    const limits = { deadline: ctx?.deadline ?? Infinity, signal: ctx?.signal };
+    if (limits.signal?.aborted === true || Date.now() >= limits.deadline) {
+      return { success: false, error: NOT_RUN_ERROR };
+    }
+    // The tab this action targets, fixed before it can change the active tab.
+    const target = tabId ?? this._activeTabId;
+    const result = await this._run(action, async () => {
+      const page = this._targetPage(tabId);
+      const base = { tabId, args, host: this._host, ...limits };
+      if (route.kind === 'dispatch' && !route.needsPage) {
+        return this._floorRefusal(call, page?.url() ?? null, approval) ?? route.run({ ...base, page });
+      }
+      if (page === null) throw new Error(NO_TAB_ERROR);
+      if (route.kind === 'unsupported') {
+        return { success: false, error: `Unsupported headless action: ${action}` };
+      }
+      return this._floorRefusal(call, page.url(), approval) ?? route.run({ ...base, page });
+    });
+    if (route.kind === 'dispatch' && route.needsPage) this._reportTab(result, target);
+    return this._finish(action, target, args, result);
+  }
+
+  /** The URL of the page of `tabId`, or of the active tab when undefined; null without one. */
+  private _urlOfTab(tabId: number | undefined): string | null {
+    const id = tabId ?? this._activeTabId;
+    const page = id === null ? undefined : this._tabs.get(id);
+    return page?.url() ?? null;
+  }
+
+  /** The approval floor's refusal of `call` on the page at `pageUrl`, or null (also without a floor). */
+  private _floorRefusal(
+    call: HeadlessCall,
+    pageUrl: string | null,
+    approval: CommandApproval | null,
+  ): Record<string, unknown> | null {
+    return approval === null ? null : floorRefusal(call.action, call.args, pageUrl, approval);
   }
 
   private async _run(

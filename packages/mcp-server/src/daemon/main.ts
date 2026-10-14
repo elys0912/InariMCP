@@ -211,14 +211,10 @@ async function startHeadless(): Promise<void> {
   if (containerWarning !== null) log(`WARNING: ${containerWarning}`);
 
   connectionManager.registerBrowser('headless', (command) => {
-    headless.execute(command.action, command.tabId, command.data ?? {})
-      .then((result) => {
-        connectionManager.handleResponse({
-          requestId: command.requestId,
-          success: result['success'] === true,
-          data: result,
-          error: typeof result['error'] === 'string' ? result['error'] : undefined,
-        });
+    // runCommand: behind the approval floor (headless/approval-floor.ts).
+    headless.runCommand(command)
+      .then((response) => {
+        connectionManager.handleResponse(response);
       })
       .catch((err: unknown) => {
         connectionManager.handleResponse({

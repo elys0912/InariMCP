@@ -1030,6 +1030,57 @@
     "headless": "dispatch:go_back"
   },
   {
+    "id": "navigate/back_new_tab",
+    "tool": "fox_navigate",
+    "args": {
+      "action": "back",
+      "newTab": true
+    },
+    "approval": "plain.example.test",
+    "command": {
+      "action": "go_back",
+      "data": {
+        "action": "back",
+        "newTab": true,
+        "waitForLoad": true,
+        "bypassCache": false
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      },
+      "blockedUrlRules": [
+        {
+          "kind": "host",
+          "source": "blocked.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "blocked.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "allowedUrlRules": [
+        {
+          "kind": "host",
+          "source": "example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "strict"
+        }
+      ],
+      "approvedHost": "plain.example.test"
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "dispatch:go_back"
+  },
+  {
     "id": "navigate/forward",
     "tool": "fox_navigate",
     "args": {

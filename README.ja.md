@@ -389,7 +389,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 | キー | 既定値 | 意味 |
 |---|---|---|
-| `enabled` | `true` | 安全ガードを有効にする |
+| `enabled` | `true` | 安全ガードを有効にする（URLの検査とURLの一覧、`confirm_read_sites`、`read_only`、`container_scope`、レート制限）。`false`にするとこれらは止まるが、人の承認は止まらない。操作系ツールは常に先に尋ねる（[人による承認](#人による承認)） |
 | `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ）を拒否する。観察・待機・UIだけを変えるツール（`fox_interact`、`action: "switch"`の`fox_tab`）は使える |
 | `allow_password_typing` | `false` | パスワード欄（`type="password"`、または`autocomplete`に`current-password` / `new-password`のトークンを含むもの。大文字小文字は問わず、`section-login current-password`も含む）への`fox_type` / `fox_set_value`を許可する。伏せ字は解かない: パスワード欄と隠し欄（`type="password"` / `"hidden"`）、`autocomplete`に`current-password`・`new-password`・`one-time-code`・`cc-number`・`cc-csc`・`cc-exp`・`cc-exp-month`・`cc-exp-year`を含む欄の値は、読み取るツール（`fox_read`、`fox_find`）で両方のバックエンドとも常に`[MASKED]`になる |
 | `max_actions_per_minute` | `120` | レート制限。全セッション共通（`0`で制限なし） |
@@ -424,7 +424,7 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 
 読み取り・待機・UIだけのツールは尋ねずに動く: `fox_read`、`fox_find`、`fox_screenshot`、`fox_snapshot`、`fox_tabs`、`fox_wait`、`fox_interact`、`action: "switch"`の`fox_tab`、`fox_detect_captcha`、`fox_safety_status`。`confirm_read_sites`に書いたサイトでは、ページを読むツール（`fox_read`、`fox_find`、`fox_screenshot`、`fox_snapshot`）も尋ねる。`scope: "all_tabs"`の`fox_screenshot`は、尋ねる代わりにそのタブを除いて撮る。同時に待てる承認要求は最大32件。
 
-サイトとは、呼び出しが操作するページのホスト名のこと（`url`を付けた`fox_navigate`と`create`の`fox_tab`では、開くURLのホスト名。URLなしの新しいタブは`about:`、ローカルのファイルは`file:`）。対象のタブがどのページにあるかをdaemonがまだ知らないとき（起動した直後や、一覧で見たことのないタブ）は、その呼び出しはまだ承認できず、先に`fox_tabs`を呼ぶようモデルに返す。Firefoxの拡張機能はタブの実際のURLで承認をもう一度確かめ、daemonが何を送ってきても、そのタブのサイトに対して承認されていない操作は拒否する。その間にタブを別のサイトへ移していた場合は、そのサイトについて改めて尋ねる。
+サイトとは、呼び出しが操作するページのホスト名のこと（`url`を付けた`fox_navigate`と`create`の`fox_tab`では、開くURLのホスト名。URLなしの新しいタブは`about:`、ローカルのファイルは`file:`）。対象のタブがどのページにあるかをdaemonがまだ知らないとき（起動した直後や、一覧で見たことのないタブ）は、その呼び出しはまだ承認できず、先に`fox_tabs`を呼ぶようモデルに返す。Firefoxの拡張機能はタブの実際のURLで承認をもう一度確かめ、daemonが何を送ってきても、そのタブのサイトに対して承認されていない操作は拒否する。ヘッドレスのバックエンドも、コマンドを実行する直前に同じように確かめる。その間にタブが別のサイトへ移っていた場合は、そのサイトについて改めて尋ねる。
 
 承認が効くのは、そのツールをその引数のまま、そのサイトで1回呼ぶことだけ。要求の期限（120秒。Firefoxのポップアップが待つのは最大60秒）までに答える必要があり、承認は中継だけが見る1回限りのトークンで運ばれる（モデルには見えない）。同じタブで同じツールを続けて呼ぶ場合も、操作系の呼び出しは1回ずつ尋ねる（「しばらく許可」はない）。引数は省略せずに見せる: 見えない文字と文字の向きを変える文字（双方向制御文字、ゼロ幅文字、タグ文字、U+2028 / U+2029）は警告の行を付けて`\u`のエスケープで表示し、引数が収まらない呼び出し（1つの値が160、または`名前: 値`の行の全体が800を超える。長さは各値をJSONに直した後のUTF-16の単位で数え、引用符とエスケープを含む。値の中の改行は2、絵文字は2と数える）は承認を求めずに、承認できないことをモデルに返す。つまり長い引数は承認できない: 長いURLの`fox_navigate`、長文の`fox_type`。テキストは短い呼び出しに分けられる場合があるが、URLは分けられない。ページの中のもの — ボタンや`fox_click` — では承認できない。elicitationでの承認が有効な間は、1つのリスクを受け入れている: 回答はローカルのHTTPでdaemonに届くので、`~/.inari-mcp/api_token`を読めるローカルのプロセスは自分の要求を自分で承認できる。Firefoxのポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する（ヘッドレスモードでは承認できなくなる）。
 

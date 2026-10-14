@@ -220,6 +220,17 @@
     "guardOff": null
   },
   {
+    "id": "navigate/back_new_tab",
+    "tool": "fox_navigate",
+    "default": "confirmation_required",
+    "readOnly": "read_only",
+    "readSiteTab": "confirmation_required",
+    "localFileTab": "confirmation_required",
+    "unknownTab": "confirmation_required",
+    "blockedTab": "blocked_url",
+    "guardOff": null
+  },
+  {
     "id": "navigate/forward",
     "tool": "fox_navigate",
     "default": "confirmation_required",

@@ -120,3 +120,16 @@ describe('lower bounds of numeric arguments', () => {
     expect(schema.safeParse({ kind: 'select', selector: '#s', option: { index: -1 } }).success).toBe(false);
   });
 });
+
+// scroll_capture scrolls the user's tab step by step: neither the step count
+// nor the wait between steps is unbounded.
+describe('upper bounds of scroll_capture', () => {
+  it.each([
+    ['maxScrolls', 50],
+    ['delay', 2000],
+  ] as const)('fox_screenshot scroll_capture: %s accepts %d, not more', (key, max) => {
+    const schema = callSchemaFor('fox_screenshot')!;
+    expect(schema.safeParse({ scope: 'scroll_capture', [key]: max }).success).toBe(true);
+    expect(schema.safeParse({ scope: 'scroll_capture', [key]: max + 1 }).success).toBe(false);
+  });
+});

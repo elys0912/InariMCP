@@ -123,6 +123,18 @@ export const ELEMENT_LOCATION_NOTE =
 export const SCREENSHOT_SCOPES = ['viewport', 'full_page', 'all_tabs', 'scroll_capture'] as const;
 export type ScreenshotScope = (typeof SCREENSHOT_SCOPES)[number];
 
+/**
+ * Upper bounds of scroll_capture, so that one call cannot keep the user's
+ * tab scrolling for long: 50 steps (2.5 times the default 20) and 2 s
+ * between them (4 times the default 500 ms). The Extension also stops after
+ * 25 s of delays in total (content/constants.ts SCROLL_CAPTURE_BUDGET), so
+ * the answer comes before the daemon stops waiting (30 s).
+ */
+const MAX_SCROLL_CAPTURE_STEPS = 50;
+const MAX_SCROLL_CAPTURE_DELAY_MS = 2_000;
+/** The total of the delays of one scroll_capture (the Extension's budget). */
+const SCROLL_CAPTURE_BUDGET_S = 25;
+
 const foxScreenshotSchema = z.object({
   scope: z.enum(SCREENSHOT_SCOPES)
     .optional()
@@ -142,8 +154,14 @@ const foxScreenshotSchema = z.object({
   timeout: timeoutMs.describe('all_tabs: time budget for capturing all tabs in ms (default 20000); tabs left when it runs out are reported as skipped'),
   // scroll_capture options
   scrollStep: z.number().int().positive().optional().describe('Pixels to scroll each step (default: 80% of viewport)'),
-  delay: z.number().int().min(0).optional().default(500).describe('Delay between scrolls in ms (for scroll_capture scope)'),
-  maxScrolls: z.number().int().positive().optional().default(20).describe('Maximum number of scroll steps (for scroll_capture scope)'),
+  delay: z.number().int().min(0).max(MAX_SCROLL_CAPTURE_DELAY_MS).optional().default(500).describe(
+    `Delay between scrolls in ms (for scroll_capture scope; at most ${MAX_SCROLL_CAPTURE_DELAY_MS}, ` +
+    `and the delays stop after ${SCROLL_CAPTURE_BUDGET_S} s in total)`,
+  ),
+  maxScrolls: z.number().int().positive().max(MAX_SCROLL_CAPTURE_STEPS).optional().default(20).describe(
+    `Maximum number of scroll steps (for scroll_capture scope; at most ${MAX_SCROLL_CAPTURE_STEPS}, ` +
+    `fewer when the delays reach ${SCROLL_CAPTURE_BUDGET_S} s in total)`,
+  ),
   restore: z.boolean().optional().default(true).describe('Restore original scroll position after capture'),
 });
 

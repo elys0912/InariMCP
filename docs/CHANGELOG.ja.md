@@ -39,6 +39,8 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - `fox_safety_status` は `confirmProtectedActions` と `protectedUrlPatterns` の代わりに、`approvalPolicy`（どの呼び出しで尋ねるか）と `confirmReadSites` を返す。
 - 一度だけ使える承認のトークンの接頭辞を `kat_` から `iat_`（Inari approval token）にした。
 - `scope: "all_tabs"` の `fox_screenshot` は、`confirm_read_sites` のサイトで除いたタブの理由を `excludedReason` ではなく `excludedReadSitesReason` で返す（`excludedReadSites`、`excludedBlockedReason` と並ぶ名前）。
+- `fox_navigate` の `action: "back"`・`"forward"`・`"refresh"` に `newTab: true` を付けたときは、今のタブを操作するものとして、そのタブのサイトについて承認を求めるようにした（従来は新しい空のタブ `about:` について尋ねていた）。
+- `fox_screenshot` の `scope: "scroll_capture"` で、`maxScrolls` は 50 まで、`delay` は 2000 ms までにした。
 
 ### 削除
 
@@ -62,4 +64,8 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - `FOX_HOST` がループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）でなければ daemon は起動しないようにした。従来は警告をログに出して、平文の HTTP・WebSocket をネットワークに開いていた。Native Host と stdio の中継も、そのような `FOX_HOST` には接続せずに拒否する。`--doctor` は daemon に届かないと報告する。`127.999.0.1` のようにアドレスに見えるだけの名前は、ループバックとみなさない。
 - 監査ログは、`text`・`value` などの伏せる引数を入れ子の object の中でも伏せる（`kind: "select"` の `fox_set_value` の `option`）。`fox_press_key` の `key` も伏せる。
 - ホストの無いページ（`view-source:`、`blob:`、`data:` など。`about:` と `file:` は除く）にあるタブでは、ページを操作するツールを拒否するようにした。こうしたページには `safety.json` のどの URL パターンも一致しない。読み取るツールは動く。
-- 引数 `urlPattern` が 256 文字を超えるとき、または繰り返す括弧の中に繰り返しがあるとき（`(a+)+` など）は、コンパイルする前に拒否するようにした（daemon と拡張機能の両方で）。1 つのパターンで拡張機能のバックグラウンドページが止まらないようにするため。
+- 引数 `urlPattern` を、次のときはコンパイルする前に拒否するようにした（daemon と拡張機能の両方で）。1 つのパターンで拡張機能のバックグラウンドページが止まらないようにするため。256 文字を超えるとき。繰り返す括弧（後ろに `*`・`+`・`{…}` が付く）の中に量指定子か `|` があるとき（`(a+)+`、`(a|aa)+`、`(a?){25}` など。`(a{3})+` も拒否するので `(?:aaa)+` と書く）。量指定子（`*`・`+`・`?`・`{n}`・`{n,m}`・`{n,}`）と `|` が合わせて 7 個を超えるとき。`{n,m}` の m が 32 を超えるとき。量指定子が URL を分ける仕方が多すぎるとき（上限の無い繰り返しを 6、`{n,m}` を log2(m − n + 1)、`?` と `|` を 1 と数え、合計 12 まで。`.*.*` は通り、`.*.*.*` は通らない）。文字クラスは JavaScript の規則で読む（`[]` と `[^]` は最初の `]` で閉じる）。`^https://example\.com/.*$`、`https://[^/]+\.example\.com/.*`、`(https?://)?(www\.)?example\.com/.*` のような普通のパターンは通る。
+- ヘッドレスモードでも、拡張機能と同じように、コマンドを実行する直前に、実行するページで承認を確かめ直すようにした。操作系のコマンドは人が承認したサイトでだけ動き、`confirm_read_sites` のページの読み取りはそのサイトの承認があるときだけ動く。承認の後にページが別のサイトへ移っていた場合は、そのサイトについて改めて尋ねる。
+- `safety.json` の `enabled: false` で、ヘッドレスモードの人の承認が止まらないようにした。操作系ツールは両方のバックエンドで常に先に尋ねる（`false` で止まるのは、URL の検査と URL の一覧、`confirm_read_sites`、`read_only`、`container_scope`、レート制限）。
+- ヘッドレスの `fox_snapshot` で、伏せる対象の欄（パスワード、ワンタイムコード、カード番号など上に挙げたもの）の値を `[MASKED]` にし、伏せる対象の `<select>` で選んだ option に selected の印を付けないようにした。従来は Playwright のアクセシビリティツリーがこれらの値をそのまま出していた。
+- URL の query と fragment にある秘密の値（`token`、`access_token`、`password` など）を、監査ログの `url` と、MCP クライアントが受け取る `details.approval` の `url` でも伏せるようにした（引数の `url` では従来から伏せていた）。Firefox の承認のポップアップには URL 全体を出す。

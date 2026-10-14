@@ -6,6 +6,7 @@ import { DEFAULT_CONFIG, type SafetyConfig } from '../src/safety/config.js';
 import { SafetyGuard } from '../src/safety/guard.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { answerFromElicitation } from '../src/tools/approval-flow.js';
+import { getApprovalStore } from '../src/safety/approval.js';
 
 /** The guard handlers.ts works with (there is no setter for the singleton). */
 const testGuard = vi.hoisted(() => ({ current: null as SafetyGuard | null }));
@@ -242,6 +243,22 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
       approval: { host: 'b.example.test', url: 'https://b.example.test/x', matchedPattern: null },
     });
     expect(g.urlFor(2)).toBe('https://b.example.test/x');
+  });
+
+  // The page's URL in details.approval goes to the MCP client like any other
+  // URL of a result; the popup shows the stored request as it is.
+  it('masks a secret query parameter in details.approval.url, not in the stored request', async () => {
+    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, confirmReadSites: ['b.example.test'] });
+    testGuard.current = g;
+    stubBrowser({
+      success: false, safetyDecision: 'confirmation_required', error: 'approval required',
+      data: { url: 'https://b.example.test/cb?token=abc&x=1', matchedPattern: 'b.example.test' },
+    });
+
+    const result = await createToolHandler('fox_read')({ mode: 'text', tabId: 2, selector: '#a' });
+    const approval = details(result)['approval'] as { requestId: string; url: string };
+    expect(approval.url).toBe('https://b.example.test/cb?token=[MASKED]&x=1');
+    expect(getApprovalStore().getRequest(approval.requestId)?.url).toBe('https://b.example.test/cb?token=abc&x=1');
   });
 });
 

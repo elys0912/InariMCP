@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { getAuditLogPath } from './config.js';
-import { maskSensitiveArgs } from './sanitizer.js';
+import { maskSensitiveArgs, sanitizeUrl } from './sanitizer.js';
 import { rotateIfLarge } from '../utils/log-file.js';
 
 export type AuditDecision =
@@ -49,7 +49,9 @@ export function audit(
     ts: new Date().toISOString(),
     tool: toolName,
     decision,
-    url: targetUrl,
+    // Page-derived URLs (a redirect target, an OAuth callback) can carry a
+    // secret in the query or fragment: masked like the url argument.
+    url: sanitizeUrl(targetUrl),
     transport: transport ?? null,
     args: maskSensitiveArgs(args),
   };

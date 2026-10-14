@@ -3,7 +3,7 @@ import type { LoadedSafetyConfig } from './config.js';
 import { audit } from './audit.js';
 import type { AuditDecision } from './audit.js';
 import { checkHeadlessContainerScope } from './container.js';
-import { grantCoversDenial } from './approval.js';
+import { NEW_TAB_URL, grantCoversDenial } from './approval.js';
 import type { ApprovalGrant } from './approval.js';
 import { PATTERN_LIST_KEYS, compileUrlPatterns, normalizeUrl } from './url-pattern.js';
 import type { PatternListName, UrlPattern } from './url-pattern.js';
@@ -18,9 +18,6 @@ import { isRecord } from '@inari-mcp/shared';
 
 // Derived from the tool schemas; re-exported for the existing importers.
 export { ACTING_TOOLS, PAGE_READ_TOOLS, TAB_INDEPENDENT_TOOLS };
-
-/** The page a new tab opened without a URL shows (the Extension opens the same). */
-const NEW_TAB_URL = 'about:blank';
 
 /**
  * The URL a call goes to or opens, or null when it acts on (or reads) a tab
@@ -44,20 +41,29 @@ export function targetUrlOf(toolName: string, args: Record<string, unknown>): st
   return typeof url === 'string' && url !== '' ? url : null;
 }
 
-/** Calls that open a new tab, whose id the result may not report. */
+/**
+ * Calls that open a new tab, whose id the result may not report. fox_navigate
+ * opens one only for goto: back / forward / refresh with `newTab: true` act
+ * on the tab as it is, and are approved for its page.
+ */
 function opensNewTab(toolName: string | undefined, args: Record<string, unknown>): boolean {
   switch (toolName) {
     case 'fox_create_tab':
     case 'fox_open_in_container':
       return true;
     case 'fox_navigate':
-      return args['newTab'] === true;
+      return navigateGoesToUrl(args['action']) && args['newTab'] === true;
     default:
       return false;
   }
 }
 
-/** The layers of the safety model, as reported in `details.layer` of a refusal. */
+/**
+ * The layers of the safety model, as reported in `details.layer` of a
+ * refusal. 6 is unused: it was the script-execution switch, removed with the
+ * script tools. The numbers are not closed up, so a `details.layer` keeps
+ * its meaning.
+ */
 export const LAYER = {
   containerScope: 0,
   rateLimit: 1,
@@ -126,6 +132,28 @@ export interface SafetyDenial {
     matchedPattern: string | null;
     toolName: string;
   };
+}
+
+/** A confirmation_required refusal of the browser, as confirmationFromBrowser() reads it. */
+export interface BrowserConfirmation {
+  /** The target tab's URL if the browser reported it (`data.url`); also recorded like noteUrl(). */
+  url: string | null;
+  /** The confirm_read_sites entry the browser matched (`data.matchedPattern`), if reported. */
+  matchedPattern?: string | null;
+  transport?: string;
+  label?: CallLabel;
+}
+
+/** One call as the layers of SafetyGuard._checkInner() see it. */
+interface CheckedCall {
+  toolName: string;
+  args: Record<string, unknown>;
+  /** The tool name the caller used (messages, elicitation). */
+  shown: string;
+  /** The URL the call goes to or opens (targetUrlOf), or null. */
+  targetUrl: string | null;
+  /** The target tab's last-known URL, or null. */
+  currentUrl: string | null;
 }
 
 export interface SafetyStatus {
@@ -232,6 +260,9 @@ export class SafetyGuard {
       );
     }
 
+    // Off, the guard asks nothing; the human approval stays: the Extension
+    // and the headless backend refuse every acting command that carries no
+    // approval for its site (headless/approval-floor.ts).
     if (!this.config.enabled) {
       return null;
     }
@@ -426,54 +457,48 @@ export class SafetyGuard {
   }
 
   /**
-   * Build the confirmation result for a refusal the Extension made itself
+   * Build the confirmation result for a refusal the browser made itself
    * (safetyDecision "confirmation_required"): the actual target tab of an
    * acting tool is on a site the call was not approved for (the Extension
-   * requires an approval for every acting command), or a read's target tab
-   * matched the `confirmReadUrlRules` attached to the command. The server
-   * could not have known when its last-known URL for the tab was stale or
-   * unknown.
-   *
-   * @param url  The target tab's URL if the Extension reported it
-   *             (`data.url`); also recorded like noteUrl().
-   * @param matchedPattern  The confirm_read_sites entry the Extension
-   *             matched (`data.matchedPattern`), if reported.
+   * and the headless backend require an approval for every acting command),
+   * or a read's target tab matched the `confirmReadUrlRules` attached to the
+   * command. The server could not have known when its last-known URL for the
+   * tab was stale or unknown.
    */
   confirmationFromBrowser(
     toolName: string,
     args: Record<string, unknown>,
-    url: string | null,
-    transport?: string,
-    matchedPattern?: string | null,
-    label?: CallLabel,
+    reported: BrowserConfirmation,
   ): SafetyDenial {
-    const shown = label?.tool ?? toolName;
-    if (url) this.noteRefusedUrl(url, args);
-    const knownUrl = url ?? this.urlFor(this._tabIdArg(args));
-    const acting = isOperationIn(ACTING_TOOLS, toolName);
-    const matched = acting ? null : this._matchedReadSite(knownUrl) ?? matchedPattern ?? null;
-
-    this.recordAudit(toolName, args, 'confirmation_required', transport, label, knownUrl);
+    const shown = reported.label?.tool ?? toolName;
+    if (reported.url) this.noteRefusedUrl(reported.url, args);
+    const knownUrl = reported.url ?? this.urlFor(this._tabIdArg(args));
+    this.recordAudit(toolName, args, 'confirmation_required', reported.transport, reported.label, knownUrl);
 
     const page = knownUrl ?? '(target tab)';
-    return {
-      success: false,
-      safetyDecision: 'confirmation_required',
-      layer: acting ? LAYER.approval : LAYER.readSites,
-      confirmationRequired: true,
-      elicitation: { url: knownUrl, matchedPattern: matched, toolName: shown },
-      error: acting
-        ? `${shown} needs human approval for '${page}', where the browser reports the target ` +
-          'tab is. Every acting tool asks the human first, on every site.'
-        : `${shown} reads '${page}', which matches confirm_read_sites entry '${matched ?? '?'}' ` +
-          'in safety.json (as checked by the browser). Reading this site needs human approval.',
-    };
+    if (isOperationIn(ACTING_TOOLS, toolName)) {
+      return this._confirmation(
+        LAYER.approval,
+        { url: knownUrl, matchedPattern: null, toolName: shown },
+        `${shown} needs human approval for '${page}', where the browser reports the target ` +
+        'tab is. Every acting tool asks the human first, on every site.',
+      );
+    }
+
+    const matched = this._matchedReadSite(knownUrl) ?? reported.matchedPattern ?? null;
+    return this._confirmation(
+      LAYER.readSites,
+      { url: knownUrl, matchedPattern: matched, toolName: shown },
+      `${shown} reads '${page}', which matches confirm_read_sites entry '${matched ?? '?'}' ` +
+      'in safety.json (as checked by the browser). Reading this site needs human approval.',
+    );
   }
 
   /**
    * One audit log line, when audit_log is on, under the caller's names
-   * (CallLabel), else the operation's. `url` defaults to the call's target
-   * URL, else the target tab's last-known URL (what check() records).
+   * (CallLabel), else the operation's. `url` left out (undefined) defaults
+   * to the call's target URL, else the target tab's last-known URL (what
+   * check() records); null records a line without a URL.
    */
   recordAudit(
     toolName: string,
@@ -512,6 +537,11 @@ export class SafetyGuard {
     };
   }
 
+  /**
+   * The layers of check() that refuse or ask, in order: Layer 0 and 2-3 for
+   * every call, then Layer 4 for a call that changes no page data, or
+   * Layer 2 (a page without a host), 5 and 7 for an acting call.
+   */
   private _checkInner(
     toolName: string,
     targetUrl: string | null,
@@ -519,73 +549,95 @@ export class SafetyGuard {
     args: Record<string, unknown>,
     shown: string,
   ): SafetyDenial | null {
-    // Layer 0: Container scope (server-side part only).
-    // The server cannot see tabs, so the per-tab cookieStoreId check is done
-    // by the Extension using the `containerScope` that handlers.ts attaches
-    // to every BrowserCommand. Here we only refuse everything when the
-    // backend has no containers at all (headless).
+    const call: CheckedCall = { toolName, args, shown, targetUrl, currentUrl };
+    // The layers that apply to every call.
+    const earlyDenial = this._checkContainerScope() ?? this._checkUrlRules(call);
+    if (earlyDenial !== null) return earlyDenial;
+    if (!isOperationIn(ACTING_TOOLS, toolName)) return this._checkReading(call);
+
+    return this._checkActing(call);
+  }
+
+  /**
+   * Layer 0: Container scope (server-side part only).
+   * The server cannot see tabs, so the per-tab cookieStoreId check is done
+   * by the Extension using the `containerScope` that handlers.ts attaches
+   * to every BrowserCommand. Here we only refuse everything when the
+   * backend has no containers at all (headless).
+   */
+  private _checkContainerScope(): SafetyDenial | null {
     const containerDenial = checkHeadlessContainerScope(this.config);
-    if (containerDenial) {
-      return this._deny(containerDenial.safetyDecision, containerDenial.error);
+    return containerDenial ? this._deny(containerDenial.safetyDecision, containerDenial.error) : null;
+  }
+
+  /**
+   * Layer 2-3: URL scheme guard + blocklist/allowlist, on the parsed URL the
+   * call goes to, else on the target tab's last-known URL.
+   */
+  private _checkUrlRules({ toolName, shown, targetUrl, currentUrl }: CheckedCall): SafetyDenial | null {
+    if (targetUrl !== null) return this._checkTargetUrl(targetUrl);
+    if (currentUrl === null || isOperationIn(TAB_INDEPENDENT_TOOLS, toolName)) return null;
+
+    // No url argument: the tool acts on (or reads) the tab, whose last
+    // known URL may have been reached by a redirect or a click.
+    const violation = this._listViolation(currentUrl);
+    if (violation === null) return null;
+    return this._deny(
+      violation.decision,
+      `${shown} refused: the target tab is on '${currentUrl}', which ${violation.reason}. ` +
+      'Navigate it elsewhere (fox_navigate with a url) or close it.',
+      currentUrl,
+    );
+  }
+
+  /** Layer 2-3 for the URL a call goes to or opens. */
+  private _checkTargetUrl(targetUrl: string): SafetyDenial | null {
+    const n = normalizeUrl(targetUrl);
+    if (n === null) {
+      return this._deny(
+        'invalid_url',
+        `'${targetUrl}' refused: not an absolute URL (e.g. https://example.com/).`,
+      );
+    }
+    const isBlank = n.url.href === 'about:blank';
+    if (!isBlank && n.url.protocol !== 'http:' && n.url.protocol !== 'https:') {
+      return this._deny(
+        'blocked_scheme',
+        `Navigation to '${targetUrl}' refused: only http://, https:// and about:blank targets are allowed.`,
+      );
+    }
+    if (n.hasUserinfo) {
+      return this._deny(
+        'invalid_url',
+        `'${targetUrl}' refused: URLs with a user name or password before the host ` +
+        "('user:pass@host') are not allowed; they hide the real host.",
+      );
     }
 
-    // Layer 2-3: URL scheme guard + blocklist/allowlist, on the parsed URL
-    if (targetUrl !== null) {
-      const n = normalizeUrl(targetUrl);
-      if (n === null) {
-        return this._deny(
-          'invalid_url',
-          `'${targetUrl}' refused: not an absolute URL (e.g. https://example.com/).`,
-        );
-      }
-      const isBlank = n.url.href === 'about:blank';
-      if (!isBlank && n.url.protocol !== 'http:' && n.url.protocol !== 'https:') {
-        return this._deny(
-          'blocked_scheme',
-          `Navigation to '${targetUrl}' refused: only http://, https:// and about:blank targets are allowed.`,
-        );
-      }
-      if (n.hasUserinfo) {
-        return this._deny(
-          'invalid_url',
-          `'${targetUrl}' refused: URLs with a user name or password before the host ` +
-          "('user:pass@host') are not allowed; they hide the real host.",
-        );
-      }
-      const violation = this._listViolation(targetUrl);
-      if (violation !== null) {
-        return this._deny(violation.decision, `URL '${targetUrl}' ${violation.reason}.`, targetUrl);
-      }
-    } else if (currentUrl !== null && !isOperationIn(TAB_INDEPENDENT_TOOLS, toolName)) {
-      // No url argument: the tool acts on (or reads) the tab, whose last
-      // known URL may have been reached by a redirect or a click.
-      const violation = this._listViolation(currentUrl);
-      if (violation !== null) {
-        return this._deny(
-          violation.decision,
-          `${shown} refused: the target tab is on '${currentUrl}', which ${violation.reason}. ` +
-          'Navigate it elsewhere (fox_navigate with a url) or close it.',
-          currentUrl,
-        );
-      }
-    }
+    const violation = this._listViolation(targetUrl);
+    if (violation === null) return null;
+    return this._deny(violation.decision, `URL '${targetUrl}' ${violation.reason}.`, targetUrl);
+  }
 
-    // Layer 4: tools that change no page data (read, wait, UI only) run
-    // without approval; a read of a tab on a confirm_read_sites site asks
-    // the human. scope all_tabs is handled by the Extension, which skips
-    // such tabs.
-    if (!isOperationIn(ACTING_TOOLS, toolName)) {
-      const capturesAllTabs = toolName === 'fox_screenshot' && args['scope'] === 'all_tabs';
-      if (isOperationIn(PAGE_READ_TOOLS, toolName) && !capturesAllTabs) {
-        return this._readSiteConfirmation(shown, targetUrl ?? currentUrl);
-      }
-      return null;
-    }
+  /**
+   * Layer 4: tools that change no page data (read, wait, UI only) run
+   * without approval; a read of a tab on a confirm_read_sites site asks
+   * the human. scope all_tabs is handled by the Extension, which skips
+   * such tabs.
+   */
+  private _checkReading({ toolName, args, shown, targetUrl, currentUrl }: CheckedCall): SafetyDenial | null {
+    const capturesAllTabs = toolName === 'fox_screenshot' && args['scope'] === 'all_tabs';
+    if (!isOperationIn(PAGE_READ_TOOLS, toolName) || capturesAllTabs) return null;
+    return this._readSiteConfirmation(shown, targetUrl ?? currentUrl);
+  }
 
+  /** The layers of an acting tool: 2 (a page without a host), 5 and 7. */
+  private _checkActing(call: CheckedCall): SafetyDenial | null {
+    const { toolName, shown, targetUrl, currentUrl } = call;
     // Layer 2 for acting tools: a tab on a page without a host
     // (view-source:, blob:, data:, ...) matches no URL pattern, and a Layer 7
     // approval could name only its scheme, not the site it shows or carries.
-    // Acting there is refused; the reading tools above stay allowed.
+    // Acting there is refused; the reading tools stay allowed.
     if (targetUrl === null && currentUrl !== null && !isOperationIn(TAB_INDEPENDENT_TOOLS, toolName) &&
       isHostlessPage(currentUrl)) {
       return this._deny(
@@ -608,7 +660,7 @@ export class SafetyGuard {
     }
 
     // Layer 7: every acting tool asks the human, on every site.
-    return this._actionConfirmation(shown, this._approvalUrl(toolName, targetUrl, currentUrl, args));
+    return this._actionConfirmation(shown, this._approvalUrl(call));
   }
 
   /**
@@ -616,15 +668,19 @@ export class SafetyGuard {
    * about:blank for a new tab without one, else the target tab's last-known
    * URL (null when the guard has not seen it).
    */
-  private _approvalUrl(
-    toolName: string,
-    targetUrl: string | null,
-    currentUrl: string | null,
-    args: Record<string, unknown>,
-  ): string | null {
+  private _approvalUrl({ toolName, args, targetUrl, currentUrl }: CheckedCall): string | null {
     if (targetUrl !== null) return targetUrl;
     if (opensNewTab(toolName, args)) return NEW_TAB_URL;
     return currentUrl;
+  }
+
+  /** A confirmation_required denial: what the human is asked to approve, and why. */
+  private _confirmation(
+    layer: Layer,
+    elicitation: NonNullable<SafetyDenial['elicitation']>,
+    error: string,
+  ): SafetyDenial {
+    return { success: false, safetyDecision: 'confirmation_required', layer, confirmationRequired: true, elicitation, error };
   }
 
   /**
@@ -633,18 +689,21 @@ export class SafetyGuard {
    * not know the target tab's page, so the call cannot be approved yet
    * (tools/handlers.ts tells the caller to list the tabs first).
    * `shown`: the tool name the caller used (messages, elicitation).
+   *
+   * The approval names a site, not who gave it: an elicitation answer
+   * reaches the daemon over local HTTP, so a local process that can read the
+   * API token can answer for itself (README, Human approval). The floor of
+   * the Extension and of the headless backend checks only that a command
+   * runs on the approved site.
    */
   private _actionConfirmation(shown: string, url: string | null): SafetyDenial {
-    return {
-      success: false,
-      safetyDecision: 'confirmation_required',
-      layer: LAYER.approval,
-      confirmationRequired: true,
-      elicitation: { url, matchedPattern: null, toolName: shown },
-      error:
-        `${shown} needs human approval` + (url !== null ? ` for '${url}'` : '') +
-        '. Every acting tool (input, navigation, tabs) asks the human first, on every site.',
-    };
+    const page = url !== null ? ` for '${url}'` : '';
+    return this._confirmation(
+      LAYER.approval,
+      { url, matchedPattern: null, toolName: shown },
+      `${shown} needs human approval${page}. ` +
+      'Every acting tool (input, navigation, tabs) asks the human first, on every site.',
+    );
   }
 
   /**
@@ -656,16 +715,12 @@ export class SafetyGuard {
   private _readSiteConfirmation(shown: string, checkUrl: string | null): SafetyDenial | null {
     const matched = this._matchedReadSite(checkUrl);
     if (checkUrl === null || matched === null) return null;
-    return {
-      success: false,
-      safetyDecision: 'confirmation_required',
-      layer: LAYER.readSites,
-      confirmationRequired: true,
-      elicitation: { url: checkUrl, matchedPattern: matched, toolName: shown },
-      error:
-        `${shown} reads '${checkUrl}', which matches confirm_read_sites entry '${matched}' ` +
-        'in safety.json. Reading this site needs human approval.',
-    };
+    return this._confirmation(
+      LAYER.readSites,
+      { url: checkUrl, matchedPattern: matched, toolName: shown },
+      `${shown} reads '${checkUrl}', which matches confirm_read_sites entry '${matched}' ` +
+      'in safety.json. Reading this site needs human approval.',
+    );
   }
 
   /**

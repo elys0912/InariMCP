@@ -1,8 +1,8 @@
 // Which form fields have their value masked in what the tools return: the
 // one rule of the Extension content script (content/dom.ts isMaskedField)
-// and the headless backend (mcp-server headless/actions.ts elementFacts).
-// Also the selectors a reading tool refuses because they could test a
-// masked value instead of returning it (readSelectorProblem).
+// and the headless backend (mcp-server headless/actions.ts elementFacts and
+// snapshot). Also the selectors a reading tool refuses because they could
+// test a masked value instead of returning it (readSelectorProblem).
 //
 // Zod-free and import-free on purpose: the Extension bundles this module
 // (scripts/build-extension.mjs SHARED_ENTRIES).

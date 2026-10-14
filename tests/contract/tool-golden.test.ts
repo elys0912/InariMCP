@@ -84,6 +84,7 @@ const CASES: Case[] = [
   ['navigate/default', 'fox_navigate', { url: PLAIN_URL }],
   ['navigate/goto_new_tab', 'fox_navigate', { action: 'goto', url: `${PLAIN_URL}next`, newTab: true, waitForLoad: false }],
   ['navigate/back', 'fox_navigate', { action: 'back' }],
+  ['navigate/back_new_tab', 'fox_navigate', { action: 'back', newTab: true }],
   ['navigate/forward', 'fox_navigate', { action: 'forward', tabId: 2 }],
   ['navigate/refresh', 'fox_navigate', { action: 'refresh', bypassCache: true }],
   ['navigate/hard_refresh', 'fox_navigate', { action: 'hard_refresh' }],
