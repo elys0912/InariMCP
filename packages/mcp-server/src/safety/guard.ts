@@ -44,14 +44,18 @@ export function targetUrlOf(toolName: string, args: Record<string, unknown>): st
   return typeof url === 'string' && url !== '' ? url : null;
 }
 
-/** Calls that open a new tab, whose id the result may not report. */
+/**
+ * Calls that open a new tab, whose id the result may not report. fox_navigate
+ * opens one only for goto: back / forward / refresh with `newTab: true` act
+ * on the tab as it is, and are approved for its page.
+ */
 function opensNewTab(toolName: string | undefined, args: Record<string, unknown>): boolean {
   switch (toolName) {
     case 'fox_create_tab':
     case 'fox_open_in_container':
       return true;
     case 'fox_navigate':
-      return args['newTab'] === true;
+      return navigateGoesToUrl(args['action']) && args['newTab'] === true;
     default:
       return false;
   }
