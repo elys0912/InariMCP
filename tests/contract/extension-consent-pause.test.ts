@@ -6,12 +6,13 @@
  *   - every command from the Native Host refused while paused (the popup's
  *     own commands still run), and the badge while a command runs;
  *   - who may read or change the consent and the pause switch, and the
- *     consent page opened on the first install only.
+ *     consent page opened on the first install only;
+ *   - the privacy policy link in the UI language.
  * Modules with state are loaded afresh per test (vi.resetModules).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONSENT_PAGE_PATH, CONTROL_MESSAGE } from '../../packages/extension/src/user-control.ts';
+import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, privacyPolicyUrl } from '../../packages/extension/src/user-control.ts';
 import { readExtensionSource } from './helpers/extension-source.js';
 
 const EXTENSION_ID = 'inari@test';
@@ -331,6 +332,22 @@ describe('listeners: consent page and pause switch messages', () => {
 
     expect(await send({ type: CONTROL_MESSAGE.SET_PAUSED, paused: false }, popup)).toEqual({ consent: 'undecided', paused: false });
     expect(await send({ type: CONTROL_MESSAGE.GET }, consentPage)).toEqual({ consent: 'undecided', paused: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// user-control.ts: the privacy policy linked from the consent page
+// ---------------------------------------------------------------------------
+
+describe('privacy policy link', () => {
+  it.each([
+    ['ja', 'PRIVACY.ja.md'],
+    ['ja-JP', 'PRIVACY.ja.md'],
+    ['en-US', 'PRIVACY.md'],
+    ['jam', 'PRIVACY.md'],
+    ['', 'PRIVACY.md'],
+  ])('UI language %j links %s on main', (lang, file) => {
+    expect(privacyPolicyUrl(lang)).toBe(`https://github.com/elys0912/InariMCP/blob/main/docs/${file}`);
   });
 });
 

@@ -6,7 +6,7 @@
   <link rel="stylesheet" href="consent.css">
 </head>
 <body>
-  <!-- Opened once after install (and from the popup while not allowed).
+  <!-- Opened once after install, and from the toolbar popup at any time.
        Elements with data-i18n get their text from _locales (consent.ts). -->
   <main class="consent">
     <h1 data-i18n="consentHeading">Allow Inari MCP for Firefox to connect?</h1>
@@ -18,12 +18,12 @@
 
     <section>
       <h2 data-i18n="consentSendsTitle">What it sends</h2>
-      <p data-i18n="consentSendsText">The content of open pages, screenshots, URLs and the list of tabs, through the native host on this computer to the MCP client. The MCP client may pass them on to its AI provider.</p>
+      <p data-i18n="consentSendsText">The content of open pages (including the values of form fields; password and similar fields are masked), screenshots, URLs, the list of tabs and the names of your containers. They go to the native host on this computer and from there to the MCP client, which may pass them on to its AI provider.</p>
     </section>
 
     <section>
       <h2 data-i18n="consentNeedsTitle">What you need</h2>
-      <p data-i18n="consentNeedsText">The InariMCP native host, installed separately on this computer (see the installation guide).</p>
+      <p data-i18n="consentNeedsText">The Inari MCP native host, installed separately on this computer (see the installation guide).</p>
     </section>
 
     <section>

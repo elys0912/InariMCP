@@ -8,7 +8,7 @@
  */
 
 import { localizePage, t } from '../i18n';
-import { CONTROL_MESSAGE, PRIVACY_POLICY_URL, parseControlView, type ConsentState } from '../user-control';
+import { CONTROL_MESSAGE, parseControlView, privacyPolicyUrl, type ConsentState } from '../user-control';
 
 /** Message key of the line under the text, per consent state. */
 const STATE_KEYS: Record<ConsentState, string | null> = {
@@ -42,7 +42,7 @@ async function answer(granted: boolean): Promise<void> {
 document.addEventListener('DOMContentLoaded', async () => {
   localizePage();
   const link = document.getElementById('privacy-link') as HTMLAnchorElement | null;
-  if (link) link.href = PRIVACY_POLICY_URL;
+  if (link) link.href = privacyPolicyUrl(browser.i18n.getUILanguage());
   document.getElementById('btn-allow')?.addEventListener('click', () => { void answer(true); });
   document.getElementById('btn-deny')?.addEventListener('click', () => { void answer(false); });
 

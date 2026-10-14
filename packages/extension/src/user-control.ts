@@ -11,8 +11,18 @@
 // Imported by the background modules, popup.ts and consent.ts (bundled into
 // each). Contract tests import it as a module.
 
-/** Privacy policy linked from the consent page (also the AMO listing's). */
-export const PRIVACY_POLICY_URL = "https://github.com/elys0912/InariMCP/blob/main/docs/PRIVACY.md";
+/**
+ * Where the privacy policy linked from the consent page lives: on main, so
+ * that an installed add-on always shows the current policy (the AMO listing
+ * links to the policy of its own version tag instead).
+ */
+const PRIVACY_POLICY_DIR = "https://github.com/elys0912/InariMCP/blob/main/docs/";
+
+/** The privacy policy in the UI language: Japanese for "ja" / "ja-*", else English. */
+export function privacyPolicyUrl(uiLanguage: string): string {
+  const japanese = /^ja(-|$)/i.test(uiLanguage);
+  return `${PRIVACY_POLICY_DIR}${japanese ? "PRIVACY.ja.md" : "PRIVACY.md"}`;
+}
 
 /** The consent page, as a path for runtime.getURL. */
 export const CONSENT_PAGE_PATH = "/dist/consent/consent.html";

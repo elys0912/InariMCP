@@ -390,7 +390,8 @@ async function decide(id: string, approved: boolean): Promise<void> {
 // ---------------------------------------------------------------------------
 //
 // The background holds both (user-control.ts). Without consent the popup
-// only offers to open the consent page again; with it, the pause switch.
+// only offers to open the consent page again; with it, the pause switch and,
+// under it, a link to the consent page to withdraw the consent.
 
 async function fetchControl(): Promise<ControlView | null> {
   try {
@@ -432,10 +433,15 @@ function setupPauseSwitch(): void {
 }
 
 /** Opens the consent page in a tab (the popup closes when the tab opens). */
-function setupConsentButton(): void {
-  document.getElementById('btn-open-consent')?.addEventListener('click', () => {
-    void browser.tabs.create({ url: browser.runtime.getURL(CONSENT_PAGE_PATH) }).then(() => window.close());
-  });
+function openConsentPage(): void {
+  void browser.tabs.create({ url: browser.runtime.getURL(CONSENT_PAGE_PATH) }).then(() => window.close());
+}
+
+/** The buttons that open the consent page: to allow, and to withdraw. */
+function setupConsentButtons(): void {
+  for (const id of ['btn-open-consent', 'btn-change-consent']) {
+    document.getElementById(id)?.addEventListener('click', openConsentPage);
+  }
 }
 
 /** The active tab's title and URL at the top of the popup. */
@@ -527,7 +533,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     void refreshStatus(os, true);
   });
   setupCopyCommandButton();
-  setupConsentButton();
+  setupConsentButtons();
   setupPauseSwitch();
 
   // Without consent nothing connects: the status would only say
