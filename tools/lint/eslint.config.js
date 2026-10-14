@@ -73,4 +73,30 @@ export default tseslint.config(
       'max-lines-per-function': 'off',
     },
   },
+  {
+    // Tests poke at loosely typed fixtures and mocks on purpose; the type-aware
+    // rules below are kept for src, which is what the store review reads.
+    basePath: ROOT,
+    files: TEST_FILES,
+    rules: {
+      // JSON.parse results and mock call arguments are read without a schema
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      // mock.calls[0][0].field and parsed messages are read field by field
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      // parsed fixtures go straight into expect() and the code under test
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      // stub implementations hand back loosely typed fixtures
+      '@typescript-eslint/no-unsafe-return': 'off',
+      // functions pulled out of mocks and fixtures are called as is
+      '@typescript-eslint/no-unsafe-call': 'off',
+      // async stubs stand in for async APIs without awaiting anything
+      '@typescript-eslint/require-await': 'off',
+      // expect(obj.method) refers to a mocked method without calling it
+      '@typescript-eslint/unbound-method': 'off',
+      // stubs throw plain objects to mimic what browser APIs reject with
+      '@typescript-eslint/only-throw-error': 'off',
+      // TS 6 (lint) and TS 7 (build) can disagree here; src keeps the rule
+      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
+    },
+  },
 );
