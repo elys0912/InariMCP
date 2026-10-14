@@ -35,10 +35,6 @@ export function controlView(): ControlView {
   return { consent, paused };
 }
 
-export function isConsentGranted(): boolean {
-  return consent === "granted";
-}
-
 export function isPaused(): boolean {
   return paused;
 }

@@ -19,7 +19,9 @@
 // through the hooks set here.
 //
 // Nothing connects to the Native Host until the user allowed it on the
-// consent page (user-control.ts): the saved choice is read first.
+// consent page (user-control.ts): the saved choice is read first
+// (background/control-state.ts), and native-connection.ts opens no port
+// until setConnectionAllowed(true).
 
 import { cancelAllApprovals } from "./background/approvals";
 import { registerContextMenus } from "./background/context-menu";
@@ -30,19 +32,26 @@ import { setConnectionHooks, setConnectionAllowed, recheckHost } from "./backgro
 import { refreshBadge, refreshSetupState, SETUP_REFRESH_MS } from "./background/setup-badge";
 import type { ControlView } from "./user-control";
 
+/** Apply the consent: connect only with it, and disconnect when it is withdrawn. */
+function applyConsent(view: ControlView): void {
+  const allowed = view.consent === "granted";
+  setConnectionAllowed(allowed);
+  if (allowed) recheckHost();
+  refreshBadge();
+}
+
 /**
- * Apply the consent and the pause switch: connect only with consent (and
- * disconnect when it is withdrawn); pausing withdraws the open approval
- * requests, since every new command is refused from then on.
+ * Apply a change of the consent or the pause switch. Pausing withdraws the
+ * open approval requests, since every new command is refused from then on
+ * (the dispatcher stops the running ones itself: dispatch.ts).
  */
 function applyControl(view: ControlView, change: ControlChange): void {
   if (change === "consent") {
-    const allowed = view.consent === "granted";
-    setConnectionAllowed(allowed);
-    if (allowed) recheckHost();
-  } else if (view.paused) {
-    cancelAllApprovals();
+    applyConsent(view);
+    return;
   }
+
+  if (view.paused) cancelAllApprovals();
   refreshBadge();
 }
 
@@ -60,7 +69,8 @@ setControlHook(applyControl);
 registerListeners();
 registerContextMenus();
 refreshBadge();
-void loadControlState().then((view) => { applyControl(view, "consent"); });
+// At startup only the consent matters: no approval request is open yet.
+void loadControlState().then(applyConsent);
 // Session count changes without any event reaching the Extension.
 setInterval(() => { void refreshSetupState(); }, SETUP_REFRESH_MS);
 console.log("[InariMCP] Background script initialized");
