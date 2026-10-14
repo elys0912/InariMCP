@@ -3,6 +3,7 @@
 
 import { isMaskedField as isMaskedFieldInfo, MASKED_VALUE } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
+import { abortedError, isAborted, whenAborted } from "./abort";
 import { LIMITS } from "./constants";
 import type { FindElementOptions, ElementInfo } from "./types";
 
@@ -83,8 +84,25 @@ export function assertNotPasswordField(
   }
 }
 
+/**
+ * Wait `ms` between two steps of a command. Ends at once with
+ * abortedError() when the running commands are told to stop (the pause
+ * switch, abort.ts): every loop and wait that steps with it -- typing,
+ * polling, scroll_and_capture -- stops at its next step.
+ */
 export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  if (isAborted()) return Promise.reject(abortedError());
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      stopListening();
+      resolve();
+    }, ms);
+    const stopListening = whenAborted(() => {
+      clearTimeout(timer);
+      reject(abortedError());
+    });
+  });
 }
 
 export function isVisible(element: Element): boolean {

@@ -15,6 +15,13 @@ const STORAGE_KEY = {
 let consent: ConsentState = "undecided";
 let paused = false;
 
+/**
+ * Aborted when agent actions are paused, so the commands still running are
+ * answered at once (dispatch.ts). A fresh one replaces it for the commands
+ * that come after.
+ */
+let pauseController = new AbortController();
+
 /** Which of the two choices a change was about. */
 export type ControlChange = "consent" | "paused";
 
@@ -34,6 +41,11 @@ export function isConsentGranted(): boolean {
 
 export function isPaused(): boolean {
   return paused;
+}
+
+/** Aborted by the next pause (setPaused(true)). */
+export function pauseSignal(): AbortSignal {
+  return pauseController.signal;
 }
 
 /**
@@ -77,6 +89,10 @@ export async function setConsent(granted: boolean): Promise<ControlView> {
 /** The popup's pause switch. */
 export async function setPaused(next: boolean): Promise<ControlView> {
   paused = next;
+  if (next) {
+    pauseController.abort();
+    pauseController = new AbortController();
+  }
   onChange(controlView(), "paused");
   await save({ [STORAGE_KEY.PAUSED]: paused });
 

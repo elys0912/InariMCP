@@ -1,6 +1,7 @@
 // Target tab resolution and messaging to the tab's content script (L1).
 
 import { errorMessage } from "../error-message";
+import { ABORT_REQUEST_TYPE } from "../content/constants";
 import type { ContentRequest } from "../content/types";
 import { TOP_FRAME_ID } from "./constants";
 import type { CommandResult } from "./types";
@@ -48,6 +49,20 @@ export async function sendToContentScript(
     return { success: true, ...result };
   } catch (error) {
     return contentScriptFailure(error);
+  }
+}
+
+/**
+ * The pause switch: tell the content script of `tabId` (its top frame, where
+ * every command goes) to stop the commands it runs; each ends at its next
+ * step (content/abort.ts). Best effort: a tab without a content script runs
+ * none.
+ */
+export async function abortContentCommands(tabId: number): Promise<void> {
+  try {
+    await browser.tabs.sendMessage(tabId, { type: ABORT_REQUEST_TYPE }, { frameId: TOP_FRAME_ID });
+  } catch {
+    // No content script in the tab, or the tab is gone: nothing runs there
   }
 }
 

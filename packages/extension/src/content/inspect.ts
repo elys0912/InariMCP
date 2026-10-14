@@ -216,13 +216,35 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
   return elements;
 }
 
+/**
+ * The delay and the step count of scroll_and_capture: the requested ones
+ * (else the defaults), cut to LIMITS.SCROLL_CAPTURE_MAX_DELAY and
+ * LIMITS.SCROLL_CAPTURE_MAX_SCROLLS, and to the steps whose delays fit in
+ * TIMEOUTS.SCROLL_CAPTURE_BUDGET, whatever the command asks for.
+ */
+export function scrollCaptureLimits(options: ScrollCaptureOptions): { delay: number; maxScrolls: number } {
+  const delay = Math.min(options.delay || TIMEOUTS.SCROLL_STEP, LIMITS.SCROLL_CAPTURE_MAX_DELAY);
+  const requestedScrolls = options.maxScrolls || DEFAULTS.SCROLL_CAPTURE_MAX_SCROLLS;
+  const maxScrolls = Math.min(
+    requestedScrolls,
+    LIMITS.SCROLL_CAPTURE_MAX_SCROLLS,
+    Math.floor(TIMEOUTS.SCROLL_CAPTURE_BUDGET / delay),
+  );
+
+  return { delay, maxScrolls };
+}
+
+/**
+ * Scroll the page step by step from the top and list the interactive
+ * elements visible at each position (no images). Each step waits in sleep(),
+ * so the pause switch stops it at the next step (abort.ts).
+ */
 export async function scrollAndCapture(
   options: ScrollCaptureOptions,
 ): Promise<Record<string, unknown>> {
   const scrollStep =
     options.scrollStep || window.innerHeight * DEFAULTS.SCROLL_CAPTURE_STEP_RATIO;
-  const delay = options.delay || TIMEOUTS.SCROLL_STEP;
-  const maxScrolls = options.maxScrolls || DEFAULTS.SCROLL_CAPTURE_MAX_SCROLLS;
+  const { delay, maxScrolls } = scrollCaptureLimits(options);
 
   const snapshots: Record<string, unknown>[] = [];
   const originalScroll = window.scrollY;

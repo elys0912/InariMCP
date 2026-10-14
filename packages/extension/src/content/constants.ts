@@ -6,6 +6,12 @@ export const TIMEOUTS = {
   NETWORK_IDLE: 10_000,
   CAPTCHA: 180_000,
   SCROLL_STEP: 500,
+  /**
+   * scroll_and_capture: all the steps' delays together. Inside the MCP
+   * Server's command timeout (30 s), so the capture ends before the server
+   * stops waiting for it.
+   */
+  SCROLL_CAPTURE_BUDGET: 25_000,
   /** fox_type: all per-character delays together (see typingDelay). */
   TYPING_BUDGET: 10_000,
   /** fox_click_and_wait without waitTimeout. */
@@ -74,6 +80,12 @@ export const LIMITS = {
   CLICK_WAIT_CHANGES: 20,
   /** scroll_and_capture: the page counts as scrolled to the end this close (px). */
   SCROLL_END_SLACK: 10,
+  /**
+   * scroll_and_capture: most steps, and the longest delay of one step (ms),
+   * whatever the command asks for (scrollCaptureLimits).
+   */
+  SCROLL_CAPTURE_MAX_SCROLLS: 50,
+  SCROLL_CAPTURE_MAX_DELAY: 2_000,
 } as const;
 
 export const INTERACTIVE_SELECTORS = [
@@ -98,6 +110,13 @@ export const HIGHLIGHT_STYLE = {
   /** Above the page's own content. */
   Z_INDEX: 999_999,
 } as const;
+
+/**
+ * `type` of the background → content message that stops the commands running
+ * in the frame (the pause switch, abort.ts). Not a ContentAction: handler.ts
+ * answers it before any command handler.
+ */
+export const ABORT_REQUEST_TYPE = "inari:content:abort";
 
 /** DOM id of the captcha wait banner (solveCaptcha, cancelHumanWait). */
 export const CAPTCHA_BANNER_ID = "__fox_captcha_banner";

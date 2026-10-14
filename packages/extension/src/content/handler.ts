@@ -1,7 +1,10 @@
-// Message dispatch of the content script: one command from the background
-// to its handler.
+// Message dispatch of the content script: one message from the background
+// (content.ts), either the abort of the running commands (the pause switch)
+// or one command to its handler.
 
+import { abortRunningCommands, beginCommand } from "./abort";
 import { solveCaptcha } from "./captcha";
+import { ABORT_REQUEST_TYPE } from "./constants";
 import {
   performClick,
   performType,
@@ -28,6 +31,34 @@ import {
   waitForNetworkIdle,
   clickAndWait,
 } from "./wait";
+
+/** Whether `request` is the background's abort of the running commands. */
+function isAbortRequest(request: unknown): boolean {
+  return typeof request === "object" && request !== null && (request as { type?: unknown }).type === ABORT_REQUEST_TYPE;
+}
+
+/**
+ * Stop the commands running in this frame: their next step ends them
+ * (abort.ts), and the captcha wait ends like a cancel_human_wait, so a late
+ * click cannot look like an answer.
+ */
+function abortCommands(): Record<string, unknown> {
+  abortRunningCommands();
+  cancelHumanWait();
+
+  return { success: true, aborted: true };
+}
+
+/**
+ * One runtime message from the background. content.ts takes any message as
+ * a request; a command's options are read defensively by its handler.
+ */
+export async function handleRequest(request: unknown): Promise<Record<string, unknown>> {
+  if (isAbortRequest(request)) return abortCommands();
+
+  beginCommand();
+  return handleMessage(request as ContentMessage);
+}
 
 export async function handleMessage(
   message: ContentMessage,

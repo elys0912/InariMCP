@@ -1,6 +1,7 @@
 // Command dispatcher (L4): one command from the Native Host or the popup,
 // through the checks (pause switch, container scope, URL lists, human
 // approval) to its handler, and the response back over Native Messaging.
+// A pause stops the commands from the Native Host that are still running.
 // Which checks apply to an action, and its handler, come from the action
 // table (action-table.ts). While a command from the Native Host runs, the
 // toolbar badge shows it (setup-badge.ts).
@@ -9,10 +10,10 @@ import { errorMessage } from "../error-message";
 import type { CompiledUrlRule } from "../url-rule";
 import { describeAction, UNKNOWN_ACTION, type ActionContext, type ActionDescriptor } from "./action-table";
 import { parseContainerScope, enforceContainerScope, outOfScope } from "./container-scope";
-import { isPaused } from "./control-state";
+import { isPaused, pauseSignal } from "./control-state";
 import { postToHost } from "./native-connection";
 import { startHostCommand } from "./setup-badge";
-import { resolveTab } from "./tab-target";
+import { abortContentCommands, resolveTab } from "./tab-target";
 import type { NativeMessage, CommandResult, ScopeFilter, UrlLists } from "./types";
 import { parseUrlPolicy, hasUrlLists, checkListedTarget, checkApproval, isUpfrontApproval } from "./url-policy";
 import { resolveWireAction, toWireResponse } from "./wire";
@@ -26,7 +27,8 @@ export type CommandSource = "host" | "page";
 
 /**
  * The answer to every command from the Native Host while the user has paused
- * agent actions in the popup (control-state.ts). The error starts with
+ * agent actions in the popup (control-state.ts), and to those still running
+ * when the pause comes. The error starts with
  * "paused", and safetyDecision "paused" lets the MCP Server tell it from a
  * browser failure.
  */
@@ -37,22 +39,60 @@ export const PAUSED_REFUSAL: CommandResult = {
 };
 
 export async function handleCommand(message: NativeMessage, source: CommandSource): Promise<CommandResult> {
-  // Commands from the user's own pages (the popup) are not the agent's.
-  if (source === "host" && isPaused()) {
-    const refusal = { ...PAUSED_REFUSAL };
-    postWireResponse(message, refusal);
-    return refusal;
-  }
+  // Commands from the user's own pages (the popup) are not the agent's: the
+  // pause switch does not apply to them.
+  const result = source === "host" ? await runHostCommand(message) : await runCommand(message, source);
+  postWireResponse(message, result);
 
-  const finishHostCommand = source === "host" ? startHostCommand() : undefined;
+  return result;
+}
+
+/** Check a command, then run its handler. */
+async function runCommand(message: NativeMessage, source: CommandSource): Promise<CommandResult> {
+  const checked = await checkCommand(message, source);
+  return checked.kind === "refused" ? checked.result : runChecked(checked);
+}
+
+/**
+ * A command from the Native Host. The pause switch is looked at when it
+ * arrives (refused before anything runs, not shown as running), again after
+ * the checks (they wait on the browser) and before the answer. A pause while
+ * the handler runs answers at once (untilPaused).
+ */
+async function runHostCommand(message: NativeMessage): Promise<CommandResult> {
+  if (isPaused()) return { ...PAUSED_REFUSAL };
+
+  const finishHostCommand = startHostCommand();
   try {
-    const checked = await checkCommand(message, source);
-    const result = checked.kind === "refused" ? checked.result : await runChecked(checked);
-    postWireResponse(message, result);
-    return result;
+    const checked = await checkCommand(message, "host");
+    if (isPaused()) return { ...PAUSED_REFUSAL };
+    if (checked.kind === "refused") return checked.result;
+
+    const result = await untilPaused(runChecked(checked), checked.context.tabId);
+    return isPaused() ? { ...PAUSED_REFUSAL } : result;
   } finally {
-    finishHostCommand?.();
+    finishHostCommand();
   }
+}
+
+/**
+ * `running`, or PAUSED_REFUSAL as soon as agent actions are paused. The
+ * handler is not waited for then: the content script of `tabId` is told to
+ * stop, and its typing, waits and scroll_and_capture end at their next step
+ * (content/abort.ts).
+ */
+function untilPaused(running: Promise<CommandResult>, tabId: number | undefined): Promise<CommandResult> {
+  const signal = pauseSignal();
+  return new Promise((resolve) => {
+    const onPause = (): void => {
+      if (tabId !== undefined) void abortContentCommands(tabId);
+      resolve({ ...PAUSED_REFUSAL });
+    };
+    signal.addEventListener("abort", onPause, { once: true });
+    void running
+      .then(resolve, (error: unknown) => resolve({ success: false, error: errorMessage(error) }))
+      .finally(() => signal.removeEventListener("abort", onPause));
+  });
 }
 
 /** A command that passed every check: what its handler runs with. */
