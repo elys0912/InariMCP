@@ -129,7 +129,7 @@ export type ActionDescriptor = TabActionDescriptor | SelfScopedActionDescriptor 
 
 /**
  * Content-script-forwarded actions. Every command goes to the top frame
- * (sendToContentScript's default), never to whichever frame answers first.
+ * (sendToContentScript always names it), never to whichever frame answers first.
  * An acting command carries the origin it was approved on: the content
  * script refuses it if its page is no longer there (content/handler.ts). A
  * command from the Native Host carries the pause count: it is not sent, or

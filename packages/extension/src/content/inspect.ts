@@ -130,6 +130,16 @@ function removeHighlight(): void {
   }
 }
 
+/** The overlay's glow grows and shrinks until the overlay is removed. */
+function pulseGlow(overlay: HTMLElement): void {
+  const S = HIGHLIGHT_STYLE;
+  const glow = (blur: number, color: string) => ({ boxShadow: `0 0 ${blur}px ${color}` });
+  overlay.animate(
+    [glow(S.GLOW_BLUR, S.GLOW), glow(S.GLOW_PEAK_BLUR, S.GLOW_PEAK), glow(S.GLOW_BLUR, S.GLOW)],
+    { duration: S.PULSE_MS, easing: "ease-in-out", iterations: Infinity },
+  );
+}
+
 /**
  * fox_interact highlight. UI only and no read (no confirm_read_sites
  * check): it returns where the element is, not its content.
@@ -147,7 +157,6 @@ export function highlightElement(
   const rect = element.getBoundingClientRect();
 
   highlightOverlay = document.createElement("div");
-  highlightOverlay.className = "inari-highlight-overlay";
   highlightOverlay.style.cssText = `
       position: fixed;
       left: ${rect.left}px;
@@ -158,7 +167,7 @@ export function highlightElement(
       background: ${HIGHLIGHT_STYLE.FILL};
       pointer-events: none;
       z-index: ${HIGHLIGHT_STYLE.Z_INDEX};
-      box-shadow: 0 0 10px ${HIGHLIGHT_STYLE.GLOW};
+      box-shadow: 0 0 ${HIGHLIGHT_STYLE.GLOW_BLUR}px ${HIGHLIGHT_STYLE.GLOW};
       transition: all 0.3s ease;
     `;
 
@@ -179,6 +188,7 @@ export function highlightElement(
   highlightOverlay.appendChild(label);
 
   document.body.appendChild(highlightOverlay);
+  pulseGlow(highlightOverlay);
 
   if (options.duration !== 0) {
     highlightTimer = setTimeout(removeHighlight, options.duration || TIMEOUTS.HIGHLIGHT);

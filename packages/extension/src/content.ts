@@ -1,5 +1,6 @@
 // InariMCP Content Script
-// Runs in web pages to handle DOM interactions, clicks, typing, and element inspection
+// Runs in the top frame of web pages to read them and to perform the clicks,
+// typing and other actions the background sends
 //
 // Based on ClaudeCodeBrowser by Andre Watson (nanogenomic), Ligandal Inc.
 // MIT License — Copyright (c) 2025
@@ -39,6 +40,4 @@ import { handleRequest } from "./content/handler";
       return true;
     },
   );
-
-  console.log("[InariMCP] Content script loaded");
 })();

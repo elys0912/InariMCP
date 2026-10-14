@@ -49,7 +49,7 @@ In `web-ext-artifacts/`:
 | `inari_mcp_for_firefox-<version>.zip` | the add-on package (the submitted file) |
 | `inari_mcp_for_firefox-<version>.sha256.txt` | one line per file in the zip: `<sha256>  <path>`, sorted by path |
 
-`<version>` is the `version` of `packages/extension/manifest.json`. The files in the zip are `manifest.json`, `_locales/`, `icons/` and `dist/` (three JavaScript bundles, the HTML and the CSS files).
+`<version>` is the `version` of `packages/extension/manifest.json`. The files in the zip are `manifest.json`, `_locales/`, `icons/` and `dist/`: four JavaScript bundles (`dist/background.js`, `dist/content.js`, `dist/popup/popup.js`, `dist/consent/consent.js`) and the HTML and CSS files of the popup and of the permission page.
 
 `dist/LICENSE` in the zip is a copy of the repository's `LICENSE` (MIT, with the copyright notice of the project this add-on is based on); `scripts/build-extension.mjs` copies it.
 
@@ -57,11 +57,11 @@ In `web-ext-artifacts/`:
 
 A zip file records the modification time of each file, so two zips built at different times differ as files even when their contents are the same. Compare the hashes of the contents instead:
 
-Make the same list from the submitted add-on (the file downloaded from AMO) and compare it with the one your build wrote:
+Make the same list from the submitted add-on and compare it with the one your build wrote. The add-on that AMO signs and serves has a `META-INF/` folder added (the signature), which the build does not make: leave it out, as below, or use the unsigned file that was uploaded.
 
 ```bash
 mkdir submitted && unzip -q -d submitted <submitted add-on>.xpi
-(cd submitted && find . -type f | sed 's|^\./||' | LC_ALL=C sort | xargs sha256sum) > submitted.sha256.txt
+(cd submitted && find . -type f -not -path './META-INF/*' | sed 's|^\./||' | LC_ALL=C sort | xargs sha256sum) > submitted.sha256.txt
 diff submitted.sha256.txt web-ext-artifacts/inari_mcp_for_firefox-<version>.sha256.txt
 ```
 
@@ -72,7 +72,7 @@ Line endings do not differ between systems: `.gitattributes` fixes every text fi
 ## What the build does and does not do
 
 - All build dependencies are in `package-lock.json` (ESLint: `tools/lint/package-lock.json`) and come from the official npm registry (`https://registry.npmjs.org`). No dependency is copied into the repository, and no build step downloads anything else.
-- esbuild only bundles the TypeScript sources of `packages/extension/src` and `packages/shared/src` into three files (`dist/background.js`, `dist/content.js`, `dist/popup/popup.js`). It does not minify and does not obfuscate: names and structure of the sources stay readable, and each part of a bundle is preceded by a comment with the path of its source file.
+- esbuild only bundles the TypeScript sources of `packages/extension/src` and `packages/shared/src` into four files (`dist/background.js`, `dist/content.js`, `dist/popup/popup.js`, `dist/consent/consent.js`); the build script copies the HTML and CSS files of the popup and of the permission page as they are. esbuild does not minify and does not obfuscate: names and structure of the sources stay readable, and each part of a bundle is preceded by a comment with the path of its source file.
 - No source map is written (`sourcemap: false`; source maps exist only with the `--dev` option, which `pack:ext` does not use).
 - The bundles contain no build time, random value, environment variable or absolute path. Building twice gives the same hashes.
 - The bundles contain no third-party code: the only inputs are the repository's own sources (the build fails if `zod` or any Node.js-only module reaches a bundle).
@@ -83,7 +83,7 @@ Line endings do not differ between systems: `.gitattributes` fixes every text fi
 | Path | Content |
 |---|---|
 | `packages/extension/` | the add-on: `manifest.json`, `src/` (TypeScript), `_locales/`, `icons/` |
-| `packages/shared/src/` | code shared with the Node.js parts; the add-on bundles `index.ts` and `action-names.ts` from here |
+| `packages/shared/src/` | code shared with the Node.js parts; the add-on bundles `index.ts`, `action-names.ts`, `field-mask.ts` and `url-pattern-limit.ts` from here |
 | `scripts/build-extension.mjs` | the esbuild configuration |
 | `scripts/pack-extension.mjs` | the packaging script (`npm run pack:ext`) |
 | `tools/lint/` | ESLint, its configuration and its lockfile (`npm run lint:install`, `npm run lint`) |

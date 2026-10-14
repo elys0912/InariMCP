@@ -29,11 +29,9 @@ export function noTargetTab(): CommandResult {
 }
 
 /**
- * Send a command to the tab's content script in one frame -- the top frame
- * (0) unless a caller names another. The content script runs in every frame
- * (all_frames), and tabs.sendMessage without a frameId goes to all of them
- * and takes the first answer, so any iframe (including a hostile one) could
- * answer or be the one that acts.
+ * Send a command to the tab's content script, in the top frame. The manifest
+ * loads the content script there only (all_frames: false); the frameId is
+ * given anyway, so that no other frame can answer or be the one that acts.
  *
  * Build `message` as `{ ...data, action }`: the action last, so that a
  * command's data cannot replace the action the background checked. A
@@ -43,14 +41,13 @@ export function noTargetTab(): CommandResult {
 export async function sendToContentScript(
   tabId: number | undefined,
   message: ContentRequest,
-  frameId: number = TOP_FRAME_ID,
 ): Promise<CommandResult> {
   try {
     const tab = await resolveTab(tabId);
     if (!tab) return noTargetTab();
     // The tab lookup waits on the browser: a pause may have come meanwhile.
     if (isSentBeforePause(message.pauseCount)) return { ...PAUSED_BEFORE_SENDING };
-    const result = (await browser.tabs.sendMessage(tab.id, message, { frameId })) as Record<string, unknown>;
+    const result = (await browser.tabs.sendMessage(tab.id, message, { frameId: TOP_FRAME_ID })) as Record<string, unknown>;
     return { success: true, ...result };
   } catch (error) {
     return contentScriptFailure(error);

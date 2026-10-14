@@ -24,7 +24,7 @@
 // until setConnectionAllowed(true).
 
 import { cancelAllApprovals } from "./background/approvals";
-import { registerContextMenus } from "./background/context-menu";
+import { registerContextMenuListener, setScreenshotMenu } from "./background/context-menu";
 import { loadControlState, setControlHook, type ControlChange } from "./background/control-state";
 import { handleCommand } from "./background/dispatch";
 import { registerListeners } from "./background/listeners";
@@ -32,10 +32,14 @@ import { setConnectionHooks, setConnectionAllowed, recheckHost } from "./backgro
 import { refreshBadge, refreshSetupState, SETUP_REFRESH_MS } from "./background/setup-badge";
 import type { ControlView } from "./user-control";
 
-/** Apply the consent: connect only with it, and disconnect when it is withdrawn. */
+/**
+ * Apply the consent: connect, and show the screenshot menu entry, only with
+ * it (disconnect and remove the entry when it is withdrawn).
+ */
 function applyConsent(view: ControlView): void {
   const allowed = view.consent === "granted";
   setConnectionAllowed(allowed);
+  setScreenshotMenu(allowed);
   if (allowed) recheckHost();
   refreshBadge();
 }
@@ -56,7 +60,8 @@ function applyControl(view: ControlView, change: ControlChange): void {
 }
 
 // The hooks first: connecting (below) is what can make them fire.
-// Listeners and context menus are registered synchronously at load time.
+// Listeners, the context menu's click listener included, are registered
+// synchronously at load time; the menu entry itself comes with the consent.
 setConnectionHooks({
   onCommand: (message) => { void handleCommand(message, "host"); },
   onConfirmed: () => { void refreshSetupState(); },
@@ -67,7 +72,7 @@ setConnectionHooks({
 });
 setControlHook(applyControl);
 registerListeners();
-registerContextMenus();
+registerContextMenuListener();
 refreshBadge();
 // At startup only the consent matters: no approval request is open yet.
 void loadControlState().then(applyConsent);

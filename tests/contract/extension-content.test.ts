@@ -578,7 +578,8 @@ describe('highlight and overlay banner timers', () => {
   real('E-05 the timer of an earlier highlight does not remove the next one', async () => {
     await load('<div id="a">A</div><div id="b">B</div>');
     const r = await run<Record<string, number>>(
-      `const count = () => document.querySelectorAll('.inari-highlight-overlay').length;
+      // The overlay is the body's only child without an id; it carries no class.
+      `const count = () => document.querySelectorAll('body > div:not([id]):not([class])').length;
        f.inspect.highlightElement({ selector: '#a', duration: 400 });
        await sleep(100);
        f.inspect.highlightElement({ selector: '#b', duration: 10000 });
@@ -590,6 +591,18 @@ describe('highlight and overlay banner timers', () => {
        return { second, persistent: count() };`,
     );
     expect(r).toEqual({ second: 1, persistent: 1 });
+  });
+
+  real('the highlight overlay pulses through an animation on the element itself', async () => {
+    await load('<div id="a">A</div>');
+    const r = await run<Record<string, unknown>>(
+      `f.inspect.highlightElement({ selector: '#a', duration: 0 });
+       const overlay = document.querySelector('body > div:not([id]):not([class])');
+       const animations = overlay.getAnimations();
+       return { animations: animations.length, endless: animations[0]?.effect.getTiming().iterations,
+                sheets: document.styleSheets.length };`,
+    );
+    expect(r).toEqual({ animations: 1, endless: Infinity, sheets: 0 });
   });
 
   real('E-06 a banner replaced by one with the same id settles at once; cancel reaches the new one', async () => {

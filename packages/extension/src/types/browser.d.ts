@@ -250,6 +250,8 @@ declare namespace browser {
       contexts: string[];
     }): void;
 
+    function remove(menuItemId: string): Promise<void>;
+
     const onClicked: {
       addListener(
         callback: (

@@ -30,9 +30,8 @@
     {
       "matches": ["<all_urls>"],
       "js": ["dist/content.js"],
-      "css": ["dist/content.css"],
       "run_at": "document_end",
-      "all_frames": true
+      "all_frames": false
     }
   ],
 
@@ -42,7 +41,7 @@
       "32": "icons/icon.svg",
       "48": "icons/icon.svg"
     },
-    "default_title": "InariMCP",
+    "default_title": "Inari MCP",
     "default_popup": "dist/popup/popup.html",
     "default_area": "navbar"
   },
@@ -59,7 +58,7 @@
       "id": "inari-mcp@elys0912.github.io",
       "strict_min_version": "142.0",
       "data_collection_permissions": {
-        "required": ["websiteContent", "browsingActivity"]
+        "required": ["websiteContent", "browsingActivity", "websiteActivity"]
       }
     }
   }

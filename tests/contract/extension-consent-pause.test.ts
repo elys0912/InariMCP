@@ -6,12 +6,14 @@
  *   - every command from the Native Host refused while paused (the popup's
  *     own commands still run), and the badge while a command runs;
  *   - who may read or change the consent and the pause switch, and the
- *     consent page opened on the first install only.
+ *     consent page opened on the first install only;
+ *   - the screenshot entry of the page menu only while the consent is given,
+ *     and the privacy policy link in the UI language.
  * Modules with state are loaded afresh per test (vi.resetModules).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, requestControl } from '../../packages/extension/src/user-control.ts';
+import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, privacyPolicyUrl, requestControl } from '../../packages/extension/src/user-control.ts';
 
 const EXTENSION_ID = 'inari@test';
 const BASE_URL = 'moz-extension://inari';
@@ -47,6 +49,11 @@ interface FakeBrowser {
   storage: Record<string, unknown>;
   badgeText: string[];
   createdTabs: string[];
+  /** Ids of the context menu entries there are now. */
+  menus: string[];
+  /** Titles of the OS notifications shown. */
+  notifications: string[];
+  onMenuClicked: ReturnType<typeof fakeEvent>;
   tabQueries: number;
   /** When set, tabs.query waits for this promise (a command that is still running). */
   tabQueryGate: Promise<void> | null;
@@ -60,6 +67,9 @@ function installFakeBrowser(stored: Record<string, unknown> = {}): FakeBrowser {
     storage: { ...stored },
     badgeText: [],
     createdTabs: [],
+    menus: [],
+    notifications: [],
+    onMenuClicked: fakeEvent(),
     tabQueries: 0,
     tabQueryGate: null,
     onMessage: fakeEvent(),
@@ -94,6 +104,20 @@ function installFakeBrowser(stored: Record<string, unknown> = {}): FakeBrowser {
       onRemoved: fakeEvent(),
     },
     windows: { getAll: async () => [] },
+    contextMenus: {
+      create: ({ id }: { id: string }) => {
+        if (fake.menus.includes(id)) throw new Error(`duplicate menu id ${id}`);
+        fake.menus.push(id);
+      },
+      remove: async (id: string) => {
+        if (!fake.menus.includes(id)) throw new Error(`no menu id ${id}`);
+        fake.menus.splice(fake.menus.indexOf(id), 1);
+      },
+      onClicked: fake.onMenuClicked,
+    },
+    notifications: {
+      create: async ({ title }: { title: string }) => { fake.notifications.push(title); return 'n-1'; },
+    },
     i18n: { getMessage: (key: string) => `msg:${key}` },
     browserAction: {
       setBadgeText: async ({ text }: { text: string }) => { fake.badgeText.push(text); },
@@ -114,6 +138,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.doUnmock('../../packages/extension/src/background/native-connection.ts');
+  vi.doUnmock('../../packages/extension/src/background/screenshot.ts');
 });
 
 // ---------------------------------------------------------------------------
@@ -467,6 +492,65 @@ describe('listeners: consent page and pause switch messages', () => {
 });
 
 // ---------------------------------------------------------------------------
+// context-menu.ts: the screenshot entry follows the consent
+// ---------------------------------------------------------------------------
+
+describe('context menu: the screenshot entry', () => {
+  it('appears only while the consent is given, once, and goes when it is withdrawn', async () => {
+    const fake = installFakeBrowser();
+    const menu = await import('../../packages/extension/src/background/context-menu.ts');
+    menu.registerContextMenuListener();
+    expect(fake.menus).toEqual([]); // loading adds no entry
+
+    menu.setScreenshotMenu(false); // still undecided or denied: nothing to remove
+    menu.setScreenshotMenu(true);
+    menu.setScreenshotMenu(true); // granted again (startup, then the page): one entry
+    expect(fake.menus).toEqual(['inari-screenshot']);
+
+    menu.setScreenshotMenu(false);
+    await vi.waitFor(() => expect(fake.menus).toEqual([]));
+  });
+
+  it.each([
+    [true, []],
+    [false, ['msg:notifyScreenshotNotSentTitle']],
+  ])('a click hands the screenshot to the host (connected: %s), or says it was not sent', async (connected, shown) => {
+    const posted: Record<string, unknown>[] = [];
+    vi.doMock('../../packages/extension/src/background/native-connection.ts', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      postToHost: (message: Record<string, unknown>) => { posted.push(message); return connected; },
+    }));
+    vi.doMock('../../packages/extension/src/background/screenshot.ts', () => ({
+      takeScreenshot: async () => ({ success: true, imageData: 'data:image/png;base64,AA' }),
+    }));
+    const fake = installFakeBrowser();
+    const menu = await import('../../packages/extension/src/background/context-menu.ts');
+    menu.registerContextMenuListener();
+
+    fake.onMenuClicked.fire({ menuItemId: 'inari-screenshot' }, { id: 3, url: 'https://a.test/', title: 'A' });
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toMatchObject({ action: 'screenshotTaken', data: 'data:image/png;base64,AA', tab: { id: 3 } });
+    await vi.waitFor(() => expect(fake.notifications).toEqual(shown));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// user-control.ts: the privacy policy linked from the consent page
+// ---------------------------------------------------------------------------
+
+describe('privacy policy link', () => {
+  it.each([
+    ['ja', 'PRIVACY.ja.md'],
+    ['ja-JP', 'PRIVACY.ja.md'],
+    ['en-US', 'PRIVACY.md'],
+    ['jam', 'PRIVACY.md'],
+    ['', 'PRIVACY.md'],
+  ])('UI language %j links %s on main', (lang, file) => {
+    expect(privacyPolicyUrl(lang)).toBe(`https://github.com/elys0912/InariMCP/blob/main/docs/${file}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // background.ts: the startup (the entry loaded against the fake browser)
 // ---------------------------------------------------------------------------
 
@@ -475,9 +559,6 @@ describe('background.ts startup', () => {
   async function startBackground(stored: Record<string, unknown>): Promise<FakeBrowser> {
     vi.useFakeTimers();
     const fake = installFakeBrowser(stored);
-    Object.assign((globalThis as { browser: object }).browser, {
-      contextMenus: { create: () => {}, remove: async () => {}, onClicked: fakeEvent() },
-    });
     await import('../../packages/extension/src/background.ts');
     await vi.advanceTimersByTimeAsync(0);
     return fake;
@@ -488,6 +569,11 @@ describe('background.ts startup', () => {
     expect(fake.ports).toHaveLength(1);
   });
 
+  it('adds the screenshot menu entry with the saved consent', async () => {
+    const fake = await startBackground({ consent: 'granted' });
+    expect(fake.menus).toEqual(['inari-screenshot']);
+  });
+
   it.each([
     ['nothing saved', {}],
     ['a denied consent', { consent: 'denied' }],
@@ -495,5 +581,6 @@ describe('background.ts startup', () => {
     const fake = await startBackground(stored);
     await vi.advanceTimersByTimeAsync(PAST_ALL_RECONNECTS_MS);
     expect(fake.ports).toHaveLength(0);
+    expect(fake.menus).toEqual([]);
   });
 });

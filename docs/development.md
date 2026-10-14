@@ -51,7 +51,7 @@ npm run e2e:extension   # the Extension loads into Firefox as a temporary add-on
 | `src/content.ts` | `dist/content.js` | `manifest.json` `content_scripts` |
 | `src/popup/popup.ts` | `dist/popup/popup.js` | `dist/popup/popup.html` (`browser_action.default_popup`) |
 | `src/consent/consent.ts` | `dist/consent/consent.js` | `dist/consent/consent.html` (the consent page; the background opens it on the first install) |
-| `src/popup/popup.html`, `src/popup/popup.css`, `src/consent/consent.html`, `src/consent/consent.css`, `src/content.css` | copied to `dist/` | |
+| `src/popup/popup.html`, `src/popup/popup.css`, `src/consent/consent.html`, `src/consent/consent.css` | copied to `dist/` | |
 
 `manifest.json` loads exactly one script per context. Details of the build:
 
@@ -85,7 +85,7 @@ Steps for a new version, for example 0.1.1. The AMO submission is the listed cha
 5. **Packages.** `npm run pack:ext` and `npm run pack:source`. Both write to `web-ext-artifacts/` (ignored by git):
    - `inari_mcp_for_firefox-<version>.zip` and `.sha256.txt`: the add-on and the SHA-256 of each file in it. `pack:ext` runs ESLint first and fails on an ESLint error, and fails when `web-ext lint` reports any error or warning. Building twice gives the same hashes (`tests/scripts/pack-extension.test.ts`); a zip file itself differs by its file times, so compare the `.sha256.txt` files.
    - `inari-mcp-source-<version>.zip`: the tracked files of `HEAD` and `BUILD.md`.
-6. **Submit.** Push the tag, make a GitHub release and attach the `.sha256.txt`. In the AMO Developer Hub, upload the add-on zip as a listed version, upload the source zip when asked whether the add-on uses bundled or minified code, and paste the text of `docs/amo/reviewer-notes.md` into Notes for Reviewers.
+6. **Submit.** Merge the release commit into `main` and push `main` and the tag first: the permission page of the add-on links to `docs/PRIVACY.md` on `main`, and the listing and the Notes for Reviewers link to it at the tag (`blob/v<version>/docs/PRIVACY.md`), so both must be on GitHub before anyone opens them. Then make a GitHub release and attach the `.sha256.txt`. In the AMO Developer Hub, upload the add-on zip as a listed version, upload the source zip when asked whether the add-on uses bundled or minified code, and paste the text of `docs/amo/reviewer-notes.md` into Notes for Reviewers, with `<version>` replaced. Update the privacy policy URL of the listing to the new tag (`docs/amo/listing.md`).
 
 CI does not upload the packages (to save Actions storage); make them locally at step 5.
 

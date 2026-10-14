@@ -7,10 +7,11 @@
 //   src/popup/popup.ts      -> dist/popup/popup.js      (popup.html)
 //   src/consent/consent.ts  -> dist/consent/consent.js  (consent.html, opened
 //                                                        by the background)
-// plus the static files popup.html / popup.css / consent.html / consent.css /
-// content.css, and dist/LICENSE: a copy of the repository's LICENSE (the MIT
-// notice of this project and of the project it is based on), which the
-// license asks to ship with every copy, the xpi included.
+// plus the static files popup.html / popup.css / consent.html / consent.css,
+// and dist/LICENSE: a copy of the repository's LICENSE (the MIT notice of
+// this project and of the project it is based on), which the license asks to
+// ship with every copy, the xpi included. Pages get no stylesheet: the
+// content script styles its own elements.
 //
 // esbuild does not type-check: `npm run typecheck -w @inari-mcp/extension`
 // (tsc --noEmit) does, and `npm run build` of the extension runs it first.
@@ -128,7 +129,6 @@ for (const [from, to] of [
   ['popup/popup.css', 'popup/popup.css'],
   ['consent/consent.html', 'consent/consent.html'],
   ['consent/consent.css', 'consent/consent.css'],
-  ['content.css', 'content.css'],
 ]) {
   mkdirSync(path.dirname(path.join(dist, to)), { recursive: true });
   copyFileSync(path.join(src, from), path.join(dist, to));

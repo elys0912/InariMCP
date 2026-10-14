@@ -360,6 +360,19 @@ footer {
   margin-top: 6px;
 }
 
+/* A button that looks like a link: opens the consent page (popup.ts). */
+.link-button {
+  display: block;
+  margin-top: 6px;
+  padding: 0;
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: #89b4fa;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .btn-small:disabled {
   opacity: 0.5;
   cursor: default;

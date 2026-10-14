@@ -101,7 +101,7 @@ const count = (source: string, re: RegExp): number => [...source.matchAll(re)].l
 const LISTENER_FILES = ['background/context-menu.ts', 'background/listeners.ts', 'content.ts'];
 
 /** Registration functions the background entry calls at load time. */
-const REGISTRARS = ['registerListeners', 'registerContextMenus'] as const;
+const REGISTRARS = ['registerListeners', 'registerContextMenuListener'] as const;
 
 describe('extension modules', () => {
   const graph = importGraph();
