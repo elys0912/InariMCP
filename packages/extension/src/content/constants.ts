@@ -99,8 +99,11 @@ export const HIGHLIGHT_STYLE = {
   /** The same color, translucent: fill of the overlay, and its glow. */
   FILL: "rgba(124, 58, 237, 0.1)",
   GLOW: "rgba(124, 58, 237, 0.5)",
-  /** The glow at the peak of each pulse. */
+  /** Blur radius of the glow, in px. */
+  GLOW_BLUR: 10,
+  /** The glow at the peak of each pulse: color and blur radius (px). */
   GLOW_PEAK: "rgba(124, 58, 237, 0.8)",
+  GLOW_PEAK_BLUR: 20,
   /** One pulse of the glow (out and back). */
   PULSE_MS: 1_500,
   /** Above the page's own content. */

@@ -22,7 +22,7 @@
 // consent page (user-control.ts): the saved choice is read first.
 
 import { cancelAllApprovals } from "./background/approvals";
-import { registerContextMenus, setScreenshotMenu } from "./background/context-menu";
+import { registerContextMenuListener, setScreenshotMenu } from "./background/context-menu";
 import { loadControlState, setControlHook, type ControlChange } from "./background/control-state";
 import { handleCommand } from "./background/dispatch";
 import { registerListeners } from "./background/listeners";
@@ -61,7 +61,7 @@ setConnectionHooks({
 });
 setControlHook(applyControl);
 registerListeners();
-registerContextMenus();
+registerContextMenuListener();
 refreshBadge();
 void loadControlState().then((view) => { applyControl(view, "consent"); });
 // Session count changes without any event reaching the Extension.

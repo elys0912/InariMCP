@@ -47,7 +47,7 @@ What you need
 
 You stay in control
 - On first start, the extension asks for your permission. It does not connect to the native host until you allow it. The toolbar popup can open the permission page again, where you can withdraw it.
-- Every action on a page or the browser (clicking, typing, pressing keys, setting a field, hovering, navigating, opening or closing a tab) waits for your approval, each time and on every site, in the MCP client or in the toolbar popup. Reading, waiting and switching tabs do not ask, except that reading a page and taking screenshots ask on the sites you list in confirm_read_sites.
+- Every action on a page or the browser (clicking, typing, pressing keys, setting a field, hovering, navigating, opening or closing a tab) waits for your approval, each time and on every site, in the MCP client or in the toolbar popup. Reading, waiting, scrolling, highlighting an element and switching tabs do not ask, except that reading a page and taking screenshots ask on the sites you list in confirm_read_sites.
 - An approval given in the MCP client's dialog reaches the local Inari MCP server over 127.0.0.1. A program on your computer that can read its key (~/.inari-mcp/api_token) could approve its own requests. To approve only in the toolbar popup, set FOX_APPROVAL_ELICITATION=0.
 - A badge shows while a tool is working. A pause switch in the popup refuses every call and stops the one that is running.
 
@@ -90,7 +90,7 @@ MCP クライアントがツールを呼ぶと、拡張機能はそのツール�
 
 制御はあなたの手に
 - 初回の起動で許可を求める。許可するまでネイティブホストに繋がない。ツールバーのポップアップから許可の画面を開き直して、許可を取り消せる。
-- ページやブラウザへの操作（クリック、入力、キーの入力、入力欄の値の設定、hover、ページの移動、タブを開く・閉じる）は、どのサイトでも毎回、MCP クライアントかツールバーのポップアップであなたの承認を待つ。読み取り・待機・タブの切り替えは承認を求めない。ただし confirm_read_sites に書いたサイトでは、ページの読み取りとスクリーンショットも承認を待つ。
+- ページやブラウザへの操作（クリック、入力、キーの入力、入力欄の値の設定、hover、ページの移動、タブを開く・閉じる）は、どのサイトでも毎回、MCP クライアントかツールバーのポップアップであなたの承認を待つ。読み取り・待機・スクロール・要素の強調表示・タブの切り替えは承認を求めない。ただし confirm_read_sites に書いたサイトでは、ページの読み取りとスクリーンショットも承認を待つ。
 - MCP クライアントのダイアログでの承認は、127.0.0.1 を通って手元の Inari MCP のサーバーに届く。その鍵（~/.inari-mcp/api_token）を読める手元の PC のプログラムは、自分の要求を自分で承認できる。ツールバーのポップアップでだけ承認するには FOX_APPROVAL_ELICITATION=0 を設定する。
 - ツールが動いている間はバッジが付く。ポップアップの一時停止スイッチで、すべての呼び出しを断り、実行中のものも中断できる。
 

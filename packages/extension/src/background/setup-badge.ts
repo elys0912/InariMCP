@@ -87,7 +87,7 @@ const PAUSED_BADGE_COLOR = "#1E66F5";
 const ACTIVE_BADGE_COLOR = "#40A02B";
 /** Badge text while a command from the Native Host runs (no word to translate). */
 const ACTIVE_BADGE_TEXT = "●";
-const DEFAULT_TITLE = "InariMCP";
+const DEFAULT_TITLE = "Inari MCP";
 
 let lastSetupState: SetupState = { kind: "connecting" };
 

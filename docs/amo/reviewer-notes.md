@@ -16,7 +16,7 @@ Source: https://github.com/elys0912/InariMCP (tag v<version>). The native host a
 2. Permissions
 - tabs: list tabs for the tab-listing tool, create / close / switch / reload tabs, read the URL and title of the target tab (URL checks run on them), and tabs.captureTab for screenshots.
 - nativeMessaging: runtime.connectNative("inari_mcp"), the only channel to the local host.
-- notifications: an OS notification when an action waits for the user's approval, and when a CAPTCHA is detected and the user has to act.
+- notifications: an OS notification when an action waits for the user's approval, when a CAPTCHA is detected and the user has to act, and when a screenshot from the context menu cannot reach the native host.
 - storage: storage.local keeps the user's answer on the permission page and the state of the pause switch.
 - <all_urls>: the packaged content script runs on web pages to read text and elements and to perform approved clicks and typing; captureTab needs it for screenshots.
 - contextMenus: one menu item, "Take Screenshot for Inari MCP" (page), created only while the user has allowed the connection on the permission page.

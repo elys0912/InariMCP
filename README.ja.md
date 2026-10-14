@@ -20,7 +20,7 @@ Inari MCP for Firefoxは、Firefox拡張機能・ネイティブメッセージ�
 
 ### Inari MCPとKitsuneMCP
 
-Inari MCP for Firefoxは[KitsuneMCP](https://github.com/elys0912/KitsuneMCP)のaddons.mozilla.org版で、2026-10-14にKitsuneMCP 0.2.0から分岐し、版は0.1.0から数える。ページでスクリプトを実行せず、コンソール・ネットワークのログを取らず、操作のたびに承認を求める。アドオンのID（`inari-mcp@elys0912.github.io`）、ネイティブメッセージングのホスト名（`inari_mcp`）、状態ディレクトリ（`~/.inari-mcp`）がKitsuneMCPと違うので、両方を同じFirefoxに入れられる。既定のポート（`8785` / `8786`）もKitsuneMCP（`8765` / `8766`）と違うので、両方を同時に動かせる。
+Inari MCP for Firefoxは[KitsuneMCP](https://github.com/elys0912/KitsuneMCP)のaddons.mozilla.org版で、2026-10-14にKitsuneMCP 0.2.0から分岐し、版は0.1.0から数える。MCPクライアントやAIから来たコードをページで実行せず、コンソール・ネットワークのログを取らず、ページやブラウザへの操作のたびに承認を求める（読み取り・待機・スクロール・要素の強調表示・タブの切り替えは承認を求めない）。アドオンのID（`inari-mcp@elys0912.github.io`）、ネイティブメッセージングのホスト名（`inari_mcp`）、状態ディレクトリ（`~/.inari-mcp`）がKitsuneMCPと違うので、両方を同じFirefoxに入れられる。既定のポート（`8785` / `8786`）もKitsuneMCP（`8765` / `8766`）と違うので、両方を同時に動かせる。
 
 ## なぜ作ったか？
 
@@ -42,7 +42,7 @@ Inari MCPは意図的に用途を絞っている。以下に当てはまる場�
 
 - **17個の`fox_*`ツール** — ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、読み取りと検索、タブ管理、待機をカバー。関連する操作は1つのツールにまとめ、モード引数で切り替える（`fox_wait`の`for: "url"`、`fox_tab`の`action: "close"`など）。以前のツール名も使える。[ツール名の移行](#ツール名の移行)を参照。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
 - **ツールプロファイル（`FOX_CAPS`）** — 全てのツールを登録すると実際にコンテキストトークンを消費する。プロファイル（`core`、`human`、`wait`など）を選んで必要な分だけ読み込める。[`FOX_CAPS`のプロファイル](#fox_capsのプロファイル)を参照。
-- **操作はすべてあなたが承認** — クリック・入力・キーの入力・入力欄の値の設定・hover・ページの移動・タブを開く/閉じる操作は、どのサイトでも1回ずつ、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのInari MCPツールバーのポップアップで、あなたが承認するまで待つ。ページの中からは承認できない。読み取り・待機・タブの切り替えは承認を求めない（`confirm_read_sites`に書いたサイトでは、ページの読み取りとスクリーンショットも承認を求める）。[人による承認](#人による承認)を参照。
+- **操作はすべてあなたが承認** — クリック・入力・キーの入力・入力欄の値の設定・hover・ページの移動・タブを開く/閉じる操作は、どのサイトでも1回ずつ、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのInari MCPツールバーのポップアップで、あなたが承認するまで待つ。ページの中からは承認できない。読み取り・待機・スクロール・要素の強調表示・タブの切り替えは承認を求めない（`confirm_read_sites`に書いたサイトでは、ページの読み取りとスクリーンショットも承認を求める）。[人による承認](#人による承認)を参照。
 - **許可・一時停止・バッジ** — 拡張機能は初回の起動で許可を求め、許可するまでどこにも繋がない。ツールバーのポップアップに、すべての呼び出しを断る一時停止のスイッチがあり、ツールが動いている間はバッジが付く。
 - **安全ガード** — コンテナスコープ、レート制限、URLスキームの確認、ブロック/許可リスト、読み取り専用モードを、すべての呼び出しの前に通す。判定はすべて手元のPCのJSONLの監査ログに残る。
 - **コンテナ分離（オプトイン）** — Firefoxの`contextualIdentities`を使い、エージェントを専用コンテナに制限できる。これにより、他のタブで開いている銀行・メールのセッションをエージェントから見えなくできる。これはFirefox専用の機能で、Chromiumには同等のものが存在しない。
@@ -162,7 +162,7 @@ claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server
 | バッジ / ポップアップ | 意味 | 対処 |
 |---|---|---|
 | バッジなし、「Connected」/「Connected (N)」 | FirefoxとN個のClaude Codeセッションが接続している | 不要 |
-| 赤い`!`、「No session」 | Firefox側は準備済みだが、InariMCPを使うClaude Codeのセッションがない | 登録して（ポップアップにコマンドが出る）Claude Codeを再起動する。実行中のセッションは約30秒で表示される |
+| 赤い`!`、「No session」 | Firefox側は準備済みだが、Inari MCPを使うClaude Codeのセッションがない | 登録して（ポップアップにコマンドが出る）Claude Codeを再起動する。実行中のセッションは約30秒で表示される |
 | 赤い`!`、「Setup needed」（native hostが見つからない） | FirefoxがNative Messaging hostを見つけられない | ビルドしてインストーラを実行し（ポップアップにコマンドが出る）、Recheckを押す（Snap版 / Flatpak版Firefoxは[環境ごとの注意](#環境ごとの注意)を参照） |
 | 赤い`!`、「Setup needed」（native hostが失敗 / MCPサーバーが応答しない） | hostは登録済みだが起動しない、またはdaemonが応答しない | インストーラ（`npm run setup`）を再実行する（ポップアップのコマンドはビルドもする。よくある原因はNode.jsのアップグレード・移動）。下記のログを見る |
 | 赤い`!`、「Update needed」 | クローンが拡張機能より古い | 拡張機能の版をチェックアウトしてビルドし、インストーラを再実行して（[更新](#更新)を参照）、Firefoxを再起動する |
@@ -308,7 +308,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 |---|---|---|
 | `tabs` | すべてのタブ（`about:`と`file:`のタブも含む）のURLとタイトル。タブの一覧（`fox_tabs`）、対象タブの特定、コマンドを実行する前の`safety.json`のURL規則との照合に使う | `background/tabs.ts`、`background/tab-target.ts`、`background/url-policy.ts`、`background/screenshot.ts`、`background/reload.ts` |
 | `nativeMessaging` | Native Host（`inari_mcp`）への接続。コマンドが拡張機能に届き、結果が拡張機能から出る唯一の経路 | `background/native-connection.ts` |
-| `notifications` | ポップアップで承認要求が待っているとき、CAPTCHAに人の操作が要るとき（`fox_detect_captcha`）のOSの通知 | `background/approvals.ts`、`background/human-wait.ts`、`background/listeners.ts`（通知のクリックでポップアップを開く） |
+| `notifications` | ポップアップで承認要求が待っているとき、CAPTCHAに人の操作が要るとき（`fox_detect_captcha`）、コンテキストメニューのスクリーンショットをNative Hostに渡せないときのOSの通知 | `background/approvals.ts`、`background/human-wait.ts`、`background/context-menu.ts`、`background/listeners.ts`（承認の通知のクリックでポップアップを開く） |
 | `storage` | 許可の画面での答えと一時停止スイッチの状態を`storage.local`に保存する（[初回の許可](#初回の許可)、[一時停止](#一時停止)） | `background/control-state.ts` |
 | `<all_urls>` | すべてのページでのコンテンツスクリプト（ページの読み取りと操作）、スクリーンショットの`tabs.captureTab` | `manifest.json`の`content_scripts`、`background/screenshot.ts` |
 | `contextMenus` | ページのコンテキストメニューの1項目（スクリーンショットを撮る。接続を許可している間だけ出る） | `background/context-menu.ts` |
@@ -325,7 +325,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 - 拡張機能がタブを読むのは、MCPクライアントがツールを呼んだときだけで、結果は手元のPCのネイティブホストへ送る。接続したMCPクライアントがそれを受け取り、自分のAIの提供元へ送る。Inari MCPは開発者には何も送らない。
 - パスワード・hidden・ワンタイムコード・クレジットカード（`cc-*`）の欄は、ツールが読む値では伏せる。スクリーンショットは画像なので伏せない。cookieは読まない。
-- ページやブラウザへの操作（クリック・入力・hover・ページの移動・タブを開く/閉じるなど）は、あなたの承認を待つ。ツールバーのポップアップで、すべての呼び出しを一時停止でき（実行中のものは中断する）、許可の画面を開き直して許可を取り消せる。
+- ページやブラウザへの操作（クリック・入力・hover・ページの移動・タブを開く/閉じるなど）は、あなたの承認を待つ。読み取り・待機・スクロール・要素の強調表示・タブの切り替えは承認を求めない。ツールバーのポップアップで、すべての呼び出しを一時停止でき（実行中のものは中断する）、許可の画面を開き直して許可を取り消せる。
 - 拡張機能で撮ったスクリーンショットは`~/.inari-mcp/screenshots/`に30日残る（ヘッドレスモードのものは消すまで残る）。`~/.inari-mcp/logs/audit.jsonl`には呼び出しごとの時刻・ツール名・URLを書き、ページの内容は書かない。`npm run teardown -- --purge`ですべて消せる。
 - プライベートウィンドウには対応しない。
 
@@ -422,8 +422,8 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | キー | 既定値 | 意味 |
 |---|---|---|
 | `enabled` | `true` | 安全ガードを有効にする |
-| `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ）を拒否する。観察・待機・UIだけを変えるツール（`fox_interact`、`action: "switch"`の`fox_tab`）は使える |
-| `allow_password_typing` | `false` | パスワード欄（`type="password"`、または`autocomplete`に`current-password` / `new-password`のトークンを含むもの。大文字小文字は問わず、`section-login current-password`も含む）への`fox_type` / `fox_set_value`を許可する。伏せ字は解かない: パスワード欄と隠し欄（`type="password"` / `"hidden"`）、`autocomplete`に`current-password`・`new-password`・`one-time-code`・`cc-number`・`cc-csc`・`cc-exp`・`cc-exp-month`・`cc-exp-year`を含む欄の値は、読み取るツール（`fox_read`、`fox_find`）で両方のバックエンドとも常に`[MASKED]`になる |
+| `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ）を拒否する。観察・待機・UIだけを変えるツール（`action: "scroll"`か`"highlight"`の`fox_interact`、`action: "switch"`の`fox_tab`）は使える |
+| `allow_password_typing` | `false` | パスワード欄（`type="password"`、または`autocomplete`に`current-password` / `new-password`のトークンを含むもの。大文字小文字は問わず、`section-login current-password`も含む）への`fox_type` / `fox_set_value`を許可する。伏せ字は解かない: パスワード欄と隠し欄（`type="password"` / `"hidden"`）、`autocomplete`に`current-password`・`new-password`・`one-time-code`か、`cc-`で始まるトークン（`cc-number`、`cc-name`など）を含む欄の値は、読み取るツール（`fox_read`、`fox_find`）で両方のバックエンドとも常に`[MASKED]`になる |
 | `max_actions_per_minute` | `120` | レート制限。全セッション共通（`0`で制限なし） |
 | `audit_log` | `true` | `~/.inari-mcp/logs/audit.jsonl`に書く |
 | `blocked_url_patterns` | `[]` | 拒否するURL |
@@ -533,7 +533,7 @@ npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（Pla
 |---|---|
 | `npm run test:e2e` | MCP経由で中継 → daemon → ヘッドレスFirefox（`tests/e2e/`。`npx playwright install firefox`が必要）。一時的なホームディレクトリと空きポートを使うので、動いているdaemonには触れない |
 | `npm run e2e:extension` | 拡張機能が一時的なアドオンとしてFirefoxに読み込まれる（`scripts/e2e/extension-load.mjs`、PlaywrightのFirefoxで`web-ext`を使う。別のFirefoxは`FOX_E2E_FIREFOX`か引数のパスで指定、全体の制限時間は`FOX_E2E_TIMEOUT_MS`、既定60000） |
-| `node scripts/e2e/tools-smoke.mjs` | 実際のFirefoxでdaemon → Native Host → 拡張機能（インストーラ実行済み、拡張機能読み込み済み。127.0.0.1のテストページを使う。操作系の呼び出しはInariMCPのポップアップで1回ずつ承認する） |
+| `node scripts/e2e/tools-smoke.mjs` | 実際のFirefoxでdaemon → Native Host → 拡張機能（インストーラ実行済み、拡張機能読み込み済み。127.0.0.1のテストページを使う。操作系の呼び出しはInari MCPのポップアップで1回ずつ承認する） |
 | `npm run smoke:reviewer` | MCPクライアントとして、手元のテストページで基本機能を試す。操作（タブを開く、クリック、タブを閉じる）はポップアップで1回ずつ承認する（`scripts/e2e/reviewer-smoke.mjs`。拡張機能なしは`-- --headless`で、動くのはタブの一覧だけ）。アドオンの審査者向けの手順は[docs/amo/reviewer-smoke.md](docs/amo/reviewer-smoke.md)（英語） |
 | `node scripts/e2e/nm-probe.mjs` | インストールしたNative Messaging hostが起動してdaemonに届く |
 

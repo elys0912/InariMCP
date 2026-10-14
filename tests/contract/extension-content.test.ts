@@ -540,6 +540,18 @@ describe('WP44 highlight and overlay banner timers (E-05, E-06, A-07)', () => {
     expect(r).toEqual({ second: 1, persistent: 1 });
   });
 
+  real('the highlight overlay pulses through an animation on the element itself', async () => {
+    await load('<div id="a">A</div>');
+    const r = await run<Record<string, unknown>>(
+      `f.inspect.highlightElement({ selector: '#a', duration: 0 });
+       const overlay = document.querySelector('body > div:not([id]):not([class])');
+       const animations = overlay.getAnimations();
+       return { animations: animations.length, endless: animations[0]?.effect.getTiming().iterations,
+                sheets: document.styleSheets.length };`,
+    );
+    expect(r).toEqual({ animations: 1, endless: Infinity, sheets: 0 });
+  });
+
   real('E-06 a banner replaced by one with the same id settles at once; cancel reaches the new one', async () => {
     await load('<div>page</div>');
     const r = await run<Record<string, unknown>>(

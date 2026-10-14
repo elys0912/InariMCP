@@ -134,10 +134,11 @@ function removeHighlight(): void {
 
 /** The overlay's glow grows and shrinks until the overlay is removed. */
 function pulseGlow(overlay: HTMLElement): void {
+  const S = HIGHLIGHT_STYLE;
   const glow = (blur: number, color: string) => ({ boxShadow: `0 0 ${blur}px ${color}` });
   overlay.animate(
-    [glow(10, HIGHLIGHT_STYLE.GLOW), glow(20, HIGHLIGHT_STYLE.GLOW_PEAK), glow(10, HIGHLIGHT_STYLE.GLOW)],
-    { duration: HIGHLIGHT_STYLE.PULSE_MS, easing: "ease-in-out", iterations: Infinity },
+    [glow(S.GLOW_BLUR, S.GLOW), glow(S.GLOW_PEAK_BLUR, S.GLOW_PEAK), glow(S.GLOW_BLUR, S.GLOW)],
+    { duration: S.PULSE_MS, easing: "ease-in-out", iterations: Infinity },
   );
 }
 
@@ -164,7 +165,7 @@ export function highlightElement(
       background: ${HIGHLIGHT_STYLE.FILL};
       pointer-events: none;
       z-index: ${HIGHLIGHT_STYLE.Z_INDEX};
-      box-shadow: 0 0 10px ${HIGHLIGHT_STYLE.GLOW};
+      box-shadow: 0 0 ${HIGHLIGHT_STYLE.GLOW_BLUR}px ${HIGHLIGHT_STYLE.GLOW};
       transition: all 0.3s ease;
     `;
 

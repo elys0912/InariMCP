@@ -20,7 +20,7 @@ It's a fork of [nanogenomic/ClaudeCodeBrowser](https://github.com/nanogenomic/Cl
 
 ### Inari MCP and KitsuneMCP
 
-Inari MCP for Firefox is the addons.mozilla.org edition of [KitsuneMCP](https://github.com/elys0912/KitsuneMCP), split off from KitsuneMCP 0.2.0 on 2026-10-14 and numbered from 0.1.0. It runs no scripts in pages, records no console or network logs, and asks before every action. It has its own add-on ID (`inari-mcp@elys0912.github.io`), native messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), so both can be installed in the same Firefox. Its default ports (`8785` / `8786`) differ from KitsuneMCP's (`8765` / `8766`), so both can also run at the same time.
+Inari MCP for Firefox is the addons.mozilla.org edition of [KitsuneMCP](https://github.com/elys0912/KitsuneMCP), split off from KitsuneMCP 0.2.0 on 2026-10-14 and numbered from 0.1.0. It runs no code that comes from the MCP client or the AI in pages, records no console or network logs, and asks before every action on a page or the browser (reading, waiting, scrolling, highlighting an element and switching tabs do not ask). It has its own add-on ID (`inari-mcp@elys0912.github.io`), native messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), so both can be installed in the same Firefox. Its default ports (`8785` / `8786`) differ from KitsuneMCP's (`8765` / `8766`), so both can also run at the same time.
 
 ## Why?
 
@@ -42,7 +42,7 @@ Inari MCP is deliberately narrow. If your use case is one of these, you'll be ha
 
 - **17 `fox_*` tools** covering navigation, click/type/scroll, screenshots (visible/full page/all tabs), reading and finding, tab management and wait helpers. Related operations share one tool with a mode argument (`fox_wait` with `for: "url"`, `fox_tab` with `action: "close"`, …); the earlier tool names still work, see [Tool name migration](#tool-name-migration). Prefixed `fox_` instead of `browser_` so it doesn't collide with Playwright MCP if you run both. Not all of them work on every backend yet: see [Tool availability](#tool-availability).
 - **Tool profiles (`FOX_CAPS`)** — registering every tool costs real context tokens. Pick profiles (`core`, `human`, `wait`, …) to only load what you need. See [`FOX_CAPS` profiles](#fox_caps-profiles).
-- **Your approval for every action** — clicking, typing, pressing keys, setting field values, hovering, navigating and opening or closing tabs wait until you approve them, call by call and on every site, either in Claude Code's own confirmation dialog (MCP elicitation) or in the Inari MCP toolbar popup in Firefox. Nothing inside the page can approve it. Reading, waiting and switching tabs do not ask, except that reading a page and screenshots ask on the sites you list in `confirm_read_sites`. See [Human approval](#human-approval).
+- **Your approval for every action** — clicking, typing, pressing keys, setting field values, hovering, navigating and opening or closing tabs wait until you approve them, call by call and on every site, either in Claude Code's own confirmation dialog (MCP elicitation) or in the Inari MCP toolbar popup in Firefox. Nothing inside the page can approve it. Reading, waiting, scrolling, highlighting an element and switching tabs do not ask, except that reading a page and screenshots ask on the sites you list in `confirm_read_sites`. See [Human approval](#human-approval).
 - **Permission, pause and badge** — on first start the extension asks for your permission and connects to nothing until you allow it. The toolbar popup has a pause switch that refuses every call, and a badge shows while a tool is working.
 - **Safety guard** — container scope, rate limit, URL scheme check, block/allow lists and read-only mode, in front of every call. Every decision is written to a JSONL audit log on your computer.
 - **Container isolation (opt-in)** — using Firefox's `contextualIdentities`, you can restrict the agent to a dedicated container so your banking/email sessions in other tabs stay invisible to it. This is a Firefox-only capability; Chromium has nothing equivalent.
@@ -162,7 +162,7 @@ The toolbar popup has a **Pause agent actions** switch. While it is on, the exte
 | Badge / popup | Meaning | What to do |
 |---|---|---|
 | no badge, popup "Connected" / "Connected (N)" | Firefox and N Claude Code sessions are connected | nothing |
-| red `!`, "No session" | Firefox is ready, but no Claude Code session uses InariMCP | register it (the popup shows the command) and restart Claude Code; a running session appears within about 30 s |
+| red `!`, "No session" | Firefox is ready, but no Claude Code session uses Inari MCP | register it (the popup shows the command) and restart Claude Code; a running session appears within about 30 s |
 | red `!`, "Setup needed" (native host missing) | Firefox cannot find the Native Messaging host | build and run the installer (the popup shows the commands), then press Recheck (Snap / Flatpak Firefox: see [Platform notes](#platform-notes)) |
 | red `!`, "Setup needed" (native host failed / MCP server not responding) | the host is registered but does not start, or the daemon does not answer | re-run the installer, `npm run setup` (the popup's command also rebuilds; usual cause: Node.js was upgraded or moved); check the logs below |
 | red `!`, "Update needed" | the clone is older than the extension | check out the extension's version, rebuild and re-run the installer (see [Update](#update)), restart Firefox |
@@ -308,7 +308,7 @@ The extension asks for ten permissions. Paths are under `packages/extension/src/
 |---|---|---|
 | `tabs` | The URL and title of every tab, `about:` and `file:` tabs included: the tab list (`fox_tabs`), finding the target tab, and checking a tab against the URL rules of `safety.json` before a command runs on it | `background/tabs.ts`, `background/tab-target.ts`, `background/url-policy.ts`, `background/screenshot.ts`, `background/reload.ts` |
 | `nativeMessaging` | The connection to the Native Host (`inari_mcp`), the only way commands reach the extension and results leave it | `background/native-connection.ts` |
-| `notifications` | An OS notification when an approval request waits in the popup, and when a CAPTCHA needs a human (`fox_detect_captcha`) | `background/approvals.ts`, `background/human-wait.ts`, `background/listeners.ts` (a click on the notification opens the popup) |
+| `notifications` | An OS notification when an approval request waits in the popup, when a CAPTCHA needs a human (`fox_detect_captcha`), and when a screenshot from the context menu cannot reach the native host | `background/approvals.ts`, `background/human-wait.ts`, `background/context-menu.ts`, `background/listeners.ts` (a click on an approval notification opens the popup) |
 | `storage` | `storage.local` keeps your answer on the permission page and the state of the pause switch ([First-run permission](#first-run-permission), [Pausing the agent](#pausing-the-agent)) | `background/control-state.ts` |
 | `<all_urls>` | The content script on every page (reading and acting on the page), and `tabs.captureTab` for screenshots | `manifest.json` `content_scripts`, `background/screenshot.ts` |
 | `contextMenus` | One item of the page context menu: take a screenshot (only while the extension is allowed to connect) | `background/context-menu.ts` |
@@ -325,7 +325,7 @@ The extension does not run in private windows (`"incognito": "not_allowed"`), an
 
 - The extension reads your tabs only when the MCP client calls a tool, and sends the result to the native host on your computer. The MCP client you connected receives it and sends it to its AI provider; Inari MCP sends nothing to the developer.
 - Password, hidden, one-time-code and credit card (`cc-*`) fields are masked in what the tools read; screenshots are images and are not masked. Cookies are not read.
-- Every action on a page or the browser (clicking, typing, hovering, navigating, opening or closing tabs, …) waits for your approval. The toolbar popup can pause every call (the running one is stopped) and reopen the permission page to withdraw it.
+- Every action on a page or the browser (clicking, typing, hovering, navigating, opening or closing tabs, …) waits for your approval; reading, waiting, scrolling, highlighting an element and switching tabs do not. The toolbar popup can pause every call (the running one is stopped) and reopen the permission page to withdraw it.
 - Screenshots taken through the extension stay in `~/.inari-mcp/screenshots/` for 30 days (those of headless mode until you delete them). `~/.inari-mcp/logs/audit.jsonl` records the time, tool name and URL of each call, not the page content. `npm run teardown -- --purge` deletes everything.
 - Private windows are not supported.
 
@@ -422,8 +422,8 @@ Auto-generated on first run at `~/.inari-mcp/safety.json` (or `FOX_SAFETY_CONFIG
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Safety guard on |
-| `read_only` | `false` | Refuse the tools that change page or browser state (input, navigation, tabs); observation, waiting and UI-only tools (`fox_interact`, `fox_tab` with `action: "switch"`) still work |
-| `allow_password_typing` | `false` | Allow `fox_type` / `fox_set_value` on password fields (`type="password"`, or an `autocomplete` with the token `current-password` / `new-password` in any case, such as `section-login current-password`). It unmasks nothing: what the tools read (`fox_read`, `fox_find`) always shows `[MASKED]` for the value of a password or hidden field (`type="password"` / `"hidden"`) and of a field whose `autocomplete` has `current-password`, `new-password`, `one-time-code`, `cc-number`, `cc-csc`, `cc-exp`, `cc-exp-month` or `cc-exp-year`, on both backends |
+| `read_only` | `false` | Refuse the tools that change page or browser state (input, navigation, tabs); observation, waiting and UI-only tools (`fox_interact` with `action: "scroll"` or `"highlight"`, `fox_tab` with `action: "switch"`) still work |
+| `allow_password_typing` | `false` | Allow `fox_type` / `fox_set_value` on password fields (`type="password"`, or an `autocomplete` with the token `current-password` / `new-password` in any case, such as `section-login current-password`). It unmasks nothing: what the tools read (`fox_read`, `fox_find`) always shows `[MASKED]` for the value of a password or hidden field (`type="password"` / `"hidden"`) and of a field whose `autocomplete` has `current-password`, `new-password`, `one-time-code` or a token starting with `cc-` (`cc-number`, `cc-name`, …), on both backends |
 | `max_actions_per_minute` | `120` | Rate limit, shared by all sessions (`0` = no limit) |
 | `audit_log` | `true` | Write `~/.inari-mcp/logs/audit.jsonl` |
 | `blocked_url_patterns` | `[]` | URLs to refuse |
@@ -533,7 +533,7 @@ End-to-end checks, kept out of `npm test`:
 |---|---|
 | `npm run test:e2e` | relay → daemon → headless Firefox over MCP (`tests/e2e/`; needs `npx playwright install firefox`). Uses a temporary home directory and free ports, so a running daemon is not touched |
 | `npm run e2e:extension` | the extension loads into Firefox as a temporary add-on (`scripts/e2e/extension-load.mjs`, `web-ext` with Playwright's Firefox; another Firefox with `FOX_E2E_FIREFOX` or a path argument, overall limit `FOX_E2E_TIMEOUT_MS`, default 60000) |
-| `node scripts/e2e/tools-smoke.mjs` | daemon → Native Host → extension in your real Firefox (installer run, extension loaded; local test pages on 127.0.0.1; approve each acting call in the InariMCP popup) |
+| `node scripts/e2e/tools-smoke.mjs` | daemon → Native Host → extension in your real Firefox (installer run, extension loaded; local test pages on 127.0.0.1; approve each acting call in the Inari MCP popup) |
 | `npm run smoke:reviewer` | the basic features as an MCP client against a local test page, with each action (opening the tab, the click, closing the tab) approved in the popup (`scripts/e2e/reviewer-smoke.mjs`; `-- --headless` without the extension, where only the tab list runs). For add-on reviewers: [docs/amo/reviewer-smoke.md](docs/amo/reviewer-smoke.md) |
 | `node scripts/e2e/nm-probe.mjs` | the installed Native Messaging host starts and reaches the daemon |
 

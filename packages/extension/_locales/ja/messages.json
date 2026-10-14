@@ -65,6 +65,8 @@
   "badgeApprovalPending": { "message": "Inari MCP: 承認待ちのリクエストが $1 件あります" },
 
   "menuScreenshot": { "message": "Inari MCP でスクリーンショットを撮る" },
+  "notifyScreenshotNotSentTitle": { "message": "スクリーンショットを送れませんでした" },
+  "notifyScreenshotNotSentMessage": { "message": "Inari MCP は Native Host に接続していません。理由はツールバーのポップアップで確認できます。" },
 
   "notifyApprovalTitle": { "message": "MCP クライアントが承認を求めています" },
   "notifyApprovalDefault": { "message": "MCP クライアントが操作の実行を求めています" },
@@ -123,7 +125,7 @@
   "consentPrivacy": { "message": "プライバシーポリシー" },
   "consentAllow": { "message": "許可する" },
   "consentDeny": { "message": "許可しない" },
-  "consentStateGranted": { "message": "許可しました。Inari MCP for Firefox は Native Host に接続します。このタブは閉じてかまいません。エージェントの操作は、ツールバーのポップアップの一時停止スイッチでいつでも止められます。許可を取り消すときは、ポップアップからこの画面を開き直してください。" },
+  "consentStateGranted": { "message": "許可しました。Inari MCP for Firefox は Native Host に接続します。このタブは閉じてかまいません。エージェントの操作は、ツールバーのポップアップの一時停止スイッチでいつでも止められます。許可を取り消すときは、この画面で「許可しない」を押してください。この画面はツールバーのポップアップからいつでも開けます。" },
   "consentStateDenied": { "message": "許可しませんでした。Inari MCP for Firefox は接続せず、何もしません。あとからツールバーのボタンで許可できます。" },
   "consentStateFailed": { "message": "回答を保存できませんでした。このページを再読み込みして、もう一度押してください。" }
 }

@@ -160,7 +160,7 @@ function judge(ctx, check, tool, res, passed, detail) {
 
 function printApprovalHint(ctx, tool) {
   if (ctx.headless) return;
-  console.log(`      ${tool} is an action: open the InariMCP toolbar popup in Firefox (it shows a badge) and press "Approve".`);
+  console.log(`      ${tool} is an action: open the Inari MCP toolbar popup in Firefox (it shows a badge) and press "Approve".`);
 }
 
 /** Poll fox_read until the tab shows `page` (by title); the last answer. */
@@ -231,7 +231,7 @@ async function checkClick(ctx, tabId) {
   } else {
     console.log('');
     console.log('      fox_click is an action on the page: Inari MCP for Firefox asks you before it runs.');
-    console.log('      Click the InariMCP button in the Firefox toolbar (it shows a badge) and press "Approve".');
+    console.log('      Click the Inari MCP button in the Firefox toolbar (it shows a badge) and press "Approve".');
     console.log('      Waiting for your answer (the popup gives you 60 s). This script never approves by itself.');
   }
 

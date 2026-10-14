@@ -15,7 +15,7 @@ Inari MCP is made by the developer with the GitHub handle **elys0912**. The only
 - Inari MCP lets a program on your computer, an MCP client such as Claude Code, read and operate the tabs of your Firefox.
 - What it reads from your tabs goes to that MCP client on the same computer. The MCP client sends it on to the AI service it uses.
 - Nothing is sent to the developer. The developer runs no server and receives no data, no statistics and no crash reports.
-- Every action on a page or the browser (clicking, typing, moving the mouse pointer over an element, submitting forms, navigating, opening or closing a tab) waits for your approval, on every site and each time. Reading, waiting and switching tabs do not, except that reading a page and taking screenshots also ask on the sites you list yourself.
+- Every action on a page or the browser (clicking, typing, moving the mouse pointer over an element, submitting forms, navigating, opening or closing a tab) waits for your approval, on every site and each time. Reading, waiting, scrolling, highlighting an element and switching tabs do not, except that reading a page and taking screenshots also ask on the sites you list yourself.
 - Screenshots taken through the extension are kept on your computer for 30 days. A log of tool calls (time, tool name, URL) is kept on your computer. You can delete both at any time.
 
 ## What is read and sent

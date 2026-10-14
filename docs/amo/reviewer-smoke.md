@@ -83,14 +83,14 @@ The script waits up to 30 s for Firefox with the add-on to connect to the daemon
 Before opening the test tab, the script prints:
 
 ```
-      fox_tab create is an action: open the InariMCP toolbar popup in Firefox (it shows a badge) and press "Approve".
+      fox_tab create is an action: open the Inari MCP toolbar popup in Firefox (it shows a badge) and press "Approve".
 ```
 
 Before `fox_click`, it prints:
 
 ```
       fox_click is an action on the page: Inari MCP for Firefox asks you before it runs.
-      Click the InariMCP button in the Firefox toolbar (it shows a badge) and press "Approve".
+      Click the Inari MCP button in the Firefox toolbar (it shows a badge) and press "Approve".
       Waiting for your answer (the popup gives you 60 s). This script never approves by itself.
 ```
 
@@ -122,7 +122,7 @@ Waiting up to 30 s for Firefox with the add-on to connect ...
 test page: http://127.0.0.1:50123/index.html
 
 PASS  fox_tabs: list the tabs  — tabs=1
-      fox_tab create is an action: open the InariMCP toolbar popup in Firefox (it shows a badge) and press "Approve".
+      fox_tab create is an action: open the Inari MCP toolbar popup in Firefox (it shows a badge) and press "Approve".
 PASS  fox_tab create: open the local test page  — http://127.0.0.1:50123/index.html
 PASS  fox_read: page 1 is loaded  — title: InariMCP reviewer smoke: page 1
 PASS  fox_read: password field is [MASKED]  — values: ["[MASKED]"]
@@ -131,11 +131,11 @@ PASS  fox_find: find the heading text  — count=1
 PASS  fox_screenshot: a PNG file is written  — <home>/.inari-mcp/screenshots/screenshot_1760425312345.png
 
       fox_click is an action on the page: Inari MCP for Firefox asks you before it runs.
-      Click the InariMCP button in the Firefox toolbar (it shows a badge) and press "Approve".
+      Click the Inari MCP button in the Firefox toolbar (it shows a badge) and press "Approve".
       Waiting for your answer (the popup gives you 60 s). This script never approves by itself.
 PASS  fox_click: click "Go to page 2" (after your approval)  — #to-page-2
 PASS  fox_click: the tab moved to page 2  — http://127.0.0.1:50123/page2.html
-      fox_tab close is an action: open the InariMCP toolbar popup in Firefox (it shows a badge) and press "Approve".
+      fox_tab close is an action: open the Inari MCP toolbar popup in Firefox (it shows a badge) and press "Approve".
 PASS  fox_tab close: close the test tab  — tabId=12
 
 #   Check                                                    Tool            Result  Detail

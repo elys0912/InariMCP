@@ -129,7 +129,7 @@ export type ActionDescriptor = TabActionDescriptor | SelfScopedActionDescriptor 
 
 /**
  * Content-script-forwarded actions. Every command goes to the top frame
- * (sendToContentScript's default), never to whichever frame answers first.
+ * (sendToContentScript always names it), never to whichever frame answers first.
  */
 function toContentScript(action: ContentAction): ActionHandler {
   return (c) => sendToContentScript(c.tabId, { ...c.data, action });

@@ -52,6 +52,9 @@ interface FakeBrowser {
   createdTabs: string[];
   /** Ids of the context menu entries there are now. */
   menus: string[];
+  /** Titles of the OS notifications shown. */
+  notifications: string[];
+  onMenuClicked: ReturnType<typeof fakeEvent>;
   tabQueries: number;
   /** When set, tabs.query waits for this promise (a command that is still running). */
   tabQueryGate: Promise<void> | null;
@@ -66,6 +69,8 @@ function installFakeBrowser(stored: Record<string, unknown> = {}): FakeBrowser {
     badgeText: [],
     createdTabs: [],
     menus: [],
+    notifications: [],
+    onMenuClicked: fakeEvent(),
     tabQueries: 0,
     tabQueryGate: null,
     onMessage: fakeEvent(),
@@ -109,7 +114,10 @@ function installFakeBrowser(stored: Record<string, unknown> = {}): FakeBrowser {
         if (!fake.menus.includes(id)) throw new Error(`no menu id ${id}`);
         fake.menus.splice(fake.menus.indexOf(id), 1);
       },
-      onClicked: fakeEvent(),
+      onClicked: fake.onMenuClicked,
+    },
+    notifications: {
+      create: async ({ title }: { title: string }) => { fake.notifications.push(title); return 'n-1'; },
     },
     i18n: { getMessage: (key: string) => `msg:${key}` },
     browserAction: {
@@ -131,6 +139,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.doUnmock('../../packages/extension/src/background/native-connection.ts');
+  vi.doUnmock('../../packages/extension/src/background/screenshot.ts');
 });
 
 // ---------------------------------------------------------------------------
@@ -358,7 +367,7 @@ describe('context menu: the screenshot entry', () => {
   it('appears only while the consent is given, once, and goes when it is withdrawn', async () => {
     const fake = installFakeBrowser();
     const menu = await import('../../packages/extension/src/background/context-menu.ts');
-    menu.registerContextMenus();
+    menu.registerContextMenuListener();
     expect(fake.menus).toEqual([]); // loading adds no entry
 
     menu.setScreenshotMenu(false); // still undecided or denied: nothing to remove
@@ -368,6 +377,28 @@ describe('context menu: the screenshot entry', () => {
 
     menu.setScreenshotMenu(false);
     await vi.waitFor(() => expect(fake.menus).toEqual([]));
+  });
+
+  it.each([
+    [true, []],
+    [false, ['msg:notifyScreenshotNotSentTitle']],
+  ])('a click hands the screenshot to the host (connected: %s), or says it was not sent', async (connected, shown) => {
+    const posted: Record<string, unknown>[] = [];
+    vi.doMock('../../packages/extension/src/background/native-connection.ts', async (importOriginal) => ({
+      ...(await importOriginal<object>()),
+      postToHost: (message: Record<string, unknown>) => { posted.push(message); return connected; },
+    }));
+    vi.doMock('../../packages/extension/src/background/screenshot.ts', () => ({
+      takeScreenshot: async () => ({ success: true, imageData: 'data:image/png;base64,AA' }),
+    }));
+    const fake = installFakeBrowser();
+    const menu = await import('../../packages/extension/src/background/context-menu.ts');
+    menu.registerContextMenuListener();
+
+    fake.onMenuClicked.fire({ menuItemId: 'inari-screenshot' }, { id: 3, url: 'https://a.test/', title: 'A' });
+    await vi.waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toMatchObject({ action: 'screenshotTaken', data: 'data:image/png;base64,AA', tab: { id: 3 } });
+    await vi.waitFor(() => expect(fake.notifications).toEqual(shown));
   });
 });
 

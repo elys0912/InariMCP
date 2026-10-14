@@ -803,14 +803,12 @@ describe('3.security native message logging', () => {
     expect(readExtensionTree('content')).not.toMatch(/\.className\s*=(?!=)|classList\.add\(/);
   });
 
-  it('manifest: declares every kind of data it sends, under the name of the UI', () => {
+  it('manifest: declares websiteContent, browsingActivity and websiteActivity', () => {
     const manifest = JSON.parse(readExtensionSource('../manifest.json')) as {
-      browser_action: { default_title: string };
       browser_specific_settings: { gecko: { data_collection_permissions: { required: string[] } } };
     };
     // Page text and form values, the URLs and tab list, and the clicks and typing it performs.
     expect([...manifest.browser_specific_settings.gecko.data_collection_permissions.required].sort())
       .toEqual(['browsingActivity', 'websiteActivity', 'websiteContent']);
-    expect(manifest.browser_action.default_title).toBe('Inari MCP');
   });
 });

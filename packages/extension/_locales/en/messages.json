@@ -81,6 +81,8 @@
   },
 
   "menuScreenshot": { "message": "Take Screenshot for Inari MCP" },
+  "notifyScreenshotNotSentTitle": { "message": "Screenshot not sent" },
+  "notifyScreenshotNotSentMessage": { "message": "Inari MCP is not connected to the native host. Open the toolbar popup to see why." },
 
   "notifyApprovalTitle": { "message": "The MCP client requests approval" },
   "notifyApprovalDefault": { "message": "The MCP client wants to perform an action" },
@@ -154,7 +156,7 @@
   "consentPrivacy": { "message": "Privacy policy" },
   "consentAllow": { "message": "Allow" },
   "consentDeny": { "message": "Don't allow" },
-  "consentStateGranted": { "message": "Allowed. Inari MCP for Firefox connects to the native host. You can close this tab. To stop the agent at any time, use the pause switch in the toolbar popup; to withdraw the permission, open this page again from the popup." },
+  "consentStateGranted": { "message": "Allowed. Inari MCP for Firefox connects to the native host. You can close this tab. To stop the agent at any time, use the pause switch in the toolbar popup. To withdraw the permission, press \"Don't allow\" here; you can open this page again from the toolbar popup at any time." },
   "consentStateDenied": { "message": "Not allowed. Inari MCP for Firefox does not connect and does nothing. You can allow it later from the toolbar button." },
   "consentStateFailed": { "message": "Your answer could not be saved. Reload this page and try again." }
 }

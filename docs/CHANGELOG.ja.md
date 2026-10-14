@@ -34,11 +34,11 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - 拡張機能の説明文とポップアップの末尾を「Inari MCP for Firefox」の名前にした。末尾には、ページの内容が手元の PC のネイティブホストを経て MCP クライアントへ渡ることを書いた。
 - ツールバーのボタン、ポップアップ、バッジの説明、コンテキストメニューの名前を短い名前「Inari MCP」にそろえた（以前は「InariMCP」）。承認と CAPTCHA の通知とポップアップは、要求元を「Claude」ではなく「MCP クライアント」と書く。
 - 許可の画面に、送るものをすべて書いた：ページの内容（入力欄の値を含む。パスワードなどの欄は伏せる）、スクリーンショット、URL、タブの一覧、コンテナの名前。プライバシーポリシーのリンクは、Firefox の言語が日本語なら日本語版を開く。ポップアップの一時停止の説明に、実行中の命令も中断することを書いた。
-- コンテキストメニューの「Inari MCP でスクリーンショットを撮る」は、接続を許可している間だけ出るようにした。以前は許可の前と拒否の後にも出て、撮った画像はどこにも渡らなかった。
+- コンテキストメニューの「Inari MCP でスクリーンショットを撮る」は、接続を許可している間だけ出るようにした。以前は許可の前と拒否の後にも出て、撮った画像はどこにも渡らなかった。許可していても Native Host に接続していないときは、送れなかったことを OS の通知で知らせる。
 - コンテンツスクリプトはページの最上位のフレームでだけ動くようにした（`all_frames: false`。ほかのフレームに届くツールは無かった）。読み込み時のログも出さない。ページにスタイルシートを入れるのをやめた：`action: "highlight"` の `fox_interact` の枠は要素そのものに見た目を付けるので、ページがアドオンのクラス名やキーフレーム名を探せない。
 - プライバシーポリシー、掲載用の素材、審査者向けのメモ：承認を求める呼び出しと求めない呼び出し、スクリーンショットは伏せないこと、ヘッドレスのスクリーンショットは自動では消えないこと、ポップアップの「スクリーンショット」「ページ情報」が残すもの、`for: "network_idle"` の `fox_wait` がページの `fetch` / XHR をどう包むか、MCP クライアントのダイアログで承認するときのリスク、`cookies` の権限が要る理由を書いた。掲載用の素材と審査者向けのメモは、その版のタグのプライバシーポリシーを指す。
 - BUILD.md：バンドルは 4 本（`dist/consent/consent.js` を含む）、shared の入口は 4 つ。提出物との比較では、AMO の署名で足される `META-INF/` フォルダを除く。
-- 操作系のツールは、どのサイトでも実行の前に人に尋ねるようにした：`fox_click`、`fox_type`、`fox_press_key`、`fox_set_value`、`fox_navigate`、`fox_tab` の create / close（コンテナの有無を問わない）、`fox_handle_dialog`。1 回の承認で許可されるのは、そのサイトでの、その引数による、そのツールの 1 回の呼び出しだけで、操作を続けると 1 回ずつ尋ねる。読み取り・待機・UI だけのツール（`fox_read`、`fox_find`、`fox_screenshot`、`fox_tabs`、`fox_wait`、`fox_interact`、`fox_tab` の switch など）は尋ねずに動く。対象タブのページを daemon がまだ見ていないときは、`fox_tabs` を呼ぶまで操作系の呼び出しを承認できない。
+- 操作系のツールは、どのサイトでも実行の前に人に尋ねるようにした：`fox_click`、`fox_type`、`fox_press_key`、`fox_set_value`、`fox_navigate`、`fox_tab` の create / close（コンテナの有無を問わない）、`action: "hover"` の `fox_interact`、`fox_handle_dialog`。1 回の承認で許可されるのは、そのサイトでの、その引数による、そのツールの 1 回の呼び出しだけで、操作を続けると 1 回ずつ尋ねる。読み取り・待機・UI だけのツール（`fox_read`、`fox_find`、`fox_screenshot`、`fox_tabs`、`fox_wait`、`fox_interact` の scroll / highlight、`fox_tab` の switch など）は尋ねずに動く。対象タブのページを daemon がまだ見ていないときは、`fox_tabs` を呼ぶまで操作系の呼び出しを承認できない。
 - Firefox の拡張機能も、タブ（または開く URL）のサイトについて承認されていない操作系のコマンドを、daemon が何を送ってきても拒否するようにした。
 - 承認の確認（MCP elicitation とツールバーのポップアップ）を、保護対象サイトの名前ではなく、ツール・サイト・引数を示して「この操作を許可しますか」と尋ねる形にした。
 - `fox_safety_status` は `confirmProtectedActions` と `protectedUrlPatterns` の代わりに、`approvalPolicy`（どの呼び出しで尋ねるか）と `confirmReadSites` を返す。
@@ -54,7 +54,7 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 
 ### セキュリティ
 
-- 値を `[MASKED]` で伏せる欄を広げた（拡張機能とヘッドレスの両方）。パスワード欄に加えて、`type="hidden"` の欄と、`autocomplete` が `one-time-code`・`cc-number`・`cc-csc`・`cc-exp`・`cc-exp-month`・`cc-exp-year` の欄（`current-password`・`new-password` は従来どおり）。`allow_password_typing` は従来どおりパスワード欄への入力を許すだけで、伏せ字は解かない。
+- 値を `[MASKED]` で伏せる欄を広げた（拡張機能とヘッドレスの両方）。パスワード欄に加えて、`type="hidden"` の欄と、`autocomplete` に `one-time-code` か、`cc-` で始まるトークン（`cc-number`・`cc-csc`・`cc-exp`・`cc-name` など）を含む欄（`current-password`・`new-password` は従来どおり）。`allow_password_typing` は従来どおりパスワード欄への入力を許すだけで、伏せ字は解かない。
 - `FOX_HOST` がループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）でなければ daemon は起動しないようにした。従来は警告をログに出して、平文の HTTP・WebSocket をネットワークに開いていた。
 - ホストの無いページ（`view-source:`、`blob:`、`data:` など。`about:` と `file:` は除く）にあるタブでは、ページを操作するツールを拒否するようにした。こうしたページには `safety.json` のどの URL パターンも一致しない。読み取るツールは動く。
 - 引数 `urlPattern` が 256 文字を超えるとき、または繰り返す括弧の中に繰り返しがあるとき（`(a+)+` など）は、コンパイルする前に拒否するようにした（daemon と拡張機能の両方で）。1 つのパターンで拡張機能のバックグラウンドページが止まらないようにするため。

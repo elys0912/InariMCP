@@ -7,6 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readExtensionSource } from './helpers/extension-source.js';
 
 const host = vi.hoisted(() => ({
   status: { confirmed: true, portOpen: true, lastError: null as string | null },
@@ -57,7 +58,7 @@ describe('background/setup-badge.ts', () => {
     host.status = { confirmed: false, portOpen: false, lastError: null };
     expect(await refreshSetupState()).toEqual({ kind: 'connecting' });
     expect(badge.text.at(-1)).toBe('');
-    expect(badge.title.at(-1)).toBe('InariMCP');
+    expect(badge.title.at(-1)).toBe('Inari MCP');
 
     host.status.lastError = 'No such native application inari_mcp';
     expect(await refreshSetupState()).toMatchObject({ kind: 'hostMissing' });
@@ -154,7 +155,13 @@ describe('background/setup-badge.ts: badge priority', () => {
   it('a running command comes before the setup state', () => {
     expect(badgeFor(inputs({ activeHostCommands: 1, setup: HOST_MISSING }))).toMatchObject({ text: '●', title: 'msg:badgeActive' });
     expect(badgeFor(inputs({ setup: HOST_MISSING }))).toEqual({ text: '!', color: BADGE_COLOR, title: 'msg:badgeSetupNeeded' });
-    expect(badgeFor(inputs())).toEqual({ text: '', color: BADGE_COLOR, title: 'InariMCP' });
+    expect(badgeFor(inputs())).toEqual({ text: '', color: BADGE_COLOR, title: 'Inari MCP' });
+  });
+
+  it('names the toolbar button Inari MCP when ready, as the manifest does', () => {
+    const manifest = JSON.parse(readExtensionSource('../manifest.json')) as { browser_action: { default_title: string } };
+    expect(manifest.browser_action.default_title).toBe('Inari MCP');
+    expect(badgeFor(inputs()).title).toBe(manifest.browser_action.default_title);
   });
 
   it('each state has its own color', () => {
@@ -181,7 +188,7 @@ describe('background/setup-badge.ts: badge priority', () => {
     expect(badge.text.at(-1)).toBe('●');
     finishSecond();
     expect(badge.text.at(-1)).toBe('');
-    expect(badge.title.at(-1)).toBe('InariMCP');
+    expect(badge.title.at(-1)).toBe('Inari MCP');
   });
 
   it('refreshBadge draws a change of the consent or the pause switch', () => {
