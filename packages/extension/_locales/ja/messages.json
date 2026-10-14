@@ -1,9 +1,9 @@
 {
   "extDescription": {
-    "message": "Claude Code から Firefox を操作する MCP アドオン（拡張機能 + Native Messaging）"
+    "message": "Claude Code などの MCP クライアントから Firefox のタブを読んで操作する。ページの内容・URL・スクリーンショットを手元のネイティブホストへ送る。"
   },
 
-  "popupFooter": { "message": "InariMCP — Firefox 用 MCP アドオン" },
+  "popupFooter": { "message": "Inari MCP for Firefox — ページの内容はこの PC のネイティブホストにだけ送る" },
   "popupQuickActions": { "message": "クイック操作" },
   "popupScreenshot": { "message": "スクリーンショット" },
   "popupPageInfo": { "message": "ページ情報" },

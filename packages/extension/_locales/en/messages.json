@@ -1,9 +1,9 @@
 {
   "extDescription": {
-    "message": "Firefox MCP addon for Claude Code — browser automation via extension + native messaging"
+    "message": "Lets an MCP client such as Claude Code read and operate your tabs. Sends page content, URLs and screenshots to a local native host."
   },
 
-  "popupFooter": { "message": "InariMCP — Firefox MCP Addon" },
+  "popupFooter": { "message": "Inari MCP for Firefox — sends page content only to the native host on this computer" },
   "popupQuickActions": { "message": "Quick Actions" },
   "popupScreenshot": { "message": "Screenshot" },
   "popupPageInfo": { "message": "Page Info" },

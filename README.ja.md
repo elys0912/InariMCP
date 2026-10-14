@@ -1,60 +1,89 @@
-# InariMCP
+# Inari MCP for Firefox
 
 [English](./README.md) | **日本語**
 
-**普段使いのFirefoxをClaude Codeから操作する。** Firefox専用のMCPアドオン — 使い捨てブラウザではなく、あなたの実プロファイル・実ログインをそのまま使う。
+**普段使いのFirefoxを、Claude CodeなどのMCPクライアントから読んで操作する。** 使い捨てブラウザではなく、あなたの実プロファイル・実ログインをそのまま使う。クリック・入力・ページの移動は、毎回あなたの承認を待つ。
 
-> ステータス: **開発初期 — インストーラは完成済み（Windows・macOS・Linux。macOSは実機で未検証）で、拡張機能経路はエンドツーエンドで動く。** AMOで署名した拡張機能は[GitHub Releases](https://github.com/elys0912/InariMCP/releases/latest)で配布している。下記の[Status](#status)を参照。
-
-![status](https://img.shields.io/badge/status-WIP-yellow) ![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
+![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
 
 ---
 
+**送るもの。** MCPクライアントがツールを呼ぶと、拡張機能はそのツールに要るものをタブから読み（ページの文字と要素、フォームの値、URLとタイトル、開いているタブの一覧、スクリーンショット）、手元のPCのネイティブホストへ送る。そこから接続したMCPクライアントへ渡り、MCPクライアントがそれを自分のAIの提供元へ送る。開発者には何も送らない。パスワード・hidden・ワンタイムコード・クレジットカードの欄は伏せる。cookieは読まない。詳しくは[プライバシー](#プライバシー)と[プライバシーポリシー](docs/PRIVACY.ja.md)。
+
+**要るもの。** Firefox 142以降と、addons.mozilla.orgの拡張機能。Node.js 18以上と、このリポジトリのネイティブホスト（これが無いと拡張機能は何もしない）。Claude CodeなどのMCPクライアント。[クイックスタート](#クイックスタート)を参照。
+
 ## これは何？
 
-InariMCPは、MCPサーバー + Firefox拡張機能で構成されるツールで、Claude Codeにあなたの実際のFirefox — cookieもセッションも既存の拡張機能もそのままの環境 — を操作させることができる。使い捨てプロファイルを立ち上げる代わりに、WebExtensionとネイティブメッセージングブリッジを通じて実行中のFirefoxと通信し、クリック・入力・スクリーンショット・コンソール/ネットワークログの読み取りなどを行い、今見ているタブに対する高速な「手」として動作する。
+Inari MCP for Firefoxは、Firefox拡張機能・ネイティブメッセージングホスト・MCPサーバーで構成されるツールで、Claude Code（または他のMCPクライアント）にあなたの実際のFirefox — cookieもセッションも既存の拡張機能もそのままの環境 — を操作させることができる。使い捨てプロファイルを立ち上げる代わりに、WebExtensionとネイティブメッセージングブリッジを通じて実行中のFirefoxと通信し、今見ているタブでページを読む・要素を探す・スクリーンショットを撮る・タブを切り替える・クリックや入力をする。操作はどれも、あなたが承認してから行う。
 
 これは[nanogenomic/ClaudeCodeBrowser](https://github.com/nanogenomic/ClaudeCodeBrowser)（MIT）のフォークで、PythonからTypeScriptに移植し、Firefox専用に絞ったもの。
 
+### Inari MCPとKitsuneMCP
+
+Inari MCP for Firefoxは[KitsuneMCP](https://github.com/elys0912/KitsuneMCP)のaddons.mozilla.org版で、2026-10-14にKitsuneMCP 0.2.0から分岐し、版は0.1.0から数える。ページでスクリプトを実行せず、コンソール・ネットワークのログを取らず、操作のたびに承認を求める。アドオンのID（`inari-mcp@elys0912.github.io`）、ネイティブメッセージングのホスト名（`inari_mcp`）、状態ディレクトリ（`~/.inari-mcp`）がKitsuneMCPと違うので、両方を同じFirefoxに入れられる。ただし既定のポート（`8765` / `8766`）は同じなので、両方を同時に動かすときは片方のポートを変える（`FOX_HTTP_PORT`、`FOX_WS_PORT`）。
+
 ## なぜ作ったか？
 
-Chromeにはすでに公式のClaudeブラウザ拡張機能がある。Firefoxにはまだない。InariMCPは、Anthropic（またはMozilla）が公式なものを出すまでのギャップを埋めるために存在する。それが実現した時点で、このプロジェクトの役目はほぼ終わる。
+Chromeにはすでに公式のClaudeブラウザ拡張機能がある。Firefoxにはまだない。Inari MCPは、Anthropic（またはMozilla）が公式なものを出すまでのギャップを埋めるために存在する。それが実現した時点で、このプロジェクトの役目はほぼ終わる。
 
 ## こんな人には向かない
 
-InariMCPは意図的に用途を絞っている。以下に当てはまる場合は、他の選択肢の方が満足できるはず。
+Inari MCPは意図的に用途を絞っている。以下に当てはまる場合は、他の選択肢の方が満足できるはず。
 
 - **Chrome/Edgeユーザー** → [公式Claudeブラウザ拡張機能](https://claude.com)か[Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp)を使う。
 - **CI・自動テスト、クロスブラウザ対応** → [Playwright MCP](https://github.com/microsoft/playwright-mcp)。Chromium/Firefox/WebKitと使い捨てプロファイルに対応していて、その用途には適材適所。
 - **大規模スクレイピング** → [browser-use](https://github.com/browser-use/browser-use)や[Browserbase](https://www.browserbase.com/)がその用途向けに作られている。
 - **Firefox自体のデバッグ（DevToolsプロトコルレベル）** → [mozilla/firefox-devtools-mcp](https://github.com/mozilla/firefox-devtools-mcp)が本命。
-- **CAPTCHA突破** → InariMCPはこれをやらない。CAPTCHAを検知したら、あえて制御をあなたに返す。
+- **CAPTCHA突破** → Inari MCPはこれをやらない。CAPTCHAを検知したら、あえて制御をあなたに返す。
+- **ページでのスクリプト実行** → そのためのツールは無く、受け取ったコードを実行することもない。
+- **プライベートウィンドウ** → 拡張機能はそこでは動かない。
 
 ## 特徴
 
-- **21個の`fox_*`ツール** — ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、タブ管理、コンソール/ネットワークログ収集、スクリプト実行、待機をカバー。関連する操作は1つのツールにまとめ、モード引数で切り替える（`fox_wait`の`for: "url"`、`fox_tab`の`action: "close"`など）。以前の41個のツール名も使える。[ツール名の移行](#ツール名の移行)を参照。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
-- **ツールプロファイル（`FOX_CAPS`）** — 全てのツールを登録すると実際にコンテキストトークンを消費する。プロファイル（`core`、`logs`、`script`など）を選んで必要な分だけ読み込める。[`FOX_CAPS`のプロファイル](#fox_capsのプロファイル)を参照。
-- **8層の安全ガード（レイヤー0〜7）** — コンテナスコープ（0）、レート制限（1）、URLスキームの確認とブロック/許可リスト（2〜3）、観察系ツールの通過（4）、読み取り専用モード（5）、スクリプト実行トグル（6）、銀行・決済処理業者・`.gov`などの保護対象ドメインでの人による承認（7）。判定はすべてJSONLの監査ログに残る。ガード自体は常に動作していて、オプトインが必要なのはコンテナスコープ（レイヤー0）だけ。
-- **ページの外での承認** — 保護対象サイトでの操作は、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのInariMCPツールバーのポップアップで人が承認する。ページの中からは承認できない。[保護対象サイトでの人による承認](#保護対象サイトでの人による承認)を参照。
+- **17個の`fox_*`ツール** — ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、読み取りと検索、タブ管理、待機をカバー。関連する操作は1つのツールにまとめ、モード引数で切り替える（`fox_wait`の`for: "url"`、`fox_tab`の`action: "close"`など）。以前のツール名も使える。[ツール名の移行](#ツール名の移行)を参照。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
+- **ツールプロファイル（`FOX_CAPS`）** — 全てのツールを登録すると実際にコンテキストトークンを消費する。プロファイル（`core`、`human`、`wait`など）を選んで必要な分だけ読み込める。[`FOX_CAPS`のプロファイル](#fox_capsのプロファイル)を参照。
+- **操作はすべてあなたが承認** — クリック・入力・送信・ページの移動・タブを開く/閉じる操作は、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのInari MCPツールバーのポップアップで、あなたが承認するまで待つ。ページの中からは承認できない。読み取りは承認を求めない。
+- **許可・一時停止・バッジ** — 拡張機能は初回の起動で許可を求め、許可するまでどこにも繋がない。ツールバーのポップアップに、すべての呼び出しを断る一時停止のスイッチがあり、ツールが動いている間はバッジが付く。
+- **安全ガード** — コンテナスコープ、レート制限、URLスキームの確認、ブロック/許可リスト、読み取り専用モードを、すべての呼び出しの前に通す。判定はすべて手元のPCのJSONLの監査ログに残る。
 - **コンテナ分離（オプトイン）** — Firefoxの`contextualIdentities`を使い、エージェントを専用コンテナに制限できる。これにより、他のタブで開いている銀行・メールのセッションをエージェントから見えなくできる。これはFirefox専用の機能で、Chromiumには同等のものが存在しない。
 - **ヘッドレスモード（上級者向け）** — 拡張機能経由を使いたくない場合のための、Playwrightベースの、Firefox専用ヘッドレスバックエンド。使えないツール・引数が多い（[ツールの対応状況](#ツールの対応状況)を参照）。
 - **FirefoxネイティブなAPI** — トークンを節約できるページ内テキスト検索用の`browser.find`、全ページ・全タブを含むスクリーンショット用の`tabs.captureTab`（背景タブも切り替えずに撮る。破棄済み（discarded）のタブは、切り替えるまでエラーになる）。
 
 ## クイックスタート
 
+手順は3つ：1. [AMOから拡張機能を入れる](#amoから拡張機能を入れる)、2. [ネイティブホストを入れる](#ネイティブホストを入れる)、3. [MCPクライアントに登録する](#mcpクライアントに登録する)。
+
 ### 前提条件
 
-- Node.js >= 18.0.0（InariMCPの実行に必要。開発時の要件は[開発](#開発)を参照）
 - Firefox 142以降（拡張機能の`strict_min_version`）。Developer EditionとNightlyも通常版と同じNative Messagingの登録を読む
+- Node.js >= 18.0.0（ネイティブホストとMCPサーバーの実行に必要。開発時の要件は[開発](#開発)を参照）
+- Claude CodeなどのMCPクライアント
 - （ヘッドレスモードのみ）PlaywrightとそのFirefox。`playwright`は`packages/mcp-server`の任意の依存（optionalDependencies）で、任意の依存を除かない限り（`--omit=optional`）`npm ci`で入る。Firefoxは別にダウンロードする: `npx playwright install firefox`
 
 PowerShellは不要。インストーラとアンインストーラはNode.jsのスクリプト。
 
-### インストール
+### AMOから拡張機能を入れる
+
+1. [addons.mozilla.orgのInari MCP for Firefox](https://addons.mozilla.org/firefox/addon/inari-mcp-for-firefox/)を開き、「Firefox へ追加」を押す。
+2. Firefoxが権限と、拡張機能が送るデータ（ウェブサイトのコンテンツと閲覧履歴の情報）を表示する。承諾するとインストールされる。
+3. 拡張機能が許可の画面を開く。読んで許可する。許可するまでネイティブホストに繋がず、拒否すれば繋がないままになる。
+
+ツールバーにInari MCPのボタンが出る。ポップアップに接続状態が表示される（[再起動と接続確認](#再起動と接続確認)を参照）。拡張機能はFirefoxが自動で更新する。ネイティブホストは同じ版に合わせる（[更新](#更新)を参照）。
+
+拡張機能を自分で変更して試すときは、代わりに一時的なアドオンとして読み込む。
+
+1. Firefoxで`about:debugging#/runtime/this-firefox`を開く
+2. 「一時的なアドオンを読み込む」→ `packages/extension/manifest.json`を選択（`packages/extension/dist/`のバンドルを読み込むので、先に`npm run build`を実行しておく）
+3. Firefoxを再起動すると消えるので、その都度読み込み直す必要がある
+
+### ネイティブホストを入れる
+
+拡張機能が話す相手は手元のPCのネイティブメッセージングホストだけで、ホストが呼び出しをMCPサーバーへ渡す。どちらもこのリポジトリにあり、AMOには無い。拡張機能と同じ版（`about:addons`に出る）をチェックアウトする。
 
 ```bash
 git clone https://github.com/elys0912/InariMCP.git
 cd InariMCP
+git checkout v<版>
 npm ci
 npm run build
 npm run setup
@@ -67,7 +96,7 @@ npm run setup
 1. Node.js（18以上）とビルド結果（`packages/*/dist`）を確認し、Firefoxを探す（見つからなくても警告だけ）
 2. Native Messaging hostのラッパー（`run-host.cmd` / `run-host.sh`）を`~/.inari-mcp/native-host/`に書く
 3. hostのマニフェスト`inari_mcp.json`をFirefoxが読む場所に書く（Windows: ラッパーと同じ場所に置き、全エディション共通の`HKCU\Software\Mozilla\NativeMessagingHosts\inari_mcp`から参照する。macOS: `~/Library/Application Support/Mozilla/NativeMessagingHosts/`。Linux: `~/.mozilla/native-messaging-hosts/`と、XDG・Snap・Flatpak版がありそうならそれぞれの置き場）
-4. `claude mcp add`のコマンドを表示する。`--register-claude`を付けると実行する（[Claude Codeへの追加](#claude-codeへの追加)を参照）
+4. `claude mcp add`のコマンドを表示する。`--register-claude`を付けると実行する（[MCPクライアントに登録する](#mcpクライアントに登録する)を参照）
 
 何度実行してもよい。変わっていないファイルと登録はそのままにする。指定しない限りビルドはしない（`--build`で先に`npm install`と`npm run build`を実行する）。オプションはnpm経由なら`--`の後に書く（`npm run setup -- --register-claude`）か、スクリプトを直接呼ぶ（`node scripts/install.mjs --register-claude`）。
 
@@ -86,32 +115,17 @@ npm run setup
 
 **Node.jsを入れ替えた・アップグレードした場合は、インストーラを実行し直すこと** — 生成されるラッパーには、インストーラを実行したnodeバイナリの絶対パスが埋め込まれている（そのバイナリが無くなった場合は、Firefoxの`PATH`上の`node`で起動する）。そのnodeがバージョンマネージャーのもの（バージョンを切り替えるとパスが変わる）ならインストーラが警告する。`--node`で変わらないパスを指定できる。
 
-### Firefoxへの拡張機能の読み込み
+### MCPクライアントに登録する
 
-[GitHub Releases](https://github.com/elys0912/InariMCP/releases/latest)から`inarimcp-<版>.xpi`をダウンロードする。AMOの署名付き（unlisted。アドオンストアの検索には出ない）で、Firefoxを再起動しても消えない。入れ方はどちらでもよい。
+MCPサーバーはstdioのMCPサーバー（`node <INSTALL_PATH>/packages/mcp-server/dist/index.js`）。MCPクライアントにはそのクライアントのやり方で登録する。Claude Codeならインストーラが登録できる。
 
-- `.xpi`をFirefoxのウィンドウにドラッグ＆ドロップする
-- `about:addons`を開き、歯車アイコン →「ファイルからアドオンをインストール」で`.xpi`を選ぶ
-
-拡張機能・Native Host・サーバーは一緒に変わり、版が合わないとコマンドを拒否することがあるので、チェックアウトした版（`git checkout v<版>`）と同じリリースの`.xpi`を使うこと。
-
-拡張機能を自分で変更して試すときは、代わりに一時的なアドオンとして読み込む。
-
-1. Firefoxで`about:debugging#/runtime/this-firefox`を開く
-2. 「一時的なアドオンを読み込む」→ `packages/extension/manifest.json`を選択（`packages/extension/dist/`のバンドルを読み込むので、先に`npm run build`を実行しておく）
-3. Firefoxを再起動すると消えるので、その都度読み込み直す必要がある
-
-ツールバーにInariMCPのボタンが出る。ポップアップに接続状態が表示される（[再起動と接続確認](#再起動と接続確認)を参照）。
-
-### Claude Codeへの追加
-
-`npm run setup -- --register-claude`でInariMCPをClaude Codeに登録する（`claude mcp add`、既定スコープ`user` = 全プロジェクト共通、nodeは絶対パス）。このインストールを指す登録が既にあればそのままにし、別の場所を指していれば確認してから置き換える。`--register-claude`を付けなかった場合や`claude`が`PATH`に無い場合は、インストーラが表示するコマンドを自分で実行する。
+`npm run setup -- --register-claude`でInari MCPをClaude Codeに登録する（`claude mcp add`、既定スコープ`user` = 全プロジェクト共通、nodeは絶対パス）。このインストールを指す登録が既にあればそのままにし、別の場所を指していれば確認してから置き換える。`--register-claude`を付けなかった場合や`claude`が`PATH`に無い場合は、インストーラが表示するコマンドを自分で実行する。
 
 ```bash
 claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server/dist/index.js
 ```
 
-サーバーへの環境変数は名前の前に書く。例: `claude mcp add --scope user --env FOX_CAPS=core,logs inari-mcp -- node …`（頼る前に[先にdaemonを起動した側の設定が勝つ](#先にdaemonを起動した側の設定が勝つ)を読むこと）。
+サーバーへの環境変数は名前の前に書く。例: `claude mcp add --scope user --env FOX_CAPS=core inari-mcp -- node …`（頼る前に[先にdaemonを起動した側の設定が勝つ](#先にdaemonを起動した側の設定が勝つ)を読むこと）。
 
 または、MCP設定に手動で追加する（`config/mcp_config.json`も同じテンプレート）。
 
@@ -122,7 +136,7 @@ claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server
       "command": "node",
       "args": ["<INSTALL_PATH>/packages/mcp-server/dist/index.js"],
       "env": {
-        "FOX_CAPS": "core,logs"
+        "FOX_CAPS": "core"
       }
     }
   }
@@ -134,7 +148,7 @@ claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server
 ### 再起動と接続確認
 
 1. **Claude Codeを再起動する**（実行中のセッションは新しいMCPサーバーを読み込まない）。
-2. 拡張機能が読み込まれていることを確認する（Firefoxを再起動するたびに読み込み直す）。
+2. `about:addons`で拡張機能が有効になっていること、許可の画面で許可したこと、ポップアップで一時停止していないことを確認する。
 3. InariMCPのツールバーボタンを見る。
 
 | バッジ / ポップアップ | 意味 | 対処 |
@@ -143,11 +157,11 @@ claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server
 | 赤い`!`、「No session」 | Firefox側は準備済みだが、InariMCPを使うClaude Codeのセッションがない | 登録して（ポップアップにコマンドが出る）Claude Codeを再起動する。実行中のセッションは約30秒で表示される |
 | 赤い`!`、「Setup needed」（native hostが見つからない） | FirefoxがNative Messaging hostを見つけられない | ビルドしてインストーラを実行し（ポップアップにコマンドが出る）、Recheckを押す（Snap版 / Flatpak版Firefoxは[環境ごとの注意](#環境ごとの注意)を参照） |
 | 赤い`!`、「Setup needed」（native hostが失敗 / MCPサーバーが応答しない） | hostは登録済みだが起動しない、またはdaemonが応答しない | インストーラ（`npm run setup`）を再実行する（ポップアップのコマンドはビルドもする。よくある原因はNode.jsのアップグレード・移動）。下記のログを見る |
-| 赤い`!`、「Update needed」 | クローンが拡張機能より古い | `git pull`してビルドし、インストーラを再実行して、Firefoxを再起動する |
+| 赤い`!`、「Update needed」 | クローンが拡張機能より古い | 拡張機能の版をチェックアウトしてビルドし、インストーラを再実行して（[更新](#更新)を参照）、Firefoxを再起動する |
 | 黄色の数字 | あなたの承認を待っている要求がある | ポップアップを開いて承認か拒否をする |
 
 4. 診断を実行する: `node packages/mcp-server/dist/index.js --doctor`（[コマンドライン](#コマンドライン)を参照）。ビルド、Firefoxへの登録、Claude Codeへの登録、daemon、ログを確認し、問題ごとに対処を表示する。
-5. Claude Codeに`fox_safety_status`を呼ばせる。有効な安全ポリシー（読み取り専用モード、スクリプトの可否、URLパターン、レート制限、監査ログの場所）が表示され、動いているdaemonがこのセッションと違う設定で起動されていれば警告も出る。ブラウザが接続しているかどうかは表示されない。
+5. Claude Codeに`fox_safety_status`を呼ばせる。有効な安全ポリシー（読み取り専用モード、URLパターン、レート制限、監査ログの場所）が表示され、動いているdaemonがこのセッションと違う設定で起動されていれば警告も出る。ブラウザが接続しているかどうかは表示されない。
 6. 低いレベルで確認するときはdaemonに問い合わせる。
 
 ```bash
@@ -205,14 +219,17 @@ FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
 
 ### 更新
 
+拡張機能はFirefoxがaddons.mozilla.orgから自動で更新する。ネイティブホストとMCPサーバーは一緒には更新されないので、拡張機能の版（`about:addons`に出る）が変わったら、クローンを同じ版にする。
+
 ```bash
-git pull
+git fetch --tags
+git checkout v<版>
 npm ci
 npm run build
 npm run setup
 ```
 
-その後、[GitHub Releases](https://github.com/elys0912/InariMCP/releases/latest)の新しい`.xpi`を入れて（古いものは上書きされる。一時的なアドオンなら`about:debugging`で再読み込みする）、FirefoxとClaude Codeを再起動する。古い版のdaemonは止めるまで動き続ける。新しい中継やNative Hostが、動いているdaemonについて「speaks protocol …」「is from another version」と報告したら、そのdaemonのプロセスを止める（Native Hostが起動したものならFirefoxも再起動する）。次のツール呼び出しで対応する版のdaemonが起動する。`--stop-daemon`より前のdaemonはPIDで終了する（探すポートは`--doctor`が表示する）。それより新しいdaemonは`node packages/mcp-server/dist/index.js --stop-daemon`で止められる。
+その後、FirefoxとClaude Codeを再起動する（一時的なアドオンなら、先に`about:debugging`で再読み込みする）。古い版のdaemonは止めるまで動き続ける。新しい中継やNative Hostが、動いているdaemonについて「speaks protocol …」「is from another version」と報告したら、そのdaemonのプロセスを止める（Native Hostが起動したものならFirefoxも再起動する）。次のツール呼び出しで対応する版のdaemonが起動する。`--stop-daemon`より前のdaemonはPIDで終了する（探すポートは`--doctor`が表示する）。それより新しいdaemonは`node packages/mcp-server/dist/index.js --stop-daemon`で止められる。
 
 #### 更新時の注意
 
@@ -269,6 +286,34 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 - **Flatpak版Firefox**はサンドボックスの中からホストのnodeを実行できない。インストーラはマニフェストを`~/.var/app/org.mozilla.firefox/`にも書くが、Firefoxがhostに届くのはポータル経由のときだけ。`about:config`で`widget.use-xdg-desktop-portal.native-messaging`を`1`にする（WebExtensionsに対応したxdg-desktop-portalが必要）。そうしないと、ポップアップに「Setup needed」と出てもインストーラの再実行では直らない。Flatpak以外のFirefoxが確実。
 - **WSL**: Claude CodeとFirefoxは同じ側で動かす。WSLの中のClaude CodeとWindowsのFirefoxを組み合わせると、それぞれが自分の`~/.inari-mcp/`（とAPIトークン）でdaemonを起動するので、WSLのセッションはWindowsのFirefoxに届かない。Claude CodeをWindowsで動かすか、FirefoxをWSLの中（WSLg）で動かしてインストーラもそこで実行する。WSLの中で実行するとインストーラが警告する。
 - **Firefoxのプロファイルを複数**同時に開くと、すべてが1つのdaemonに接続し、コマンドは先に接続した方に送られる。どちらが使われているかはどこにも表示されない。
+
+## 権限
+
+拡張機能がFirefoxに求める権限と、その用途。
+
+| 権限 | 用途 |
+|---|---|
+| `tabs` | タブの一覧（`fox_tabs`）、タブを開く・閉じる・切り替える・再読み込みする、対象のタブのURLとタイトルを読む、スクリーンショット（`tabs.captureTab`） |
+| `nativeMessaging` | 手元のPCのネイティブホスト（`inari_mcp`）への接続。拡張機能から外へ出る経路はこれだけ |
+| `notifications` | 操作があなたの承認を待っているとき、CAPTCHAであなたの操作が要るときの通知 |
+| `<all_urls>` | ページを読み、承認されたクリックと入力を行うコンテンツスクリプト。どのタブでもスクリーンショットを撮る |
+| `contextMenus` | 右クリックメニューの「InariMCP でスクリーンショットを撮る」と「InariMCP で要素を調べる」 |
+| `contextualIdentities` | コンテナ分離、コンテナの一覧、コンテナでタブを開く |
+| `cookies` | コンテナでタブを開くためにFirefoxが求める。cookieそのものは読まない |
+| `find` | ページ内の文字の検索（`fox_find`） |
+| `webNavigation` | ページの読み込みが終わるのを待つ（`fox_wait`の`for: "navigation"`） |
+
+拡張機能はプライベートウィンドウでは動かない（`"incognito": "not_allowed"`）。送るデータ（ウェブサイトのコンテンツと閲覧履歴の情報）はインストール時の画面に出る。
+
+## プライバシー
+
+- 拡張機能がタブを読むのは、MCPクライアントがツールを呼んだときだけで、結果は手元のPCのネイティブホストへ送る。接続したMCPクライアントがそれを受け取り、自分のAIの提供元へ送る。Inari MCPは開発者には何も送らない。
+- パスワード・hidden・ワンタイムコード・クレジットカード（`cc-*`）の欄は伏せる。cookieは読まない。
+- クリック・入力・送信・ページの移動は、あなたの承認を待つ。ツールバーのポップアップで、すべての呼び出しを一時停止できる。
+- スクリーンショットは`~/.inari-mcp/screenshots/`に30日残る。`~/.inari-mcp/logs/audit.jsonl`には呼び出しごとの時刻・ツール名・URLを書き、ページの内容は書かない。`npm run teardown -- --purge`ですべて消せる。
+- プライベートウィンドウには対応しない。
+
+全文は[プライバシーポリシー](docs/PRIVACY.ja.md)（[English](docs/PRIVACY.md)）。
 
 ## アーキテクチャ
 
@@ -416,7 +461,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 
 ## Status
 
-このプロジェクトは**活発かつ段階的に開発中** — まだ一般利用の準備は整っていない。とはいえ「読んでビルドできるソースコード」の段階は過ぎていて、インストーラとGitHub ReleasesのAMO署名済み拡張機能で、実際のFirefoxをエンドツーエンドで動かせる。
+Inari MCP for Firefox 0.1.0は、addons.mozilla.orgに掲載する最初の版。以下はKitsuneMCPと共通の経緯。
 
 **完了済み:**
 - 設計 + 多角的レビュー
@@ -433,11 +478,10 @@ daemon はセッションごとに新しく起動されるわけではない。C
 - 診断（`--doctor`）、`--help` / `--version`、全パッケージと拡張機能の版の統一（0.1.4）
 - 配布準備: 正式なExtension ID確定（`inari-mcp@elys0912.github.io`）、AMOの`data_collection_permissions`設定、`web-ext lint`がエラー・警告0件（P8）
 - 承認をページの外へ移動（ツールバーのポップアップ / MCP elicitation、1回限りの承認トークン）、daemon・中継・Native Hostの間のHMACによる相互認証
-- AMOでの署名（unlisted）と、GitHub Releasesでの署名済み`.xpi`の配布（0.1.0から）
+- Inari MCP for Firefoxとしてaddons.mozilla.org向けに整備：スクリプト実行とログ記録の削除、すべての操作の承認、許可の画面、プライベートブラウジングの不許可（0.1.0）
 
 **未完了:**
 - 実機のmacOSでのインストーラの確認
-- AMOのストアへの掲載（当面は予定なし。配布はGitHub Releasesだけ）
 
 
 ### ツールの対応状況
@@ -482,6 +526,16 @@ npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（Pla
 | `npm run e2e:extension` | 拡張機能が一時的なアドオンとしてFirefoxに読み込まれる（`scripts/e2e/extension-load.mjs`、PlaywrightのFirefoxで`web-ext`を使う。別のFirefoxは`FOX_E2E_FIREFOX`か引数のパスで指定、全体の制限時間は`FOX_E2E_TIMEOUT_MS`、既定60000） |
 | `node scripts/e2e/tools-smoke.mjs` | 実際のFirefoxでdaemon → Native Host → 拡張機能（インストーラ実行済み、拡張機能読み込み済み。インターネット接続が必要） |
 | `node scripts/e2e/nm-probe.mjs` | インストールしたNative Messaging hostが起動してdaemonに届く |
+
+## 関連リンク
+
+- [addons.mozilla.orgのInari MCP for Firefox](https://addons.mozilla.org/firefox/addon/inari-mcp-for-firefox/)
+- [プライバシーポリシー](docs/PRIVACY.ja.md)
+- [変更履歴](docs/CHANGELOG.ja.md)
+- [既知の制約](docs/known-issues.ja.md)
+- [開発](docs/development.ja.md)
+- [Issues](https://github.com/elys0912/InariMCP/issues) — 質問と不具合の報告
+- [KitsuneMCP](https://github.com/elys0912/KitsuneMCP) — この版の分岐元
 
 ## Credits
 

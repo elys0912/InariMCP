@@ -1,60 +1,89 @@
-# InariMCP
+# Inari MCP for Firefox
 
 **English** | [日本語](./README.ja.md)
 
-**Control your everyday Firefox from Claude Code.** A Firefox-only MCP addon — your real profile, your real logins, no throwaway browser.
+**Let an MCP client such as Claude Code read and operate your everyday Firefox.** Your real profile and your real logins, no throwaway browser. Clicking, typing and navigating always wait for your approval.
 
-> Status: **early WIP — the installer is in place (Windows, macOS and Linux; macOS untested on real hardware) and the extension path works end-to-end.** The AMO-signed extension is published on [GitHub Releases](https://github.com/elys0912/InariMCP/releases/latest). See [Status](#status) below.
-
-![status](https://img.shields.io/badge/status-WIP-yellow) ![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
+![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
 
 ---
 
+**What it sends.** When the MCP client calls a tool, the extension reads what that tool needs from your tabs (page text and elements, form values, the URL and title, the list of open tabs, screenshots) and sends it to the native host on your computer. From there it goes to the MCP client you connected, and that client sends it to its AI provider. Nothing is sent to the developer. Password, hidden, one-time-code and credit card fields are masked; cookies are not read. Details: [Privacy](#privacy) and the [privacy policy](docs/PRIVACY.md).
+
+**What you need.** Firefox 142 or later with the extension from addons.mozilla.org; Node.js 18 or later and the native host from this repository (the extension does nothing without it); an MCP client such as Claude Code. See [Quick Start](#quick-start).
+
 ## What is this?
 
-InariMCP is an MCP server + Firefox extension that lets Claude Code drive your actual Firefox browser — the one with your cookies, your sessions, your extensions already installed. Instead of spinning up a throwaway profile, it talks to your running Firefox through a WebExtension and a native messaging bridge, so it can click, type, screenshot, read console/network logs, and generally act like a very fast pair of hands on the tab you're already looking at.
+Inari MCP for Firefox is a Firefox extension, a native messaging host and an MCP server that let Claude Code (or another MCP client) drive your actual Firefox browser — the one with your cookies, your sessions, your extensions already installed. Instead of spinning up a throwaway profile, it talks to your running Firefox through a WebExtension and a native messaging bridge, so it can read pages, find elements, take screenshots, switch tabs, and click and type on the tab you're already looking at, each action after you approve it.
 
 It's a fork of [nanogenomic/ClaudeCodeBrowser](https://github.com/nanogenomic/ClaudeCodeBrowser) (MIT), ported from Python to TypeScript and narrowed to Firefox only.
 
+### Inari MCP and KitsuneMCP
+
+Inari MCP for Firefox is the addons.mozilla.org edition of [KitsuneMCP](https://github.com/elys0912/KitsuneMCP), split off from KitsuneMCP 0.2.0 on 2026-10-14 and numbered from 0.1.0. It runs no scripts in pages, records no console or network logs, and asks before every action. It has its own add-on ID (`inari-mcp@elys0912.github.io`), native messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), so both can be installed in the same Firefox. Both use the same default ports (`8765` / `8766`), though: to run both at the same time, give one of them other ports (`FOX_HTTP_PORT`, `FOX_WS_PORT`).
+
 ## Why?
 
-Chrome already has an official Claude browser extension. Firefox doesn't — not yet. InariMCP exists to fill that gap until Anthropic (or Mozilla) ships something official. When that happens, this project's job is basically done.
+Chrome already has an official Claude browser extension. Firefox doesn't — not yet. Inari MCP exists to fill that gap until Anthropic (or Mozilla) ships something official. When that happens, this project's job is basically done.
 
 ## Not for you?
 
-InariMCP is deliberately narrow. If your use case is one of these, you'll be happier elsewhere:
+Inari MCP is deliberately narrow. If your use case is one of these, you'll be happier elsewhere:
 
 - **Chrome/Edge user** → use the [official Claude browser extension](https://claude.com) or [Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp).
 - **CI / automated testing, cross-browser** → [Playwright MCP](https://github.com/microsoft/playwright-mcp). It supports Chromium/Firefox/WebKit and disposable profiles — the right tool for that job.
 - **Large-scale scraping** → [browser-use](https://github.com/browser-use/browser-use) or [Browserbase](https://www.browserbase.com/) are built for that.
 - **Debugging Firefox itself (DevTools protocol level)** → [mozilla/firefox-devtools-mcp](https://github.com/mozilla/firefox-devtools-mcp) is the real deal for that.
-- **CAPTCHA solving** → InariMCP won't do this. It detects a CAPTCHA and hands control back to you — on purpose.
+- **CAPTCHA solving** → Inari MCP won't do this. It detects a CAPTCHA and hands control back to you — on purpose.
+- **Running scripts in pages** → Inari MCP has no tool for it, and never executes code it receives.
+- **Private windows** → the extension does not run there.
 
 ## Features
 
-- **21 `fox_*` tools** covering navigation, click/type/scroll, screenshots (visible/full page/all tabs), tab management, console/network log capture, script execution and wait helpers. Related operations share one tool with a mode argument (`fox_wait` with `for: "url"`, `fox_tab` with `action: "close"`, …); the 41 earlier tool names still work, see [Tool name migration](#tool-name-migration). Prefixed `fox_` instead of `browser_` so it doesn't collide with Playwright MCP if you run both. Not all of them work on every backend yet: see [Tool availability](#tool-availability).
-- **Tool profiles (`FOX_CAPS`)** — registering every tool costs real context tokens. Pick profiles (`core`, `logs`, `script`, …) to only load what you need. See [`FOX_CAPS` profiles](#fox_caps-profiles).
-- **8-layer safety guard (Layers 0–7)** — container scope (0), rate limit (1), URL scheme check and block/allow lists (2–3), read-only pass-through for observation tools (4), read-only mode (5), script-execution toggle (6) and human approval on protected domains such as banks, payment processors and `.gov` (7). Every decision is written to a JSONL audit log. The guard is always on; only container scoping (Layer 0) needs opt-in.
-- **Human approval outside the page** — an action on a protected site is approved by you, either in Claude Code's own confirmation dialog (MCP elicitation) or in the InariMCP toolbar popup in Firefox. Nothing inside the page can approve it. See [Human approval for protected sites](#human-approval-for-protected-sites).
+- **17 `fox_*` tools** covering navigation, click/type/scroll, screenshots (visible/full page/all tabs), reading and finding, tab management and wait helpers. Related operations share one tool with a mode argument (`fox_wait` with `for: "url"`, `fox_tab` with `action: "close"`, …); the earlier tool names still work, see [Tool name migration](#tool-name-migration). Prefixed `fox_` instead of `browser_` so it doesn't collide with Playwright MCP if you run both. Not all of them work on every backend yet: see [Tool availability](#tool-availability).
+- **Tool profiles (`FOX_CAPS`)** — registering every tool costs real context tokens. Pick profiles (`core`, `human`, `wait`, …) to only load what you need. See [`FOX_CAPS` profiles](#fox_caps-profiles).
+- **Your approval for every action** — clicking, typing, submitting, navigating and opening or closing tabs wait until you approve them, either in Claude Code's own confirmation dialog (MCP elicitation) or in the Inari MCP toolbar popup in Firefox. Nothing inside the page can approve it. Reading does not ask.
+- **Permission, pause and badge** — on first start the extension asks for your permission and connects to nothing until you allow it. The toolbar popup has a pause switch that refuses every call, and a badge shows while a tool is working.
+- **Safety guard** — container scope, rate limit, URL scheme check, block/allow lists and read-only mode, in front of every call. Every decision is written to a JSONL audit log on your computer.
 - **Container isolation (opt-in)** — using Firefox's `contextualIdentities`, you can restrict the agent to a dedicated container so your banking/email sessions in other tabs stay invisible to it. This is a Firefox-only capability; Chromium has nothing equivalent.
 - **Headless mode (advanced)** — a Playwright-driven, Firefox-only headless backend for when you don't want the extension path. Many tools and parameters are not supported there (see [Tool availability](#tool-availability)).
 - **Firefox-native APIs** — `browser.find` for token-cheap in-page text search, `tabs.captureTab` for screenshots, including full-page and all-tabs ones (a background tab is captured without switching to it; a discarded tab is an error until you switch to it).
 
 ## Quick Start
 
+Three steps: 1. [install the extension from AMO](#install-the-extension-from-amo), 2. [install the native host](#install-the-native-host), 3. [register it with your MCP client](#register-with-your-mcp-client).
+
 ### Prerequisites
 
-- Node.js >= 18.0.0 (to run InariMCP; development needs more, see [Development](#development))
 - Firefox 142 or later (`strict_min_version` of the extension). Developer Edition and Nightly read the same Native Messaging registration as the release build
+- Node.js >= 18.0.0 (to run the native host and the MCP server; development needs more, see [Development](#development))
+- An MCP client, such as Claude Code
 - (Headless mode only) Playwright and its Firefox. `playwright` is an optional dependency of `packages/mcp-server`: `npm ci` installs it unless optional dependencies are omitted (`--omit=optional`). Its Firefox is a separate download: `npx playwright install firefox`
 
 PowerShell is not needed: the installer and uninstaller are Node.js scripts.
 
-### Install
+### Install the extension from AMO
+
+1. Open [Inari MCP for Firefox on addons.mozilla.org](https://addons.mozilla.org/firefox/addon/inari-mcp-for-firefox/) and click "Add to Firefox".
+2. Firefox shows the permissions and the data the extension sends (website content and browsing activity). Accept to install.
+3. The extension opens its permission page. Read it and allow it; until you do, it does not connect to the native host, and if you decline it stays disconnected.
+
+The Inari MCP button appears in the toolbar. Its popup shows the connection state (see [Check the connection](#restart-and-check-the-connection)). Firefox updates the extension by itself; keep the native host at the same version (see [Update](#update)).
+
+To try your own changes to the extension, load it as a temporary add-on instead:
+
+1. Open `about:debugging#/runtime/this-firefox` in Firefox.
+2. "Load Temporary Add-on..." → select `packages/extension/manifest.json` (it loads the bundles in `packages/extension/dist/`, so run `npm run build` first).
+3. It's removed when Firefox restarts, so you'll need to load it again after each restart.
+
+### Install the native host
+
+The extension only talks to a native messaging host on your computer, which passes the calls on to the MCP server. Both come from this repository and are not on AMO. Check out the version that matches the extension (shown in `about:addons`):
 
 ```bash
 git clone https://github.com/elys0912/InariMCP.git
 cd InariMCP
+git checkout v<version>
 npm ci
 npm run build
 npm run setup
@@ -67,7 +96,7 @@ The installer works the same way on Windows, macOS and Linux; macOS is untested 
 1. checks Node.js (>= 18) and the build output (`packages/*/dist`), and looks for Firefox (warning only),
 2. writes the Native Messaging host wrapper (`run-host.cmd` / `run-host.sh`) to `~/.inari-mcp/native-host/`,
 3. writes the host manifest `inari_mcp.json` where Firefox reads it (Windows: next to the wrapper, with `HKCU\Software\Mozilla\NativeMessagingHosts\inari_mcp` pointing to it, for every edition; macOS: `~/Library/Application Support/Mozilla/NativeMessagingHosts/`; Linux: `~/.mozilla/native-messaging-hosts/`, plus the XDG, Snap and Flatpak directories when those builds seem to be present),
-4. prints the `claude mcp add` command, or runs it with `--register-claude` (see [Add to Claude Code](#add-to-claude-code)).
+4. prints the `claude mcp add` command, or runs it with `--register-claude` (see [Register with your MCP client](#register-with-your-mcp-client)).
 
 It is safe to run again: unchanged files and registrations are left alone. It does not build unless asked (`--build` runs `npm install` and `npm run build` first). Options go after `--` when going through npm (`npm run setup -- --register-claude`), or call the script directly (`node scripts/install.mjs --register-claude`):
 
@@ -86,32 +115,17 @@ Questions are asked only when stdin is a terminal; otherwise the default answer 
 
 **If you ever swap out or upgrade Node.js**, re-run the installer — the generated wrapper embeds the absolute path to the `node` binary that ran it (it falls back to the `node` on Firefox's `PATH` when that binary is gone). The installer warns when that node comes from a version manager, whose paths change when you switch versions; `--node` pins a stable one.
 
-### Load the extension in Firefox
+### Register with your MCP client
 
-Download `inarimcp-<version>.xpi` from [GitHub Releases](https://github.com/elys0912/InariMCP/releases/latest). It is signed by AMO (unlisted: it is not in the add-on store's search) and stays installed across restarts. Install it either way:
+The MCP server is a stdio MCP server: `node <INSTALL_PATH>/packages/mcp-server/dist/index.js`. Register it with your MCP client in the client's own way; for Claude Code, the installer can do it.
 
-- Drag and drop the `.xpi` onto a Firefox window.
-- Open `about:addons`, click the gear icon → "Install Add-on From File..." and choose the `.xpi`.
-
-Use the `.xpi` from the release that matches your checkout (`git checkout v<version>`): the extension, the Native Host and the server change together, and mismatched versions can refuse commands.
-
-To try your own changes to the extension, load it as a temporary add-on instead:
-
-1. Open `about:debugging#/runtime/this-firefox` in Firefox.
-2. "Load Temporary Add-on..." → select `packages/extension/manifest.json` (it loads the bundles in `packages/extension/dist/`, so run `npm run build` first).
-3. It's removed when Firefox restarts, so you'll need to load it again after each restart.
-
-The InariMCP button appears in the toolbar. Its popup shows the connection state (see [Check the connection](#restart-and-check-the-connection)).
-
-### Add to Claude Code
-
-`npm run setup -- --register-claude` registers InariMCP with Claude Code (`claude mcp add`, scope `user` by default — available from any project), with the absolute path of node. A registration that already points to this installation is left unchanged; one that points elsewhere is replaced after asking. Without `--register-claude`, or when `claude` is not on your `PATH`, the installer prints the command; run it yourself:
+`npm run setup -- --register-claude` registers Inari MCP with Claude Code (`claude mcp add`, scope `user` by default — available from any project), with the absolute path of node. A registration that already points to this installation is left unchanged; one that points elsewhere is replaced after asking. Without `--register-claude`, or when `claude` is not on your `PATH`, the installer prints the command; run it yourself:
 
 ```bash
 claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server/dist/index.js
 ```
 
-Environment variables for the server go before the name, e.g. `claude mcp add --scope user --env FOX_CAPS=core,logs inari-mcp -- node …` (but read [Whichever side starts the daemon first, its config wins](#whichever-side-starts-the-daemon-first-its-config-wins) before relying on them).
+Environment variables for the server go before the name, e.g. `claude mcp add --scope user --env FOX_CAPS=core inari-mcp -- node …` (but read [Whichever side starts the daemon first, its config wins](#whichever-side-starts-the-daemon-first-its-config-wins) before relying on them).
 
 Or add it manually to your MCP config (`config/mcp_config.json` is the same template):
 
@@ -122,7 +136,7 @@ Or add it manually to your MCP config (`config/mcp_config.json` is the same temp
       "command": "node",
       "args": ["<INSTALL_PATH>/packages/mcp-server/dist/index.js"],
       "env": {
-        "FOX_CAPS": "core,logs"
+        "FOX_CAPS": "core"
       }
     }
   }
@@ -134,7 +148,7 @@ Replace `<INSTALL_PATH>` with the absolute path of your clone.
 ### Restart and check the connection
 
 1. **Restart Claude Code** (a running session does not pick up a new MCP server).
-2. Make sure the extension is loaded (again, after every Firefox restart).
+2. Make sure the extension is enabled in `about:addons`, that you allowed it on its permission page, and that it is not paused in its popup.
 3. Look at the InariMCP toolbar button:
 
 | Badge / popup | Meaning | What to do |
@@ -143,11 +157,11 @@ Replace `<INSTALL_PATH>` with the absolute path of your clone.
 | red `!`, "No session" | Firefox is ready, but no Claude Code session uses InariMCP | register it (the popup shows the command) and restart Claude Code; a running session appears within about 30 s |
 | red `!`, "Setup needed" (native host missing) | Firefox cannot find the Native Messaging host | build and run the installer (the popup shows the commands), then press Recheck (Snap / Flatpak Firefox: see [Platform notes](#platform-notes)) |
 | red `!`, "Setup needed" (native host failed / MCP server not responding) | the host is registered but does not start, or the daemon does not answer | re-run the installer, `npm run setup` (the popup's command also rebuilds; usual cause: Node.js was upgraded or moved); check the logs below |
-| red `!`, "Update needed" | the clone is older than the extension | `git pull`, rebuild, re-run the installer, restart Firefox |
+| red `!`, "Update needed" | the clone is older than the extension | check out the extension's version, rebuild and re-run the installer (see [Update](#update)), restart Firefox |
 | amber number | approval requests waiting for you | open the popup and approve or deny |
 
 4. Run the diagnostics: `node packages/mcp-server/dist/index.js --doctor` (see [Command line](#command-line)). It checks the build, the Firefox registration, the Claude Code registration, the daemon and the logs, and prints a fix for each problem.
-5. Ask Claude Code to call `fox_safety_status`. It shows the active safety policy (read-only mode, script toggle, URL patterns, rate limit, audit log path) and warns when the running daemon was started with different settings than this session. It does not report whether a browser is connected.
+5. Ask Claude Code to call `fox_safety_status`. It shows the active safety policy (read-only mode, URL patterns, rate limit, audit log path) and warns when the running daemon was started with different settings than this session. It does not report whether a browser is connected.
 6. For a low-level check, query the daemon:
 
 ```bash
@@ -205,14 +219,17 @@ Note this loses your real sessions/cookies/logged-in state — it's a disposable
 
 ### Update
 
+Firefox updates the extension from addons.mozilla.org by itself. The native host and the MCP server are not updated with it: when the extension's version (in `about:addons`) changes, bring your clone to the same version:
+
 ```bash
-git pull
+git fetch --tags
+git checkout v<version>
 npm ci
 npm run build
 npm run setup
 ```
 
-Then install the new `.xpi` from [GitHub Releases](https://github.com/elys0912/InariMCP/releases/latest) (it replaces the old one in place; with a temporary add-on, reload it in `about:debugging` instead), restart Firefox and restart Claude Code. A daemon from the old version keeps running until it is stopped: when the new relay or Native Host reports that the running daemon "speaks protocol …" / "is from another version", stop that daemon process (and restart Firefox if the Native Host started it); a matching one starts on the next tool call. A daemon that predates `--stop-daemon` has to be ended by PID (`--doctor` prints the port to look for); a newer one can be stopped with `node packages/mcp-server/dist/index.js --stop-daemon`.
+Then restart Firefox and restart Claude Code (with a temporary add-on, reload it in `about:debugging` first). A daemon from the old version keeps running until it is stopped: when the new relay or Native Host reports that the running daemon "speaks protocol …" / "is from another version", stop that daemon process (and restart Firefox if the Native Host started it); a matching one starts on the next tool call. A daemon that predates `--stop-daemon` has to be ended by PID (`--doctor` prints the port to look for); a newer one can be stopped with `node packages/mcp-server/dist/index.js --stop-daemon`.
 
 #### Notes on updating
 
@@ -269,6 +286,34 @@ On Windows the Native Host starts the daemon outside Firefox's job object (other
 - **Flatpak Firefox** cannot run node from the host inside its sandbox. The installer writes the manifest into `~/.var/app/org.mozilla.firefox/`, but Firefox reaches the host only through the portal: set `widget.use-xdg-desktop-portal.native-messaging` to `1` in `about:config` (needs an xdg-desktop-portal with WebExtensions support). Without that, re-running the installer does not help, although the popup says "Setup needed"; a non-Flatpak Firefox is the reliable choice.
 - **WSL**: run Claude Code and Firefox on the same side. With Claude Code inside WSL and Firefox on Windows, each side starts its own daemon with its own `~/.inari-mcp/` (and API token), so the WSL session never reaches the Windows Firefox. Either run Claude Code on Windows, or Firefox inside WSL (WSLg) with the installer run there. The installer warns when it runs inside WSL.
 - **Several Firefox profiles** running at the same time all connect to the one daemon; commands go to the one that connected first, and nothing shows which one that is.
+
+## Permissions
+
+The extension asks Firefox for these permissions:
+
+| Permission | Used for |
+|---|---|
+| `tabs` | listing tabs (`fox_tabs`), opening, closing, switching and reloading tabs, reading the URL and title of the target tab, screenshots (`tabs.captureTab`) |
+| `nativeMessaging` | the connection to the native host on your computer (`inari_mcp`), the only way out of the extension |
+| `notifications` | a notification when an action waits for your approval, or when a CAPTCHA needs you |
+| `<all_urls>` | the content script that reads pages and performs approved clicks and typing; screenshots of any tab |
+| `contextMenus` | the "Take Screenshot for InariMCP" and "Inspect Element for InariMCP" entries of the right-click menu |
+| `contextualIdentities` | container isolation, listing containers, opening a tab in a container |
+| `cookies` | needed by Firefox to open a tab in a container; cookies themselves are never read |
+| `find` | text search in the page (`fox_find`) |
+| `webNavigation` | waiting for a page load to finish (`fox_wait` with `for: "navigation"`) |
+
+The extension does not run in private windows (`"incognito": "not_allowed"`), and the install prompt declares the data it sends: website content and browsing activity.
+
+## Privacy
+
+- The extension reads your tabs only when the MCP client calls a tool, and sends the result to the native host on your computer. The MCP client you connected receives it and sends it to its AI provider; Inari MCP sends nothing to the developer.
+- Password, hidden, one-time-code and credit card (`cc-*`) fields are masked. Cookies are not read.
+- Clicking, typing, submitting and navigating wait for your approval. The toolbar popup can pause every call.
+- Screenshots stay in `~/.inari-mcp/screenshots/` for 30 days. `~/.inari-mcp/logs/audit.jsonl` records the time, tool name and URL of each call, not the page content. `npm run teardown -- --purge` deletes everything.
+- Private windows are not supported.
+
+The full text: [privacy policy](docs/PRIVACY.md) ([日本語](docs/PRIVACY.ja.md)).
 
 ## Architecture
 
@@ -416,7 +461,7 @@ The daemon isn't started fresh per session — whoever gets there first (your Cl
 
 ## Status
 
-This project is **under active, incremental development** — not ready for general use yet. It has moved past "source you can read and build": the installer and the AMO-signed extension on GitHub Releases let you drive your real Firefox end-to-end.
+Inari MCP for Firefox 0.1.0 is the first version listed on addons.mozilla.org. The list below is the history it shares with KitsuneMCP.
 
 **Done:**
 - Design and multi-angle review
@@ -433,11 +478,10 @@ This project is **under active, incremental development** — not ready for gene
 - Diagnostics (`--doctor`), `--help` / `--version`, and one version (0.1.4) for every package and the extension
 - Distribution prep: the real Extension ID is confirmed (`inari-mcp@elys0912.github.io`), AMO's `data_collection_permissions` is set, and `web-ext lint` passes with 0 errors/warnings (P8)
 - Human approval moved out of the page (toolbar popup / MCP elicitation, one-time approval tokens), and HMAC mutual authentication between the daemon, the relays and the Native Host
-- AMO signing (unlisted) and distributing the signed `.xpi` via GitHub Releases (since 0.1.0)
+- Prepared for addons.mozilla.org as Inari MCP for Firefox: no script execution, no logging, approval for every action, a permission page, private browsing not allowed (0.1.0)
 
 **Not done yet:**
 - Running the installer on real macOS
-- Listing on the AMO store (not planned for now; the extension is distributed only through GitHub Releases)
 
 
 ### Tool availability
@@ -482,6 +526,16 @@ End-to-end checks, kept out of `npm test`:
 | `npm run e2e:extension` | the extension loads into Firefox as a temporary add-on (`scripts/e2e/extension-load.mjs`, `web-ext` with Playwright's Firefox; another Firefox with `FOX_E2E_FIREFOX` or a path argument, overall limit `FOX_E2E_TIMEOUT_MS`, default 60000) |
 | `node scripts/e2e/tools-smoke.mjs` | daemon → Native Host → extension in your real Firefox (installer run, extension loaded; needs internet access) |
 | `node scripts/e2e/nm-probe.mjs` | the installed Native Messaging host starts and reaches the daemon |
+
+## Links
+
+- [Inari MCP for Firefox on addons.mozilla.org](https://addons.mozilla.org/firefox/addon/inari-mcp-for-firefox/)
+- [Privacy policy](docs/PRIVACY.md)
+- [Changelog](docs/CHANGELOG.md)
+- [Known issues](docs/known-issues.md)
+- [Development](docs/development.md)
+- [Issues](https://github.com/elys0912/InariMCP/issues) — questions and bug reports
+- [KitsuneMCP](https://github.com/elys0912/KitsuneMCP) — the edition this one split off from
 
 ## Credits
 
