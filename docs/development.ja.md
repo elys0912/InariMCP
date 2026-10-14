@@ -95,7 +95,7 @@ CIはパッケージをアップロードしない（Actionsのストレージ�
 |---|---|---|
 | `@inari-mcp/shared` | zodスキーマ（プロトコル、アクション、Native Hostのメッセージ）、アクション名、定数（`ENV`など）、小さなユーティリティ。Node.jsのAPIは使わない（`packages/shared/tests/browser-safe.test.ts`で確認） | daemon、中継、Native Host。拡張機能はzodを引き込まないexportだけ |
 | `@inari-mcp/shared/action-names` | ブラウザコマンドのアクション名。zodなし | 拡張機能 |
-| `@inari-mcp/shared/field-mask` | 値を伏せる（`[MASKED]`にする）フォーム欄の規則。importなし | 拡張機能（ヘッドレスは`@inari-mcp/shared`から使う） |
+| `@inari-mcp/shared/field-mask` | 値を伏せる（`[MASKED]`にする）フォーム欄の規則と、読み取るツールが拒否するCSSセレクタ（`[value…]`、`:checked`）。importなし | 拡張機能（ヘッドレスは`@inari-mcp/shared`から使う） |
 | `@inari-mcp/shared/url-pattern-limit` | 引数`urlPattern`の長さと形の制限。importなし | 拡張機能（daemonは`@inari-mcp/shared`から使う） |
 | `@inari-mcp/shared/node` | Node.jsのプロセス用の共通処理（下表） | daemon、中継、Native Host、doctor |
 
@@ -106,7 +106,7 @@ CIはパッケージをアップロードしない（Actionsのストレージ�
 | モジュール | 内容 |
 |---|---|
 | `paths` | `~/.inari-mcp/`の下のファイル（データとログのディレクトリ、APIトークン、`daemon.log`、`native-host.log`、監査ログ、既定の`safety.json`とスクリーンショットのディレクトリ）。呼び出し時に解決する |
-| `endpoint` | `FOX_HOST` / `FOX_HTTP_PORT` / `FOX_WS_PORT`（と旧名）、ループバックの判定 |
+| `endpoint` | `FOX_HOST` / `FOX_HTTP_PORT` / `FOX_WS_PORT`（と旧名）、ループバックの判定（`resolveDaemonHost`: daemon、Native Host、中継はループバックでない`FOX_HOST`を拒否する） |
 | `token` | APIトークンの読み込みと作成（作成はdaemonだけ） |
 | `health` | `GET /health`の応答の判定（daemonの多重起動確認、中継、Native Host、doctor） |
 | `log` | 5 MBでの`<file>.old`へのローテーション（名前の変更、またはcopy-truncate）、行頭の`<ISO時刻> [<pid>] `、`[InariMCP:<role>]`のstderrロガー |

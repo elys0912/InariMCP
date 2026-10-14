@@ -19,6 +19,7 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - addons.mozilla.org の掲載用の素材（[docs/amo/listing.md](./amo/listing.md)）と、審査者向けのメモ（[docs/amo/reviewer-notes.md](./amo/reviewer-notes.md)）。
 - `npm run smoke:reviewer`（`scripts/e2e/reviewer-smoke.mjs`）と [docs/amo/reviewer-smoke.md](amo/reviewer-smoke.md)（英語）：127.0.0.1 のテストページで基本機能（タブ、タブを開く、マスク付きの読み取り、検索、スクリーンショット、クリック、タブを閉じる。操作はポップアップで 1 回ずつ承認する）を試す smoke テスト。Claude Code・アカウント・インターネット接続は要らない。`-- --headless` で拡張機能なしでも動くが、誰も承認できないので、動くのはタブの一覧だけ。`scripts/e2e/tools-smoke.mjs` も example.com の代わりに同じテストページを使う。
 - ESLint（複雑度のルールを含む。complexity、max-depth、max-params、max-nested-callbacks、max-lines-per-function は警告）：`npm run lint:install && npm run lint`。lint だけ `tools/lint` の TypeScript 6 で動く（typescript-eslint のピア依存のため）。ビルドは TypeScript 7 のまま。エラーがあると `npm run lint`、CI、`npm run pack:ext` は失敗する。
+- 拡張のパッケージに `dist/LICENSE` を入れた。リポジトリの `LICENSE`（Inari MCP for Firefox と、その元になったプロジェクトの MIT の表示）の写し。
 
 ### 変更
 
@@ -32,7 +33,7 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - Inari MCP の実行に要る Node.js を 20 以上にした（`engines`、インストーラ、`--doctor`）。審査の再現ビルドは Node.js 24.x と npm 11.x。
 - 一時停止中の拒否は、ブラウザのエラーではなく安全上の拒否として MCP クライアントに返す（`decision: "paused"`、文言は `paused:` で始まる）。
 - 拡張機能の説明文とポップアップの末尾を「Inari MCP for Firefox」の名前にし、ページの内容は手元の PC のネイティブホストにだけ送ることを書いた。
-- 操作系のツールは、どのサイトでも実行の前に人に尋ねるようにした：`fox_click`、`fox_type`、`fox_press_key`、`fox_set_value`、`fox_navigate`、`fox_tab` の create / close（コンテナの有無を問わない）、`fox_handle_dialog`。1 回の承認で許可されるのは、そのサイトでの、その引数による、そのツールの 1 回の呼び出しだけで、操作を続けると 1 回ずつ尋ねる。読み取り・待機・UI だけのツール（`fox_read`、`fox_find`、`fox_screenshot`、`fox_tabs`、`fox_wait`、`fox_interact`、`fox_tab` の switch など）は尋ねずに動く。対象タブのページを daemon がまだ見ていないときは、`fox_tabs` を呼ぶまで操作系の呼び出しを承認できない。
+- 操作系のツールは、どのサイトでも実行の前に人に尋ねるようにした：`fox_click`、`fox_type`、`fox_press_key`、`fox_set_value`、`fox_navigate`、`fox_tab` の create / close（コンテナの有無を問わない）、`fox_handle_dialog`、`fox_interact` の hover（ページ自身のホバーのハンドラを動かすため。読み取り専用モードでは拒否する）。1 回の承認で許可されるのは、そのサイトでの、その引数による、そのツールの 1 回の呼び出しだけで、操作を続けると 1 回ずつ尋ねる。読み取り・待機・UI だけのツール（`fox_read`、`fox_find`、`fox_screenshot`、`fox_tabs`、`fox_wait`、`fox_interact` の scroll / highlight、`fox_tab` の switch など）は尋ねずに動く。対象タブのページを daemon がまだ見ていないときは、`fox_tabs` を呼ぶまで操作系の呼び出しを承認できない。
 - Firefox の拡張機能も、タブ（または開く URL）のサイトについて承認されていない操作系のコマンドを、daemon が何を送ってきても拒否するようにした。
 - 承認の確認（MCP elicitation とツールバーのポップアップ）を、保護対象サイトの名前ではなく、ツール・サイト・引数を示して「この操作を許可しますか」と尋ねる形にした。
 - `fox_safety_status` は `confirmProtectedActions` と `protectedUrlPatterns` の代わりに、`approvalPolicy`（どの呼び出しで尋ねるか）と `confirmReadSites` を返す。
@@ -48,7 +49,11 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 
 ### セキュリティ
 
-- 値を `[MASKED]` で伏せる欄を広げた（拡張機能とヘッドレスの両方）。パスワード欄に加えて、`type="hidden"` の欄と、`autocomplete` が `one-time-code`・`cc-number`・`cc-csc`・`cc-exp`・`cc-exp-month`・`cc-exp-year` の欄（`current-password`・`new-password` は従来どおり）。`allow_password_typing` は従来どおりパスワード欄への入力を許すだけで、伏せ字は解かない。
-- `FOX_HOST` がループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）でなければ daemon は起動しないようにした。従来は警告をログに出して、平文の HTTP・WebSocket をネットワークに開いていた。
+- 値を `[MASKED]` で伏せる欄を広げた（拡張機能とヘッドレスの両方）。パスワード欄に加えて、`type="hidden"` の欄と、`autocomplete` が `one-time-code` か `cc-` で始まる欄（支払いカードの欄すべて。カード名義人の名前も含む。`current-password`・`new-password` は従来どおり）。伏せる `<select>` では、各 `<option>` の値とテキストも伏せる。`allow_password_typing` は従来どおりパスワード欄への入力を許すだけで、伏せ字は解かない。
+- 読み取るツール（selector での `fox_find`、text の `fox_read`、要素を待つ `fox_wait`、scroll / highlight の `fox_interact`）は、`value` 属性を調べる CSS セレクタ（`[value^="a"]` など）と `:checked` を使うセレクタを、書き方によらず拒否する。一致の数や待ちが終わるかどうかで、伏せた値を 1 文字ずつ当てられるため。
+- 要素を待つ `fox_wait` と `fox_interact`（hover、highlight、`toElement` の scroll）は、要素のタグ・生成したセレクタ・位置だけを返し、テキスト・値・リンク・画像のアドレスは返さないようにした。これらは読み取りではないので `confirm_read_sites` が掛からず、そのサイトのページを尋ねずに読めたため。
+- `confirm_read_sites` を設定しているとき、拡張機能が URL を読めないタブの読み取りは、許可ではなく拒否にした。`screenshot` の all_tabs もそのタブを飛ばす。`view-source:` とリーダー表示（`about:reader`）のタブは、表示しているページの URL で照合する。
+- `FOX_HOST` がループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）でなければ daemon は起動しないようにした。従来は警告をログに出して、平文の HTTP・WebSocket をネットワークに開いていた。Native Host と stdio の中継も、そのような `FOX_HOST` には接続せずに拒否する。`127.999.0.1` のようにアドレスに見えるだけの名前は、ループバックとみなさない。
+- 監査ログは、`text`・`value` などの伏せる引数を入れ子の object の中でも伏せる（`kind: "select"` の `fox_set_value` の `option`）。`fox_press_key` の `key` も伏せる。
 - ホストの無いページ（`view-source:`、`blob:`、`data:` など。`about:` と `file:` は除く）にあるタブでは、ページを操作するツールを拒否するようにした。こうしたページには `safety.json` のどの URL パターンも一致しない。読み取るツールは動く。
 - 引数 `urlPattern` が 256 文字を超えるとき、または繰り返す括弧の中に繰り返しがあるとき（`(a+)+` など）は、コンパイルする前に拒否するようにした（daemon と拡張機能の両方で）。1 つのパターンで拡張機能のバックグラウンドページが止まらないようにするため。
