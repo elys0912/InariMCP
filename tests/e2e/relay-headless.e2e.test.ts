@@ -231,7 +231,7 @@ describe('relay → daemon → headless Firefox', () => {
     const nav = await client.callTool({ name: 'fox_navigate', arguments: { url: pageUrl } }, undefined, { timeout: 90_000 });
     expect(nav.isError, text(nav)).not.toBe(true);
     // An acting tool: the human was asked once, for the page's site.
-    expect(approvalsAsked).toEqual([expect.stringMatching(/^InariMCP: allow this operation\?[\s\S]*Tool: fox_navigate[\s\S]*Site: 127\.0\.0\.1/)]);
+    expect(approvalsAsked).toEqual([expect.stringMatching(/^Inari MCP: allow this operation\?[\s\S]*Tool: fox_navigate[\s\S]*Site: 127\.0\.0\.1/)]);
 
     // The daemon is up now: learn its PID for the cleanup.
     const token = fs.readFileSync(path.join(os.homedir(), '.inari-mcp', 'api_token'), 'utf-8').trim();

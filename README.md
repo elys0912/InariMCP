@@ -324,7 +324,7 @@ The extension does not run in private windows (`"incognito": "not_allowed"`), an
 ## Privacy
 
 - The extension reads your tabs only when the MCP client calls a tool, and sends the result to the native host on your computer. The MCP client you connected receives it and sends it to its AI provider; Inari MCP sends nothing to the developer.
-- Password, hidden, one-time-code and credit card (`cc-*`) fields are masked in what the tools read; screenshots are images and are not masked. Cookies are not read.
+- Password, hidden, one-time-code and credit card (`cc-*`) fields, and the options of such a select, are masked in what the tools read, and the reading tools refuse selectors that could test them; screenshots are images and are not masked. Cookies are not read.
 - Every action on a page or the browser (clicking, typing, hovering, navigating, opening or closing tabs, …) waits for your approval; reading, waiting, scrolling, highlighting an element and switching tabs do not. The toolbar popup can pause every call (the running one is stopped) and reopen the permission page to withdraw it.
 - Screenshots taken through the extension stay in `~/.inari-mcp/screenshots/` for 30 days (those of headless mode until you delete them). `~/.inari-mcp/logs/audit.jsonl` records the time, tool name and URL of each call, not the page content. `npm run teardown -- --purge` deletes everything.
 - Private windows are not supported.

@@ -456,7 +456,7 @@ const AS_IS_DESCRIPTIONS = {
   fox_handle_dialog:
     'Extension path: not implemented (returns an error; commands to a tab showing an alert/confirm/prompt time out there). Headless only: wait for the next dialog and accept or dismiss it (promptText for prompts). Call it before the action that opens the dialog: it does not block other commands, and when no dialog comes within timeout it arms itself for the next dialog on the tab (30 s). Dialogs nobody handles are dismissed automatically after 2 s and reported in the next result of that tab.',
   fox_request_approval:
-    'Ask the human at the browser a yes/no question and wait for the answer. Shown in the InariMCP toolbar popup in Firefox (badge + OS notification), never in the page. The answer is for you only: it approves no tool call — acting tools ask the human on their own when you call them. Unavailable in headless mode.',
+    'Ask the human at the browser a yes/no question and wait for the answer. Shown in the Inari MCP toolbar popup in Firefox (badge + OS notification), never in the page. The answer is for you only: it approves no tool call — acting tools ask the human on their own when you call them. Unavailable in headless mode.',
   fox_detect_captcha:
     'Detect captchas on the page (reCAPTCHA, hCaptcha, Cloudflare Turnstile, generic image captchas). Reports what was found so the human can be asked to solve it. Does NOT auto-solve.',
   fox_safety_status:

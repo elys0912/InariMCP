@@ -418,7 +418,7 @@ const TOKEN_REJECTED_NOTE =
 
 /** Note of a call that cannot be approved yet: the page of the target tab is not known. */
 const UNKNOWN_PAGE_NOTE =
-  'This call cannot be approved yet: InariMCP does not know which page the target tab is on, ' +
+  'This call cannot be approved yet: Inari MCP does not know which page the target tab is on, ' +
   'so it cannot tell the human where the call would act. Call fox_tabs (what: "tabs") first, ' +
   'then call this tool again (with the tabId of the tab to act on).';
 
@@ -434,9 +434,9 @@ const ARGS_TOO_LONG_NOTE =
 /** Note of an opened approval request: how approval works and how to retry. */
 function howApprovalWorksNote(toolName: string, site: string): string {
   return (
-    'How approval works: InariMCP asks the human itself, in the MCP client\'s ' +
+    'How approval works: Inari MCP asks the human itself, in the MCP client\'s ' +
     'confirmation dialog (MCP elicitation) when the client supports it, otherwise in ' +
-    'Firefox, where the InariMCP toolbar button shows a badge and the human approves ' +
+    'Firefox, where the Inari MCP toolbar button shows a badge and the human approves ' +
     'or denies in its popup. An approval covers one call of this tool with exactly these ' +
     `arguments on ${site}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
     'Nothing in the page (buttons, fox_click) can approve it. ' +
@@ -546,7 +546,7 @@ function screenshotResourceLinks(paths: string[]): CallToolResult['content'] {
     uri: pathToFileURL(p).href,
     name: path.basename(p),
     mimeType: mimeTypeFor(p),
-    description: 'Screenshot saved by InariMCP',
+    description: 'Screenshot saved by Inari MCP',
   }));
 }
 

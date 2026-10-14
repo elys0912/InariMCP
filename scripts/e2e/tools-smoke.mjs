@@ -18,7 +18,7 @@
 // It serves the local test pages of scripts/e2e/fixtures/reviewer/ on
 // 127.0.0.1, opens page 1 in the active tab and page 2 in a new tab (closed
 // again at the end). No internet access is needed. Every acting call (the two
-// navigations, closing the tab) asks for approval in the InariMCP toolbar
+// navigations, closing the tab) asks for approval in the Inari MCP toolbar
 // popup in Firefox: approve each one there.
 //
 // Usage: node scripts/e2e/tools-smoke.mjs
@@ -71,14 +71,14 @@ async function post(urlPath, payload, timeoutMs) {
 
 /**
  * Call a tool. An acting tool is first refused with an approval request: the
- * human is asked in the InariMCP popup (POST /approval/browser), and the call
+ * human is asked in the Inari MCP popup (POST /approval/browser), and the call
  * is repeated once with the one-time token, as the relay does.
  */
 async function call(name, args = {}) {
   const first = interpretCallResponse(await post('/mcp/call', { name, arguments: args }, CALL_TIMEOUT_MS));
   const requestId = approvalRequestId(first);
   if (requestId === undefined) return first;
-  console.log(`      ${name}: approve it in the InariMCP toolbar popup in Firefox`);
+  console.log(`      ${name}: approve it in the Inari MCP toolbar popup in Firefox`);
   const res = await post('/approval/browser', { requestId }, APPROVAL_TIMEOUT_MS);
   const reply = res ? parseJsonOrUndefined(res.body.toString('utf8')) : undefined;
   if (typeof reply?.approvalToken !== 'string') {

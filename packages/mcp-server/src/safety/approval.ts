@@ -9,7 +9,7 @@
  *            + hash of the tool arguments (canonical JSON, SHA-256)
  *
  * A human decision obtained outside the page — MCP elicitation answered in
- * the MCP client, or the InariMCP toolbar popup in Firefox — turns that
+ * the MCP client, or the Inari MCP toolbar popup in Firefox — turns that
  * request into a one-time *token*. The retried tool call presents the token
  * (out of band: `approvalToken` in the POST /mcp/call body, never a tool
  * argument), the handler consumes it, and the guard lets exactly that call

@@ -502,7 +502,6 @@ async function copyPageInfo(tab: browser.tabs.Tab): Promise<void> {
       { frameId: TOP_FRAME_ID },
     ) as PageInfoResponse;
 
-    console.log('Page Info:', result);
     const count = result.interactiveElements?.length ?? 0;
     showToast(t('toastFoundElements', String(count)), 'success');
 

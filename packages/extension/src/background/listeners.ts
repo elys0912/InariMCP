@@ -69,7 +69,7 @@ function onRuntimeMessage(message: unknown, sender: MessageSender, sendResponse:
 function answerApprovalMessage(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): void {
   if (!isExtensionPage(sender) || (msg.type === APPROVAL_MESSAGE.DECIDE && !isToolbarPopup(sender))) {
     console.error("[InariMCP] Refused approval message from", sender.url);
-    sendResponse({ success: false, error: "Approval requests are answered in the InariMCP toolbar popup" });
+    sendResponse({ success: false, error: "Approval requests are answered in the Inari MCP toolbar popup" });
     return;
   }
   sendResponse(

@@ -290,7 +290,7 @@ describe('E-21 get_page_info fails like the other content script tools', () => {
     useFakeBrowser(failingSend('Could not establish connection. Receiving end does not exist.'));
     const { getPageInfo } = await import('../../packages/extension/src/background/page-actions.ts');
     const pageInfo = await getPageInfo(undefined);
-    expect(pageInfo).toMatchObject({ success: false, error: expect.stringMatching(/^InariMCP cannot reach this page/) });
+    expect(pageInfo).toMatchObject({ success: false, error: expect.stringMatching(/^Inari MCP cannot reach this page/) });
     expect(pageInfo).toEqual(await handleCommand({ action: 'get_elements' }, 'host'));
   });
 
@@ -578,7 +578,7 @@ describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
   /** The popup page opened in a tab. */
   const popupInTab: browser.runtime.MessageSender = { ...popup, tab: fakeTab({ id: 9, url: POPUP_URL }) };
 
-  const APPROVALS_REFUSED = { success: false, error: 'Approval requests are answered in the InariMCP toolbar popup' };
+  const APPROVALS_REFUSED = { success: false, error: 'Approval requests are answered in the Inari MCP toolbar popup' };
   const COMMAND_REFUSED = { success: false, error: 'Background commands are only accepted from extension pages' };
 
   it('a content script can neither list nor decide approvals, nor drive the dispatcher', async () => {

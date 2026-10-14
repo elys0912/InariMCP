@@ -134,7 +134,7 @@ export function canElicit(caps: ClientCapabilities | undefined): boolean {
 
 export function elicitationParams(info: ApprovalInfo): ElicitRequestFormParams {
   const lines = [
-    'InariMCP: allow this operation?',
+    'Inari MCP: allow this operation?',
     '',
     `Tool: ${info.toolName}`,
     `Site: ${info.host}` + (info.matchedPattern ? ` (confirm_read_sites: '${info.matchedPattern}')` : ''),
@@ -231,13 +231,13 @@ export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Pr
 
 export function describeOutcome(outcome: ApprovalOutcome): string {
   const where = (via: 'elicitation' | 'browser'): string =>
-    via === 'elicitation' ? "in the MCP client's confirmation dialog" : 'in the InariMCP popup in Firefox';
+    via === 'elicitation' ? "in the MCP client's confirmation dialog" : 'in the Inari MCP popup in Firefox';
   switch (outcome.kind) {
     case 'approved':
       return `The human approved this call ${where(outcome.via)}.`;
     case 'not_approved':
       if (outcome.reason === 'timeout') {
-        return `InariMCP asked the human ${where(outcome.via)}, but got no answer in time. ` +
+        return `Inari MCP asked the human ${where(outcome.via)}, but got no answer in time. ` +
           'Tell the user what you want to do and call the tool again when they are ready.';
       }
       if (outcome.reason === 'cancelled') {
@@ -245,7 +245,7 @@ export function describeOutcome(outcome: ApprovalOutcome): string {
       }
       return `The human declined this call ${where(outcome.via)}. Do not retry it unless the user asks you to.`;
     case 'unavailable':
-      return `InariMCP could not ask the human: ${outcome.detail}.`;
+      return `Inari MCP could not ask the human: ${outcome.detail}.`;
     default: {
       const unhandled: never = outcome;
       return String(unhandled);

@@ -3,7 +3,7 @@
  * starts, once per Claude Code session.
  *
  * Speaks MCP JSON-RPC on stdio and binds no port. tools/list is answered
- * locally from TOOL_SCHEMAS (filtered by this session's FOX_CAPS); each
+ * locally from PUBLIC_TOOLS (filtered by this session's FOX_CAPS); each
  * tools/call is forwarded to the shared daemon's POST /mcp/call, which runs
  * zod validation and the SafetyGuard, and its CallToolResult is returned
  * unchanged — except confirmation-required results: for those the relay

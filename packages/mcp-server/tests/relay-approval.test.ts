@@ -85,7 +85,7 @@ describe('elicitation helpers', () => {
     expect(params.message).toContain('fox_click');
     expect(params.message).toContain('bank.example.test');
     expect(params.message).toContain('selector: "#go"');
-    expect(params.message).toMatch(/^InariMCP: allow this operation\?/);
+    expect(params.message).toMatch(/^Inari MCP: allow this operation\?/);
     expect(params.message).not.toMatch(/protected|confirm_read_sites/);
     expect(params.requestedSchema.required).toEqual(['approve']);
     expect(params.requestedSchema.properties['approve']).toMatchObject({ type: 'boolean', default: false });

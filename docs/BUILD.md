@@ -49,7 +49,7 @@ In `web-ext-artifacts/`:
 | `inari_mcp_for_firefox-<version>.zip` | the add-on package (the submitted file) |
 | `inari_mcp_for_firefox-<version>.sha256.txt` | one line per file in the zip: `<sha256>  <path>`, sorted by path |
 
-`<version>` is the `version` of `packages/extension/manifest.json`. The files in the zip are `manifest.json`, `_locales/`, `icons/` and `dist/`: four JavaScript bundles (`dist/background.js`, `dist/content.js`, `dist/popup/popup.js`, `dist/consent/consent.js`) and the HTML and CSS files of the popup and of the permission page.
+`<version>` is the `version` of `packages/extension/manifest.json`. The files in the zip are `manifest.json`, `_locales/`, `icons/` and `dist/`: four JavaScript bundles (`dist/background.js`, `dist/content.js`, `dist/popup/popup.js`, `dist/consent/consent.js`), the HTML and CSS files of the popup and of the permission page, and `dist/LICENSE`.
 
 `dist/LICENSE` in the zip is a copy of the repository's `LICENSE` (MIT, with the copyright notice of the project this add-on is based on); `scripts/build-extension.mjs` copies it.
 
@@ -83,7 +83,7 @@ Line endings do not differ between systems: `.gitattributes` fixes every text fi
 | Path | Content |
 |---|---|
 | `packages/extension/` | the add-on: `manifest.json`, `src/` (TypeScript), `_locales/`, `icons/` |
-| `packages/shared/src/` | code shared with the Node.js parts; the add-on bundles `index.ts`, `action-names.ts`, `field-mask.ts` and `url-pattern-limit.ts` from here |
+| `packages/shared/src/` | code shared with the Node.js parts; the add-on bundles `index.ts`, `action-names.ts`, `field-mask.ts`, `approval-site.ts` and `url-pattern-limit.ts` from here (`SHARED_ENTRIES` of `scripts/build-extension.mjs`) |
 | `scripts/build-extension.mjs` | the esbuild configuration |
 | `scripts/pack-extension.mjs` | the packaging script (`npm run pack:ext`) |
 | `tools/lint/` | ESLint, its configuration and its lockfile (`npm run lint:install`, `npm run lint`) |
