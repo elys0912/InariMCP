@@ -3,7 +3,7 @@
     "message": "Claude Code などの MCP クライアントから Firefox のタブを読んで操作する。ページの内容・URL・スクリーンショットを手元のネイティブホストへ送る。"
   },
 
-  "popupFooter": { "message": "Inari MCP for Firefox — ページの内容はこの PC のネイティブホストにだけ送る" },
+  "popupFooter": { "message": "Inari MCP for Firefox — ページの内容はこの PC のネイティブホストを経て MCP クライアントへ渡る" },
   "popupQuickActions": { "message": "クイック操作" },
   "popupScreenshot": { "message": "スクリーンショット" },
   "popupPageInfo": { "message": "ページ情報" },
@@ -25,7 +25,7 @@
 
   "setupHostMissingTitle": { "message": "セットアップが必要" },
   "setupHostMissingText": {
-    "message": "Firefox が InariMCP の Native Host を見つけられません。InariMCP のフォルダ（リポジトリを clone したもの）でビルドしてインストーラを実行してください:"
+    "message": "Firefox が Inari MCP の Native Host を見つけられません。Inari MCP のフォルダ（リポジトリを clone したもの）でビルドしてインストーラを実行してください:"
   },
   "setupHostMissingNote": { "message": "実行したら「再確認」を押してください。Flatpak 版の Firefox はインストール手順を見てください（インストーラの再実行だけでは直りません）。" },
   "setupHostErrorTitle": { "message": "Native Host が動いていません" },
@@ -34,16 +34,16 @@
   },
   "setupHostOutdatedTitle": { "message": "Native Host が古くなっています" },
   "setupHostOutdatedText": {
-    "message": "ブラウザ操作はそのまま使えますが、InariMCP のフォルダがこの拡張より古い版です。そのフォルダで最新版を取得してビルドし、インストーラを実行し直してください（Native Host を更新します）:"
+    "message": "ブラウザ操作はそのまま使えますが、Inari MCP のフォルダがこの拡張より古い版です。そのフォルダで最新版を取得してビルドし、インストーラを実行し直してください（Native Host を更新します）:"
   },
   "setupHostOutdatedNote": { "message": "更新したら Firefox を再起動してください。" },
   "setupDetails": { "message": "詳細: $1" },
   "setupDaemonDownTitle": { "message": "MCP サーバーが応答しません" },
-  "setupDaemonDownText": { "message": "Native Host は動いていますが、InariMCP のサーバーが応答しません。" },
-  "setupDaemonDownTextAt": { "message": "Native Host は動いていますが、InariMCP のサーバー（$1）が応答しません。" },
+  "setupDaemonDownText": { "message": "Native Host は動いていますが、Inari MCP のサーバーが応答しません。" },
+  "setupDaemonDownTextAt": { "message": "Native Host は動いていますが、Inari MCP のサーバー（$1）が応答しません。" },
   "setupNoSessionTitle": { "message": "Claude Code とつながっていません" },
   "setupNoSessionText": {
-    "message": "Firefox 側の準備はできています。InariMCP が Claude Code に登録されていないか、Claude Code のセッションが起動していません。登録するには:"
+    "message": "Firefox 側の準備はできています。Inari MCP が Claude Code に登録されていないか、Claude Code のセッションが起動していません。登録するには:"
   },
   "setupNoSessionNote": {
     "message": "登録したら Claude Code を起動し直してください。起動中のセッションは 30 秒ほどでここに反映されます。"
@@ -57,39 +57,39 @@
   "toastCopyFailed": { "message": "コピーできませんでした。コマンドを選択して手動でコピーしてください" },
   "toastUnknownError": { "message": "不明なエラー" },
 
-  "badgeSetupNeeded": { "message": "InariMCP: セットアップが必要" },
-  "badgeHostError": { "message": "InariMCP: Native Host が動いていません" },
-  "badgeHostOutdated": { "message": "InariMCP: Native Host が古くなっています" },
-  "badgeDaemonDown": { "message": "InariMCP: MCP サーバーが応答しません" },
-  "badgeNoSession": { "message": "InariMCP: Claude Code とつながっていません" },
-  "badgeApprovalPending": { "message": "InariMCP: 承認待ちのリクエストが $1 件あります" },
+  "badgeSetupNeeded": { "message": "Inari MCP: セットアップが必要" },
+  "badgeHostError": { "message": "Inari MCP: Native Host が動いていません" },
+  "badgeHostOutdated": { "message": "Inari MCP: Native Host が古くなっています" },
+  "badgeDaemonDown": { "message": "Inari MCP: MCP サーバーが応答しません" },
+  "badgeNoSession": { "message": "Inari MCP: Claude Code とつながっていません" },
+  "badgeApprovalPending": { "message": "Inari MCP: 承認待ちのリクエストが $1 件あります" },
 
-  "menuScreenshot": { "message": "InariMCP でスクリーンショットを撮る" },
+  "menuScreenshot": { "message": "Inari MCP でスクリーンショットを撮る" },
 
-  "notifyApprovalTitle": { "message": "Claude が承認を求めています" },
-  "notifyApprovalDefault": { "message": "Claude が操作の実行を求めています" },
-  "notifyApprovalToolCall": { "message": "$2 での $1 を許可しますか。ツールバーの InariMCP ボタンから承認または拒否してください。" },
-  "notifyApprovalQuestion": { "message": "$1 — ツールバーの InariMCP ボタンから回答してください。" },
+  "notifyApprovalTitle": { "message": "MCP クライアントが承認を求めています" },
+  "notifyApprovalDefault": { "message": "MCP クライアントが操作の実行を求めています" },
+  "notifyApprovalToolCall": { "message": "$2 での $1 を許可しますか。ツールバーの Inari MCP ボタンから承認または拒否してください。" },
+  "notifyApprovalQuestion": { "message": "$1 — ツールバーの Inari MCP ボタンから回答してください。" },
   "notifyCaptchaTitle": { "message": "CAPTCHA の解決が必要です" },
-  "notifyCaptchaMessage": { "message": "Claude が CAPTCHA で止まっています。解いてください。" },
+  "notifyCaptchaMessage": { "message": "MCP クライアントが CAPTCHA で止まっています。解いてください。" },
 
   "bannerCaptchaTitle": { "message": "🧩 CAPTCHA（$1）を解いてください。解けたら自動で続きます。" },
   "bannerCaptchaDetail": {
-    "message": "InariMCP は一時停止して待っています。自動で続かないときは「完了」を押してください。"
+    "message": "Inari MCP は一時停止して待っています。自動で続かないときは「完了」を押してください。"
   },
   "bannerDone": { "message": "完了" },
   "bannerCancel": { "message": "キャンセル" },
 
   "popupApprovalsTitle": { "message": "承認リクエスト" },
   "approvalToolCallTitle": { "message": "この操作を許可しますか" },
-  "approvalMessageTitle": { "message": "Claude からの確認" },
+  "approvalMessageTitle": { "message": "MCP クライアントからの確認" },
   "approvalTool": { "message": "ツール" },
   "approvalSite": { "message": "サイト" },
   "approvalPage": { "message": "ページ" },
   "approvalPattern": { "message": "confirm_read_sites の項目" },
   "approvalArgs": { "message": "引数" },
   "approvalToolCallNote": { "message": "自分で依頼した操作のときだけ承認してください。許可されるのは、このサイトでの、この引数による、このツールの 1 回の呼び出しだけです。残り $1 秒。" },
-  "approvalMessageNote": { "message": "回答は Claude に返されます。この回答でツールの呼び出しが許可されることはありません。残り $1 秒。" },
+  "approvalMessageNote": { "message": "回答は MCP クライアントに返されます。この回答でツールの呼び出しが許可されることはありません。残り $1 秒。" },
   "approvalMore": { "message": "ほかに $1 件が待機中です" },
   "approvalApprove": { "message": "承認" },
   "approvalDeny": { "message": "拒否" },
@@ -98,31 +98,32 @@
   "popupConsentTitle": { "message": "まだ許可されていません" },
   "popupConsentText": { "message": "許可の画面で許可するまで、Inari MCP for Firefox は Native Host に接続しません。" },
   "popupConsentOpen": { "message": "許可の画面を開く" },
+  "popupConsentChange": { "message": "許可を取り消す（許可の画面を開く）" },
   "popupPauseLabel": { "message": "エージェントの操作を一時停止" },
-  "popupPauseNote": { "message": "一時停止中: MCP クライアントからの命令はすべて拒否します。" },
+  "popupPauseNote": { "message": "一時停止中: MCP クライアントからの命令はすべて拒否し、実行中のものは中断します。" },
   "statusNoConsent": { "message": "未許可" },
   "toastPauseFailed": { "message": "一時停止を切り替えられませんでした" },
 
   "badgeTextNoConsent": { "message": "未許可" },
-  "badgeNoConsent": { "message": "InariMCP: 未許可です（接続しません）。ポップアップから許可できます。" },
+  "badgeNoConsent": { "message": "Inari MCP: 未許可です（接続しません）。ポップアップから許可できます。" },
   "badgeTextPaused": { "message": "停止" },
-  "badgePaused": { "message": "InariMCP: 一時停止中（MCP クライアントからの命令を拒否します）" },
-  "badgeActive": { "message": "InariMCP: MCP クライアントが Firefox を操作しています" },
+  "badgePaused": { "message": "Inari MCP: 一時停止中（MCP クライアントからの命令を拒否します）" },
+  "badgeActive": { "message": "Inari MCP: MCP クライアントが Firefox を操作しています" },
 
   "consentPageTitle": { "message": "Inari MCP for Firefox: 許可の確認" },
   "consentHeading": { "message": "Inari MCP for Firefox の接続を許可しますか？" },
   "consentWhatTitle": { "message": "何をするか" },
   "consentWhatText": { "message": "Inari MCP for Firefox は、このコンピューターの MCP クライアント（Claude Code など）が Firefox を操作できるようにします。ページの読み取り、スクリーンショット、クリック、入力、タブの操作をします。" },
   "consentSendsTitle": { "message": "何を送るか" },
-  "consentSendsText": { "message": "開いているページの内容、スクリーンショット、URL、タブの一覧です。このコンピューターの Native Host を経由して MCP クライアントに渡ります。MCP クライアントはそれを AI の提供元に送ることがあります。" },
+  "consentSendsText": { "message": "開いているページの内容（入力欄の値を含む。パスワードなどの欄は伏せる）、スクリーンショット、URL、タブの一覧、コンテナの名前です。このコンピューターの Native Host を経由して MCP クライアントに渡ります。MCP クライアントはそれを AI の提供元に送ることがあります。" },
   "consentNeedsTitle": { "message": "必要なもの" },
-  "consentNeedsText": { "message": "このコンピューターに別途インストールする InariMCP の Native Host。アドオンだけでは何もしません。" },
+  "consentNeedsText": { "message": "このコンピューターに別途インストールする Inari MCP の Native Host。アドオンだけでは何もしません。" },
   "consentDenyTitle": { "message": "許可しない場合" },
   "consentDenyText": { "message": "アドオンは Native Host に接続せず、何もしません。あとからツールバーのボタンで許可できます。" },
   "consentPrivacy": { "message": "プライバシーポリシー" },
   "consentAllow": { "message": "許可する" },
   "consentDeny": { "message": "許可しない" },
-  "consentStateGranted": { "message": "許可しました。Inari MCP for Firefox は Native Host に接続します。このタブは閉じてかまいません。エージェントの操作は、ツールバーのポップアップの一時停止スイッチでいつでも止められます。" },
+  "consentStateGranted": { "message": "許可しました。Inari MCP for Firefox は Native Host に接続します。このタブは閉じてかまいません。エージェントの操作は、ツールバーのポップアップの一時停止スイッチでいつでも止められます。許可を取り消すときは、ポップアップからこの画面を開き直してください。" },
   "consentStateDenied": { "message": "許可しませんでした。Inari MCP for Firefox は接続せず、何もしません。あとからツールバーのボタンで許可できます。" },
   "consentStateFailed": { "message": "回答を保存できませんでした。このページを再読み込みして、もう一度押してください。" }
 }

@@ -3,7 +3,7 @@
     "message": "Lets an MCP client such as Claude Code read and operate your tabs. Sends page content, URLs and screenshots to a local native host."
   },
 
-  "popupFooter": { "message": "Inari MCP for Firefox — sends page content only to the native host on this computer" },
+  "popupFooter": { "message": "Inari MCP for Firefox — page content goes through the native host on this computer to your MCP client" },
   "popupQuickActions": { "message": "Quick Actions" },
   "popupScreenshot": { "message": "Screenshot" },
   "popupPageInfo": { "message": "Page Info" },
@@ -28,7 +28,7 @@
 
   "setupHostMissingTitle": { "message": "Setup needed" },
   "setupHostMissingText": {
-    "message": "Firefox cannot find the InariMCP native host. Build InariMCP and run its installer in your InariMCP folder (a clone of the repository):"
+    "message": "Firefox cannot find the Inari MCP native host. Build Inari MCP and run its installer in your Inari MCP folder (a clone of the repository):"
   },
   "setupHostMissingNote": { "message": "Then press Recheck. Flatpak Firefox: see the installation guide (re-running the installer alone does not help there)." },
   "setupHostErrorTitle": { "message": "Native host failed" },
@@ -38,7 +38,7 @@
   },
   "setupHostOutdatedTitle": { "message": "Native host is out of date" },
   "setupHostOutdatedText": {
-    "message": "Browser tools still work, but your InariMCP folder is older than this extension. Pull the latest version there, rebuild it and re-run the installer (it updates the native host):"
+    "message": "Browser tools still work, but your Inari MCP folder is older than this extension. Pull the latest version there, rebuild it and re-run the installer (it updates the native host):"
   },
   "setupHostOutdatedNote": { "message": "Then restart Firefox." },
   "setupDetails": {
@@ -46,14 +46,14 @@
     "description": "$1 = log file path"
   },
   "setupDaemonDownTitle": { "message": "MCP server not responding" },
-  "setupDaemonDownText": { "message": "The native host runs, but the InariMCP server does not answer." },
+  "setupDaemonDownText": { "message": "The native host runs, but the Inari MCP server does not answer." },
   "setupDaemonDownTextAt": {
-    "message": "The native host runs, but the InariMCP server does not answer at $1.",
+    "message": "The native host runs, but the Inari MCP server does not answer at $1.",
     "description": "$1 = server URL"
   },
   "setupNoSessionTitle": { "message": "Claude Code is not connected" },
   "setupNoSessionText": {
-    "message": "Firefox is ready. Either InariMCP is not registered with Claude Code, or no Claude Code session is running. To register it:"
+    "message": "Firefox is ready. Either Inari MCP is not registered with Claude Code, or no Claude Code session is running. To register it:"
   },
   "setupNoSessionNote": {
     "message": "After registering, restart Claude Code. A running session shows up here within about 30 seconds."
@@ -70,44 +70,44 @@
   "toastCopyFailed": { "message": "Copy failed: select the command and copy it by hand" },
   "toastUnknownError": { "message": "Unknown error" },
 
-  "badgeSetupNeeded": { "message": "InariMCP: setup needed" },
-  "badgeHostError": { "message": "InariMCP: native host failed" },
-  "badgeHostOutdated": { "message": "InariMCP: native host is out of date" },
-  "badgeDaemonDown": { "message": "InariMCP: MCP server not responding" },
-  "badgeNoSession": { "message": "InariMCP: no Claude Code session" },
+  "badgeSetupNeeded": { "message": "Inari MCP: setup needed" },
+  "badgeHostError": { "message": "Inari MCP: native host failed" },
+  "badgeHostOutdated": { "message": "Inari MCP: native host is out of date" },
+  "badgeDaemonDown": { "message": "Inari MCP: MCP server not responding" },
+  "badgeNoSession": { "message": "Inari MCP: no Claude Code session" },
   "badgeApprovalPending": {
-    "message": "InariMCP: $1 approval request(s) waiting for you",
+    "message": "Inari MCP: $1 approval request(s) waiting for you",
     "description": "$1 = number of pending requests"
   },
 
-  "menuScreenshot": { "message": "Take Screenshot for InariMCP" },
+  "menuScreenshot": { "message": "Take Screenshot for Inari MCP" },
 
-  "notifyApprovalTitle": { "message": "Claude requests approval" },
-  "notifyApprovalDefault": { "message": "Claude wants to perform an action" },
+  "notifyApprovalTitle": { "message": "The MCP client requests approval" },
+  "notifyApprovalDefault": { "message": "The MCP client wants to perform an action" },
   "notifyApprovalToolCall": {
-    "message": "Allow $1 on $2? Click the InariMCP toolbar button to approve or deny.",
+    "message": "Allow $1 on $2? Click the Inari MCP toolbar button to approve or deny.",
     "description": "$1 = tool name, $2 = site (hostname)"
   },
   "notifyApprovalQuestion": {
-    "message": "$1 — answer with the InariMCP toolbar button.",
-    "description": "$1 = question written by Claude (not translated)"
+    "message": "$1 — answer with the Inari MCP toolbar button.",
+    "description": "$1 = question written by the MCP client (not translated)"
   },
   "notifyCaptchaTitle": { "message": "Captcha needs solving" },
-  "notifyCaptchaMessage": { "message": "Claude paused on a captcha and needs you to solve it." },
+  "notifyCaptchaMessage": { "message": "The MCP client paused on a captcha and needs you to solve it." },
 
   "bannerCaptchaTitle": {
     "message": "🧩 Please solve the captcha ($1), then it continues automatically.",
     "description": "$1 = captcha types, e.g. recaptcha, hcaptcha"
   },
   "bannerCaptchaDetail": {
-    "message": "InariMCP paused and is waiting for you. Click Done if it does not continue on its own."
+    "message": "Inari MCP paused and is waiting for you. Click Done if it does not continue on its own."
   },
   "bannerDone": { "message": "Done" },
   "bannerCancel": { "message": "Cancel" },
 
   "popupApprovalsTitle": { "message": "Approval requests" },
   "approvalToolCallTitle": { "message": "Allow this operation?" },
-  "approvalMessageTitle": { "message": "Question from Claude" },
+  "approvalMessageTitle": { "message": "Question from the MCP client" },
   "approvalTool": { "message": "Tool" },
   "approvalSite": { "message": "Site" },
   "approvalPage": { "message": "Page" },
@@ -118,7 +118,7 @@
     "description": "$1 = seconds left"
   },
   "approvalMessageNote": {
-    "message": "Your answer goes back to Claude; it approves no tool call. $1 s left.",
+    "message": "Your answer goes back to the MCP client; it approves no tool call. $1 s left.",
     "description": "$1 = seconds left"
   },
   "approvalMore": { "message": "$1 more request(s) waiting", "description": "$1 = number of other pending requests" },
@@ -129,31 +129,32 @@
   "popupConsentTitle": { "message": "Not allowed yet" },
   "popupConsentText": { "message": "Inari MCP for Firefox does not connect to the native host until you allow it on the permission page." },
   "popupConsentOpen": { "message": "Open the permission page" },
+  "popupConsentChange": { "message": "Withdraw the permission (opens the permission page)" },
   "popupPauseLabel": { "message": "Pause agent actions" },
-  "popupPauseNote": { "message": "Paused: every command from the MCP client is refused." },
+  "popupPauseNote": { "message": "Paused: every command from the MCP client is refused, and the one that is running is stopped." },
   "statusNoConsent": { "message": "Not allowed" },
   "toastPauseFailed": { "message": "Could not change the pause switch" },
 
   "badgeTextNoConsent": { "message": "OFF", "description": "Toolbar badge text (at most 4 characters): not allowed to connect yet" },
-  "badgeNoConsent": { "message": "InariMCP: not allowed yet (it does not connect). Open the popup to allow it." },
+  "badgeNoConsent": { "message": "Inari MCP: not allowed yet (it does not connect). Open the popup to allow it." },
   "badgeTextPaused": { "message": "II", "description": "Toolbar badge text (at most 4 characters): agent actions paused" },
-  "badgePaused": { "message": "InariMCP: paused (commands from the MCP client are refused)" },
-  "badgeActive": { "message": "InariMCP: the MCP client is operating Firefox" },
+  "badgePaused": { "message": "Inari MCP: paused (commands from the MCP client are refused)" },
+  "badgeActive": { "message": "Inari MCP: the MCP client is operating Firefox" },
 
   "consentPageTitle": { "message": "Inari MCP for Firefox: permission" },
   "consentHeading": { "message": "Allow Inari MCP for Firefox to connect?" },
   "consentWhatTitle": { "message": "What it does" },
   "consentWhatText": { "message": "Inari MCP for Firefox lets an MCP client on this computer (such as Claude Code) operate Firefox: read pages, take screenshots, click, type and manage tabs." },
   "consentSendsTitle": { "message": "What it sends" },
-  "consentSendsText": { "message": "The content of open pages, screenshots, URLs and the list of tabs. They go to the native host on this computer and from there to the MCP client, which may pass them on to its AI provider." },
+  "consentSendsText": { "message": "The content of open pages (including the values of form fields; password and similar fields are masked), screenshots, URLs, the list of tabs and the names of your containers. They go to the native host on this computer and from there to the MCP client, which may pass them on to its AI provider." },
   "consentNeedsTitle": { "message": "What you need" },
-  "consentNeedsText": { "message": "The InariMCP native host, installed separately on this computer. The add-on alone does nothing." },
+  "consentNeedsText": { "message": "The Inari MCP native host, installed separately on this computer. The add-on alone does nothing." },
   "consentDenyTitle": { "message": "If you do not allow it" },
   "consentDenyText": { "message": "The add-on does not connect to the native host and does nothing. You can allow it later from the toolbar button." },
   "consentPrivacy": { "message": "Privacy policy" },
   "consentAllow": { "message": "Allow" },
   "consentDeny": { "message": "Don't allow" },
-  "consentStateGranted": { "message": "Allowed. Inari MCP for Firefox connects to the native host. You can close this tab. To stop the agent at any time, use the pause switch in the toolbar popup." },
+  "consentStateGranted": { "message": "Allowed. Inari MCP for Firefox connects to the native host. You can close this tab. To stop the agent at any time, use the pause switch in the toolbar popup; to withdraw the permission, open this page again from the popup." },
   "consentStateDenied": { "message": "Not allowed. Inari MCP for Firefox does not connect and does nothing. You can allow it later from the toolbar button." },
   "consentStateFailed": { "message": "Your answer could not be saved. Reload this page and try again." }
 }

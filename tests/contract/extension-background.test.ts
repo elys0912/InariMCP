@@ -349,11 +349,10 @@ describe('3.A2 reconnect backoff', () => {
 });
 
 describe('3.A3 / 5.1 frame routing', () => {
-  it('every tabs.sendMessage call names a frame', () => {
+  it('every tabs.sendMessage call names the top frame, the only one with the content script', () => {
     const calls = [...background.matchAll(/browser\.tabs\s*\.sendMessage\(([\s\S]*?)\)(?:\s*as|\s*\.|;)/g)];
     expect(calls.length).toBeGreaterThan(0);
-    for (const [call] of calls) expect(call, call).toMatch(/frameId/);
-    expect(background).toMatch(/frameId: number = TOP_FRAME_ID/);
+    for (const [call] of calls) expect(call, call).toMatch(/\{ frameId: TOP_FRAME_ID \}/);
   });
 });
 
@@ -791,5 +790,25 @@ describe('3.security native message logging', () => {
     const manifest = JSON.parse(readExtensionSource('../manifest.json')) as Record<string, unknown>;
     expect(manifest['permissions']).not.toContain('activeTab');
     expect(manifest).not.toHaveProperty('web_accessible_resources');
+  });
+
+  it('manifest: the content script runs in the top frame only and puts no stylesheet into pages', () => {
+    const manifest = JSON.parse(readExtensionSource('../manifest.json')) as {
+      content_scripts: Record<string, unknown>[];
+    };
+    expect(manifest.content_scripts).toHaveLength(1);
+    expect(manifest.content_scripts[0]).toMatchObject({ all_frames: false });
+    expect(manifest.content_scripts[0]).not.toHaveProperty('css');
+  });
+
+  it('manifest: declares every kind of data it sends, under the name of the UI', () => {
+    const manifest = JSON.parse(readExtensionSource('../manifest.json')) as {
+      browser_action: { default_title: string };
+      browser_specific_settings: { gecko: { data_collection_permissions: { required: string[] } } };
+    };
+    // Page text and form values, the URLs and tab list, and the clicks and typing it performs.
+    expect([...manifest.browser_specific_settings.gecko.data_collection_permissions.required].sort())
+      .toEqual(['browsingActivity', 'websiteActivity', 'websiteContent']);
+    expect(manifest.browser_action.default_title).toBe('Inari MCP');
   });
 });
