@@ -30,6 +30,18 @@ interface PendingApproval {
 const pendingApprovals = new Map<string, PendingApproval>();
 export const APPROVAL_NOTIFICATION_PREFIX = "inari-approval-";
 
+/**
+ * Most fox_request_approval questions (kind "message") pending at once. A
+ * question unlocks nothing; past this many the next one is refused at once,
+ * so questions cannot pile up and wear the human into approving the
+ * tool_call requests without reading them.
+ */
+export const MAX_PENDING_QUESTIONS = 3;
+
+function pendingQuestionCount(): number {
+  return [...pendingApprovals.values()].filter((entry) => entry.view.kind === "message").length;
+}
+
 export function requestApproval(
   requestId: number | string | undefined,
   data: Record<string, unknown> = {},
@@ -41,6 +53,12 @@ export function requestApproval(
   }
   // A repeated id (server retry) replaces the older entry.
   pendingApprovals.get(view.id)?.finish("cancelled");
+  if (view.kind === "message" && pendingQuestionCount() >= MAX_PENDING_QUESTIONS) {
+    return Promise.resolve({
+      success: false,
+      error: `Refused: ${MAX_PENDING_QUESTIONS} questions already wait for the human; ask again once one is answered`,
+    });
+  }
 
   return new Promise<CommandResult>((resolve) => {
     let settled = false;
@@ -99,9 +117,13 @@ export function cancelAllApprovals(): void {
   for (const entry of [...pendingApprovals.values()]) entry.finish("cancelled");
 }
 
-/** Popup: the pending requests, oldest first. */
+/**
+ * Popup: the pending requests, the tool_call requests first (they decide
+ * what the agent may do), then the questions; each kind oldest first.
+ */
 export function listApprovals(): ApprovalView[] {
-  return [...pendingApprovals.values()].map((entry) => entry.view);
+  const views = [...pendingApprovals.values()].map((entry) => entry.view);
+  return [...views.filter((view) => view.kind === "tool_call"), ...views.filter((view) => view.kind !== "tool_call")];
 }
 
 /** Popup: the human's decision on one request. */

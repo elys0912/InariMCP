@@ -321,20 +321,44 @@ const APPROVAL_ARM_DELAY_MS = 800;
 /** The request on screen, since when, and how many others are queued. */
 let shownApproval: { id: string; more: number; shownAt: number } | null = null;
 
-/**
- * Show the oldest pending request (one at a time: the buttons never move
- * under the cursor), with a count of the others. The card is rebuilt only
- * when the request on screen changes; otherwise just the countdown updates.
- */
-async function refreshApprovals(): Promise<void> {
-  let approvals: ApprovalView[];
+/** The pending requests as the background lists them (none when it cannot answer). */
+async function fetchApprovals(): Promise<ApprovalView[]> {
   try {
     const reply = await browser.runtime.sendMessage({ type: APPROVAL_MESSAGE.LIST }) as ApprovalListResponse;
-    approvals = reply?.success && Array.isArray(reply.approvals) ? reply.approvals : [];
+    return reply?.success && Array.isArray(reply.approvals) ? reply.approvals : [];
   } catch {
-    approvals = [];
+    return [];
   }
+}
 
+/** Keep the buttons of `card` disabled until APPROVAL_ARM_DELAY_MS after `shownAt`. */
+function armLater(card: HTMLElement, shownAt: number): void {
+  const armIn = shownAt + APPROVAL_ARM_DELAY_MS - Date.now();
+  if (armIn <= 0) return;
+
+  const buttons = card.querySelectorAll('button');
+  buttons.forEach((b) => { b.disabled = true; });
+  setTimeout(() => buttons.forEach((b) => { b.disabled = false; }), armIn);
+}
+
+/** The line under the card: how many other requests wait (none when 0). */
+function queuedNote(more: number): HTMLElement[] {
+  if (more === 0) return [];
+
+  const queued = document.createElement('p');
+  queued.className = 'approval-queued';
+  queued.textContent = t('approvalMore', String(more));
+  return [queued];
+}
+
+/**
+ * Show the first pending request (one at a time: the buttons never move
+ * under the cursor; the background lists the tool_call requests first), with
+ * a count of the others. The card is rebuilt only when the request on screen
+ * changes; otherwise just the countdown updates.
+ */
+async function refreshApprovals(): Promise<void> {
+  const approvals = await fetchApprovals();
   const list = document.getElementById('approval-list');
   setHidden('approvals', approvals.length === 0);
   if (!list) return;
@@ -355,20 +379,8 @@ async function refreshApprovals(): Promise<void> {
   const shownAt = shownApproval?.id === view.id ? shownApproval.shownAt : Date.now();
   shownApproval = { id: view.id, more, shownAt };
   const card = approvalCard(view, (id, approved) => { void decide(id, approved); });
-  const armIn = shownAt + APPROVAL_ARM_DELAY_MS - Date.now();
-  if (armIn > 0) {
-    const buttons = card.querySelectorAll('button');
-    buttons.forEach((b) => { b.disabled = true; });
-    setTimeout(() => buttons.forEach((b) => { b.disabled = false; }), armIn);
-  }
-  const children: HTMLElement[] = [card];
-  if (more > 0) {
-    const queued = document.createElement('p');
-    queued.className = 'approval-queued';
-    queued.textContent = t('approvalMore', String(more));
-    children.push(queued);
-  }
-  list.replaceChildren(...children);
+  armLater(card, shownAt);
+  list.replaceChildren(card, ...queuedNote(more));
 }
 
 async function decide(id: string, approved: boolean): Promise<void> {

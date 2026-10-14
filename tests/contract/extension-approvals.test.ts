@@ -12,6 +12,7 @@ import {
   cancelApprovalByRequestId,
   decideApproval,
   listApprovals,
+  MAX_PENDING_QUESTIONS,
   requestApproval,
 } from '../../packages/extension/src/background/approvals.ts';
 
@@ -144,5 +145,33 @@ describe('background/approvals.ts', () => {
     expect(calls.badgeText.at(-1)).toBe('1');
     expect(decideApproval('msg-r-8', true)).toEqual({ success: true });
     await expect(answer).resolves.toMatchObject({ approved: true });
+  });
+
+  it(`refuses a question at once while ${MAX_PENDING_QUESTIONS} wait, and still takes a tool_call request`, async () => {
+    for (let i = 0; i < MAX_PENDING_QUESTIONS; i++) void requestApproval(`q-${i}`, { message: `Question ${i}` });
+    await expect(requestApproval('q-extra', { message: 'One more' })).resolves
+      .toMatchObject({ success: false, error: expect.stringMatching(/^Refused: /) });
+    expect(listApprovals()).toHaveLength(MAX_PENDING_QUESTIONS);
+
+    void requestApproval('r-tool', TOOL_CALL());
+    expect(listApprovals()).toHaveLength(MAX_PENDING_QUESTIONS + 1);
+  });
+
+  it('a question is taken again once one is answered, and a retry of a waiting one is no extra', async () => {
+    for (let i = 0; i < MAX_PENDING_QUESTIONS; i++) void requestApproval(`q-${i}`, { message: `Question ${i}` });
+    void requestApproval('q-0', { message: 'Question 0, retried' });
+    expect(listApprovals()).toHaveLength(MAX_PENDING_QUESTIONS);
+
+    decideApproval('msg-q-1', false);
+    void requestApproval('q-next', { message: 'Next' });
+    expect(listApprovals().map((v) => v.id)).toContain('msg-q-next');
+  });
+
+  it('lists the tool_call requests first, each kind oldest first', () => {
+    void requestApproval('q-1', { message: 'First question' });
+    void requestApproval('r-1', TOOL_CALL({ approvalId: 'ap-1' }));
+    void requestApproval('q-2', { message: 'Second question' });
+    void requestApproval('r-2', TOOL_CALL({ approvalId: 'ap-2' }));
+    expect(listApprovals().map((v) => v.id)).toEqual(['ap-1', 'ap-2', 'msg-q-1', 'msg-q-2']);
   });
 });
