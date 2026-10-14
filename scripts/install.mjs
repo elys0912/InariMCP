@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * InariMCP installer (Windows / macOS / Linux). See --help.
+ * Inari MCP installer (Windows / macOS / Linux). See --help.
  *
  *   node scripts/install.mjs [--dry-run] [--yes] [--register-claude] ...
  *
@@ -77,7 +77,7 @@ async function install(argv, deps, r) {
   }
 
   const dry = opts.dryRun;
-  r.title(`InariMCP installer (${platform})${dry ? ' — dry run, nothing is changed' : ''}`);
+  r.title(`Inari MCP installer (${platform})${dry ? ' — dry run, nothing is changed' : ''}`);
   r.title(`Repository: ${repo.repoRoot}`);
 
   // -------------------------------------------------------------------------

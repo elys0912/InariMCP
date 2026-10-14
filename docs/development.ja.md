@@ -2,7 +2,7 @@
 
 [English](./development.md) | **日本語**
 
-パッケージのビルドと確認の方法。InariMCPの使い方は[README](../README.ja.md)を参照。
+パッケージのビルドと確認の方法。Inari MCPの使い方は[README](../README.ja.md)を参照。
 
 ## 必要なもの
 

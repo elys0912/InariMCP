@@ -326,7 +326,7 @@ function handleNativeMessage(raw: unknown): void {
   const entry = typeof requestId === "number" ? pendingRequests.get(requestId) : undefined;
   if (typeof requestId === "number" && entry !== undefined) {
     pendingRequests.delete(requestId);
-    // BUG FIX: clear the timeout so it doesn't fire after resolution
+    // The request is answered: its timeout must not fire later.
     clearTimeout(entry.timeoutId);
 
     if (message.error) {

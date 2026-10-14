@@ -2,7 +2,7 @@
 
 [English](./known-issues.md) | **日本語**
 
-InariMCPの現行版（v0.1.x）で分かっている制約と注意点。
+Inari MCPの現行版（v0.1.x）で分かっている制約と注意点。
 
 ## 安全ガード
 
@@ -11,7 +11,7 @@ InariMCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **URLパターンはパスと比べ、クエリやフラグメントとは比べない**: パスに`?`や`#`（`%3F`、`%23`も）を含むホストパターンは、決して一致しないので設定エラーになる。クエリ文字列で一致させたいときは、`re:`（URL全体に対する正規表現）で書くこと
 - **拡張機能とMCP Serverの版が違うと、コマンドが`config_error`で拒否されることがある**: MCP Serverがコマンドに付けたコンテナスコープやURLルールを拡張機能が使えないとき、拡張機能はその検査を飛ばして実行せず、コマンドを拒否する。拡張機能とMCP Serverは一緒に更新すること（READMEの「更新」を参照）
 - **共有daemonは、起動したプロセスの環境変数を使う**: `FOX_READ_ONLY`などの環境変数は、実際にdaemonを起動したプロセスのものだけが読まれる。Firefox（Native Host）が起動したdaemonはFirefoxの環境変数を引き継ぎ、`claude mcp add --env`の値は使われない。確実に効かせたい設定は`~/.inari-mcp/safety.json`に書くこと（READMEを参照）。セッションとdaemonで設定が食い違うと、セッション開始時と`fox_safety_status`の結果に警告が出る
-- **以前の版の`allow_script_execution`が残った`safety.json`では、すべてのツールが拒否される**: InariMCPにはスクリプト系ツールがないので、このキーは知らないキーになり、ファイルを使えない（ほかの知らないキーと同じく、安全側に倒す）。キーを消してdaemonを再起動する
+- **以前の版の`allow_script_execution`が残った`safety.json`では、すべてのツールが拒否される**: Inari MCPにはスクリプト系ツールがないので、このキーは知らないキーになり、ファイルを使えない（ほかの知らないキーと同じく、安全側に倒す）。キーを消してdaemonを再起動する
 - **KitsuneMCPの`protected_url_patterns`や`confirm_protected_actions`が残った`safety.json`では、すべてのツールが拒否される**: InariMCPはどのサイトでも操作系ツールごとに尋ねるので、保護対象サイトの一覧もその切り替えもない。どちらのキーも知らないキーになる（安全側に倒す）。キーを消してdaemonを再起動し、読み取りとスクリーンショットでも尋ねたいサイトは`confirm_read_sites`に書く
 - **`blocked_url_patterns` / `allowed_url_patterns`はhttp(s)のタブにだけ効く**: ユーザーが開いた`file://`のページやブラウザ内部のページ（`about:`、`moz-extension://`）はサイトではないので、リストの対象にならない。許可リストのモードでも、そのようなタブは読み取り・操作の対象になる。`fox_navigate`ではそこへ行けない（http(s)と`about:blank`以外は`blocked_scheme`で拒否する）
 
@@ -36,7 +36,9 @@ InariMCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **`fox_screenshot`の引数には思いどおりに動かないものがある**: 画像はクライアントに保存したファイル（パスと`resource_link`）としてだけ届き、base64では返らない。そのため`saveToFile: false`では何も撮らずタブの情報だけを返し、`includeData`は効かない。既存の`filename`で保存するとファイルを上書きする（結果に`imageOverwritten`と警告が付く）。背景タブは切り替えずに撮るが、破棄済み（discarded）のタブは撮れず、そのタブに切り替える（`action: "switch"`の`fox_tab`）までエラーになる。`scope: "scroll_capture"`は画像を撮らず、スクロール位置ごとの要素の情報を返す。段数は1段2秒まで・50段まで、かつ合計25秒に収まる数まで
 - **`kind: "input"`の`fox_set_value`は何も変わらなくても成功を返す**: 入力欄・textarea・select・contenteditableのどれでもない要素や、その値のoptionがないselectに対しても成功になる
 - **ネイティブのダイアログ（alert / confirm / prompt）が開いている間、そのタブへのコマンドはタイムアウトする**: 拡張機能経路ではダイアログを見ることも操作することもできない
-- **コンテンツスクリプトが入れないページでは、読み取り・操作のツールが使えない**: FirefoxのJSONビューアー、`about:`のページ、addons.mozilla.org、ほかの拡張機能のページなど。InariMCPをインストール・更新する前に開いたタブにもコンテンツスクリプトがないので、再読み込みする。`fox_screenshot`や`fox_tabs`のように、tabs APIだけを使うツールは動く
+- **コンテンツスクリプトが入れないページでは、読み取り・操作のツールが使えない**: FirefoxのJSONビューアー、`about:`のページ、addons.mozilla.org、ほかの拡張機能のページなど。Inari MCPをインストール・更新する前に開いたタブにもコンテンツスクリプトがないので、再読み込みする。`fox_screenshot`や`fox_tabs`のように、tabs APIだけを使うツールは動く
+- **`fox_find`が確認するのは、トップフレームに表示されている伏せる欄だけ**: 検索の前に、パスワード・ワンタイムコード・決済カードの欄が表示されているページを拒否する。一致件数から値を1文字ずつ推測できるため。この確認はトップフレームのドキュメントだけを見る。iframeやshadow DOMの中にある伏せる欄は見えないので、検索は実行され、その件数にその欄の値が反映されうる。そのようなページでは、値を伏せて返す`fox_read`を使うこと
+
 ## ヘッドレスモード
 
 - **対応していないツールがある**: `fox_navigate`の`hard_refresh`、`fox_screenshot`の`all_tabs` / `scroll_capture`、コンテナ（`what: "containers"`の`fox_tabs`、`container`を付けた`fox_tab`）。`fox_request_approval`は常に失敗する（「人による承認」を参照）
@@ -69,8 +71,8 @@ InariMCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **WindowsでPowerShellが使えないと、Firefoxと一緒にdaemonが止まることがある**: Native Hostは、daemonをFirefoxのジョブオブジェクトの外で起動するためにPowerShellを使い、だめならWMI（`cscript`）、タスク スケジューラ（`schtasks`）を試す。すべて失敗するとdaemonをジョブの中で起動して`native-host.log`に警告を出し、そのときはFirefoxを閉じるとdaemonと、それを使うClaude Codeのセッションが止まる。インストーラとアンインストーラ自体にはPowerShellは要らない
 - **WSLのClaude CodeからWindowsのFirefoxは使えない**: それぞれが自分の`~/.inari-mcp/`（とAPIトークン）でdaemonを起動するので、WSLのセッションはWindowsのFirefoxに届かない。Claude CodeとFirefoxは同じ側で動かす
 - **Firefoxのプロファイルを複数同時に開くと、先に接続した1つだけが使われる**: どれが使われているかはどこにも表示されない
-- **アンインストールの後にdaemonが戻ってくることがある**: アンインストーラは最初にFirefoxへの登録を外し、daemonより先にこのリポジトリのNative Hostを止めるが、InariMCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す（APIトークンも作り直す）。それらのセッションを再起動すること（アンインストーラが一覧を出す）。プロセスの一覧を取れない場合（`ps` / WMIがない）は、拡張機能を外すかFirefoxも終了する
+- **アンインストールの後にdaemonが戻ってくることがある**: アンインストーラは最初にFirefoxへの登録を外し、daemonより先にこのリポジトリのNative Hostを止めるが、Inari MCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す（APIトークンも作り直す）。それらのセッションを再起動すること（アンインストーラが一覧を出す）。プロセスの一覧を取れない場合（`ps` / WMIがない）は、拡張機能を外すかFirefoxも終了する
 - **空のAPIトークンファイルがあるとdaemonが起動しない**: `~/.inari-mcp/api_token`があって中身が空のとき（書き込み中に異常終了した場合など）、ほかのプロセスが書き込み中かもしれないので上書きせず、削除を求めるメッセージを出してdaemonが終了する。ファイルを削除してからやり直す（次のツール呼び出しで新しいトークンを作る）。読めないトークンファイルもエラーになる
 - **Windowsではファイルのモード（0o600 / 0o700）が効かない**: `~/.inari-mcp/`のAPIトークン、ログ、スクリーンショットは、ユーザープロファイルのフォルダのアクセス権で守られる。プロファイルの外の`FOX_SCREENSHOTS_DIR`を指定すると、Native Hostが警告をログに出す
 - **ログファイルは5 MBで切り替わる**: `~/.inari-mcp/logs/`のログは5 MBを超えると`<名前>.old`に退避される（1世代だけ残る）。`daemon.log`は動いているdaemonが開いたままなので、複製してから中身を空にする（copy-truncate。その間に書かれた行は失われる）。`native-host.log`と監査ログは書き込みのたびに確認する。`daemon.log`はdaemonの起動時と、Native Hostが動いている間は1時間ごとに確認する。FirefoxなしでClaude Codeだけから使っていると、daemonが再起動するまで5 MBを超えて大きくなる
-- **再現ビルドはNode.js 24.xとnpm 11.x**: AMOの審査環境と同じ版（`.nvmrc`、[BUILD.md](BUILD.md)）。InariMCPの実行はNode.js 20以上。`--doctor`は`engines`（`>=20`）を確認し、それより古いNode.jsはFAILと報告する
+- **再現ビルドはNode.js 24.xとnpm 11.x**: AMOの審査環境と同じ版（`.nvmrc`、[BUILD.md](BUILD.md)）。Inari MCPの実行はNode.js 20以上。`--doctor`は`engines`（`>=20`）を確認し、それより古いNode.jsはFAILと報告する

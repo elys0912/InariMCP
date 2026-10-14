@@ -259,10 +259,10 @@ npm run teardown
 1. the Firefox Native Messaging registration (registry key / manifest files), so the extension cannot start the Native Host again,
 2. `~/.inari-mcp/native-host/` (the wrapper),
 3. the Claude Code registration, when you confirm or pass `--unregister-claude` (it only finds registrations visible from the repository directory — a `local`-scope registration made in another directory is listed, and has to be removed there),
-4. running Native Host processes of this repository, then the daemon (after checking that the process on the port is a InariMCP daemon; over its signed `POST /daemon/shutdown` when the API token is present, else — or when that fails — SIGTERM, then SIGKILL after the grace period),
+4. running Native Host processes of this repository, then the daemon (after checking that the process on the port is an Inari MCP daemon; over its signed `POST /daemon/shutdown` when the API token is present, else — or when that fails — SIGTERM, then SIGKILL after the grace period),
 5. with `--purge`, the rest of `~/.inari-mcp/` (API token, `safety.json`, logs, screenshots); otherwise what is left is listed, not deleted.
 
-Claude Code sessions that still run InariMCP start the daemon again on their next browser tool call; the uninstaller names them — restart them. The repository and the Firefox extension are not touched (remove the extension in Firefox). A Claude Code configuration file (`~/.claude.json`, `.mcp.json`) that cannot be read or parsed is reported as a problem (exit code 1), not as "not registered"; check with `claude mcp list`. A Firefox registration that points to another checkout's Native Host is reported with a warning and removed as well.
+Claude Code sessions that still run Inari MCP start the daemon again on their next browser tool call; the uninstaller names them — restart them. The repository and the Firefox extension are not touched (remove the extension in Firefox). A Claude Code configuration file (`~/.claude.json`, `.mcp.json`) that cannot be read or parsed is reported as a problem (exit code 1), not as "not registered"; check with `claude mcp list`. A Firefox registration that points to another checkout's Native Host is reported with a warning and removed as well.
 
 Options (after `--` with npm): `-n`/`--dry-run`, `-y`/`--yes` (also removes the Claude Code registration), `--unregister-claude`, `--keep-claude`, `--no-stop` (stop nothing), `--grace SECONDS` (0 to 60, default 5; anything else is a usage error), `--purge`, `--manual`, `-h`/`--help`. `--stop-daemon`, `--no-stop-daemon` and `--no-unregister-claude` are still accepted, and `npm run uninstall:windows` / `uninstall:unix` remain as aliases.
 
@@ -494,7 +494,7 @@ Build, packages and checks in detail: [`docs/development.md`](docs/development.m
 
 `npm audit` reports 11 vulnerabilities, all in the dependency tree of `web-ext` (a devDependency); they are accepted. Audit with `npm audit --omit=dev` (0 vulnerabilities): the distributed parts (mcp-server, native-host, the extension `.xpi`) do not contain web-ext.
 
-`npm test` runs the Vitest suites (unit tests per package, contract tests in `tests/contract/`, installer tests in `tests/scripts/`). Each test file gets a temporary home directory, so the tests never touch your `~/.inari-mcp/`. Running InariMCP needs Node.js 20 or later; the reproducible build for the AMO review uses Node.js 24.x and npm 11.x (`.nvmrc`, [docs/BUILD.md](docs/BUILD.md)).
+`npm test` runs the Vitest suites (unit tests per package, contract tests in `tests/contract/`, installer tests in `tests/scripts/`). Each test file gets a temporary home directory, so the tests never touch your `~/.inari-mcp/`. Running Inari MCP needs Node.js 20 or later; the reproducible build for the AMO review uses Node.js 24.x and npm 11.x (`.nvmrc`, [docs/BUILD.md](docs/BUILD.md)).
 
 End-to-end checks, kept out of `npm test`:
 

@@ -57,8 +57,9 @@ async function requestHostStatus(): Promise<HostStatusReply> {
 function setupStateOf(reply: HostStatusReply): SetupState {
   const server = reply.mcp_server ?? {};
   const serverUrl = typeof server.url === "string" ? server.url : undefined;
-  // Native Hosts before 0.1.2 do not send `relays` at all (current ones send
-  // null when the daemon info is unavailable): not a daemon problem.
+  // A Native Host older than this extension sends no `relays` at all (a
+  // matching one sends null when the daemon info is unavailable): the host
+  // is out of date, not the daemon down.
   if (server.available === true && !("relays" in server)) {
     return { kind: "hostOutdated", serverUrl };
   }

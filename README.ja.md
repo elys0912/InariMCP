@@ -259,10 +259,10 @@ npm run teardown
 1. FirefoxのNative Messagingの登録（レジストリキー / マニフェストファイル）。これで拡張機能がNative Hostを起動し直せなくなる
 2. `~/.inari-mcp/native-host/`（ラッパー）
 3. Claude Codeの登録。確認して同意したときか`--unregister-claude`を付けたとき（見つけられるのはリポジトリのディレクトリから見える登録だけ。別のディレクトリで`local`スコープで登録したものは一覧に出すので、そこで削除する）
-4. このリポジトリの動いているNative Hostのプロセス、続いてdaemon（ポートの相手がInariMCPのdaemonであることを確かめてから。APIトークンがあれば署名付きの`POST /daemon/shutdown`で止め、トークンが無いかそれが失敗したときはSIGTERM、猶予の後にSIGKILL）
+4. このリポジトリの動いているNative Hostのプロセス、続いてdaemon（ポートの相手がInari MCPのdaemonであることを確かめてから。APIトークンがあれば署名付きの`POST /daemon/shutdown`で止め、トークンが無いかそれが失敗したときはSIGTERM、猶予の後にSIGKILL）
 5. `--purge`を付けたときは`~/.inari-mcp/`の残り（APIトークン、`safety.json`、ログ、スクリーンショット）。付けなければ残りは一覧を表示するだけで削除しない
 
-InariMCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す。アンインストーラがそれを表示するので、再起動する。リポジトリとFirefoxの拡張機能は変更しない（拡張機能はFirefoxで外す）。Claude Codeの設定ファイル（`~/.claude.json`、`.mcp.json`）が読めないか解析できなければ、「未登録」ではなく問題として報告する（終了コード1）。`claude mcp list`で確認すること。Firefoxの登録が別のチェックアウトのNative Hostを指していれば、警告を出したうえでそれも外す。
+Inari MCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す。アンインストーラがそれを表示するので、再起動する。リポジトリとFirefoxの拡張機能は変更しない（拡張機能はFirefoxで外す）。Claude Codeの設定ファイル（`~/.claude.json`、`.mcp.json`）が読めないか解析できなければ、「未登録」ではなく問題として報告する（終了コード1）。`claude mcp list`で確認すること。Firefoxの登録が別のチェックアウトのNative Hostを指していれば、警告を出したうえでそれも外す。
 
 オプション（npm経由では`--`の後）: `-n`/`--dry-run`、`-y`/`--yes`（Claude Codeの登録も削除する）、`--unregister-claude`、`--keep-claude`、`--no-stop`（何も止めない）、`--grace 秒`（0〜60、既定5。範囲外は使い方の誤り）、`--purge`、`--manual`、`-h`/`--help`。`--stop-daemon`、`--no-stop-daemon`、`--no-unregister-claude`も受け付ける。`npm run uninstall:windows` / `uninstall:unix`は別名として残っている。
 

@@ -6,8 +6,7 @@
  * Browser command action names.
  *
  * These are the action strings sent as BrowserCommand.action from the MCP
- * Server to the Extension (or headless backend). They map 1:1 to the
- * fork-source server.py _dispatch_action routing table.
+ * Server to the Extension (or headless backend).
  *
  * Note: these are NOT MCP tool names (those carry the `fox_` prefix).
  */

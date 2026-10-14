@@ -78,7 +78,7 @@ the Native Host starts the daemon again (and recreates the token and logs).
 4. Remove the extension in Firefox (about:addons, or about:debugging for a temporary add-on), or quit Firefox.
 5. Stop the daemon: \`"${v.node}" "${v.repo}\\packages\\mcp-server\\dist\\index.js" --stop-daemon\`.
    Without the API token: \`netstat -ano | findstr :${v.port ?? DEFAULT_HTTP_PORT}\` shows the PID in the LISTENING line; \`taskkill /PID <pid> /F\`.
-   Close Claude Code sessions that still use InariMCP (they start the daemon again on the next tool call).
+   Close Claude Code sessions that still use Inari MCP (they start the daemon again on the next tool call).
 6. Optional: \`rmdir /s /q "${v.data}"\` (API token, safety.json, logs, screenshots).
 `;
 }
@@ -95,7 +95,7 @@ the Native Host starts the daemon again (and recreates the token and logs).
 4. Remove the extension in Firefox (about:addons, or about:debugging for a temporary add-on), or quit Firefox.
 5. Stop the daemon: \`${v.node} ${v.repo}/packages/mcp-server/dist/index.js --stop-daemon\`.
    Without the API token: \`kill $(lsof -tiTCP:${v.port ?? DEFAULT_HTTP_PORT} -sTCP:LISTEN)\` (or find the PID with \`ss -ltnp 'sport = :${v.port ?? DEFAULT_HTTP_PORT}'\`).
-   Close Claude Code sessions that still use InariMCP (they start the daemon again on the next tool call).
+   Close Claude Code sessions that still use Inari MCP (they start the daemon again on the next tool call).
 6. Optional: \`rm -rf ${v.data}\` (API token, safety.json, logs, screenshots).
 `;
 }
@@ -125,7 +125,7 @@ export function manualForPlatform(kind, platform, v) {
 export function installUsage() {
   return `Usage: node scripts/install.mjs [options]      (npm run setup -- [options])
 
-Registers the InariMCP Native Messaging host for Firefox (Windows / macOS /
+Registers the Inari MCP Native Messaging host for Firefox (Windows / macOS /
 Linux, no PowerShell needed) and, on request, the MCP server with Claude Code.
 Safe to run again: unchanged files and registrations are left alone.
 
@@ -155,7 +155,7 @@ Compatibility: --skip-build (default now) and --no-register-claude are accepted.
 export function uninstallUsage() {
   return `Usage: node scripts/uninstall.mjs [options]    (npm run teardown -- [options])
 
-Removes the InariMCP registration, in an order that keeps it removed:
+Removes the Inari MCP registration, in an order that keeps it removed:
   1. removes the Firefox Native Messaging registration (registry key / manifest files),
      so the extension cannot start the Native Host again
   2. removes ~/.inari-mcp/native-host/ (host wrapper)

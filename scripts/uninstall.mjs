@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * InariMCP uninstaller (Windows / macOS / Linux). See --help.
+ * Inari MCP uninstaller (Windows / macOS / Linux). See --help.
  *
  * Replaces scripts/uninstall.ps1 and scripts/uninstall.sh.
  *
@@ -80,7 +80,7 @@ async function uninstall(argv, deps, r) {
 
   const dry = opts.dryRun;
   let problems = 0;
-  r.title(`InariMCP uninstaller (${platform})${dry ? ' — dry run, nothing is changed' : ''}`);
+  r.title(`Inari MCP uninstaller (${platform})${dry ? ' — dry run, nothing is changed' : ''}`);
 
   // -------------------------------------------------------------------------
   r.step('1. Removing the Firefox Native Messaging registration');
@@ -179,7 +179,7 @@ async function stopProcessesStep(deps, r, opts, { data, repo, env, platform }) {
     r.warn('could not list processes (ps / WMI unavailable): running Native Hosts cannot be found.');
     r.warn('Quit Firefox or remove the extension, otherwise a running Native Host starts the daemon again.');
   } else {
-    for (const o of classes.others) r.info(`not touched (another InariMCP checkout?): PID ${o.pid} ${o.cmd}`);
+    for (const o of classes.others) r.info(`not touched (another Inari MCP checkout?): PID ${o.pid} ${o.cmd}`);
   }
 
   // Daemon PIDs: the verified /daemon/info PID, plus daemons of this repository found in the process list.
@@ -197,7 +197,7 @@ async function stopProcessesStep(deps, r, opts, { data, repo, env, platform }) {
       r.info(`left running (--no-stop): Native Host ${hostPids.join(', ') || '-'}, daemon ${[...daemonPids].join(', ') || '-'}`);
     }
   } else if (hostPids.length + daemonPids.size === 0) {
-    if (classes) r.ok('no InariMCP Native Host or daemon of this repository is running');
+    if (classes) r.ok('no Inari MCP Native Host or daemon of this repository is running');
   } else {
     // Native Hosts first: a live host restarts a stopped daemon.
     const order = [...hostPids.map((pid) => ['Native Host', pid]), ...[...daemonPids].map((pid) => ['daemon', pid])];
@@ -209,7 +209,7 @@ async function stopProcessesStep(deps, r, opts, { data, repo, env, platform }) {
     }
   }
   if (classes && classes.relays.length > 0) {
-    r.warn(`Claude Code sessions still run InariMCP (relay PID ${classes.relays.map((x) => x.pid).join(', ')}).`);
+    r.warn(`Claude Code sessions still run Inari MCP (relay PID ${classes.relays.map((x) => x.pid).join(', ')}).`);
     r.warn('They start the daemon again (and recreate api_token) on their next browser tool call: restart them.');
   }
   return problems;
@@ -218,9 +218,9 @@ async function stopProcessesStep(deps, r, opts, { data, repo, env, platform }) {
 /** One line on what answers on the daemon port. */
 function reportDaemon(r, endpoint, daemon) {
   if (daemon.kind === 'none') r.ok(`no daemon answers on ${endpoint.host}:${endpoint.port}`);
-  else if (daemon.kind === 'foreign') r.warn(`${endpoint.host}:${endpoint.port} answers but is not a InariMCP daemon — left alone`);
+  else if (daemon.kind === 'foreign') r.warn(`${endpoint.host}:${endpoint.port} answers but is not an Inari MCP daemon — left alone`);
   else {
-    r.info(`InariMCP daemon on ${endpoint.host}:${endpoint.port} (version ${daemon.version ?? '?'}, browsers connected: ${daemon.browsers ?? '?'}, ` +
+    r.info(`Inari MCP daemon on ${endpoint.host}:${endpoint.port} (version ${daemon.version ?? '?'}, browsers connected: ${daemon.browsers ?? '?'}, ` +
       `${daemon.verified ? `verified with the API token${daemon.pid ? `, PID ${daemon.pid}` : ''}` : 'not verified: no matching API token'})`);
   }
 }
@@ -272,7 +272,7 @@ async function stopInOrder(deps, r, opts, order, { endpoint, token, daemon }) {
   if (!dry && daemon.kind === 'inari') {
     const after = await probeDaemon(deps, endpoint, token);
     if (after.kind === 'inari') {
-      r.warn(`a InariMCP daemon still answers on ${endpoint.host}:${endpoint.port}`);
+      r.warn(`an Inari MCP daemon still answers on ${endpoint.host}:${endpoint.port}`);
       problems++;
     }
   }

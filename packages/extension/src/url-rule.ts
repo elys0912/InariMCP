@@ -47,8 +47,7 @@ export interface CompiledUrlRule {
   regex: RegExp | null;
 }
 
-// Named result types: tests cut these functions out of the source, which
-// needs the body to be the first `{` after the parameter list.
+// Named result types of the functions below.
 
 /** compileUrlRules: usable rules, and how many entries were not. */
 export interface CompiledUrlRules {
