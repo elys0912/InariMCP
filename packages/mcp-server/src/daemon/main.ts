@@ -32,9 +32,8 @@ import { isHeadlessEnabled, unrecognizedHeadlessValue } from '../utils/headless-
 import { getSafetyGuard } from '../safety/guard.js';
 import { headlessContainerScopeWarning } from '../safety/container.js';
 import {
-  isLoopbackHost,
   loadOrCreateApiToken,
-  resolveHost,
+  resolveDaemonHost,
   resolveHttpPort,
   resolveWsPort,
   effectiveDaemonSettings,
@@ -282,18 +281,18 @@ interface DaemonEndpoint {
 /**
  * The endpoint, or null (logged) when FOX_HOST is not a loopback address:
  * the HTTP and WebSocket ports carry page content in plain text, so the
- * daemon refuses to start rather than listen where other machines reach it.
+ * daemon refuses to start rather than listen where other machines reach it
+ * (resolveDaemonHost, the same check as the Native Host and the relays).
  */
 function resolveDaemonEndpoint(): DaemonEndpoint | null {
-  const host = resolveHost();
-  if (!isLoopbackHost(host)) {
-    log(
-      `ERROR: ${ENV.FOX_HOST}=${host} is not a loopback address (127.0.0.0/8, ::1, localhost). ` +
-      'The daemon serves plain HTTP and WebSocket and only listens on this machine: ' +
-      `unset ${ENV.FOX_HOST} or set it to 127.0.0.1.`,
-    );
+  let host: string;
+  try {
+    host = resolveDaemonHost();
+  } catch (err) {
+    log(`ERROR: ${errorMessage(err)}`);
     return null;
   }
+
   const headlessMode = isHeadlessEnabled();
   const odd = unrecognizedHeadlessValue();
   if (odd !== undefined) {

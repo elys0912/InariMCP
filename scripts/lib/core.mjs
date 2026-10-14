@@ -11,6 +11,8 @@
  */
 
 import * as crypto from 'node:crypto';
+// net.isIP only (a pure check of an address string; no socket).
+import * as net from 'node:net';
 import * as path from 'node:path';
 
 // ---------------------------------------------------------------------------
@@ -442,13 +444,38 @@ function bareHost(host) {
   return host.trim().replace(/^\[(.*)\]$/, '$1');
 }
 
+/** 127.0.0.0/8 mapped into IPv6, as the WHATWG URL parser writes it (`::ffff:7f00:1`). */
+const IPV4_MAPPED_LOOPBACK_RE = /^::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}$/;
+
+/** An IPv6 address in the one spelling of the WHATWG URL parser, or null. */
+function canonicalIPv6(address) {
+  try {
+    return new URL(`http://[${address}]/`).hostname.slice(1, -1);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Same rule as isLoopbackHost of @inari-mcp/shared/node (127.0.0.0/8, ::1,
- * localhost, ::ffff:127.0.0.1); tests/scripts checks both agree.
+ * Same rule as isLoopbackHost of @inari-mcp/shared/node (localhost, an IP
+ * address in 127.0.0.0/8, ::1, 127.0.0.0/8 mapped into IPv6; a name that
+ * only looks like one, such as 127.999.0.1, is refused); tests/scripts
+ * checks both agree.
  */
 export function isLoopbackHost(host) {
   const h = bareHost(host).toLowerCase();
-  return h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h) || h === '::ffff:127.0.0.1';
+  if (h === 'localhost') return true;
+
+  switch (net.isIP(h)) {
+    case 4:
+      return h.startsWith('127.');
+    case 6: {
+      const canonical = canonicalIPv6(h);
+      return canonical === '::1' || (canonical !== null && IPV4_MAPPED_LOOPBACK_RE.test(canonical));
+    }
+    default:
+      return false;
+  }
 }
 
 /** envValue() of the first of `names` that is set and not blank (same rule as the shared endpoint resolution). */

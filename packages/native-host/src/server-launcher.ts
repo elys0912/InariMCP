@@ -35,7 +35,7 @@ import {
   protocolText,
   readApiTokenFile,
   readPackageVersion,
-  resolveHost,
+  resolveDaemonHost,
   resolveHttpPort,
   resolveWsPort,
   signRequest,
@@ -153,7 +153,11 @@ export class ServerLauncher {
 
   private readonly readTokenFile: () => string | undefined;
 
-  /** The options exist for tests; the Native Host uses the environment. */
+  /**
+   * The options exist for tests; the Native Host uses the environment. A
+   * FOX_HOST that is not a loopback address throws (resolveDaemonHost): page
+   * content is never sent to another machine in plain text.
+   */
   constructor(options: {
     host?: string;
     httpPort?: number;
@@ -161,7 +165,7 @@ export class ServerLauncher {
     readToken?: () => string | undefined;
     serverEntry?: string;
   } = {}) {
-    this.host = options.host ?? resolveHost();
+    this.host = options.host ?? resolveDaemonHost();
     this.httpPort = options.httpPort ?? resolveHttpPort(reportInvalidPort);
     this.wsPort = options.wsPort ?? resolveWsPort(reportInvalidPort);
     this.readTokenFile = options.readToken ?? (() => readApiTokenFile());

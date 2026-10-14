@@ -15,9 +15,9 @@ import {
 
 // Host / ports, the API token: shared with the Native Host (@inari-mcp/shared/node).
 export {
-  isLoopbackHost,
   loadOrCreateApiToken,
   readApiTokenFile,
+  resolveDaemonHost,
   resolveHost,
   resolveHttpPort,
   resolveWsPort,

@@ -473,6 +473,8 @@ describe('daemon authentication copy', () => {
       'localhost', 'LOCALHOST', ' localhost ', '127.0.0.1', '127.1.2.3', '[::1]', '::1', '::ffff:127.0.0.1',
       '[::FFFF:127.0.0.1]', ' 127.0.0.1	', '0.0.0.0', '', '::', '128.0.0.1', '127.0.0', '10.0.0.1',
       'example.test', 'localhost.example.test', '[::2]', '127.0.0.1.example.test',
+      '127.999.0.1', '127.1', '127.000.000.001', '0:0:0:0:0:0:0:1', '::ffff:7f00:1', '::ffff:7f:1',
+      '::ffff:128.0.0.1', 'fe80::1%eth0',
     ];
     for (const host of hosts) {
       expect(isLoopbackHost(host), host).toBe(serverAuth.isLoopbackHost(host));

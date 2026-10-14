@@ -46,6 +46,22 @@ describe('ServerLauncher.isPortInUse', () => {
   });
 });
 
+describe('ServerLauncher and FOX_HOST', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each(['0.0.0.0', '127.999.0.1', '192.168.1.10'])('refuses to reach a daemon on %s (not a loopback address)', (host) => {
+    vi.stubEnv('FOX_HOST', host);
+    expect(() => new ServerLauncher()).toThrow(`FOX_HOST=${host} is not a loopback address`);
+  });
+
+  it('uses a loopback FOX_HOST', () => {
+    vi.stubEnv('FOX_HOST', '::1');
+    expect(new ServerLauncher().host).toBe('::1');
+  });
+});
+
 describe('daemonEnvNote', () => {
   it('names the inherited policy settings but never their values', () => {
     const note = daemonEnvNote({ FOX_READ_ONLY: '1', FOX_SAFETY_CONFIG: 'C:\\secret\\path.json' });
