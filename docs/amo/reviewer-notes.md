@@ -30,7 +30,7 @@ Native messaging carries tool results to the local host: page text and elements,
 - Masked in the content script and never sent: password fields, hidden fields, autocomplete="one-time-code", and autocomplete cc-* (cc-number, cc-csc, cc-exp, ...).
 - No cookies, no history, no user activity is recorded.
 - Consent: on first run the extension opens a permission page (add-on name, what is sent and where, that the native host is required, what happens if declined). It does not connect to the native host until the user allows it. The popup has a pause switch (every call refused while paused), and a badge shows while a tool is working.
-- Every action that changes a page or the browser (click, type, submit, navigate, open or close a tab) waits for the user's approval, given in the MCP client's dialog or in the toolbar popup; nothing in the page can give it. Reading tools (read, find, tabs) run without approval.
+- Every action that changes a page or the browser (click, type, submit, navigate, open or close a tab) waits for the user's approval, on every site and for each call, given in the MCP client's dialog or in the toolbar popup; nothing in the page can give it. An approval covers one call on one site: the host name of the page, or for a local file or a blank tab the scheme (file:, about:). The extension itself refuses an action that was not approved for the site of its tab. When the daemon does not yet know which page the target tab shows, the action cannot be approved until the tab list is read (fox_tabs). Reading tools (read, find, screenshot, tabs) run without approval; reading a page and screenshots ask as well on the sites the user lists in confirm_read_sites in ~/.inari-mcp/safety.json (empty by default).
 - "incognito": "not_allowed": private windows are never read or stored.
 - Local files: screenshots are deleted after 30 days; ~/.inari-mcp/logs/audit.jsonl records time, tool name, URL and masked arguments, not page content.
 Privacy policy: https://github.com/elys0912/InariMCP/blob/main/docs/PRIVACY.md
@@ -43,7 +43,7 @@ Privacy policy: https://github.com/elys0912/InariMCP/blob/main/docs/PRIVACY.md
 No account or credentials are needed. Testing needs Node.js 20 or later and the native host:
   git clone https://github.com/elys0912/InariMCP.git && cd InariMCP && git checkout v<version>
   npm ci && npm run build && npm run setup
-Then follow docs/amo/reviewer-smoke.md: scripts/e2e/reviewer-smoke.mjs drives the basic functions (open a tab, read it, click with approval, screenshot) against a local test page, without the internet and without an MCP client.
+Then follow docs/amo/reviewer-smoke.md: scripts/e2e/reviewer-smoke.mjs drives the basic functions (open a tab, read it, find, screenshot, click, close the tab; the reviewer approves each action in the toolbar popup) against a local test page, without the internet and without an MCP client.
 On Ubuntu, use a Firefox from Mozilla's APT repository or the mozilla.org tarball: the Snap build starts native messaging hosts through the desktop portal, which may not work.
 On Windows, the native host starts the daemon outside Firefox's job object (PowerShell, then WMI via cscript, then a one-off Task Scheduler task), so that closing Firefox does not end the MCP client's sessions. This is in the native host, not in the extension.
 

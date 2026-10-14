@@ -15,7 +15,7 @@ Inari MCP is made by the developer with the GitHub handle **elys0912**. The only
 - Inari MCP lets a program on your computer, an MCP client such as Claude Code, read and operate the tabs of your Firefox.
 - What it reads from your tabs goes to that MCP client on the same computer. The MCP client sends it on to the AI service it uses.
 - Nothing is sent to the developer. The developer runs no server and receives no data, no statistics and no crash reports.
-- Clicking, typing, submitting forms and navigating always wait for your approval. Reading does not.
+- Clicking, typing, submitting forms and navigating always wait for your approval, on every site and each time. Reading does not, except on the sites you list yourself.
 - Screenshots are kept on your computer for 30 days. A log of tool calls (time, tool name, URL) is kept on your computer. You can delete both at any time.
 
 ## What is read and sent
@@ -68,7 +68,7 @@ Data that the MCP client or the AI provider already received is outside Inari MC
 ## Your consent and control
 
 - **Permission page**: when the extension starts for the first time, it opens a page that names the extension, explains what is sent and where, and that the native host is needed. Until you allow it there, the extension does not connect to the native host and no data is sent. If you decline, the extension stays disconnected.
-- **Approval of actions**: every action that changes a page or the browser (clicking, typing, submitting, navigating, opening or closing a tab) waits until you approve it, in the MCP client's confirmation dialog or in the extension's toolbar popup. Nothing in the page can approve it. Reading pages does not ask.
+- **Approval of actions**: every action that changes a page or the browser (clicking, typing, submitting, navigating, opening or closing a tab) waits until you approve it, on every site and each time, in the MCP client's confirmation dialog or in the extension's toolbar popup. Nothing in the page can approve it. An approval covers one call on one site: the host name of the page, or for a local file or a blank tab the scheme (`file:`, `about:`). When Inari MCP does not yet know which page a tab shows, an action there cannot be approved until the tab list is read again (`fox_tabs`). Reading pages does not ask, except on the sites you list in `confirm_read_sites` in `~/.inari-mcp/safety.json` (empty by default).
 - **Badge**: while a tool is working on your browser, the toolbar button shows a badge.
 - **Pause**: the toolbar popup has a pause switch. While paused, every tool call is refused.
 - **Disable or remove**: disabling the extension in `about:addons` ends all access to your browser at once; removing it, together with the steps above, removes Inari MCP.

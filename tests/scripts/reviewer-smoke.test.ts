@@ -41,7 +41,7 @@ describe('reviewer-smoke: needsApproval', () => {
   const refusal = (extra: Record<string, unknown>) => ({
     isError: true,
     content: [
-      { type: 'text', text: 'fox_click targets a protected site' },
+      { type: 'text', text: 'fox_click needs human approval' },
       { type: 'text', text: JSON.stringify({ code: 'SAFETY_BLOCKED', ...extra }) },
     ],
   });

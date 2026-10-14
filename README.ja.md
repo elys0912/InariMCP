@@ -534,7 +534,7 @@ npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（Pla
 | `npm run test:e2e` | MCP経由で中継 → daemon → ヘッドレスFirefox（`tests/e2e/`。`npx playwright install firefox`が必要）。一時的なホームディレクトリと空きポートを使うので、動いているdaemonには触れない |
 | `npm run e2e:extension` | 拡張機能が一時的なアドオンとしてFirefoxに読み込まれる（`scripts/e2e/extension-load.mjs`、PlaywrightのFirefoxで`web-ext`を使う。別のFirefoxは`FOX_E2E_FIREFOX`か引数のパスで指定、全体の制限時間は`FOX_E2E_TIMEOUT_MS`、既定60000） |
 | `node scripts/e2e/tools-smoke.mjs` | 実際のFirefoxでdaemon → Native Host → 拡張機能（インストーラ実行済み、拡張機能読み込み済み。127.0.0.1のテストページを使う。操作系の呼び出しはInariMCPのポップアップで1回ずつ承認する） |
-| `npm run smoke:reviewer` | MCPクライアントとして、手元のテストページで基本機能を試す。クリックはポップアップで承認する（`scripts/e2e/reviewer-smoke.mjs`。拡張機能なしは`-- --headless`）。アドオンの審査者向けの手順は[docs/amo/reviewer-smoke.md](docs/amo/reviewer-smoke.md)（英語） |
+| `npm run smoke:reviewer` | MCPクライアントとして、手元のテストページで基本機能を試す。操作（タブを開く、クリック、タブを閉じる）はポップアップで1回ずつ承認する（`scripts/e2e/reviewer-smoke.mjs`。拡張機能なしは`-- --headless`で、動くのはタブの一覧だけ）。アドオンの審査者向けの手順は[docs/amo/reviewer-smoke.md](docs/amo/reviewer-smoke.md)（英語） |
 | `node scripts/e2e/nm-probe.mjs` | インストールしたNative Messaging hostが起動してdaemonに届く |
 
 ## 関連リンク

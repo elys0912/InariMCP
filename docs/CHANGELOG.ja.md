@@ -17,7 +17,7 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - addons.mozilla.org 向けのリリース用の仕組み。`npm run pack:ext` は拡張の zip を作り、中の全ファイルの SHA-256 を書き、`web-ext lint` を実行する（エラー 0・警告 0 が条件）。`npm run pack:source` はコミット済みのファイルからソースの zip を作る。[`docs/BUILD.md`](./BUILD.md)（英語）は、審査者が拡張を再ビルドして提出物と比べる手順（Node.js 24、npm 11）。GitHub Actions のワークフローが Ubuntu 24.04 ARM64 でビルド・型検査・テストを行う。
 - プライバシーポリシー：[docs/PRIVACY.ja.md](./PRIVACY.ja.md)（[English](./PRIVACY.md)）。読み取って送るもの、送り先、手元に残るものと期間、消し方、同意と制御、プライベートブラウジング。
 - addons.mozilla.org の掲載用の素材（[docs/amo/listing.md](./amo/listing.md)）と、審査者向けのメモ（[docs/amo/reviewer-notes.md](./amo/reviewer-notes.md)）。
-- `npm run smoke:reviewer`（`scripts/e2e/reviewer-smoke.mjs`）と [docs/amo/reviewer-smoke.md](amo/reviewer-smoke.md)（英語）：127.0.0.1 のテストページで基本機能（タブ、マスク付きの読み取り、検索、スクリーンショット、ポップアップで承認するクリック）を試す smoke テスト。Claude Code・アカウント・インターネット接続は要らない。`-- --headless` で拡張機能なしでも動く。`scripts/e2e/tools-smoke.mjs` も example.com の代わりに同じテストページを使う。
+- `npm run smoke:reviewer`（`scripts/e2e/reviewer-smoke.mjs`）と [docs/amo/reviewer-smoke.md](amo/reviewer-smoke.md)（英語）：127.0.0.1 のテストページで基本機能（タブ、タブを開く、マスク付きの読み取り、検索、スクリーンショット、クリック、タブを閉じる。操作はポップアップで 1 回ずつ承認する）を試す smoke テスト。Claude Code・アカウント・インターネット接続は要らない。`-- --headless` で拡張機能なしでも動くが、誰も承認できないので、動くのはタブの一覧だけ。`scripts/e2e/tools-smoke.mjs` も example.com の代わりに同じテストページを使う。
 
 ### 変更
 

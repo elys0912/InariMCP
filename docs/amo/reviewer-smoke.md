@@ -7,14 +7,14 @@ What it checks, in order:
 | Step | Tool | Expected |
 |---|---|---|
 | 1 | `fox_tabs` | the tabs are listed |
-| 2 | `fox_tab` (create) | a new tab opens the local test page |
+| 2 | `fox_tab` (create) | you approve it in the add-on's toolbar popup; a new tab opens the local test page |
 | 3 | `fox_read` | the page is read; the password field and the hidden field are reported as `[MASKED]`, and their values appear nowhere in the answer |
 | 4 | `fox_find` | the heading text is found |
 | 5 | `fox_screenshot` | a PNG file is written |
 | 6 | `fox_click` | you approve the click in the add-on's toolbar popup; the tab then moves to page 2 |
-| 7 | `fox_tab` (close) | the test tab is closed |
+| 7 | `fox_tab` (close) | you approve it in the toolbar popup; the test tab is closed |
 
-The script never approves anything by itself and has no option to skip the approval.
+Every action (steps 2, 6 and 7) waits for your approval in the toolbar popup, on every site and each time; the reads (steps 1, 3, 4 and 5) ask nothing. The script never approves anything by itself and has no option to skip the approval.
 
 ## Requirements
 
@@ -51,7 +51,7 @@ The add-on talks to a native messaging host on this computer; Firefox only start
 
 It also prints a `claude mcp add` command for Claude Code. You do not need it for this test; nothing is registered with Claude Code unless `--register-claude` is given.
 
-When the add-on connects, the host starts a local daemon (HTTP and WebSocket on 127.0.0.1, ports 8765 and 8766). The daemon creates `~/.inari-mcp/api_token` (the key its processes authenticate each other with), `~/.inari-mcp/safety.json`, `~/.inari-mcp/logs/` and `~/.inari-mcp/screenshots/`.
+When the add-on connects, the host starts a local daemon (HTTP and WebSocket on 127.0.0.1, ports 8785 and 8786). The daemon creates `~/.inari-mcp/api_token` (the key its processes authenticate each other with), `~/.inari-mcp/safety.json`, `~/.inari-mcp/logs/` and `~/.inari-mcp/screenshots/`.
 
 ### 3. Install the add-on
 
@@ -78,9 +78,15 @@ npm run smoke:reviewer
 
 The script waits up to 30 s for Firefox with the add-on to connect to the daemon, then serves the test page and calls the tools one by one, printing a line per check.
 
-### 6. Approve the click
+### 6. Approve the actions
 
-Before `fox_click`, the script prints:
+Before opening the test tab, the script prints:
+
+```
+      fox_tab create is an action: open the InariMCP toolbar popup in Firefox (it shows a badge) and press "Approve".
+```
+
+Before `fox_click`, it prints:
 
 ```
       fox_click is an action on the page: Inari MCP for Firefox asks you before it runs.
@@ -88,9 +94,11 @@ Before `fox_click`, the script prints:
       Waiting for your answer (the popup gives you 60 s). This script never approves by itself.
 ```
 
-The toolbar button shows an amber number (the approval requests waiting for you). Open the popup: it shows the tool, the site (`127.0.0.1`) and the arguments. Press "Approve". The click runs once, and the tab moves to page 2. Pressing "Deny", or not answering within 60 s, makes the click check FAIL (that is the expected behaviour of the add-on, not a defect of the test).
+and before closing the test tab, a line like the first one for `fox_tab close`.
 
-If Firefox asks for approval of another step (opening or closing the test tab), approve it the same way; the script prints a reminder before those steps.
+Each time, the toolbar button shows an amber number (the approval requests waiting for you). Open the popup: it shows the tool, the site (`127.0.0.1`, the host name of the page; a local file would be `file:` and a blank tab `about:`) and the arguments. Press "Approve". The approved call runs once: the tab opens, the click moves it to page 2, the tab closes. Pressing "Deny", or not answering within 60 s, makes that check FAIL (that is the expected behaviour of the add-on, not a defect of the test); when opening the tab is not approved, the checks after it are `SKIP`.
+
+The add-on can ask only when the MCP server knows which page the target tab shows. The script reads the test tab (`fox_read`) before the click and before closing it, so it does; an MCP client that acts on a tab it has not seen yet is told to call `fox_tabs` first.
 
 ### 7. Read the result
 
@@ -114,6 +122,7 @@ Waiting up to 30 s for Firefox with the add-on to connect ...
 test page: http://127.0.0.1:50123/index.html
 
 PASS  fox_tabs: list the tabs  — tabs=1
+      fox_tab create is an action: open the InariMCP toolbar popup in Firefox (it shows a badge) and press "Approve".
 PASS  fox_tab create: open the local test page  — http://127.0.0.1:50123/index.html
 PASS  fox_read: page 1 is loaded  — title: InariMCP reviewer smoke: page 1
 PASS  fox_read: password field is [MASKED]  — values: ["[MASKED]"]
@@ -126,6 +135,7 @@ PASS  fox_screenshot: a PNG file is written  — <home>/.inari-mcp/screenshots/s
       Waiting for your answer (the popup gives you 60 s). This script never approves by itself.
 PASS  fox_click: click "Go to page 2" (after your approval)  — #to-page-2
 PASS  fox_click: the tab moved to page 2  — http://127.0.0.1:50123/page2.html
+      fox_tab close is an action: open the InariMCP toolbar popup in Firefox (it shows a badge) and press "Approve".
 PASS  fox_tab close: close the test tab  — tabId=12
 
 #   Check                                                    Tool            Result  Detail
@@ -144,7 +154,20 @@ npx playwright install firefox     # once; downloads Playwright's Firefox
 npm run smoke:reviewer -- --headless
 ```
 
-The daemon drives Playwright's headless Firefox instead of the add-on, so this checks the MCP server alone; it needs neither the add-on nor `npm run setup`. It runs on free ports (a running daemon is not touched) and stops its daemon at the end. Headless mode has no popup in which a human could approve, so a step that needs approval is reported as `SKIP`, and `fox_read` returns only the URL and the title there, so the two `[MASKED]` checks are `SKIP` as well.
+The daemon drives Playwright's headless Firefox instead of the add-on, so this checks the MCP server alone; it needs neither the add-on nor `npm run setup`. It runs on free ports (a running daemon is not touched) and stops its daemon at the end.
+
+Headless mode has no popup, and the script declares no MCP elicitation, so nobody can approve an action there. Opening the test tab is reported as `SKIP`, and so are the checks after it (there is no test tab); only `fox_tabs` runs. This shows that the MCP server starts and answers, and that an action does not run without a human. The exit code is 0:
+
+```
+mode: headless (Playwright Firefox, no add-on)
+test page: http://127.0.0.1:52512/index.html
+
+PASS  fox_tabs: list the tabs  — tabs=1
+SKIP  fox_tab create: open the local test page  — needs human approval; headless mode has no popup
+SKIP  remaining checks  — no test tab
+...
+1 PASS, 0 FAIL, 2 SKIP
+```
 
 ## When it does not work
 

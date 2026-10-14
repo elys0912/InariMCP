@@ -8,9 +8,10 @@
 //      as an MCP client does; it connects to the daemon or starts one.
 //   3. Calls the tools as an MCP client (@modelcontextprotocol/sdk): fox_tabs,
 //      fox_tab create, fox_read (password and hidden fields are [MASKED]),
-//      fox_find, fox_screenshot (a file is written), fox_click (the human
-//      approves it in the add-on's toolbar popup; the page moves to page 2),
-//      fox_tab close.
+//      fox_find, fox_screenshot (a file is written), fox_click (the page
+//      moves to page 2), fox_tab close. The three actions (fox_tab create,
+//      fox_click, fox_tab close) each wait until the human approves them in
+//      the add-on's toolbar popup; the reads ask nothing.
 //   4. Prints a table; exit code 1 when a check FAILs.
 //
 // The script installs nothing and never approves anything itself: the
@@ -22,8 +23,9 @@
 // --headless: the daemon drives Playwright's Firefox instead (no add-on, no
 // native host; needs `npx playwright install firefox`). It runs on free
 // ports, so a daemon in use is not touched, and is stopped at the end.
-// Headless mode has no popup: a call that needs approval is reported as
-// SKIP, and fox_read returns only the URL and title (no mask check).
+// Headless mode has no popup, so nobody can approve there: with the safety
+// guard on (the default), fox_tab create is reported as SKIP, and so is
+// every check after it (there is no test tab). Only fox_tabs runs.
 //
 // Usage: npm run smoke:reviewer [-- --headless]
 // Exit code: 0 = no check failed, 1 = a check failed, 2 = bad arguments
@@ -47,11 +49,13 @@ const USAGE = `Usage: npm run smoke:reviewer [-- --headless]
        node scripts/e2e/reviewer-smoke.mjs [--headless]
 
 Checks the basic features against a local test page (127.0.0.1) as an MCP
-client: tabs, read (masked fields), find, screenshot, click (you approve it
-in the add-on's toolbar popup) and closing the tab.
+client: tabs, opening a tab, read (masked fields), find, screenshot, click
+and closing the tab. You approve each action (opening the tab, the click,
+closing the tab) in the add-on's toolbar popup.
 
   --headless  use the daemon's headless Firefox (Playwright) instead of
-              Firefox with the add-on; no approval popup there
+              Firefox with the add-on; nobody can approve there, so only
+              the tab list runs and the actions are SKIP
   -h, --help  show this help
 
 Exit code: 0 = no check failed, 1 = a check failed, 2 = bad arguments.
@@ -156,7 +160,7 @@ function judge(ctx, check, tool, res, passed, detail) {
 
 function printApprovalHint(ctx, tool) {
   if (ctx.headless) return;
-  console.log(`      ${tool}: if the InariMCP toolbar button shows a badge, open its popup and press "Approve".`);
+  console.log(`      ${tool} is an action: open the InariMCP toolbar popup in Firefox (it shows a badge) and press "Approve".`);
 }
 
 /** Poll fox_read until the tab shows `page` (by title); the last answer. */
@@ -193,7 +197,7 @@ async function checkTabs(ctx) {
 async function openTestPage(ctx) {
   const url = new URL(PAGE_1.file, ctx.baseUrl).href;
   printApprovalHint(ctx, 'fox_tab create');
-  const res = await ctx.call('fox_tab', { action: 'create', url, active: true });
+  const res = await ctx.call('fox_tab', { action: 'create', url, active: true }, APPROVAL_CALL_TIMEOUT_MS);
   // The Extension answers tab.id, headless tabId.
   const tabId = res.data?.tabId ?? res.data?.tab?.id;
   const opened = judge(ctx, 'fox_tab create: open the local test page', 'fox_tab', res, !res.isError && Number.isInteger(tabId), url);
@@ -231,6 +235,9 @@ async function checkClick(ctx, tabId) {
     console.log('      Waiting for your answer (the popup gives you 60 s). This script never approves by itself.');
   }
 
+  // The daemon knows which page the tab shows from the fox_read answers
+  // above, so the click can be approved (on a tab it has not seen yet, an
+  // action cannot be approved until fox_tabs lists it).
   const res = await ctx.call('fox_click', { selector: LINK_TO_PAGE_2, tabId }, APPROVAL_CALL_TIMEOUT_MS);
   const check = ctx.headless ? 'fox_click: click "Go to page 2"' : 'fox_click: click "Go to page 2" (after your approval)';
   if (!judge(ctx, check, 'fox_click', res, !res.isError, LINK_TO_PAGE_2)) return;
@@ -242,7 +249,7 @@ async function checkClick(ctx, tabId) {
 /** Close the tab; whether it is gone. */
 async function closeTestPage(ctx, tabId) {
   printApprovalHint(ctx, 'fox_tab close');
-  const res = await ctx.call('fox_tab', { action: 'close', tabId });
+  const res = await ctx.call('fox_tab', { action: 'close', tabId }, APPROVAL_CALL_TIMEOUT_MS);
   const after = await ctx.call('fox_tabs', { what: 'tabs' });
   const isGone = Array.isArray(after.data?.tabs) && !after.data.tabs.some((t) => t.id === tabId);
 
