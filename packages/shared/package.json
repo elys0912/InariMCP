@@ -32,6 +32,10 @@
       "types": "./dist/field-mask.d.ts",
       "default": "./dist/field-mask.js"
     },
+    "./approval-site": {
+      "types": "./dist/approval-site.d.ts",
+      "default": "./dist/approval-site.js"
+    },
     "./url-pattern-limit": {
       "types": "./dist/url-pattern-limit.d.ts",
       "default": "./dist/url-pattern-limit.js"

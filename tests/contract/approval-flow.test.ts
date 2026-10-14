@@ -5,7 +5,7 @@
  *               tools/approval-flow.ts (elicitation / popup answers → token),
  *               relay/approval.ts (ask, then retry once with the token),
  *               transport/http-bridge.ts (/approval/* routes, approvalToken)
- *   extension   approval.ts (popup view, command result, isApprovedHost),
+ *   extension   approval.ts (popup view, command result, isApprovedSite),
  *               background.ts (wire envelope, scope sets, message guards),
  *               content.ts (no approval UI in the page)
  *
@@ -56,7 +56,7 @@ interface ExtensionApproval {
   APPROVAL_MESSAGE: { LIST: string; DECIDE: string };
   parseApprovalPrompt(data: unknown, requestId: string, now: number, defaultTimeoutMs: number): ApprovalView | null;
   approvalCommandResult(view: ApprovalView, decision: string, now: number): Record<string, unknown>;
-  isApprovedHost(tabUrl: string | undefined, approvedHost: unknown): boolean;
+  isApprovedSite(tabUrl: string | undefined, approvedSite: unknown): boolean;
 }
 type ToWireResponse = (requestId: number | string, result: Record<string, unknown>) => Record<string, unknown>;
 
@@ -506,7 +506,7 @@ describe('extension: approval request handling', () => {
 
   it('parses the server prompt into a popup view (deadline within the request lifetime)', () => {
     const request = store.createRequest(
-      { toolName: 'fox_click', host: SITE_HOST, argsHash: 'h' },
+      { toolName: 'fox_click', site: SITE_HOST, argsHash: 'h' },
       { url: SITE_URL, matchedPattern: null, summary: 'selector: "#x"' },
     );
     const now = Date.now();
@@ -542,17 +542,17 @@ describe('extension: approval request handling', () => {
     expect(question.ok && isBrowserApproval(question.response, 'msg-6')).toBe(false);
   });
 
-  it('isApprovedHost: exact hostname only, or the scheme of a URL without one', () => {
-    expect(ext.isApprovedHost('https://Bank.Example.test/x', SITE_HOST)).toBe(true);
-    expect(ext.isApprovedHost('https://bank.example.test.evil.test/', SITE_HOST)).toBe(false);
-    expect(ext.isApprovedHost('https://sub.bank.example.test/', SITE_HOST)).toBe(false);
-    expect(ext.isApprovedHost('https://bank.example.test/', undefined)).toBe(false);
-    expect(ext.isApprovedHost('https://bank.example.test/', '')).toBe(false);
-    expect(ext.isApprovedHost('not a url', SITE_HOST)).toBe(false);
-    expect(ext.isApprovedHost('file:///tmp/a.html', 'file:')).toBe(true);
-    expect(ext.isApprovedHost('about:blank', 'about:')).toBe(true);
-    expect(ext.isApprovedHost('file:///tmp/a.html', SITE_HOST)).toBe(false);
-    expect(ext.isApprovedHost('https://bank.example.test/', 'https:')).toBe(false);
+  it('isApprovedSite: exact hostname only, or the scheme of a URL without one', () => {
+    expect(ext.isApprovedSite('https://Bank.Example.test/x', SITE_HOST)).toBe(true);
+    expect(ext.isApprovedSite('https://bank.example.test.evil.test/', SITE_HOST)).toBe(false);
+    expect(ext.isApprovedSite('https://sub.bank.example.test/', SITE_HOST)).toBe(false);
+    expect(ext.isApprovedSite('https://bank.example.test/', undefined)).toBe(false);
+    expect(ext.isApprovedSite('https://bank.example.test/', '')).toBe(false);
+    expect(ext.isApprovedSite('not a url', SITE_HOST)).toBe(false);
+    expect(ext.isApprovedSite('file:///tmp/a.html', 'file:')).toBe(true);
+    expect(ext.isApprovedSite('about:blank', 'about:')).toBe(true);
+    expect(ext.isApprovedSite('file:///tmp/a.html', SITE_HOST)).toBe(false);
+    expect(ext.isApprovedSite('https://bank.example.test/', 'https:')).toBe(false);
   });
 });
 

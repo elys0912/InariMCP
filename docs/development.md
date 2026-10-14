@@ -96,10 +96,11 @@ CI does not upload the packages (to save Actions storage); make them locally at 
 | `@inari-mcp/shared` | zod schemas (protocol, actions, Native Host messages), action names, constants (`ENV`, …), small utilities. No Node.js APIs (`packages/shared/tests/browser-safe.test.ts` checks this) | daemon, relay, Native Host; the Extension only for exports that do not pull in zod |
 | `@inari-mcp/shared/action-names` | the browser command action names, zod-free | the Extension |
 | `@inari-mcp/shared/field-mask` | which form fields have their value masked (`[MASKED]`), import-free | the Extension |
+| `@inari-mcp/shared/approval-site` | the site a human approval is bound to (`approvalSiteOf`), import-free | the Extension (the daemon through `@inari-mcp/shared`) |
 | `@inari-mcp/shared/url-pattern-limit` | the length and shape limits of a `urlPattern` argument, import-free | the Extension (the daemon through `@inari-mcp/shared`) |
 | `@inari-mcp/shared/node` | helpers of the Node.js processes (below) | daemon, relay, Native Host, doctor |
 
-The Extension bundles `@inari-mcp/shared` from its sources (`packages/shared/src`), not from `dist/`. Only `@inari-mcp/shared`, `@inari-mcp/shared/action-names`, `@inari-mcp/shared/field-mask` and `@inari-mcp/shared/url-pattern-limit` resolve; any other subpath, `/node` included, is a build error. The Extension's `tsconfig.json` maps the same four names to the sources. Vitest also resolves all five imports to the sources, so tests need no build.
+The Extension bundles `@inari-mcp/shared` from its sources (`packages/shared/src`), not from `dist/`. Only `@inari-mcp/shared`, `@inari-mcp/shared/action-names`, `@inari-mcp/shared/field-mask`, `@inari-mcp/shared/approval-site` and `@inari-mcp/shared/url-pattern-limit` resolve; any other subpath, `/node` included, is a build error. The Extension's `tsconfig.json` maps the same five names to the sources. Vitest also resolves all six imports to the sources, so tests need no build.
 
 Modules of `@inari-mcp/shared/node` (`packages/shared/src/node/`):
 

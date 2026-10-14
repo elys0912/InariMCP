@@ -28,7 +28,7 @@
  */
 
 import * as crypto from 'node:crypto';
-import { ENV, ENV_DEFAULTS } from '@inari-mcp/shared';
+import { ENV, ENV_DEFAULTS, approvalSiteOf } from '@inari-mcp/shared';
 import { isFalsyEnv } from '../utils/headless-env.js';
 import type { SafetyDenial } from './guard.js';
 import { revealInvisible } from './sanitizer.js';
@@ -66,8 +66,8 @@ export type ApprovalChannel = 'elicitation' | 'browser';
 /** What an approval applies to. */
 export interface ApprovalTarget {
   toolName: string;
-  /** Site of the URL the call acts on (approvalSiteOf). */
-  host: string;
+  /** approvalSiteOf() of the URL the call acts on: a hostname, or a scheme such as `file:`. */
+  site: string;
   /** SHA-256 (hex) of the canonical JSON of the tool arguments. */
   argsHash: string;
 }
@@ -99,24 +99,6 @@ interface StoredToken extends ApprovalGrant {
 // ---------------------------------------------------------------------------
 // Target helpers
 // ---------------------------------------------------------------------------
-
-/**
- * The site an approval is bound to: the lower-case hostname of an absolute
- * URL, or its scheme (`file:`, `about:`) when it has no hostname, so that a
- * local test page or a new blank tab can be approved too. Null when `url` is
- * not an absolute URL. The Extension compares the same way
- * (extension/src/approval.ts isApprovedHost).
- */
-export function approvalSiteOf(url: string | null | undefined): string | null {
-  if (typeof url !== 'string' || url === '') return null;
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.toLowerCase().replace(/\.$/, '');
-    return host === '' ? parsed.protocol : host;
-  } catch {
-    return null;
-  }
-}
 
 /** JSON with object keys sorted at every level (stable across key order). */
 export function canonicalJson(value: unknown): string {
@@ -188,9 +170,9 @@ export function approvalTargetFor(
   args: Record<string, unknown>,
   url: string | null,
 ): ApprovalTarget | null {
-  const host = approvalSiteOf(url);
-  if (host === null) return null;
-  return { toolName, host, argsHash: hashArgs(args) };
+  const site = approvalSiteOf(url);
+  if (site === null) return null;
+  return { toolName, site, argsHash: hashArgs(args) };
 }
 
 /**
@@ -205,7 +187,7 @@ export function grantCoversDenial(
   if (!grant || denial === null) return false;
   if (denial.safetyDecision !== 'confirmation_required') return false;
   const site = approvalSiteOf(denial.elicitation?.url);
-  return site !== null && site === grant.target.host;
+  return site !== null && site === grant.target.site;
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +274,7 @@ export class ApprovalStore {
   /**
    * Consume a presented token. The token is removed on every presentation
    * (single use); the grant is returned only when it is unexpired and was
-   * issued for this tool and these exact arguments. The host is checked by
+   * issued for this tool and these exact arguments. The site is checked by
    * the guard (grantCoversDenial) and by the Extension (approvedHost).
    */
   consume(token: string, toolName: string, argsHash: string): ApprovalGrant | null {

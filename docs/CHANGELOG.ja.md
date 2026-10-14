@@ -37,6 +37,7 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - 承認の確認（MCP elicitation とツールバーのポップアップ）を、保護対象サイトの名前ではなく、ツール・サイト・引数を示して「この操作を許可しますか」と尋ねる形にした。
 - `fox_safety_status` は `confirmProtectedActions` と `protectedUrlPatterns` の代わりに、`approvalPolicy`（どの呼び出しで尋ねるか）と `confirmReadSites` を返す。
 - 一度だけ使える承認のトークンの接頭辞を `kat_` から `iat_`（Inari approval token）にした。
+- `scope: "all_tabs"` の `fox_screenshot` は、`confirm_read_sites` のサイトで除いたタブの理由を `excludedReason` ではなく `excludedReadSitesReason` で返す（`excludedReadSites`、`excludedBlockedReason` と並ぶ名前）。
 
 ### 削除
 

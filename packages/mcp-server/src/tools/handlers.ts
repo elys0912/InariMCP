@@ -392,7 +392,10 @@ function safetyDenialToCallResult(
 export interface ApprovalRequestDetails {
   requestId: string;
   toolName: string;
-  /** The site the approval is bound to (safety/approval.ts approvalSiteOf). */
+  /**
+   * The site the approval is bound to (approvalSiteOf of @inari-mcp/shared).
+   * The field keeps its name `host` (relay/approval.ts reads it).
+   */
   host: string;
   url: string;
   /** The confirm_read_sites entry of a read; null for an acting tool. */
@@ -454,7 +457,7 @@ function confirmationToCallResult(
     const approval: ApprovalRequestDetails = {
       requestId: request.id,
       toolName,
-      host: target.host,
+      host: target.site,
       url: shownUrl,
       matchedPattern,
       summary: request.summary,
@@ -465,7 +468,7 @@ function confirmationToCallResult(
       'confirmation dialog (MCP elicitation) when the client supports it, otherwise in ' +
       'Firefox, where the InariMCP toolbar button shows a badge and the human approves ' +
       'or denies in its popup. An approval covers one call of this tool with exactly these ' +
-      `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
+      `arguments on ${target.site}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
       'Nothing in the page (buttons, fox_click) can approve it. ' +
       `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
       'Every acting call is asked for separately. ' +
@@ -690,7 +693,8 @@ function buildCommand({ guard, toolName, args }: CallContext, grant: ApprovalGra
   // The human approved this call for one site: the Extension runs an acting
   // command (or a read of a confirm_read_sites site) only on that site.
   if (grant !== null) {
-    command.approvedHost = grant.target.host;
+    // The wire field keeps its name `approvedHost`; its value is a site (approvalSiteOf).
+    command.approvedHost = grant.target.site;
   }
   return command;
 }

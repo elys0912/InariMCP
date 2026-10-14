@@ -33,6 +33,7 @@ const sharedSrc = fileURLToPath(new URL('./packages/shared/src/index.ts', import
 const sharedNodeSrc = fileURLToPath(new URL('./packages/shared/src/node/index.ts', import.meta.url));
 const sharedActionNamesSrc = fileURLToPath(new URL('./packages/shared/src/action-names.ts', import.meta.url));
 const sharedFieldMaskSrc = fileURLToPath(new URL('./packages/shared/src/field-mask.ts', import.meta.url));
+const sharedApprovalSiteSrc = fileURLToPath(new URL('./packages/shared/src/approval-site.ts', import.meta.url));
 const sharedUrlPatternLimitSrc = fileURLToPath(new URL('./packages/shared/src/url-pattern-limit.ts', import.meta.url));
 
 /**
@@ -50,6 +51,7 @@ export default defineConfig({
       { find: /^@inari-mcp\/shared\/node$/, replacement: sharedNodeSrc },
       { find: /^@inari-mcp\/shared\/action-names$/, replacement: sharedActionNamesSrc },
       { find: /^@inari-mcp\/shared\/field-mask$/, replacement: sharedFieldMaskSrc },
+      { find: /^@inari-mcp\/shared\/approval-site$/, replacement: sharedApprovalSiteSrc },
       { find: /^@inari-mcp\/shared\/url-pattern-limit$/, replacement: sharedUrlPatternLimitSrc },
       { find: /^@inari-mcp\/shared$/, replacement: sharedSrc },
     ],

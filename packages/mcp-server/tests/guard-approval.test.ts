@@ -16,8 +16,8 @@ function guard(overrides: Partial<SafetyConfig> = {}): SafetyGuard {
   });
 }
 
-function grantFor(toolName: string, args: Record<string, unknown>, host = 'bank.example.test'): ApprovalGrant {
-  return { target: { toolName, host, argsHash: hashArgs(args) }, via: 'browser', requestId: 'r1' };
+function grantFor(toolName: string, args: Record<string, unknown>, site = 'bank.example.test'): ApprovalGrant {
+  return { target: { toolName, site, argsHash: hashArgs(args) }, via: 'browser', requestId: 'r1' };
 }
 
 describe('SafetyGuard.check with an approval grant', () => {

@@ -504,7 +504,31 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     const result = await handleCommand({ action: 'screenshot_all_tabs' }, 'host');
     expect(result).toMatchObject({ success: true, excludedBlocked: 0, excludedReadSites: 0 });
     expect(result).not.toHaveProperty('excludedBlockedReason');
+    expect(result).not.toHaveProperty('excludedReadSitesReason');
+  });
+
+  it('screenshot all_tabs skips confirm_read_sites tabs with excludedReadSitesReason', async () => {
+    const tabs = [
+      fakeTab({ id: 1, url: 'https://ok.test/' }),
+      fakeTab({ id: 2, url: 'https://bank.test/' }),
+    ];
+    const captured: number[] = [];
+    useFakeBrowser({
+      tabs: {
+        query: async () => tabs,
+        captureTab: async (id: number) => { captured.push(id); return `data:${id}`; },
+      },
+    });
+    const result = await handleCommand({ action: 'screenshot_all_tabs', confirmReadUrlRules: [hostRule('bank.test')] }, 'host');
+    expect(result).toMatchObject({
+      success: true,
+      count: 1,
+      excludedBlocked: 0,
+      excludedReadSites: 1,
+      excludedReadSitesReason: expect.stringContaining('confirm_read_sites'),
+    });
     expect(result).not.toHaveProperty('excludedReason');
+    expect(captured).toEqual([1]);
   });
 });
 

@@ -56,7 +56,8 @@ function auditDecision(
   if (!getSafetyGuard().config.auditLog) return;
   audit(
     request.target.toolName,
-    { approvalId: request.id, host: request.target.host, via },
+    // The audit log field keeps its name `host`; its value is a site (approvalSiteOf).
+    { approvalId: request.id, host: request.target.site, via },
     request.url,
     decision,
     transport,
@@ -120,7 +121,8 @@ export function buildApprovalPrompt(request: ApprovalRequest, now = Date.now()):
     kind: 'tool_call',
     approvalId: request.id,
     toolName: request.target.toolName,
-    host: request.target.host,
+    // The wire field keeps its name `host`; its value is a site (approvalSiteOf).
+    host: request.target.site,
     url: request.url,
     matchedPattern: request.matchedPattern,
     summary: request.summary,

@@ -37,6 +37,7 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The approval prompt (MCP elicitation and the toolbar popup) asks "Allow this operation?" with the tool, the site and the arguments, instead of naming a protected site.
 - `fox_safety_status` reports `approvalPolicy` (which calls ask) and `confirmReadSites`, instead of `confirmProtectedActions` and `protectedUrlPatterns`.
 - One-time human-approval tokens start with `iat_` (Inari approval token) instead of `kat_`.
+- `fox_screenshot` with `scope: "all_tabs"` gives the reason for the tabs it left out on `confirm_read_sites` sites in `excludedReadSitesReason` instead of `excludedReason`, next to `excludedReadSites` and `excludedBlockedReason`.
 
 ### Removed
 

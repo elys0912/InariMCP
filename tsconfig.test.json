@@ -27,6 +27,7 @@
       "@inari-mcp/shared/node": ["./packages/shared/src/node/index.ts"],
       "@inari-mcp/shared/action-names": ["./packages/shared/src/action-names.ts"],
       "@inari-mcp/shared/field-mask": ["./packages/shared/src/field-mask.ts"],
+      "@inari-mcp/shared/approval-site": ["./packages/shared/src/approval-site.ts"],
       "@inari-mcp/shared/url-pattern-limit": ["./packages/shared/src/url-pattern-limit.ts"]
     }
   },

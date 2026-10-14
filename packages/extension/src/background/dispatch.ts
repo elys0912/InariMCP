@@ -149,10 +149,11 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
         "(Extension and MCP Server versions may not match).",
     });
   }
-  const readRules = policy.readRules;
+  const confirmReadRules = policy.confirmReadRules;
   const urlLists = policy.lists;
-  // Site a human approved for this one call (MCP Server approval token).
-  const approvedHost = typeof message.approvedHost === "string" ? message.approvedHost : undefined;
+  // Site a human approved for this one call (MCP Server approval token). The
+  // wire field keeps its name `approvedHost`; its value is a site (approvalSiteOf).
+  const approvedSite = typeof message.approvedHost === "string" ? message.approvedHost : undefined;
 
   // blocked / allowed lists against the real URL of the target tab (the
   // guard only knows the last URL it saw for the tab, if any). The server
@@ -173,7 +174,7 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
   // (UNKNOWN_ACTION) without reaching a handler that acts.
   const approval = entry?.approval;
   if (approval === "act" || approval === "actOnUrl" || approval === "read") {
-    const refusal = checkApproval(approval, target, data, readRules, approvedHost);
+    const refusal = checkApproval(approval, target, data, confirmReadRules, approvedSite);
     if (refusal) return refused(refusal);
   }
 
@@ -187,8 +188,8 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
       tabId,
       target,
       scope,
-      readRules,
-      approvedHost,
+      confirmReadRules,
+      approvedSite,
       urlLists,
       navigateInNewTab,
     },

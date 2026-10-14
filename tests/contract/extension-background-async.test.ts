@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { waitForNavigation } from '../../packages/extension/src/background/tab-wait.ts';
 import { getAllTabs, findText } from '../../packages/extension/src/background/tabs.ts';
 import { registerListeners } from '../../packages/extension/src/background/listeners.ts';
-import { clipApprovalText, isApprovedHost } from '../../packages/extension/src/approval.ts';
+import { clipApprovalText, isApprovedSite } from '../../packages/extension/src/approval.ts';
 import { clipText } from '../../packages/extension/src/text-clip.ts';
 import { LIMITS, TIMEOUTS } from '../../packages/extension/src/background/constants.ts';
 import {
@@ -443,15 +443,15 @@ describe('popup status reply (E-14)', () => {
 // approval.ts (A-05) and text clipping (E-17)
 // ---------------------------------------------------------------------------
 
-describe('isApprovedHost: trailing dot (A-05)', () => {
+describe('isApprovedSite: trailing dot (A-05)', () => {
   it('a hostname with a trailing dot is the approved host', () => {
-    expect(isApprovedHost('https://bank.example.test./x', 'bank.example.test')).toBe(true);
-    expect(isApprovedHost('https://bank.example.test/x', 'bank.example.test.')).toBe(true);
+    expect(isApprovedSite('https://bank.example.test./x', 'bank.example.test')).toBe(true);
+    expect(isApprovedSite('https://bank.example.test/x', 'bank.example.test.')).toBe(true);
   });
 
   it('still exact otherwise', () => {
-    expect(isApprovedHost('https://evil.bank.example.test./', 'bank.example.test')).toBe(false);
-    expect(isApprovedHost('https://bank.example.test/', '.')).toBe(false);
+    expect(isApprovedSite('https://evil.bank.example.test./', 'bank.example.test')).toBe(false);
+    expect(isApprovedSite('https://bank.example.test/', '.')).toBe(false);
   });
 });
 

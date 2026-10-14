@@ -85,9 +85,9 @@ export interface ActionContext {
   /** Container scope filter, null when container_scope is off. */
   scope: ScopeFilter | null;
   /** confirm_read_sites rules attached by the MCP Server (`confirmReadUrlRules`). */
-  readRules: CompiledUrlRule[];
-  /** The site a human approved this one call for (`approvedHost`), if any. */
-  approvedHost: string | undefined;
+  confirmReadRules: CompiledUrlRule[];
+  /** The site a human approved this one call for (the wire field `approvedHost`), if any. */
+  approvedSite: string | undefined;
   urlLists: UrlLists;
   /** fox_navigate with newTab, routed as createTab. */
   navigateInNewTab: boolean;
@@ -183,7 +183,7 @@ const ACTIONS = {
   screenshotAllTabs: {
     scope: "self",
     approval: "readPerTab",
-    handler: (c) => screenshotAllTabs(optionsOf<ScreenshotOptions>(c), c.scope, c.readRules, c.urlLists),
+    handler: (c) => screenshotAllTabs(optionsOf<ScreenshotOptions>(c), c.scope, c.confirmReadRules, c.urlLists),
   },
 
   // --- Reload / navigation ---

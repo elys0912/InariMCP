@@ -2,9 +2,8 @@
 //
 // Human approval is asked in the toolbar popup, never in the page: content
 // scripts, page JavaScript and the LLM's own tools (fox_click, ...) cannot
-// reach the popup, and the background only
-// accepts a decision from an extension page (the popup). See
-// background/approvals.ts.
+// reach the popup, and the background only accepts a decision from an
+// extension page (the popup). See background/approvals.ts.
 //
 // Two kinds of request arrive as `request_approval` commands:
 //   tool_call  sent by the MCP Server for a tool call that needs a human
@@ -18,6 +17,7 @@
 // Imported by the background modules and popup.ts (bundled into both).
 // Contract tests import it as a module.
 
+import { approvalSiteOf, bareHost } from "@inari-mcp/shared/approval-site";
 import { clipText } from "./text-clip";
 
 /** runtime.sendMessage types between the popup and the background. */
@@ -126,30 +126,14 @@ export function approvalCommandResult(
 }
 
 /**
- * The site an approval is bound to, as the MCP Server computes it
- * (mcp-server safety/approval.ts approvalSiteOf): the lower-case hostname
- * without a trailing dot, or the scheme (`file:`, `about:`) of a URL without
- * a hostname. Null when `url` is not an absolute URL.
- */
-export function approvalSiteOf(url: string | undefined): string | null {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
-    return host === "" ? parsed.protocol : host;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Whether an approved call may run on this URL (the target tab's, or the URL
- * a new tab opens): its site equals the site the human approved (MCP Server
- * `approvedHost`, compared lower-case without a trailing dot, so
- * `example.com.` is the approved `example.com`).
+ * a new tab opens): its site (approvalSiteOf, the rule the MCP Server binds
+ * the approval with) equals the site the human approved (the command's
+ * `approvedHost`), compared as bare hostnames, so `example.com.` is the
+ * approved `example.com`.
  */
-export function isApprovedHost(url: string | undefined, approvedHost: unknown): boolean {
-  if (typeof approvedHost !== "string" || approvedHost === "") return false;
+export function isApprovedSite(url: string | undefined, approvedSite: unknown): boolean {
+  if (typeof approvedSite !== "string" || approvedSite === "") return false;
   const site = approvalSiteOf(url);
-  return site !== null && site === approvedHost.toLowerCase().replace(/\.$/, "");
+  return site !== null && site === bareHost(approvedSite);
 }
