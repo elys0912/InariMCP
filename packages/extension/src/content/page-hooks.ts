@@ -22,6 +22,8 @@
 // the hook inside it only forwards). Requests already in flight when the
 // hooks went in are not seen.
 
+import { once } from "../once";
+
 /** In-flight page requests (fetch + XHR) seen by the hooks. A count only. */
 let activeRequests = 0;
 
@@ -46,12 +48,9 @@ export function interceptionStatus(): { fetch: boolean; xhr: boolean } {
 /** Count one in-flight request; the returned function settles it (once). */
 function beginRequest(): () => void {
   activeRequests++;
-  let settled = false;
-  return () => {
-    if (settled) return;
-    settled = true;
+  return once(() => {
     activeRequests = Math.max(0, activeRequests - 1);
-  };
+  });
 }
 
 /** Hook the page's fetch; returns what puts it back, or null when not hooked. */
@@ -178,14 +177,11 @@ function installHooks(): () => void {
 export function beginNetworkCount(): () => void {
   if (runningWaits === 0) uninstallHooks = installHooks();
   runningWaits++;
-  let ended = false;
-  return () => {
-    if (ended) return;
-    ended = true;
+  return once(() => {
     runningWaits--;
     if (runningWaits === 0 && uninstallHooks) {
       uninstallHooks();
       uninstallHooks = null;
     }
-  };
+  });
 }

@@ -7,7 +7,7 @@ import { APPROVAL_MESSAGE, type ApprovalView } from '../approval';
 import { TOP_FRAME_ID } from '../background/constants';
 import type { ContentRequest } from '../content/types';
 import type { SetupState } from '../types/setup';
-import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, parseControlView, type ControlView } from '../user-control';
+import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, requestControl, type ControlView } from '../user-control';
 import { setupStateOfReply, setupStateOfFailure } from './setup-status';
 
 interface StatusResponse {
@@ -321,20 +321,44 @@ const APPROVAL_ARM_DELAY_MS = 800;
 /** The request on screen, since when, and how many others are queued. */
 let shownApproval: { id: string; more: number; shownAt: number } | null = null;
 
-/**
- * Show the oldest pending request (one at a time: the buttons never move
- * under the cursor), with a count of the others. The card is rebuilt only
- * when the request on screen changes; otherwise just the countdown updates.
- */
-async function refreshApprovals(): Promise<void> {
-  let approvals: ApprovalView[];
+/** The pending requests as the background lists them (none when it cannot answer). */
+async function fetchApprovals(): Promise<ApprovalView[]> {
   try {
     const reply = await browser.runtime.sendMessage({ type: APPROVAL_MESSAGE.LIST }) as ApprovalListResponse;
-    approvals = reply?.success && Array.isArray(reply.approvals) ? reply.approvals : [];
+    return reply?.success && Array.isArray(reply.approvals) ? reply.approvals : [];
   } catch {
-    approvals = [];
+    return [];
   }
+}
 
+/** Keep the buttons of `card` disabled until APPROVAL_ARM_DELAY_MS after `shownAt`. */
+function armLater(card: HTMLElement, shownAt: number): void {
+  const armIn = shownAt + APPROVAL_ARM_DELAY_MS - Date.now();
+  if (armIn <= 0) return;
+
+  const buttons = card.querySelectorAll('button');
+  buttons.forEach((b) => { b.disabled = true; });
+  setTimeout(() => buttons.forEach((b) => { b.disabled = false; }), armIn);
+}
+
+/** The line under the card: how many other requests wait (none when 0). */
+function queuedNote(more: number): HTMLElement[] {
+  if (more === 0) return [];
+
+  const queued = document.createElement('p');
+  queued.className = 'approval-queued';
+  queued.textContent = t('approvalMore', String(more));
+  return [queued];
+}
+
+/**
+ * Show the first pending request (one at a time: the buttons never move
+ * under the cursor; the background lists the tool_call requests first), with
+ * a count of the others. The card is rebuilt only when the request on screen
+ * changes; otherwise just the countdown updates.
+ */
+async function refreshApprovals(): Promise<void> {
+  const approvals = await fetchApprovals();
   const list = document.getElementById('approval-list');
   setHidden('approvals', approvals.length === 0);
   if (!list) return;
@@ -355,20 +379,8 @@ async function refreshApprovals(): Promise<void> {
   const shownAt = shownApproval?.id === view.id ? shownApproval.shownAt : Date.now();
   shownApproval = { id: view.id, more, shownAt };
   const card = approvalCard(view, (id, approved) => { void decide(id, approved); });
-  const armIn = shownAt + APPROVAL_ARM_DELAY_MS - Date.now();
-  if (armIn > 0) {
-    const buttons = card.querySelectorAll('button');
-    buttons.forEach((b) => { b.disabled = true; });
-    setTimeout(() => buttons.forEach((b) => { b.disabled = false; }), armIn);
-  }
-  const children: HTMLElement[] = [card];
-  if (more > 0) {
-    const queued = document.createElement('p');
-    queued.className = 'approval-queued';
-    queued.textContent = t('approvalMore', String(more));
-    children.push(queued);
-  }
-  list.replaceChildren(...children);
+  armLater(card, shownAt);
+  list.replaceChildren(card, ...queuedNote(more));
 }
 
 async function decide(id: string, approved: boolean): Promise<void> {
@@ -389,16 +401,9 @@ async function decide(id: string, approved: boolean): Promise<void> {
 // Consent and pause switch
 // ---------------------------------------------------------------------------
 //
-// The background holds both (user-control.ts). Without consent the popup
-// only offers to open the consent page again; with it, the pause switch.
-
-async function fetchControl(): Promise<ControlView | null> {
-  try {
-    return parseControlView(await browser.runtime.sendMessage({ type: CONTROL_MESSAGE.GET }));
-  } catch {
-    return null;
-  }
-}
+// The background holds both (background/control-state.ts; the messages are
+// in user-control.ts). Without consent the popup only offers to open the
+// consent page again; with it, the pause switch.
 
 function renderControl(control: ControlView): void {
   const granted = control.consent === 'granted';
@@ -419,19 +424,21 @@ function setupPauseSwitch(): void {
   toggle?.addEventListener('change', () => { void applyPauseSwitch(toggle); });
 }
 
-/** Sends the switch's state to the background; puts the switch back if that fails. */
+/**
+ * Sends the switch's state to the background; puts the switch back if that
+ * fails, and warns when the background could not save it (it then holds
+ * until Firefox restarts).
+ */
 async function applyPauseSwitch(toggle: HTMLInputElement): Promise<void> {
-  const reply = await browser.runtime
-    .sendMessage({ type: CONTROL_MESSAGE.SET_PAUSED, paused: toggle.checked })
-    .catch(() => null);
-  const control = parseControlView(reply);
-  if (control === null) {
+  const reply = await requestControl({ type: CONTROL_MESSAGE.SET_PAUSED, paused: toggle.checked });
+  if (reply === null) {
     toggle.checked = !toggle.checked;
     showToast(t('toastPauseFailed'), 'error');
     return;
   }
 
-  renderControl(control);
+  renderControl(reply);
+  if (!reply.saved) showToast(t('toastPauseNotSaved'), 'warning');
 }
 
 /** Opens the consent page in a tab (the popup closes when the tab opens). */
@@ -541,7 +548,7 @@ async function init(): Promise<void> {
 
   // Without consent nothing connects: the status would only say
   // "Connecting...". A failed query shows neither section.
-  const control = await fetchControl();
+  const control = await requestControl({ type: CONTROL_MESSAGE.GET });
   if (control !== null) renderControl(control);
   if (control === null || control.consent === 'granted') void refreshStatus(os, false);
 

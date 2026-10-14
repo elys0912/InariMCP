@@ -136,7 +136,7 @@ type NoOptions = object;
 
 /**
  * The options each background → content action carries next to `action`
- * (one key per case of handler.ts handleMessage).
+ * (one key per handler of handler.ts CONTENT_HANDLERS).
  */
 export interface ContentOptionsByAction {
   click: ClickOptions;
@@ -160,6 +160,20 @@ export interface ContentOptionsByAction {
 
 /** Action name of a background → content message. */
 export type ContentAction = keyof ContentOptionsByAction;
+
+/** What the background puts next to a command's options (action-table.ts toContentScript). */
+export interface ContentEnvelope {
+  /**
+   * Acting commands only: the origin (scheme://host[:port], site-origin.ts)
+   * of the page the human approval was checked on.
+   */
+  approvedOrigin?: string;
+  /**
+   * Commands from the Native Host: the background's pause count when the
+   * command was let through (abort.ts isSentBeforeAbort).
+   */
+  pauseCount?: number;
+}
 
 /**
  * A background → content message as the background builds it: the action

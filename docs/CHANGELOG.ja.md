@@ -40,7 +40,10 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - 一度だけ使える承認のトークンの接頭辞を `kat_` から `iat_`（Inari approval token）にした。
 - `scope: "all_tabs"` の `fox_screenshot` は、`confirm_read_sites` のサイトで除いたタブの理由を `excludedReason` ではなく `excludedReadSitesReason` で返す（`excludedReadSites`、`excludedBlockedReason` と並ぶ名前）。
 - `fox_navigate` の `action: "back"`・`"forward"`・`"refresh"` に `newTab: true` を付けたときは、今のタブを操作するものとして、そのタブのサイトについて承認を求めるようにした（従来は新しい空のタブ `about:` について尋ねていた）。
-- `fox_screenshot` の `scope: "scroll_capture"` で、`maxScrolls` は 50 まで、`delay` は 2000 ms までにした。
+- `scope: "scroll_capture"` の `fox_screenshot` で、`maxScrolls` は 50 まで、`delay` は 2000 ms までにし、拡張機能は合計 25 秒に収まる段数までにした。
+- 一時停止のスイッチは、実行中の命令も止める：MCP クライアントにはすぐ `paused` の拒否が返り、ページでの入力・待ち・`scroll_capture` は次の段で止まる。
+- 起動時に保存した一時停止の状態を読めなかったときは、一時停止した状態で始める。スイッチを保存できなかったときは、ポップアップにそう出る（その切り替えは Firefox を再起動するまで有効）。
+- `fox_request_approval`：ポップアップで同時に待てる質問を 3 件までにし、それを超えた質問はすぐ拒否する。ポップアップはツールの呼び出しの承認を質問より先に出す。
 
 ### 削除
 
@@ -69,3 +72,4 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - `safety.json` の `enabled: false` で、ヘッドレスモードの人の承認が止まらないようにした。操作系ツールは両方のバックエンドで常に先に尋ねる（`false` で止まるのは、URL の検査と URL の一覧、`confirm_read_sites`、`read_only`、`container_scope`、レート制限）。
 - ヘッドレスの `fox_snapshot` で、伏せる対象の欄（パスワード、ワンタイムコード、カード番号など上に挙げたもの）の値を `[MASKED]` にし、伏せる対象の `<select>` で選んだ option に selected の印を付けないようにした。従来は Playwright のアクセシビリティツリーがこれらの値をそのまま出していた。
 - URL の query と fragment にある秘密の値（`token`、`access_token`、`password` など）を、監査ログの `url` と、MCP クライアントが受け取る `details.approval` の `url` でも伏せるようにした（引数の `url` では従来から伏せていた）。Firefox の承認のポップアップには URL 全体を出す。
+- 拡張機能は、承認を確かめたときの origin（scheme・host・port）にタブがまだあるときだけ、承認済みの操作（`fox_click`、`fox_type`、`fox_press_key`、`fox_set_value` など）をページで実行する。その間にタブが別のページへ移っていたら拒否し、今のページについて改めて承認を求める。

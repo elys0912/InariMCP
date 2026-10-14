@@ -26,7 +26,7 @@ vi.mock('../../packages/extension/src/background/control-state', () => ({
   controlView: () => control.view,
 }));
 
-const { refreshSetupState, setPendingApprovalCount, startHostCommand, refreshBadge, badgeFor, BADGE_COLOR } =
+const { refreshSetupState, setPendingApprovalCount, startHostCommand, refreshBadge, badgeFor, SETUP_BADGE_COLOR } =
   await import('../../packages/extension/src/background/setup-badge.ts');
 
 interface Badge { text: string[]; color: string[]; title: string[] }
@@ -104,7 +104,7 @@ describe('background/setup-badge.ts', () => {
     await refreshSetupState();
     setPendingApprovalCount(2);
     expect(badge.text.at(-1)).toBe('2');
-    expect(badge.color.at(-1)).not.toBe(BADGE_COLOR);
+    expect(badge.color.at(-1)).not.toBe(SETUP_BADGE_COLOR);
     expect(badge.title.at(-1)).toBe('msg:badgeApprovalPending');
 
     // a setup refresh meanwhile does not hide the count
@@ -113,7 +113,7 @@ describe('background/setup-badge.ts', () => {
 
     setPendingApprovalCount(0);
     expect(badge.text.at(-1)).toBe('!');
-    expect(badge.color.at(-1)).toBe(BADGE_COLOR);
+    expect(badge.color.at(-1)).toBe(SETUP_BADGE_COLOR);
   });
 
   it('falls back to the message key when the locale has no text (i18n.ts)', async () => {
@@ -153,8 +153,8 @@ describe('background/setup-badge.ts: badge priority', () => {
 
   it('a running command comes before the setup state', () => {
     expect(badgeFor(inputs({ activeHostCommands: 1, setup: HOST_MISSING }))).toMatchObject({ text: '●', title: 'msg:badgeActive' });
-    expect(badgeFor(inputs({ setup: HOST_MISSING }))).toEqual({ text: '!', color: BADGE_COLOR, title: 'msg:badgeSetupNeeded' });
-    expect(badgeFor(inputs())).toEqual({ text: '', color: BADGE_COLOR, title: 'InariMCP' });
+    expect(badgeFor(inputs({ setup: HOST_MISSING }))).toEqual({ text: '!', color: SETUP_BADGE_COLOR, title: 'msg:badgeSetupNeeded' });
+    expect(badgeFor(inputs())).toEqual({ text: '', color: SETUP_BADGE_COLOR, title: 'InariMCP' });
   });
 
   it('each state has its own color', () => {

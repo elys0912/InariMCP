@@ -127,10 +127,7 @@ export function setConnectionAllowed(allowed: boolean): void {
   const port = nativePort;
   if (allowed || port === null) return;
 
-  isConnected = false;
-  hostConfirmed = false;
-  hostConfirmedAt = null;
-  nativePort = null;
+  clearPortState();
   releasePort(port);
   rejectPending(port, NOT_ALLOWED_ERROR);
   hooks.onDisconnected();
@@ -211,6 +208,11 @@ function forgetCurrentPort(error: string | undefined): void {
     hostConfirmedAt === null ? null : Date.now() - hostConfirmedAt,
     STABLE_CONNECTION_MS,
   );
+  clearPortState();
+}
+
+/** No current port: nothing connected, the host not confirmed. */
+function clearPortState(): void {
   isConnected = false;
   hostConfirmed = false;
   hostConfirmedAt = null;
@@ -241,7 +243,7 @@ function handleDisconnect(port: browser.runtime.Port): void {
 /**
  * One-line summary of a Native Messaging frame for the console: action,
  * requestId and the top-level / data key names -- never the values, which
- * can hold scripts, typed text, form values or page content.
+ * can hold typed text, form values or page content.
  */
 export function describeNativeMessage(raw: unknown): string {
   if (typeof raw !== "object" || raw === null) return `(${typeof raw})`;
@@ -253,13 +255,14 @@ export function describeNativeMessage(raw: unknown): string {
   }
   if (typeof m.success === "boolean") parts.push(`success=${m.success}`);
   const keys = Object.keys(m).filter((k) => k !== "action" && k !== "requestId" && k !== "success");
-  if (keys.length > 0) parts.push(`keys=[${keys.slice(0, LIMITS.NATIVE_SUMMARY_KEYS).join(",")}]`);
-  const data = m.data;
-  if (typeof data === "object" && data !== null && !Array.isArray(data)) {
-    const dataKeys = Object.keys(data);
-    if (dataKeys.length > 0) parts.push(`data=[${dataKeys.slice(0, LIMITS.NATIVE_SUMMARY_KEYS).join(",")}]`);
-  }
+  parts.push(...keyListPart("keys", keys), ...keyListPart("data", isRecord(m.data) ? Object.keys(m.data) : []));
+
   return parts.join(" ");
+}
+
+/** `label=[a,b,...]` of the first LIMITS.NATIVE_SUMMARY_KEYS names; nothing without names. */
+function keyListPart(label: string, names: string[]): string[] {
+  return names.length > 0 ? [`${label}=[${names.slice(0, LIMITS.NATIVE_SUMMARY_KEYS).join(",")}]`] : [];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

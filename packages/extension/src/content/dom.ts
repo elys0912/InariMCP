@@ -2,12 +2,13 @@
 // the masked-value rule and the password field guard.
 
 import {
-  isMaskedField as isMaskedFieldInfo,
+  isMaskedField as isMaskedByRule,
   MASKED_VALUE,
   maskedText,
   type MaskFieldInfo,
 } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
+import { abortedError, isAborted, whenAborted } from "./abort";
 import { LIMITS } from "./constants";
 import type { FindElementOptions, ElementInfo, ElementLocation, ElementPosition } from "./types";
 
@@ -73,10 +74,10 @@ function maskFieldInfo(element: Element): MaskFieldInfo {
 /**
  * Whether the element's value is masked in what the tools return (password,
  * hidden, one-time code and payment card fields, and the options of such a
- * select: shared/src/field-mask.ts).
+ * select): the rule of shared/src/field-mask.ts on what the element says.
  */
 export function isMaskedField(element: Element): boolean {
-  return isMaskedFieldInfo(maskFieldInfo(element));
+  return isMaskedByRule(maskFieldInfo(element));
 }
 
 /** An element's value as the tools return it: MASKED_VALUE for a masked field, else truncated. */
@@ -108,8 +109,25 @@ export function assertNotPasswordField(
   }
 }
 
+/**
+ * Wait `ms` between two steps of a command. Ends at once with
+ * abortedError() when the running commands are told to stop (the pause
+ * switch, abort.ts): every loop and wait that steps with it -- typing,
+ * polling, scroll_and_capture -- stops at its next step.
+ */
 export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  if (isAborted()) return Promise.reject(abortedError());
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      stopListening();
+      resolve();
+    }, ms);
+    const stopListening = whenAborted(() => {
+      clearTimeout(timer);
+      reject(abortedError());
+    });
+  });
 }
 
 export function isVisible(element: Element): boolean {

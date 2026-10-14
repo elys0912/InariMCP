@@ -3,12 +3,13 @@
  *
  * The explicit opt-in the add-on asks for right after install: what it does,
  * what it sends and where, and what happens without consent. The answer goes
- * to the background (user-control.ts), which connects to the Native Host
- * only once it is "granted".
+ * to the background (background/control-state.ts holds it; the messages are
+ * in user-control.ts), which connects to the Native Host only once it is
+ * "granted" (background/native-connection.ts setConnectionAllowed).
  */
 
 import { localizePage, t } from '../i18n';
-import { CONTROL_MESSAGE, PRIVACY_POLICY_URL, parseControlView, type ConsentState } from '../user-control';
+import { CONTROL_MESSAGE, PRIVACY_POLICY_URL, requestControl, type ConsentState } from '../user-control';
 
 /** Message key of the line under the text, per consent state. */
 const STATE_KEYS: Record<ConsentState, string | null> = {
@@ -17,22 +18,21 @@ const STATE_KEYS: Record<ConsentState, string | null> = {
   denied: 'consentStateDenied',
 };
 
-function showState(consent: ConsentState): void {
+/** The line under the text. */
+function setStateText(text: string): void {
   const el = document.getElementById('consent-state');
-  if (!el) return;
+  if (el) el.textContent = text;
+}
 
+function showState(consent: ConsentState): void {
   const key = STATE_KEYS[consent];
-  el.textContent = key === null ? '' : t(key);
+  setStateText(key === null ? '' : t(key));
 }
 
 async function answer(granted: boolean): Promise<void> {
-  const reply = await browser.runtime
-    .sendMessage({ type: CONTROL_MESSAGE.SET_CONSENT, granted })
-    .catch(() => null);
-  const control = parseControlView(reply);
+  const control = await requestControl({ type: CONTROL_MESSAGE.SET_CONSENT, granted });
   if (control === null) {
-    const el = document.getElementById('consent-state');
-    if (el) el.textContent = t('consentStateFailed');
+    setStateText(t('consentStateFailed'));
     return;
   }
 
@@ -47,9 +47,7 @@ async function init(): Promise<void> {
   document.getElementById('btn-deny')?.addEventListener('click', () => { void answer(false); });
 
   // Opened again later: show what was chosen before.
-  const control = parseControlView(
-    await browser.runtime.sendMessage({ type: CONTROL_MESSAGE.GET }).catch(() => null),
-  );
+  const control = await requestControl({ type: CONTROL_MESSAGE.GET });
   if (control !== null) showState(control.consent);
 }
 

@@ -1,19 +1,22 @@
 // Command dispatcher (L4): one command from the Native Host or the popup,
 // through the checks (pause switch, container scope, URL lists, human
 // approval) to its handler, and the response back over Native Messaging.
+// A pause stops the commands from the Native Host that are still running.
 // Which checks apply to an action, and its handler, come from the action
 // table (action-table.ts). While a command from the Native Host runs, the
 // toolbar badge shows it (setup-badge.ts).
 
 import { errorMessage } from "../error-message";
+import { approvalOriginOf } from "../site-origin";
+import type { CompiledUrlRule } from "../url-rule";
 import { describeAction, UNKNOWN_ACTION, type ActionContext, type ActionDescriptor } from "./action-table";
 import { parseContainerScope, enforceContainerScope, outOfScope } from "./container-scope";
-import { isPaused } from "./control-state";
+import { isPaused, pauseCount, pauseSignal } from "./control-state";
 import { postToHost } from "./native-connection";
 import { startHostCommand } from "./setup-badge";
-import { resolveTab } from "./tab-target";
-import type { NativeMessage, CommandResult, ScopeFilter } from "./types";
-import { parseUrlPolicy, hasUrlLists, checkListedTarget, checkApproval } from "./url-policy";
+import { abortContentCommands, resolveTab } from "./tab-target";
+import type { NativeMessage, CommandResult, ScopeFilter, UrlLists } from "./types";
+import { parseUrlPolicy, hasUrlLists, checkListedTarget, checkApproval, isUpfrontApproval } from "./url-policy";
 import { resolveWireAction, toWireResponse } from "./wire";
 
 /**
@@ -25,9 +28,9 @@ export type CommandSource = "host" | "page";
 
 /**
  * The answer to every command from the Native Host while the user has paused
- * agent actions in the popup (control-state.ts). The error starts with
- * "paused", and safetyDecision "paused" lets the MCP Server tell it from a
- * browser failure.
+ * agent actions in the popup (control-state.ts), and to those still running
+ * when the pause comes. The error starts with "paused", and safetyDecision
+ * "paused" lets the MCP Server tell it from a browser failure.
  */
 export const PAUSED_REFUSAL: CommandResult = {
   success: false,
@@ -35,23 +38,84 @@ export const PAUSED_REFUSAL: CommandResult = {
   error: "paused: the user paused agent actions in the Inari MCP for Firefox toolbar popup",
 };
 
-export async function handleCommand(message: NativeMessage, source: CommandSource): Promise<CommandResult> {
-  // Commands from the user's own pages (the popup) are not the agent's.
-  if (source === "host" && isPaused()) {
-    const refusal = { ...PAUSED_REFUSAL };
-    postWireResponse(message, refusal);
-    return refusal;
-  }
+/**
+ * A copy of PAUSED_REFUSAL: a caller may add to the result it gets (the URL
+ * report, the wire response), and the constant must stay as it is.
+ */
+function pausedRefusal(): CommandResult {
+  return { ...PAUSED_REFUSAL };
+}
 
-  const finishHostCommand = source === "host" ? startHostCommand() : undefined;
+/**
+ * request_approval answers the pause itself: the pause withdraws the open
+ * approval requests (background.ts, cancelAllApprovals), and the answer
+ * `cancelled` is what makes the MCP Server close its request. A PAUSED
+ * refusal in its place would leave that request open.
+ */
+const ANSWERS_THE_PAUSE_ITSELF: ReadonlySet<string> = new Set(["requestApproval"]);
+
+export async function handleCommand(message: NativeMessage, source: CommandSource): Promise<CommandResult> {
+  const result = source === "host" ? await runHostCommand(message) : await runUnpausedCommand(message, source);
+  postWireResponse(message, result);
+
+  return result;
+}
+
+/**
+ * A command from the user's own pages (the popup): not the agent's, so the
+ * pause switch does not apply to it. Check it, then run its handler.
+ */
+async function runUnpausedCommand(message: NativeMessage, source: CommandSource): Promise<CommandResult> {
+  const checked = await checkCommand(message, source);
+  return checked.kind === "refused" ? checked.result : runChecked(checked);
+}
+
+/**
+ * A command from the Native Host. The pause switch is looked at when it
+ * arrives (refused before anything runs, not shown as running), again after
+ * the checks (they wait on the browser) and before the answer. A pause while
+ * the handler runs answers at once (racePause). The command carries the
+ * count of pauses so far, so a content script that already got the abort of
+ * a later pause refuses it (content/abort.ts).
+ */
+async function runHostCommand(message: NativeMessage): Promise<CommandResult> {
+  if (isPaused()) return pausedRefusal();
+
+  const finishHostCommand = startHostCommand();
   try {
-    const checked = await checkCommand(message, source);
-    const result = checked.kind === "refused" ? checked.result : await runChecked(checked);
-    postWireResponse(message, result);
-    return result;
+    const checked = await checkCommand(message, "host");
+    if (isPaused()) return pausedRefusal();
+    if (checked.kind === "refused") return checked.result;
+
+    const running = runChecked({ ...checked, context: { ...checked.context, pauseCount: pauseCount() } });
+    if (ANSWERS_THE_PAUSE_ITSELF.has(checked.context.action ?? "")) return await running;
+    const result = await racePause(running, checked.context.tabId);
+    return isPaused() ? pausedRefusal() : result;
   } finally {
-    finishHostCommand?.();
+    finishHostCommand();
   }
+}
+
+/**
+ * `running`, or PAUSED_REFUSAL as soon as agent actions are paused, whichever
+ * comes first. The handler is not waited for then: the content script of
+ * `tabId` is told to stop, and its typing, waits and scroll_and_capture end
+ * at their next step (content/abort.ts). What runs in the background only
+ * (screenshot_all_tabs, reload_all, reload_by_url, the tab waits) is not
+ * stopped: it ends on its own, and its result is dropped.
+ */
+function racePause(running: Promise<CommandResult>, tabId: number | undefined): Promise<CommandResult> {
+  const signal = pauseSignal();
+  return new Promise((resolve) => {
+    const onPause = (): void => {
+      if (tabId !== undefined) void abortContentCommands(tabId);
+      resolve(pausedRefusal());
+    };
+    signal.addEventListener("abort", onPause, { once: true });
+    void running
+      .then(resolve, (error: unknown) => resolve({ success: false, error: errorMessage(error) }))
+      .finally(() => signal.removeEventListener("abort", onPause));
+  });
 }
 
 /** A command that passed every check: what its handler runs with. */
@@ -71,16 +135,84 @@ interface RefusedCommand {
 const refused = (result: CommandResult): RefusedCommand => ({ kind: "refused", result });
 
 /**
- * Every check before the handler: the action name, the container scope, the
- * URL rules attached by the MCP Server, the blocked / allowed lists and the
- * human approval.
+ * Every check before the handler, in this order: the action name, the
+ * container scope, the URL rules attached by the MCP Server, the blocked /
+ * allowed lists and the human approval. The first refusal ends it.
  */
 async function checkCommand(message: NativeMessage, source: CommandSource): Promise<CheckedCommand | RefusedCommand> {
-  const { data } = message;
+  const route = routeCommand(message, source);
+  if (route.kind === "refused") return route;
 
-  // Normalize the wire action name (snake_case) to the internal name once,
-  // before any check, so every check and the handler see the same row of
-  // the action table.
+  const target = route.entry?.scope === "tab" ? await pinTargetTab(message.tabId) : undefined;
+  const scope = await checkContainerScope(message, route.entry, target);
+  if (scope.kind === "refused") return scope;
+
+  const policy = checkUrlPolicy(message, route.entry, target);
+  if (policy.kind === "refused") return policy;
+
+  return {
+    kind: "checked",
+    entry: route.entry,
+    context: {
+      action: route.action,
+      message,
+      data: message.data,
+      tabId: target ? target.id : message.tabId,
+      target,
+      scope: scope.filter,
+      confirmReadRules: policy.confirmReadRules,
+      approvedSite: policy.approvedSite,
+      approvedOrigin: approvedOriginFor(route.entry, target),
+      pauseCount: undefined,
+      urlLists: policy.urlLists,
+      navigateInNewTab: route.navigateInNewTab,
+    },
+  };
+}
+
+/**
+ * The origin an acting command on the target tab was approved on: the
+ * approval check passed for that tab's URL. The content script runs the
+ * command only while its page is still there, so a tab that went elsewhere
+ * after the check is not acted on. Undefined for the other rows.
+ */
+function approvedOriginFor(entry: ActionDescriptor | undefined, target: browser.tabs.Tab | undefined): string | undefined {
+  if (entry?.approval !== "act" || target === undefined) return undefined;
+  return approvalOriginOf(target.url) ?? undefined;
+}
+
+/** The internal action a command runs. */
+interface RoutedAction {
+  /** Internal action name (undefined: a message without an action). */
+  action: string | undefined;
+  /** fox_navigate with newTab, routed as createTab. */
+  navigateInNewTab: boolean;
+}
+
+/** A routed command: its action and its row of the action table. */
+interface RoutedCommand extends RoutedAction {
+  kind: "routed";
+  entry: ActionDescriptor | undefined;
+}
+
+/**
+ * The internal action of `resolved` (an internal name, wire.ts), with
+ * fox_navigate and newTab routed as createTab: it opens the URL in a fresh
+ * tab, so the scope check treats it like fox_create_tab (the new tab is born
+ * inside the agent container instead of requiring the current active tab to
+ * be in scope). Exported for the contract tests' approval helper.
+ */
+export function routeAction(resolved: string | undefined, data: NativeMessage["data"]): RoutedAction {
+  const navigateInNewTab = resolved === "navigate" && data?.newTab === true;
+  return { action: navigateInNewTab ? "createTab" : resolved, navigateInNewTab };
+}
+
+/**
+ * Normalize the wire action name (snake_case) to the internal name once,
+ * before any check, so every check and the handler see the same row of the
+ * action table.
+ */
+function routeCommand(message: NativeMessage, source: CommandSource): RoutedCommand | RefusedCommand {
   const resolved = resolveWireAction(message.action, source === "host");
   if (resolved.kind === "notImplemented") {
     return refused({ success: false, error: `Not implemented in extension: ${resolved.wireName}` });
@@ -88,39 +220,48 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
   if (resolved.kind === "unknown") {
     return refused({ success: false, error: `Unknown action: ${resolved.wireName}` });
   }
-  // fox_navigate with newTab opens the URL in a fresh tab. Route it as
-  // createTab so the scope check treats it like fox_create_tab: the new tab
-  // is born inside the agent container instead of requiring the current
-  // active tab to be in scope.
-  const navigateInNewTab = resolved.action === "navigate" && data?.newTab === true;
-  const action = navigateInNewTab ? "createTab" : resolved.action;
+
+  const { action, navigateInNewTab } = routeAction(resolved.action, message.data);
   // Row of the action table (fail closed: an unknown name gets the strictest
   // row, UNKNOWN_ACTION). A message without an action has no row: it skips
   // the tab checks, is checked strictly by the container scope, and ends in
   // UNKNOWN_ACTION's refusal.
-  const entry: ActionDescriptor | undefined = action === undefined ? undefined : describeAction(action);
-  const singleTab = entry?.scope === "tab";
+  const entry = action === undefined ? undefined : describeAction(action);
+  return { kind: "routed", action, entry, navigateInNewTab };
+}
 
-  // Resolve the target tab of a single-tab action ONCE (explicit tabId, else
-  // the active tab of the current window) and pin its id: the container
-  // scope check, the approval check, the handler and the URL report
-  // then all see the same tab, even if the active tab changes meanwhile.
-  // Undefined when it cannot be resolved -- the checks then fail closed and
-  // the handler reports the missing tab.
-  let target: browser.tabs.Tab | undefined;
-  if (singleTab) {
-    try {
-      target = await resolveTab(message.tabId);
-    } catch {
-      target = undefined;
-    }
+/**
+ * The target tab of a single-tab action, resolved ONCE (explicit tabId, else
+ * the active tab of the current window) and pinned: the container scope
+ * check, the approval check, the handler and the URL report then all see the
+ * same tab, even if the active tab changes meanwhile. Undefined when it
+ * cannot be resolved -- the checks then fail closed and the handler reports
+ * the missing tab.
+ */
+async function pinTargetTab(tabId: number | undefined): Promise<browser.tabs.Tab | undefined> {
+  try {
+    return await resolveTab(tabId);
+  } catch {
+    return undefined;
   }
-  const tabId = target ? target.id : message.tabId;
+}
 
-  // Container scope check (Layer 0). The MCP Server attaches
-  // `containerScope` to every command when container_scope.enabled is true.
-  // A scope that is there but unusable fails closed, like the URL rules
-  // below.
+/** A command inside the container scope: the filter its handler gets (null when the scope is off). */
+interface ScopedCommand {
+  kind: "scoped";
+  filter: ScopeFilter | null;
+}
+
+/**
+ * Container scope check (Layer 0). The MCP Server attaches `containerScope`
+ * to every command when container_scope.enabled is true. A scope that is
+ * there but unusable fails closed, like the URL rules.
+ */
+async function checkContainerScope(
+  message: NativeMessage,
+  entry: ActionDescriptor | undefined,
+  target: browser.tabs.Tab | undefined,
+): Promise<ScopedCommand | RefusedCommand> {
   const containerScope = parseContainerScope(message.containerScope);
   if (containerScope.kind === "invalid") {
     return refused({
@@ -131,14 +272,36 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
         "(Extension and MCP Server versions may not match).",
     });
   }
-  let scope: ScopeFilter | null = null;
-  if (containerScope.kind === "scope") {
-    const selfScoped = entry !== undefined && entry.scope !== "tab";
-    const decision = await enforceContainerScope(selfScoped, target, containerScope.scope);
-    if (!decision.allowed) return refused(outOfScope(decision.error));
-    scope = decision.scope;
-  }
+  if (containerScope.kind !== "scope") return { kind: "scoped", filter: null };
 
+  const selfScoped = entry !== undefined && entry.scope !== "tab";
+  const decision = await enforceContainerScope(selfScoped, target, containerScope.scope);
+  if (!decision.allowed) return refused(outOfScope(decision.error));
+
+  return { kind: "scoped", filter: decision.scope };
+}
+
+/** A command the URL policy lets through: the rules its handler gets. */
+interface AllowedCommand {
+  kind: "allowed";
+  confirmReadRules: CompiledUrlRule[];
+  urlLists: UrlLists;
+  /**
+   * Site a human approved for this one call (MCP Server approval token). The
+   * wire field keeps its name `approvedHost`; its value is a site (approvalSiteOf).
+   */
+  approvedSite: string | undefined;
+}
+
+/**
+ * The URL policy attached by the MCP Server (an unusable rule fails closed),
+ * the blocked / allowed lists, then the human approval.
+ */
+function checkUrlPolicy(
+  message: NativeMessage,
+  entry: ActionDescriptor | undefined,
+  target: browser.tabs.Tab | undefined,
+): AllowedCommand | RefusedCommand {
   const policy = parseUrlPolicy(message);
   if (policy.invalid > 0) {
     return refused({
@@ -149,51 +312,29 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
         "(Extension and MCP Server versions may not match).",
     });
   }
-  const confirmReadRules = policy.confirmReadRules;
-  const urlLists = policy.lists;
-  // Site a human approved for this one call (MCP Server approval token). The
-  // wire field keeps its name `approvedHost`; its value is a site (approvalSiteOf).
   const approvedSite = typeof message.approvedHost === "string" ? message.approvedHost : undefined;
 
   // blocked / allowed lists against the real URL of the target tab (the
   // guard only knows the last URL it saw for the tab, if any). The server
   // attaches them to the commands its own tab check covers; the multi-tab
   // actions skip such tabs themselves. A human approval does not lift this.
-  if (hasUrlLists(urlLists) && singleTab) {
-    const refusal = checkListedTarget(target, urlLists);
-    if (refusal) return refused(refusal);
-  }
+  const listRefusal =
+    hasUrlLists(policy.lists) && entry?.scope === "tab" ? checkListedTarget(target, policy.lists) : null;
+  if (listRefusal) return refused(listRefusal);
 
   // Human approval, against the real URL of the target tab (not the
   // server's last-seen URL, which is shared by every session) or the URL the
   // command opens. Acting rows need it always: the MCP Server cannot switch
   // this off. Reading rows need it only on a tab matching the attached
-  // confirm_read_sites rules. The multi-tab row (readPerTab) applies it in
-  // its handler; "none" rows change no page data.
-  // A message without an action has no row: it is refused below
-  // (UNKNOWN_ACTION) without reaching a handler that acts.
+  // confirm_read_sites rules. A message without an action has no row: it is
+  // refused later (UNKNOWN_ACTION) without reaching a handler that acts.
   const approval = entry?.approval;
-  if (approval === "act" || approval === "actOnUrl" || approval === "read") {
-    const refusal = checkApproval(approval, target, data, confirmReadRules, approvedSite);
-    if (refusal) return refused(refusal);
-  }
+  const approvalRefusal = isUpfrontApproval(approval)
+    ? checkApproval(approval, { tab: target, data: message.data, confirmReadRules: policy.confirmReadRules, approvedSite })
+    : null;
+  if (approvalRefusal) return refused(approvalRefusal);
 
-  return {
-    kind: "checked",
-    entry,
-    context: {
-      action,
-      message,
-      data,
-      tabId,
-      target,
-      scope,
-      confirmReadRules,
-      approvedSite,
-      urlLists,
-      navigateInNewTab,
-    },
-  };
+  return { kind: "allowed", confirmReadRules: policy.confirmReadRules, urlLists: policy.lists, approvedSite };
 }
 
 /** Run the handler of a checked command, then report the tab's URL. */

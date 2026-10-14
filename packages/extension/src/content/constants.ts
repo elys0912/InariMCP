@@ -5,6 +5,13 @@ export const TIMEOUTS = {
   NETWORK_IDLE: 10_000,
   CAPTCHA: 180_000,
   SCROLL_STEP: 500,
+  /**
+   * scroll_and_capture: all the delays together, the one before the first
+   * step included. 5 s under the MCP Server's command timeout (30 s), for
+   * the work of each step, so the capture ends before the server stops
+   * waiting for it.
+   */
+  SCROLL_CAPTURE_BUDGET: 25_000,
   /** fox_type: all per-character delays together (see typingDelay). */
   TYPING_BUDGET: 10_000,
   /** fox_highlight without duration. */
@@ -39,13 +46,13 @@ export const DEFAULTS = {
   ELEMENTS_LIMIT: 50,
   /** fox_get_text: characters returned. */
   TEXT_MAX_LENGTH: 20_000,
-  /** scroll_and_capture: scroll steps. */
-  SCROLL_CAPTURE_MAX_SCROLLS: 20,
+  /** scroll_and_capture: scroll steps when the command gives none. */
+  SCROLL_CAPTURE_SCROLLS: 20,
   /** scroll_and_capture step: this share of the viewport height. */
   SCROLL_CAPTURE_STEP_RATIO: 0.8,
 } as const;
 
-/** Counts and lengths (characters) that cut what is returned or kept. */
+/** Counts, lengths (characters) and durations (ms) that cut what is returned, kept or waited for. */
 export const LIMITS = {
   /** getPageInfo: interactive elements looked at, and the text / value of each. */
   PAGE_INFO_ELEMENTS: 100,
@@ -67,6 +74,14 @@ export const LIMITS = {
   SELECTOR_CLASSES: 2,
   /** scroll_and_capture: the page counts as scrolled to the end this close (px). */
   SCROLL_END_SLACK: 10,
+  /**
+   * scroll_and_capture: most steps, and the longest delay of one step (ms),
+   * whatever the command asks for (scrollCaptureLimits). 50 steps are
+   * 2.5 times the default 20; a delay of 2 s still leaves 11 steps in
+   * TIMEOUTS.SCROLL_CAPTURE_BUDGET.
+   */
+  SCROLL_CAPTURE_MAX_SCROLLS: 50,
+  SCROLL_CAPTURE_MAX_DELAY: 2_000,
 } as const;
 
 export const INTERACTIVE_SELECTORS = [
@@ -91,6 +106,14 @@ export const HIGHLIGHT_STYLE = {
   /** Above the page's own content. */
   Z_INDEX: 999_999,
 } as const;
+
+/**
+ * `type` of the background → content message that stops the commands running
+ * in the frame (the pause switch, abort.ts), with the background's
+ * `pauseCount`. Not a ContentAction: handler.ts answers it before any
+ * command handler.
+ */
+export const ABORT_REQUEST_TYPE = "inari:content:abort";
 
 /** DOM id of the captcha wait banner (solveCaptcha, cancelHumanWait). */
 export const CAPTCHA_BANNER_ID = "__fox_captcha_banner";

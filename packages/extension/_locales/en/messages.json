@@ -133,6 +133,7 @@
   "popupPauseNote": { "message": "Paused: every command from the MCP client is refused." },
   "statusNoConsent": { "message": "Not allowed" },
   "toastPauseFailed": { "message": "Could not change the pause switch" },
+  "toastPauseNotSaved": { "message": "Could not save the pause switch: after Firefox restarts, it is back to the last saved state" },
 
   "badgeTextNoConsent": { "message": "OFF", "description": "Toolbar badge text (at most 4 characters): not allowed to connect yet" },
   "badgeNoConsent": { "message": "InariMCP: not allowed yet (it does not connect). Open the popup to allow it." },

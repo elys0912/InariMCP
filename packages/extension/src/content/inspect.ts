@@ -218,47 +218,73 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
   return elements;
 }
 
+/**
+ * The delay and the step count of scroll_and_capture: the requested ones
+ * (else the defaults), cut to LIMITS.SCROLL_CAPTURE_MAX_DELAY and
+ * LIMITS.SCROLL_CAPTURE_MAX_SCROLLS, and to the steps whose delays, with the
+ * first one before the first step, fit in TIMEOUTS.SCROLL_CAPTURE_BUDGET,
+ * whatever the command asks for. 500 ms (the default): 49 steps.
+ */
+export function scrollCaptureLimits(options: ScrollCaptureOptions): { delay: number; maxScrolls: number } {
+  const delay = Math.min(options.delay || TIMEOUTS.SCROLL_STEP, LIMITS.SCROLL_CAPTURE_MAX_DELAY);
+  const requestedScrolls = options.maxScrolls || DEFAULTS.SCROLL_CAPTURE_SCROLLS;
+  const maxScrolls = Math.min(
+    requestedScrolls,
+    LIMITS.SCROLL_CAPTURE_MAX_SCROLLS,
+    Math.floor(TIMEOUTS.SCROLL_CAPTURE_BUDGET / delay) - 1,
+  );
+
+  return { delay, maxScrolls };
+}
+
+/**
+ * Scroll the page step by step from the top and list the interactive
+ * elements visible at each position (no images). Each step waits in sleep(),
+ * so the pause switch stops it at the next step (abort.ts).
+ */
 export async function scrollAndCapture(
   options: ScrollCaptureOptions,
 ): Promise<Record<string, unknown>> {
   const scrollStep =
     options.scrollStep || window.innerHeight * DEFAULTS.SCROLL_CAPTURE_STEP_RATIO;
-  const delay = options.delay || TIMEOUTS.SCROLL_STEP;
-  const maxScrolls = options.maxScrolls || DEFAULTS.SCROLL_CAPTURE_MAX_SCROLLS;
+  const { delay, maxScrolls } = scrollCaptureLimits(options);
 
   const snapshots: Record<string, unknown>[] = [];
   const originalScroll = window.scrollY;
   let scrollCount = 0;
 
-  window.scrollTo({ top: 0, behavior: "instant" });
-  await sleep(delay);
-
-  while (scrollCount < maxScrolls) {
-    snapshots.push({
-      scrollY: window.scrollY,
-      viewportHeight: window.innerHeight,
-      documentHeight: document.documentElement.scrollHeight,
-      visibleElements: getVisibleInteractiveElements(),
-      timestamp: Date.now(),
-    });
-
-    if (
-      window.scrollY + window.innerHeight >=
-      document.documentElement.scrollHeight - LIMITS.SCROLL_END_SLACK
-    ) {
-      break;
-    }
-
-    window.scrollBy({ top: scrollStep, behavior: "smooth" });
+  try {
+    window.scrollTo({ top: 0, behavior: "instant" });
     await sleep(delay);
-    scrollCount++;
-  }
 
-  if (options.restore !== false) {
-    window.scrollTo({
-      top: originalScroll,
-      behavior: "instant",
-    });
+    while (scrollCount < maxScrolls) {
+      snapshots.push({
+        scrollY: window.scrollY,
+        viewportHeight: window.innerHeight,
+        documentHeight: document.documentElement.scrollHeight,
+        visibleElements: getVisibleInteractiveElements(),
+        timestamp: Date.now(),
+      });
+
+      if (
+        window.scrollY + window.innerHeight >=
+        document.documentElement.scrollHeight - LIMITS.SCROLL_END_SLACK
+      ) {
+        break;
+      }
+
+      window.scrollBy({ top: scrollStep, behavior: "smooth" });
+      await sleep(delay);
+      scrollCount++;
+    }
+  } finally {
+    // Also when the pause stops it (sleep throws): the page goes back.
+    if (options.restore !== false) {
+      window.scrollTo({
+        top: originalScroll,
+        behavior: "instant",
+      });
+    }
   }
 
   return {

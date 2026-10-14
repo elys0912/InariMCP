@@ -539,7 +539,7 @@ describe('options of a masked select, selectors that test a value, and what the 
     await load('<input id="h" type="hidden" name="csrf" value="secret"><select id="m"><option selected>a</option></select>');
     const r = await run<{ refused: string[]; plain: unknown }>(
       `const command = async (message) => {
-         try { await f.handler.runContentCommand(message); return 'ran'; } catch (e) { return e.message; }
+         try { await f.handler.handleRequest(message); return 'ran'; } catch (e) { return e.message; }
        };
        return {
          refused: [
@@ -551,7 +551,7 @@ describe('options of a masked select, selectors that test a value, and what the 
            await command({ action: 'scroll', toElement: 'input[VALUE]' }),
            await command({ action: 'scroll', selector: ':checked', direction: 'down' }),
          ],
-         plain: (await f.handler.runContentCommand({ action: 'getElements', selector: '#h' })).count,
+         plain: (await f.handler.handleRequest({ action: 'getElements', selector: '#h' })).count,
        };`,
     );
     for (const message of r.refused) expect(message).toContain('Selector refused');

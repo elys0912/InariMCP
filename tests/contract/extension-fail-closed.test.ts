@@ -12,7 +12,7 @@ import { BrowserCommandSchema } from '@inari-mcp/shared';
 import { handleCommand } from '../../packages/extension/src/background/dispatch.ts';
 import { checkApproval, isReadConfirmTab } from '../../packages/extension/src/background/url-policy.ts';
 import { resolveWireAction } from '../../packages/extension/src/background/wire.ts';
-import { runContentCommand } from '../../packages/extension/src/content/handler.ts';
+import { handleRequest } from '../../packages/extension/src/content/handler.ts';
 import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG } from '../../packages/mcp-server/src/safety/config.js';
@@ -143,19 +143,22 @@ describe('Fo-07 acting commands need an approval of their site', () => {
       .toMatchObject({ success: false, safetyDecision: 'confirmation_required' });
   });
 
+  /** checkApproval's inputs: the target tab, the data, no confirm_read_sites rules and the approved site. */
+  const inputs = (target: typeof tab | undefined, data: Record<string, unknown>, approvedSite: string | undefined) =>
+    ({ tab: target, data, confirmReadRules: [], approvedSite });
+
   it('an opening command is approved for the URL it opens (a blank tab: about:)', () => {
-    const t = tab;
-    expect(checkApproval('actOnUrl', t, { url: 'https://new.test/a' }, [], 'new.test')).toBeNull();
-    expect(checkApproval('actOnUrl', t, { url: 'https://new.test/a' }, [], 'app.example.test'))
+    expect(checkApproval('actOnUrl', inputs(tab, { url: 'https://new.test/a' }, 'new.test'))).toBeNull();
+    expect(checkApproval('actOnUrl', inputs(tab, { url: 'https://new.test/a' }, 'app.example.test')))
       .toMatchObject({ safetyDecision: 'confirmation_required', url: 'https://new.test/a' });
-    expect(checkApproval('actOnUrl', undefined, {}, [], 'about:')).toBeNull();
-    expect(checkApproval('actOnUrl', undefined, {}, [], undefined))
+    expect(checkApproval('actOnUrl', inputs(undefined, {}, 'about:'))).toBeNull();
+    expect(checkApproval('actOnUrl', inputs(undefined, {}, undefined)))
       .toMatchObject({ safetyDecision: 'confirmation_required', url: 'about:blank' });
   });
 
   it('a tab that cannot be resolved fails closed', () => {
-    expect(checkApproval('act', undefined, {}, [], 'app.example.test')).toMatchObject({ success: false });
-    expect(checkApproval('act', undefined, {}, [], 'app.example.test')).not.toHaveProperty('safetyDecision');
+    expect(checkApproval('act', inputs(undefined, {}, 'app.example.test'))).toMatchObject({ success: false });
+    expect(checkApproval('act', inputs(undefined, {}, 'app.example.test'))).not.toHaveProperty('safetyDecision');
   });
 });
 
@@ -175,17 +178,17 @@ describe('reads checked against confirm_read_sites', () => {
     ['another site wrapped deeper than can be unwrapped (asked, not unchecked)',
       `view-source:${readerOf(`view-source:${readerOf('https://shop.test/')}`)}`, true],
   ])('%s → asks: %s', (_what, url, asks) => {
-    const result = checkApproval('read', { id: 1, url } as browser.tabs.Tab, {}, rules, undefined);
+    const result = checkApproval('read', { tab: { id: 1, url } as browser.tabs.Tab, data: {}, confirmReadRules: rules, approvedSite: undefined });
     if (asks) expect(result).toMatchObject({ success: false, safetyDecision: 'confirmation_required', url });
     else expect(result).toBeNull();
   });
 
   it('a tab whose URL is unknown is refused, when there are rules to check', () => {
     const noUrl = { id: 1 } as browser.tabs.Tab;
-    const refused = checkApproval('read', noUrl, {}, rules, undefined);
+    const refused = checkApproval('read', { tab: noUrl, data: {}, confirmReadRules: rules, approvedSite: undefined });
     expect(refused).toMatchObject({ success: false, error: expect.stringContaining('confirm_read_sites') });
     expect(refused).not.toHaveProperty('safetyDecision');
-    expect(checkApproval('read', noUrl, {}, [], undefined)).toBeNull();
+    expect(checkApproval('read', { tab: noUrl, data: {}, confirmReadRules: [], approvedSite: undefined })).toBeNull();
   });
 
   it('screenshot all_tabs skips the same tabs, and a tab whose URL is unknown', () => {
@@ -204,7 +207,7 @@ describe('the content script checks the selectors of every reading command once'
     ['scroll', { selector: '[selected]', direction: 'down' }],
     ['waitForElement', { selector: ':checked' }],
   ])('%s %j is refused before its handler runs', async (action, fields) => {
-    await expect(runContentCommand({ action, ...fields } as never)).rejects.toThrow(/^Selector refused: /);
+    await expect(handleRequest({ action, ...fields })).rejects.toThrow(/^Selector refused: /);
   });
 });
 
@@ -253,5 +256,22 @@ describe('E-16 action names from the Native Host', () => {
     expect(sent).toEqual([]);
     expect(await handleCommand({ action: 'get_page_info', requestId: 'r2' }, 'host'))
       .toMatchObject({ success: true });
+  });
+});
+
+describe('checkCommand: the first check that fails gives the refusal', () => {
+  // Each command also lacks the approval an acting command needs, so a check
+  // that moved behind the approval check would show as confirmation_required.
+  const invalidRule = hostRule('app.example.test', '/page?x=1');
+  it.each([
+    ['an unusable container scope, before unusable URL rules', { containerScope: 'agent', confirmReadUrlRules: [invalidRule] }, 'config_error', /container scope/],
+    ['unusable URL rules, before the lists and the approval', { blockedUrlRules: [invalidRule] }, 'config_error', /URL pattern/],
+    ['a tab outside the container scope, before the lists', { containerScope: { containerName: 'other' }, blockedUrlRules: [hostRule('app.example.test')] }, 'out_of_scope', /./],
+    ['a blocked tab, before the approval', { blockedUrlRules: [hostRule('app.example.test')] }, 'blocked_url', /./],
+  ])('%s', async (_label, fields, decision, error) => {
+    installBrowser();
+    const result = await handleCommand({ action: 'click', data: { selector: '#a' }, ...fields }, 'host');
+    expect(result).toMatchObject({ success: false, safetyDecision: decision, error: expect.stringMatching(error) });
+    expect(sent).toEqual([]);
   });
 });

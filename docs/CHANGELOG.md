@@ -40,7 +40,10 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - One-time human-approval tokens start with `iat_` (Inari approval token) instead of `kat_`.
 - `fox_screenshot` with `scope: "all_tabs"` gives the reason for the tabs it left out on `confirm_read_sites` sites in `excludedReadSitesReason` instead of `excludedReason`, next to `excludedReadSites` and `excludedBlockedReason`.
 - `fox_navigate` with `action: "back"`, `"forward"` or `"refresh"` and `newTab: true` acts on the tab as it is, and is approved for the site of that tab (before, the approval was asked for a new blank tab, `about:`).
-- `fox_screenshot` with `scope: "scroll_capture"`: `maxScrolls` is at most 50 and `delay` at most 2000 ms.
+- `fox_screenshot` with `scope: "scroll_capture"`: `maxScrolls` is at most 50 and `delay` at most 2000 ms, and the extension takes no more steps than fit in 25 s.
+- The pause switch also stops a command that is still running: the MCP client gets the `paused` refusal at once, and typing, waiting or `scroll_capture` in the page stops at its next step.
+- When the extension cannot read the saved pause switch at startup, it starts paused. When it cannot save the switch, the popup says so (the change then holds until Firefox restarts).
+- `fox_request_approval`: at most 3 questions wait in the popup at once; another one is refused at once. The popup shows the approval requests of tool calls before the questions.
 
 ### Removed
 
@@ -69,3 +72,4 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - `enabled: false` in `safety.json` no longer turns off the human approval in headless mode: every acting tool still asks first, on both backends (it turns off the URL checks and lists, `confirm_read_sites`, `read_only`, `container_scope` and the rate limit).
 - Headless `fox_snapshot` shows `[MASKED]` for the value of a masked field (password, one-time code, card number and the others listed above), and does not mark the chosen option of a masked `<select>` as selected. Before, Playwright's accessibility tree showed these values as they are.
 - Secret query and fragment parameters (`token`, `access_token`, `password`, …) in URLs are masked in the audit log (`url`) and in the `url` of `details.approval` that the MCP client receives, as they already were in the `url` argument. The approval popup in Firefox still shows the whole URL.
+- The extension runs an approved acting command in the page (`fox_click`, `fox_type`, `fox_press_key`, `fox_set_value`, …) only while the tab is still on the origin (scheme, host and port) the approval was checked on. When the tab went elsewhere in between, the command is refused, and the approval is asked again for the page the tab is on now.
