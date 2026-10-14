@@ -24,6 +24,8 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run typecheck
+      - run: npm run lint:install
+      - run: npm run lint
 
       # With CI set, the tests that drive a real headless Firefox fail
       # instead of being skipped (docs/development.md, "Tests").
