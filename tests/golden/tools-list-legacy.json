@@ -746,14 +746,16 @@
         "delay": {
           "type": "integer",
           "minimum": 0,
+          "maximum": 2000,
           "default": 500,
-          "description": "Delay between scrolls in ms (for scroll_capture scope)"
+          "description": "Delay between scrolls in ms (for scroll_capture scope; at most 2000)"
         },
         "maxScrolls": {
           "type": "integer",
           "exclusiveMinimum": 0,
+          "maximum": 50,
           "default": 20,
-          "description": "Maximum number of scroll steps (for scroll_capture scope)"
+          "description": "Maximum number of scroll steps (for scroll_capture scope; at most 50)"
         },
         "restore": {
           "type": "boolean",
