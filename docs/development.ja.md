@@ -95,7 +95,7 @@ CIはパッケージをアップロードしない（Actionsのストレージ�
 |---|---|---|
 | `@inari-mcp/shared` | zodスキーマ（プロトコル、アクション、Native Hostのメッセージ）、アクション名、定数（`ENV`など）、小さなユーティリティ。Node.jsのAPIは使わない（`packages/shared/tests/browser-safe.test.ts`で確認） | daemon、中継、Native Host。拡張機能はzodを引き込まないexportだけ |
 | `@inari-mcp/shared/action-names` | ブラウザコマンドのアクション名。zodなし | 拡張機能 |
-| `@inari-mcp/shared/field-mask` | 値を伏せる（`[MASKED]`にする）フォーム欄の規則と、読み取るツールが拒否するCSSセレクタ（`[value…]`、`:checked`）。importなし | 拡張機能（ヘッドレスは`@inari-mcp/shared`から使う） |
+| `@inari-mcp/shared/field-mask` | 値を伏せる（`[MASKED]`にする）フォーム欄の規則と、読み取るツールが拒否するCSSセレクタ（`[value…]`、`[selected]`、`:checked`、`:default`）。importなし | 拡張機能（ヘッドレスは`@inari-mcp/shared`から使う） |
 | `@inari-mcp/shared/url-pattern-limit` | 引数`urlPattern`の長さと形の制限。importなし | 拡張機能（daemonは`@inari-mcp/shared`から使う） |
 | `@inari-mcp/shared/node` | Node.jsのプロセス用の共通処理（下表） | daemon、中継、Native Host、doctor |
 

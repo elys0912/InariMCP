@@ -68,7 +68,8 @@ function resolvePortVar(
   return port ?? fallback;
 }
 
-export function resolveHost(env: Env = process.env): string {
+/** FOX_HOST as set, unchecked: only through resolveDaemonHost(), which refuses one that is not loopback. */
+function resolveHost(env: Env): string {
   return pick(env, ENV.FOX_HOST, LEGACY_ENV.CLAUDE_BROWSER_HOST)?.raw ?? ENV_DEFAULTS.FOX_HOST;
 }
 

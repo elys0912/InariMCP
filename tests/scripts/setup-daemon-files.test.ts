@@ -496,7 +496,7 @@ describe('daemon authentication copy', () => {
     for (const env of [legacyPortEnv, legacyHostEnv, emptyEnv, blankEnv, paddedEnv]) {
       const endpoint = httpEndpoint(env);
       expect(endpoint.port, JSON.stringify(env)).toBe(serverAuth.resolveHttpPort(undefined, env));
-      expect(endpoint.host, JSON.stringify(env)).toBe(serverAuth.resolveHost(env));
+      expect(endpoint.host, JSON.stringify(env)).toBe(serverAuth.resolveDaemonHost(env));
     }
     expect(httpEndpoint(legacyPortEnv).port).toBe(legacyPort);
     expect(httpEndpoint(legacyHostEnv).host).toBe(legacyHost);

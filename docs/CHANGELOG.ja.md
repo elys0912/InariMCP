@@ -50,10 +50,10 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 ### セキュリティ
 
 - 値を `[MASKED]` で伏せる欄を広げた（拡張機能とヘッドレスの両方）。パスワード欄に加えて、`type="hidden"` の欄と、`autocomplete` が `one-time-code` か `cc-` で始まる欄（支払いカードの欄すべて。カード名義人の名前も含む。`current-password`・`new-password` は従来どおり）。伏せる `<select>` では、各 `<option>` の値とテキストも伏せる。`allow_password_typing` は従来どおりパスワード欄への入力を許すだけで、伏せ字は解かない。
-- 読み取るツール（selector での `fox_find`、text の `fox_read`、要素を待つ `fox_wait`、scroll / highlight の `fox_interact`）は、`value` 属性を調べる CSS セレクタ（`[value^="a"]` など）と `:checked` を使うセレクタを、書き方によらず拒否する。一致の数や待ちが終わるかどうかで、伏せた値を 1 文字ずつ当てられるため。
+- 読み取るツール（selector での `fox_find`、text の `fox_read`、要素を待つ `fox_wait`、scroll / highlight の `fox_interact`）は、`value` 属性か `selected` 属性を調べる CSS セレクタ（`[value^="a"]`、`option[selected]` など）と、`:checked` か `:default` を使うセレクタを、書き方によらず拒否する。1024 文字を超えるセレクタも拒否する。一致の数や待ちが終わるかどうかで、伏せた値を 1 文字ずつ当てられるため。ヘッドレスでは CSS だけを受け付け（`fox_snapshot` も同じ）、`xpath=`・`text=`・`role=`・`//`・`>>` などの Playwright のセレクタの書き方は拒否する。
 - 要素を待つ `fox_wait` と `fox_interact`（hover、highlight、`toElement` の scroll）は、要素のタグ・生成したセレクタ・位置だけを返し、テキスト・値・リンク・画像のアドレスは返さないようにした。これらは読み取りではないので `confirm_read_sites` が掛からず、そのサイトのページを尋ねずに読めたため。
 - `confirm_read_sites` を設定しているとき、拡張機能が URL を読めないタブの読み取りは、許可ではなく拒否にした。`screenshot` の all_tabs もそのタブを飛ばす。`view-source:` とリーダー表示（`about:reader`）のタブは、表示しているページの URL で照合する。
-- `FOX_HOST` がループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）でなければ daemon は起動しないようにした。従来は警告をログに出して、平文の HTTP・WebSocket をネットワークに開いていた。Native Host と stdio の中継も、そのような `FOX_HOST` には接続せずに拒否する。`127.999.0.1` のようにアドレスに見えるだけの名前は、ループバックとみなさない。
+- `FOX_HOST` がループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）でなければ daemon は起動しないようにした。従来は警告をログに出して、平文の HTTP・WebSocket をネットワークに開いていた。Native Host と stdio の中継も、そのような `FOX_HOST` には接続せずに拒否する。`--doctor` は daemon に届かないと報告する。`127.999.0.1` のようにアドレスに見えるだけの名前は、ループバックとみなさない。
 - 監査ログは、`text`・`value` などの伏せる引数を入れ子の object の中でも伏せる（`kind: "select"` の `fox_set_value` の `option`）。`fox_press_key` の `key` も伏せる。
 - ホストの無いページ（`view-source:`、`blob:`、`data:` など。`about:` と `file:` は除く）にあるタブでは、ページを操作するツールを拒否するようにした。こうしたページには `safety.json` のどの URL パターンも一致しない。読み取るツールは動く。
 - 引数 `urlPattern` が 256 文字を超えるとき、または繰り返す括弧の中に繰り返しがあるとき（`(a+)+` など）は、コンパイルする前に拒否するようにした（daemon と拡張機能の両方で）。1 つのパターンで拡張機能のバックグラウンドページが止まらないようにするため。

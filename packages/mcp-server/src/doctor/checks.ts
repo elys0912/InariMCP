@@ -30,7 +30,7 @@ import {
   protocolText,
   type HealthVerdict,
 } from '@inari-mcp/shared/node';
-import { DAEMON_SETTING_KEYS, compareDaemonSettings, readApiTokenFile, resolveHost, resolveHttpPort } from '../utils/endpoint.js';
+import { DAEMON_SETTING_KEYS, compareDaemonSettings, readApiTokenFile, resolveDaemonHost, resolveHttpPort } from '../utils/endpoint.js';
 import { resolveFoxEnv } from '../utils/headless-env.js';
 import { MAX_LOG_BYTES } from '../utils/log-file.js';
 import { HEALTH_PROBE_TIMEOUT_MS } from '../daemon/probe.js';
@@ -252,6 +252,15 @@ export function readClaudeRegistrations(deps: DoctorDeps): DoctorContext['claude
   return { configPath, entries, ...(error !== undefined ? { error } : {}) };
 }
 
+/** The daemon's URL for the messages; a refused FOX_HOST (not loopback) is named with the reason instead. */
+function daemonBaseUrl(port: number): string {
+  try {
+    return `http://${resolveDaemonHost()}:${port}`;
+  } catch (err) {
+    return `(no daemon address: ${err instanceof Error ? err.message : String(err)})`;
+  }
+}
+
 export async function gatherContext(deps: DoctorDeps): Promise<DoctorContext> {
   const dataDir = inariDataDir();
   const tokenPath = apiTokenPath();
@@ -263,7 +272,7 @@ export async function gatherContext(deps: DoctorDeps): Promise<DoctorContext> {
     tokenPath,
     token,
     port,
-    baseUrl: `http://${resolveHost()}:${port}`,
+    baseUrl: daemonBaseUrl(port),
     daemon: await probeDaemon(deps, token),
     claude: readClaudeRegistrations(deps),
     nm: findNmRegistrations(deps),

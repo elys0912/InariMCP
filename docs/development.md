@@ -95,7 +95,7 @@ CI does not upload the packages (to save Actions storage); make them locally at 
 |---|---|---|
 | `@inari-mcp/shared` | zod schemas (protocol, actions, Native Host messages), action names, constants (`ENV`, …), small utilities. No Node.js APIs (`packages/shared/tests/browser-safe.test.ts` checks this) | daemon, relay, Native Host; the Extension only for exports that do not pull in zod |
 | `@inari-mcp/shared/action-names` | the browser command action names, zod-free | the Extension |
-| `@inari-mcp/shared/field-mask` | which form fields have their value masked (`[MASKED]`), and the CSS selectors the reading tools refuse (`[value…]`, `:checked`), import-free | the Extension (the headless backend through `@inari-mcp/shared`) |
+| `@inari-mcp/shared/field-mask` | which form fields have their value masked (`[MASKED]`), and the CSS selectors the reading tools refuse (`[value…]`, `[selected]`, `:checked`, `:default`), import-free | the Extension (the headless backend through `@inari-mcp/shared`) |
 | `@inari-mcp/shared/url-pattern-limit` | the length and shape limits of a `urlPattern` argument, import-free | the Extension (the daemon through `@inari-mcp/shared`) |
 | `@inari-mcp/shared/node` | helpers of the Node.js processes (below) | daemon, relay, Native Host, doctor |
 

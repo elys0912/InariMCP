@@ -18,7 +18,6 @@ export {
   loadOrCreateApiToken,
   readApiTokenFile,
   resolveDaemonHost,
-  resolveHost,
   resolveHttpPort,
   resolveWsPort,
 } from '@inari-mcp/shared/node';

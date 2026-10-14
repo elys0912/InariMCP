@@ -270,22 +270,18 @@ describe('DaemonClient: elicitation answer refused by the daemon (X-1)', () => {
 });
 
 describe('DaemonClient and FOX_HOST', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it.each(['0.0.0.0', '127.999.0.1', '192.168.1.10'])('refuses to reach a daemon on %s (not a loopback address)', (host) => {
     vi.stubEnv('FOX_HOST', host);
-    try {
-      expect(() => new DaemonClient('test')).toThrow(`FOX_HOST=${host} is not a loopback address`);
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    expect(() => new DaemonClient('test')).toThrow(`FOX_HOST=${host} is not a loopback address`);
   });
 
   it('uses a loopback FOX_HOST', () => {
     vi.stubEnv('FOX_HOST', 'localhost');
-    try {
-      expect(new DaemonClient('test').baseUrl).toMatch(/^http:\/\/localhost:\d+$/);
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    expect(new DaemonClient('test').baseUrl).toMatch(/^http:\/\/localhost:\d+$/);
   });
 });
 

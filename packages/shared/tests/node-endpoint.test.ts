@@ -3,7 +3,6 @@ import {
   isLoopbackHost,
   parsePort,
   resolveDaemonHost,
-  resolveHost,
   resolveHttpPort,
   resolveWsPort,
 } from '@inari-mcp/shared/node';
@@ -29,18 +28,18 @@ describe('parsePort (4.A3)', () => {
 
 describe('shared/node endpoint', () => {
   it('an empty FOX_HOST counts as unset: the default applies, not "" (every interface)', () => {
-    expect(resolveHost({ FOX_HOST: '' })).toBe('127.0.0.1');
+    expect(resolveDaemonHost({ FOX_HOST: '' })).toBe('127.0.0.1');
   });
 
   it('an empty FOX_HOST falls through to CLAUDE_BROWSER_HOST', () => {
-    expect(resolveHost({ FOX_HOST: '', CLAUDE_BROWSER_HOST: '127.0.0.2' })).toBe('127.0.0.2');
-    expect(resolveHost({ FOX_HOST: '127.0.0.3', CLAUDE_BROWSER_HOST: '127.0.0.2' })).toBe('127.0.0.3');
+    expect(resolveDaemonHost({ FOX_HOST: '', CLAUDE_BROWSER_HOST: '127.0.0.2' })).toBe('127.0.0.2');
+    expect(resolveDaemonHost({ FOX_HOST: '127.0.0.3', CLAUDE_BROWSER_HOST: '127.0.0.2' })).toBe('127.0.0.3');
   });
 
   it('a blank FOX_HOST counts as unset and a set one is trimmed (R3 N-1)', () => {
-    expect(resolveHost({ FOX_HOST: ' ' })).toBe('127.0.0.1');
-    expect(resolveHost({ FOX_HOST: '\t', CLAUDE_BROWSER_HOST: ' 127.0.0.2 ' })).toBe('127.0.0.2');
-    expect(resolveHost({ FOX_HOST: ' 127.0.0.1 ' })).toBe('127.0.0.1');
+    expect(resolveDaemonHost({ FOX_HOST: ' ' })).toBe('127.0.0.1');
+    expect(resolveDaemonHost({ FOX_HOST: '\t', CLAUDE_BROWSER_HOST: ' 127.0.0.2 ' })).toBe('127.0.0.2');
+    expect(resolveDaemonHost({ FOX_HOST: ' 127.0.0.1 ' })).toBe('127.0.0.1');
   });
 
   it('an empty FOX_*_PORT falls through to the legacy port variable', () => {
