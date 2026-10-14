@@ -55,7 +55,7 @@ import { sanitizeResult, sanitizeString } from '../safety/sanitizer.js';
 import { compileUrlPatterns } from '../safety/url-pattern.js';
 import { applyPasswordPolicy, passwordSelectorRefusal } from '../safety/password-guard.js';
 import { getConnectionManager } from '../connection/manager.js';
-import { deprecationNote, resolveOperation } from './operations.js';
+import { resolveOperation } from './operations.js';
 import { NAVIGATE_ACTIONS, SAFETY_STATUS_TOOL, SCREENSHOT_SCOPES } from './schemas.js';
 import type { NavigateAction, OperationName, ScreenshotScope } from './schemas.js';
 import { isOneOf } from './one-of.js';
@@ -554,26 +554,7 @@ export function createToolHandler(
   calledName: string,
   transport: string = 'stdio',
 ): (args: Record<string, unknown>, options?: ToolCallOptions) => Promise<CallToolResult> {
-  const run = toolCall(calledName, transport);
-  return async (args, options) => withDeprecationNote(calledName, await run(args, options));
-}
-
-/** Deprecated names already reported in this process. */
-const reportedDeprecations = new Set<string>();
-
-/**
- * A call by a deprecated name: once per name and process, a note at the end
- * of the result and a line on stderr (daemon.log). Not on every call, to
- * keep results short.
- */
-function withDeprecationNote(calledName: string, result: CallToolResult): CallToolResult {
-  if (reportedDeprecations.has(calledName)) return result;
-  const note = deprecationNote(calledName);
-  if (note === null) return result;
-  reportedDeprecations.add(calledName);
-  process.stderr.write(`[InariMCP] ${note}\n`);
-  result.content.push({ type: 'text' as const, text: `Note: ${note}` });
-  return result;
+  return toolCall(calledName, transport);
 }
 
 /** One operation call on its way through the pipeline. */

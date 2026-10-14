@@ -40,7 +40,7 @@ Inari MCPは意図的に用途を絞っている。以下に当てはまる場�
 
 ## 特徴
 
-- **17個の`fox_*`ツール** — ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、読み取りと検索、タブ管理、待機をカバー。関連する操作は1つのツールにまとめ、モード引数で切り替える（`fox_wait`の`for: "url"`、`fox_tab`の`action: "close"`など）。以前のツール名も使える。[ツール名の移行](#ツール名の移行)を参照。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
+- **17個の`fox_*`ツール** — ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、読み取りと検索、タブ管理、待機をカバー。関連する操作は1つのツールにまとめ、モード引数で切り替える（`fox_wait`の`for: "url"`、`fox_tab`の`action: "close"`など）。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
 - **ツールプロファイル（`FOX_CAPS`）** — 全てのツールを登録すると実際にコンテキストトークンを消費する。プロファイル（`core`、`human`、`wait`など）を選んで必要な分だけ読み込める。[`FOX_CAPS`のプロファイル](#fox_capsのプロファイル)を参照。
 - **操作はすべてあなたが承認** — クリック・入力・送信・ページの移動・タブを開く/閉じる操作は、どのサイトでも1回ずつ、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのInari MCPツールバーのポップアップで、あなたが承認するまで待つ。ページの中からは承認できない。読み取りは承認を求めない（`confirm_read_sites`に書いたサイトを除く）。[人による承認](#人による承認)を参照。
 - **許可・一時停止・バッジ** — 拡張機能は初回の起動で許可を求め、許可するまでどこにも繋がない。ツールバーのポップアップに、すべての呼び出しを断る一時停止のスイッチがあり、ツールが動いている間はバッジが付く。
@@ -359,7 +359,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host、アンインストーラ | HTTP/WSサーバーのアドレス。ループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）だけ。それ以外ならdaemonはエラーをログに出して起動しない。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HOST` |
 | `FOX_HTTP_PORT` | `8785` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
 | `FOX_WS_PORT` | `8786` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_WS_PORT` |
-| `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。`legacy`を指定すると、代わりに以前のツール名を一覧にする（[ツール名の移行](#ツール名の移行)を参照）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
+| `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
 | `FOX_HEADLESS` | 未設定 | daemon | `1` / `true` / `yes`でヘッドレスPlaywrightバックエンドを使う。それ以外は無効（`on`など認識できない値は警告をログに出す）。旧名: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない）。旧名: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | PlaywrightのFirefox | daemon（ヘッドレスのみ） | Playwrightが起動するFirefoxバイナリのパス。旧名: `CLAUDE_BROWSER_EXECUTABLE` |
@@ -378,42 +378,12 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | プロファイル | ツール |
 |---|---|
 | `core` | `fox_navigate`、`fox_click`、`fox_type`、`fox_press_key`、`fox_set_value`、`fox_screenshot`、`fox_snapshot`、`fox_read`、`fox_find`、`fox_tabs`、`fox_tab`、`fox_interact`、`fox_wait`、`fox_handle_dialog` |
-| `workflow` | なし（`fox_run_workflow`と`fox_audit_page`は実装されなかった） |
 | `human` | `fox_request_approval`、`fox_detect_captcha` |
 | `container` | `fox_tabs`、`fox_tab`（コンテナは`what: "containers"`の`fox_tabs`と、`action: "create"`と`container`を指定した`fox_tab`） |
 | `wait` | `fox_wait` |
 | `all` | 全ツール（`FOX_CAPS`未設定と同じ） |
 
-`fox_safety_status`はどのプロファイルにも入らず、常に登録される。ほかのツールはすべて少なくとも1つのプロファイルに入っている。知らないプロファイル名はstderrに警告を出して無視する。指定した名前がすべて知らないものなら、登録されるのは`fox_safety_status`だけになる。`legacy`（単独、または他のプロファイルと一緒に: `legacy,core`）は、代わりに以前のツール名とその以前のプロファイルを登録する。[ツール名の移行](#ツール名の移行)を参照。
-
-### ツール名の移行
-
-以前の31個のツールを17個にまとめた。関連する操作を、モード引数を持つ1つのツールにした。ブラウザ側は変わっておらず、新しいツールの呼び出しは、以前のツールが実行していたものとまったく同じことを実行する。
-
-- 新しいセッションは新しい名前を一覧にする。`FOX_CAPS=legacy`のセッションは代わりに以前の名前を一覧にする（説明は`[Deprecated: …]`で始まる）。
-- daemonは両方を受け付ける。以前の名前は、`FOX_CAPS`の設定に関係なく、HTTP（`POST /mcp/call`）でも引き続き使える。
-- daemonの起動中に以前の名前を最初に呼ぶと、結果（と`daemon.log`）に置き換え先を示す注記が付く。監査ログはその呼び出しを新しいツール名で記録し、以前の名前を`legacyTool`に入れる。
-- 人の承認は、呼び出しの名前と引数に結び付く。同じ名前と引数で再試行すること。
-
-| 以前のツール | 新しい呼び出し | 引数の変更 |
-|---|---|---|
-| `fox_get_page_info` | `fox_read` `mode: "info"` | |
-| `fox_get_text` | `fox_read` `mode: "text"` | |
-| `fox_get_elements` | `fox_find` `by: "selector"` | |
-| `fox_find_text` | `fox_find` `by: "text"` | `query` → `text` |
-| `fox_get_tabs` | `fox_tabs` `what: "tabs"` | |
-| `fox_list_containers` | `fox_tabs` `what: "containers"` | |
-| `fox_create_tab` | `fox_tab` `action: "create"` | |
-| `fox_open_in_container` | `fox_tab` `action: "create"`（`container`付き） | `containerName` → `container.name`、`cookieStoreId` → `container.cookieStoreId`。`url`は必須 |
-| `fox_close_tab` | `fox_tab` `action: "close"` | |
-| `fox_switch_tab` | `fox_tab` `action: "switch"` | |
-| `fox_set_value` | `fox_set_value`（`kind: "input"`、既定） | |
-| `fox_select_option` | `fox_set_value` `kind: "select"` | `value` / `text` / `index` → `option: { value }` / `{ text }` / `{ index }`（どれか1つだけ） |
-| `fox_hover`、`fox_scroll`、`fox_highlight` | `fox_interact` `action: "hover"` / `"scroll"` / `"highlight"` | |
-| `fox_wait_for_element`、`fox_wait_for_network_idle`、`fox_wait_for_navigation`、`fox_wait_for_url` | `fox_wait` `for: "element"` / `"network_idle"` / `"navigation"` / `"url"` | `for: "url"`には`url`か`urlPattern`が要る |
-| `fox_run_workflow`、`fox_audit_page` | なし | どのバックエンドでも未実装だった。名前での呼び出しは今もでき、同じエラーになる |
-
-変更なし: `fox_screenshot`、`fox_snapshot`、`fox_navigate`、`fox_click`、`fox_type`、`fox_press_key`、`fox_handle_dialog`、`fox_request_approval`、`fox_detect_captcha`、`fox_safety_status`。
+`fox_safety_status`はどのプロファイルにも入らず、常に登録される。ほかのツールはすべて少なくとも1つのプロファイルに入っている。知らないプロファイル名はstderrに警告を出して無視する。指定した名前がすべて知らないものなら、登録されるのは`fox_safety_status`だけになる。
 
 ### `safety.json`
 
@@ -476,7 +446,7 @@ Inari MCP for Firefox 0.1.0は、addons.mozilla.orgに掲載する最初の版�
 - 設計 + 多角的レビュー
 - モノレポの雛形構築（P1）
 - 安全ガード、8層（P2）
-- MCPサーバーのコア + 全41ツールのスキーマ/ハンドラ（P3）
+- MCPサーバーのコア + ツールのスキーマとハンドラ（P3）
 - ヘッドレスPlaywrightバックエンド（P4）
 - ネイティブメッセージングホスト（P5）
 - 拡張機能のTypeScript移植（P6）

@@ -36,8 +36,6 @@ export interface AuditEntry {
   url: string | null;
   transport: string | null;
   args: Record<string, unknown>;
-  /** The deprecated tool name the call was made with (WP13 legacy aliases). */
-  legacyTool?: string;
 }
 
 export function audit(
@@ -46,7 +44,6 @@ export function audit(
   targetUrl: string | null,
   decision: AuditDecision,
   transport?: string,
-  legacyTool?: string,
 ): void {
   const entry: AuditEntry = {
     ts: new Date().toISOString(),
@@ -55,7 +52,6 @@ export function audit(
     url: targetUrl,
     transport: transport ?? null,
     args: maskSensitiveArgs(args),
-    ...(legacyTool !== undefined ? { legacyTool } : {}),
   };
 
   const logPath = getAuditLogPath();

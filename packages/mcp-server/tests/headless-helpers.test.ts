@@ -11,6 +11,7 @@ import {
 } from '../src/headless/helpers.js';
 import { CAPTCHA_SELECTORS } from '../src/headless/actions.js';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
+import { callSchemaFor, resolveOperation } from '../src/tools/operations.js';
 import { readExtensionSource } from '../../../tests/contract/helpers/extension-source.js';
 import { HEADLESS_COMMAND_TIMEOUT_MS } from '../src/connection/manager.js';
 import {
@@ -162,10 +163,18 @@ describe('HEADLESS_IGNORED against the tool schemas', () => {
     Object.entries(HEADLESS_IGNORED).map(([action, params]) => [action, (params ?? []).map((p) => p.key)]),
   );
 
-  // Which tools send which wire action, as recorded by tests/contract/tool-golden.test.ts.
-  interface Entry { id: string; tool: string; command: { action: string; data: Record<string, unknown> } | null }
+  // Which operations send which wire action, from the tool calls recorded by
+  // tests/contract/tool-golden.test.ts.
+  interface Entry {
+    id: string;
+    tool: string;
+    args: Record<string, unknown>;
+    command: { action: string; data: Record<string, unknown> } | null;
+  }
   const golden = JSON.parse(fs.readFileSync(new URL('../../../tests/golden/tool-commands.json', import.meta.url), 'utf-8')) as Entry[];
-  const toolsOf = (wire: string) => [...new Set(golden.filter((e) => e.command?.action === wire).map((e) => e.tool))];
+  const operationOf = (e: Entry): string =>
+    resolveOperation(e.tool, callSchemaFor(e.tool)!.parse(e.args) as Record<string, unknown>).op;
+  const toolsOf = (wire: string) => [...new Set(golden.filter((e) => e.command?.action === wire).map(operationOf))];
 
   it('lists the ignored parameters', () => {
     expect(table.size).toBeGreaterThan(10);

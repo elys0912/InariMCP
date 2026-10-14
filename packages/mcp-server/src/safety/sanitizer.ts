@@ -8,7 +8,7 @@ function normalizeKey(key: string): string {
 
 /** Tool arguments masked in the audit log. */
 const SENSITIVE_ARGS: ReadonlySet<string> = new Set([
-  'text', 'value', 'password', 'steps', 'prompttext',
+  'text', 'value', 'password', 'prompttext',
 ]);
 
 /** Result keys (headers, JSON fields) whose value is always masked. */

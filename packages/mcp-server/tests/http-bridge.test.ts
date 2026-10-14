@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { getScreenshotsDir } from '../src/utils/screenshot.js';
+import { PUBLIC_TOOLS } from '../src/tools/public-tools.js';
 import { SignedRequestVerifier, isAllowedHostHeader, startHttpBridge, type HttpBridgeOptions } from '../src/transport/http-bridge.js';
 import {
   AUTH_HEADER,
@@ -315,6 +316,17 @@ describe('POST /browser/command (alias of /mcp/call)', () => {
     expect(r.status).toBe(400);
     expect(r.json['error']).toBe('Missing tool name');
   });
+
+  // InariMCP (AMO): the earlier tool names of KitsuneMCP are no tools.
+  it('an earlier tool name is an unknown tool (404), and GET /mcp/tools lists the public tools only', async () => {
+    await start();
+    const r = await request('POST', '/mcp/call', headers, JSON.stringify({ name: 'fox_get_tabs', arguments: {} }));
+    expect(r.status).toBe(404);
+    expect(r.json['error']).toBe('Unknown tool: fox_get_tabs');
+    const listed = await signedGet('/mcp/tools');
+    const names = (listed.json['tools'] as Array<{ name: string }>).map((t) => t.name).sort();
+    expect(names).toEqual(Object.keys(PUBLIC_TOOLS).sort());
+  });
 });
 
 describe('authenticated GET answers', () => {
@@ -536,7 +548,7 @@ describe('body / header timeouts', () => {
       const t0 = Date.now();
       const r = await request(
         'POST', '/mcp/call', { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' },
-        JSON.stringify({ name: 'fox_get_tabs', arguments: {} }),
+        JSON.stringify({ name: 'fox_tabs', arguments: { what: 'tabs' } }),
       );
       expect(Date.now() - t0).toBeGreaterThanOrEqual(500);
       expect(r.status).toBe(200);

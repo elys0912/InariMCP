@@ -40,7 +40,7 @@ Inari MCP is deliberately narrow. If your use case is one of these, you'll be ha
 
 ## Features
 
-- **17 `fox_*` tools** covering navigation, click/type/scroll, screenshots (visible/full page/all tabs), reading and finding, tab management and wait helpers. Related operations share one tool with a mode argument (`fox_wait` with `for: "url"`, `fox_tab` with `action: "close"`, …); the earlier tool names still work, see [Tool name migration](#tool-name-migration). Prefixed `fox_` instead of `browser_` so it doesn't collide with Playwright MCP if you run both. Not all of them work on every backend yet: see [Tool availability](#tool-availability).
+- **17 `fox_*` tools** covering navigation, click/type/scroll, screenshots (visible/full page/all tabs), reading and finding, tab management and wait helpers. Related operations share one tool with a mode argument (`fox_wait` with `for: "url"`, `fox_tab` with `action: "close"`, …). Prefixed `fox_` instead of `browser_` so it doesn't collide with Playwright MCP if you run both. Not all of them work on every backend yet: see [Tool availability](#tool-availability).
 - **Tool profiles (`FOX_CAPS`)** — registering every tool costs real context tokens. Pick profiles (`core`, `human`, `wait`, …) to only load what you need. See [`FOX_CAPS` profiles](#fox_caps-profiles).
 - **Your approval for every action** — clicking, typing, submitting, navigating and opening or closing tabs wait until you approve them, call by call and on every site, either in Claude Code's own confirmation dialog (MCP elicitation) or in the Inari MCP toolbar popup in Firefox. Nothing inside the page can approve it. Reading does not ask, except on the sites you list in `confirm_read_sites`. See [Human approval](#human-approval).
 - **Permission, pause and badge** — on first start the extension asks for your permission and connects to nothing until you allow it. The toolbar popup has a pause switch that refuses every call, and a badge shows while a tool is working.
@@ -359,7 +359,7 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 | `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host, uninstaller | Address of the HTTP/WS server. Loopback addresses only (127.0.0.0/8, `::1`, `localhost`): with any other value the daemon logs an error and does not start. An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_HOST` |
 | `FOX_HTTP_PORT` | `8785` | daemon, relay, Native Host, uninstaller | HTTP port (also the daemon's singleton lock). An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_HTTP_PORT` |
 | `FOX_WS_PORT` | `8786` | daemon, Native Host | WebSocket port the Native Host connects to. An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_WS_PORT` |
-| `FOX_CAPS` | unset (all tools) | relay | Tool profiles, comma-separated (see [below](#fox_caps-profiles)); `legacy` lists the earlier tool names instead (see [Tool name migration](#tool-name-migration)). **Not a safety boundary** — it only trims which tool schemas this session registers, to save context tokens. The daemon accepts every tool from every caller; actual restrictions (read-only, URL limits, container scope) come from `safety.json` / the safety guard |
+| `FOX_CAPS` | unset (all tools) | relay | Tool profiles, comma-separated (see [below](#fox_caps-profiles)). **Not a safety boundary** — it only trims which tool schemas this session registers, to save context tokens. The daemon accepts every tool from every caller; actual restrictions (read-only, URL limits, container scope) come from `safety.json` / the safety guard |
 | `FOX_HEADLESS` | unset | daemon | `1` / `true` / `yes` uses the headless Playwright backend; anything else leaves it off (an unrecognised value such as `on` is logged as a warning). Legacy: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | Launch timeout of the headless Firefox in **milliseconds** (not seconds). Legacy: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | Playwright's Firefox | daemon (headless only) | Path to the Firefox binary Playwright launches. Legacy: `CLAUDE_BROWSER_EXECUTABLE` |
@@ -378,42 +378,12 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 | Profile | Tools |
 |---|---|
 | `core` | `fox_navigate`, `fox_click`, `fox_type`, `fox_press_key`, `fox_set_value`, `fox_screenshot`, `fox_snapshot`, `fox_read`, `fox_find`, `fox_tabs`, `fox_tab`, `fox_interact`, `fox_wait`, `fox_handle_dialog` |
-| `workflow` | none (`fox_run_workflow` and `fox_audit_page` were never implemented) |
 | `human` | `fox_request_approval`, `fox_detect_captcha` |
 | `container` | `fox_tabs`, `fox_tab` (containers are `fox_tabs` with `what: "containers"` and `fox_tab` with `action: "create"` and `container`) |
 | `wait` | `fox_wait` |
 | `all` | every tool (same as leaving `FOX_CAPS` unset) |
 
-`fox_safety_status` is in no profile: it is always registered. Every other tool is in at least one profile. Unknown profile names are ignored with a warning on stderr; when every name given is unknown, only `fox_safety_status` is registered. `legacy` (alone, or with other profiles: `legacy,core`) registers the earlier tool names and their earlier profiles instead; see [Tool name migration](#tool-name-migration).
-
-### Tool name migration
-
-The 31 earlier tools were merged into 17: related operations became one tool with a mode argument. The browser side did not change; each call of a new tool runs exactly what the earlier tool ran.
-
-- New sessions list the new names. With `FOX_CAPS=legacy` a session lists the earlier names instead (their descriptions start with `[Deprecated: …]`).
-- The daemon accepts both: the earlier names keep working over HTTP (`POST /mcp/call`) whatever `FOX_CAPS` says.
-- The first call of an earlier name in a daemon run adds a note naming the replacement to the result (and to `daemon.log`). The audit log records such a call under the new tool name with the earlier name as `legacyTool`.
-- Human approval of a call is bound to the name and arguments of the call as made: retry with the same name and arguments.
-
-| Earlier tool | New call | Argument changes |
-|---|---|---|
-| `fox_get_page_info` | `fox_read` `mode: "info"` | |
-| `fox_get_text` | `fox_read` `mode: "text"` | |
-| `fox_get_elements` | `fox_find` `by: "selector"` | |
-| `fox_find_text` | `fox_find` `by: "text"` | `query` → `text` |
-| `fox_get_tabs` | `fox_tabs` `what: "tabs"` | |
-| `fox_list_containers` | `fox_tabs` `what: "containers"` | |
-| `fox_create_tab` | `fox_tab` `action: "create"` | |
-| `fox_open_in_container` | `fox_tab` `action: "create"` with `container` | `containerName` → `container.name`, `cookieStoreId` → `container.cookieStoreId`; `url` required |
-| `fox_close_tab` | `fox_tab` `action: "close"` | |
-| `fox_switch_tab` | `fox_tab` `action: "switch"` | |
-| `fox_set_value` | `fox_set_value` (`kind: "input"`, the default) | |
-| `fox_select_option` | `fox_set_value` `kind: "select"` | `value` / `text` / `index` → `option: { value }` / `{ text }` / `{ index }` (exactly one) |
-| `fox_hover`, `fox_scroll`, `fox_highlight` | `fox_interact` `action: "hover"` / `"scroll"` / `"highlight"` | |
-| `fox_wait_for_element`, `fox_wait_for_network_idle`, `fox_wait_for_navigation`, `fox_wait_for_url` | `fox_wait` `for: "element"` / `"network_idle"` / `"navigation"` / `"url"` | `for: "url"` needs `url` or `urlPattern` |
-| `fox_run_workflow`, `fox_audit_page` | none | were not implemented on any backend; still callable by name, with the same error |
-
-Unchanged: `fox_screenshot`, `fox_snapshot`, `fox_navigate`, `fox_click`, `fox_type`, `fox_press_key`, `fox_handle_dialog`, `fox_request_approval`, `fox_detect_captcha`, `fox_safety_status`.
+`fox_safety_status` is in no profile: it is always registered. Every other tool is in at least one profile. Unknown profile names are ignored with a warning on stderr; when every name given is unknown, only `fox_safety_status` is registered.
 
 ### `safety.json`
 
@@ -476,7 +446,7 @@ Inari MCP for Firefox 0.1.0 is the first version listed on addons.mozilla.org. T
 - Design and multi-angle review
 - Monorepo scaffolding (P1)
 - Safety guard, 8 layers (P2)
-- MCP server core + all 41 tool schemas/handlers (P3)
+- MCP server core + the tool schemas and handlers (P3)
 - Headless Playwright backend (P4)
 - Native messaging host (P5)
 - Extension ported to TypeScript (P6)

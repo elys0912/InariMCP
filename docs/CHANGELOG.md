@@ -46,6 +46,8 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The "Inspect Element for InariMCP" context menu entry: it handed its result to nobody.
 - The protected-site list: `protected_url_patterns` (16 default sites: banks and other finance or payment services, `.gov`, patient portals) and `confirm_protected_actions` in `safety.json`. Acting tools ask on every site instead; list the sites where reads and screenshots should ask as well in the new `confirm_read_sites` (default empty). A `safety.json` that still has either key is refused as an unknown key until the key is deleted.
 - The browser commands that no tool sends: `get_tab_info`, `find_tabs`, `get_value`, `reload_all`, `reload_by_url`, `wait_for_change` and `click_and_wait`. Neither the extension nor the headless backend handles them any more.
+- The compatibility layer for the earlier tool names of KitsuneMCP: `FOX_CAPS=legacy` (the list with `[Deprecated: …]` descriptions), the 20 earlier names that are no tool any more (`fox_get_text`, `fox_create_tab`, `fox_wait_for_url`, …; refused as unknown tools, also over `POST /mcp/call`), the note on their first call and `legacyTool` in the audit log. Call the 17 tools instead (`fox_read`, `fox_tab`, `fox_wait`, …).
+- The never implemented `fox_run_workflow` and `fox_audit_page`, and the empty `workflow` profile of `FOX_CAPS` (now an unknown profile name, ignored with a warning).
 
 ### Security
 

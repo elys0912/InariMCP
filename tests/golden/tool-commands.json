@@ -384,8 +384,9 @@
   },
   {
     "id": "get_elements/default",
-    "tool": "fox_get_elements",
+    "tool": "fox_find",
     "args": {
+      "by": "selector",
       "selector": "a"
     },
     "command": {
@@ -442,8 +443,9 @@
   },
   {
     "id": "get_elements/options",
-    "tool": "fox_get_elements",
+    "tool": "fox_find",
     "args": {
+      "by": "selector",
       "selector": "li",
       "limit": 5,
       "tabId": 2
@@ -503,8 +505,10 @@
   },
   {
     "id": "get_text/default",
-    "tool": "fox_get_text",
-    "args": {},
+    "tool": "fox_read",
+    "args": {
+      "mode": "text"
+    },
     "command": {
       "action": "get_text",
       "data": {
@@ -558,8 +562,9 @@
   },
   {
     "id": "get_text/options",
-    "tool": "fox_get_text",
+    "tool": "fox_read",
     "args": {
+      "mode": "text",
       "selector": "#x",
       "maxLength": 100,
       "tabId": 2
@@ -619,9 +624,10 @@
   },
   {
     "id": "find_text/default",
-    "tool": "fox_find_text",
+    "tool": "fox_find",
     "args": {
-      "query": "hello"
+      "by": "text",
+      "text": "hello"
     },
     "command": {
       "action": "find_text",
@@ -679,9 +685,10 @@
   },
   {
     "id": "find_text/options",
-    "tool": "fox_find_text",
+    "tool": "fox_find",
     "args": {
-      "query": "Hi",
+      "by": "text",
+      "text": "Hi",
       "caseSensitive": true,
       "entireWord": true,
       "includeRectData": true,
@@ -744,8 +751,10 @@
   },
   {
     "id": "get_page_info/default",
-    "tool": "fox_get_page_info",
-    "args": {},
+    "tool": "fox_read",
+    "args": {
+      "mode": "info"
+    },
     "command": {
       "action": "get_page_info",
       "data": {},
@@ -797,8 +806,9 @@
   },
   {
     "id": "get_page_info/tab",
-    "tool": "fox_get_page_info",
+    "tool": "fox_read",
     "args": {
+      "mode": "info",
       "tabId": 5
     },
     "command": {
@@ -853,8 +863,10 @@
   },
   {
     "id": "get_tabs/default",
-    "tool": "fox_get_tabs",
-    "args": {},
+    "tool": "fox_tabs",
+    "args": {
+      "what": "tabs"
+    },
     "command": {
       "action": "get_tabs",
       "data": {
@@ -874,8 +886,9 @@
   },
   {
     "id": "get_tabs/options",
-    "tool": "fox_get_tabs",
+    "tool": "fox_tabs",
     "args": {
+      "what": "tabs",
       "currentWindowOnly": false,
       "limit": 10,
       "urlPattern": "^https://",
@@ -901,8 +914,9 @@
   },
   {
     "id": "get_tabs/invalid_regex",
-    "tool": "fox_get_tabs",
+    "tool": "fox_tabs",
     "args": {
+      "what": "tabs",
       "urlPattern": "("
     },
     "command": null,
@@ -1857,6 +1871,7 @@
     "id": "set_value/tab",
     "tool": "fox_set_value",
     "args": {
+      "kind": "input",
       "selector": "#v",
       "value": "2",
       "tabId": 2
@@ -1907,10 +1922,13 @@
   },
   {
     "id": "select_option/value",
-    "tool": "fox_select_option",
+    "tool": "fox_set_value",
     "args": {
+      "kind": "select",
       "selector": "select",
-      "value": "a"
+      "option": {
+        "value": "a"
+      }
     },
     "approval": "plain.example.test",
     "command": {
@@ -1956,10 +1974,13 @@
   },
   {
     "id": "select_option/text",
-    "tool": "fox_select_option",
+    "tool": "fox_set_value",
     "args": {
+      "kind": "select",
       "selector": "select",
-      "text": "A"
+      "option": {
+        "text": "A"
+      }
     },
     "approval": "plain.example.test",
     "command": {
@@ -2005,10 +2026,13 @@
   },
   {
     "id": "select_option/index",
-    "tool": "fox_select_option",
+    "tool": "fox_set_value",
     "args": {
+      "kind": "select",
       "selector": "select",
-      "index": 2,
+      "option": {
+        "index": 2
+      },
       "tabId": 2
     },
     "approval": "plain.example.test",
@@ -2056,8 +2080,9 @@
   },
   {
     "id": "hover/default",
-    "tool": "fox_hover",
+    "tool": "fox_interact",
     "args": {
+      "action": "hover",
       "selector": "#h"
     },
     "command": {
@@ -2101,8 +2126,10 @@
   },
   {
     "id": "scroll/default",
-    "tool": "fox_scroll",
-    "args": {},
+    "tool": "fox_interact",
+    "args": {
+      "action": "scroll"
+    },
     "command": {
       "action": "scroll",
       "data": {
@@ -2144,8 +2171,9 @@
   },
   {
     "id": "scroll/direction",
-    "tool": "fox_scroll",
+    "tool": "fox_interact",
     "args": {
+      "action": "scroll",
       "direction": "down",
       "amount": 500
     },
@@ -2191,8 +2219,9 @@
   },
   {
     "id": "scroll/to_element",
-    "tool": "fox_scroll",
+    "tool": "fox_interact",
     "args": {
+      "action": "scroll",
       "toElement": "#f",
       "tabId": 2
     },
@@ -2239,8 +2268,9 @@
   },
   {
     "id": "scroll/container",
-    "tool": "fox_scroll",
+    "tool": "fox_interact",
     "args": {
+      "action": "scroll",
       "selector": "#pane",
       "direction": "top"
     },
@@ -2287,8 +2317,9 @@
   },
   {
     "id": "highlight/default",
-    "tool": "fox_highlight",
+    "tool": "fox_interact",
     "args": {
+      "action": "highlight",
       "selector": "#h"
     },
     "command": {
@@ -2333,8 +2364,9 @@
   },
   {
     "id": "highlight/options",
-    "tool": "fox_highlight",
+    "tool": "fox_interact",
     "args": {
+      "action": "highlight",
       "selector": "#h",
       "duration": 1000,
       "label": "L",
@@ -2384,8 +2416,10 @@
   },
   {
     "id": "create_tab/default",
-    "tool": "fox_create_tab",
-    "args": {},
+    "tool": "fox_tab",
+    "args": {
+      "action": "create"
+    },
     "approval": "about:",
     "command": {
       "action": "create_tab",
@@ -2406,8 +2440,9 @@
   },
   {
     "id": "create_tab/url",
-    "tool": "fox_create_tab",
+    "tool": "fox_tab",
     "args": {
+      "action": "create",
       "url": "https://plain.example.test/",
       "active": false
     },
@@ -2431,8 +2466,9 @@
   },
   {
     "id": "create_tab/read_site",
-    "tool": "fox_create_tab",
+    "tool": "fox_tab",
     "args": {
+      "action": "create",
       "url": "https://bank.example.test/transfer"
     },
     "approval": "bank.example.test",
@@ -2455,8 +2491,9 @@
   },
   {
     "id": "close_tab/default",
-    "tool": "fox_close_tab",
+    "tool": "fox_tab",
     "args": {
+      "action": "close",
       "tabId": 7
     },
     "approval": "plain.example.test",
@@ -2477,8 +2514,9 @@
   },
   {
     "id": "switch_tab/default",
-    "tool": "fox_switch_tab",
+    "tool": "fox_tab",
     "args": {
+      "action": "switch",
       "tabId": 7
     },
     "command": {
@@ -2497,8 +2535,9 @@
   },
   {
     "id": "wait_for_element/default",
-    "tool": "fox_wait_for_element",
+    "tool": "fox_wait",
     "args": {
+      "for": "element",
       "selector": "#w"
     },
     "command": {
@@ -2544,8 +2583,9 @@
   },
   {
     "id": "wait_for_element/options",
-    "tool": "fox_wait_for_element",
+    "tool": "fox_wait",
     "args": {
+      "for": "element",
       "selector": "#w",
       "timeout": 40000,
       "visible": false,
@@ -2595,8 +2635,10 @@
   },
   {
     "id": "wait_for_network_idle/default",
-    "tool": "fox_wait_for_network_idle",
-    "args": {},
+    "tool": "fox_wait",
+    "args": {
+      "for": "network_idle"
+    },
     "command": {
       "action": "wait_for_network_idle",
       "data": {
@@ -2639,8 +2681,9 @@
   },
   {
     "id": "wait_for_network_idle/options",
-    "tool": "fox_wait_for_network_idle",
+    "tool": "fox_wait",
     "args": {
+      "for": "network_idle",
       "timeout": 2000,
       "idleTime": 100,
       "tabId": 2
@@ -2688,8 +2731,10 @@
   },
   {
     "id": "wait_for_navigation/default",
-    "tool": "fox_wait_for_navigation",
-    "args": {},
+    "tool": "fox_wait",
+    "args": {
+      "for": "navigation"
+    },
     "command": {
       "action": "wait_for_navigation",
       "data": {
@@ -2732,8 +2777,9 @@
   },
   {
     "id": "wait_for_navigation/options",
-    "tool": "fox_wait_for_navigation",
+    "tool": "fox_wait",
     "args": {
+      "for": "navigation",
       "waitUntil": "domcontentloaded",
       "urlPattern": "/done",
       "timeout": 60000
@@ -2781,8 +2827,9 @@
   },
   {
     "id": "wait_for_url/url",
-    "tool": "fox_wait_for_url",
+    "tool": "fox_wait",
     "args": {
+      "for": "url",
       "url": "https://plain.example.test/done"
     },
     "command": {
@@ -2827,8 +2874,9 @@
   },
   {
     "id": "wait_for_url/pattern",
-    "tool": "fox_wait_for_url",
+    "tool": "fox_wait",
     "args": {
+      "for": "url",
       "urlPattern": "done$",
       "timeout": 1000,
       "tabId": 2
@@ -2876,8 +2924,9 @@
   },
   {
     "id": "wait_for_url/read_site",
-    "tool": "fox_wait_for_url",
+    "tool": "fox_wait",
     "args": {
+      "for": "url",
       "url": "https://bank.example.test/transfer"
     },
     "command": {
@@ -2919,186 +2968,6 @@
       "headless": 35000
     },
     "headless": "dispatch:wait_for_url"
-  },
-  {
-    "id": "run_workflow/default",
-    "tool": "fox_run_workflow",
-    "args": {
-      "steps": [
-        {
-          "tool": "fox_click",
-          "arguments": {
-            "selector": "#a"
-          }
-        }
-      ]
-    },
-    "approval": "plain.example.test",
-    "command": {
-      "action": "run_workflow",
-      "data": {
-        "steps": [
-          {
-            "tool": "fox_click",
-            "arguments": {
-              "selector": "#a"
-            }
-          }
-        ],
-        "stopOnFailure": true,
-        "screenshotOnFailure": true
-      },
-      "containerScope": {
-        "containerName": "Golden Agent"
-      },
-      "blockedUrlRules": [
-        {
-          "kind": "host",
-          "source": "blocked.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "blocked.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "allowedUrlRules": [
-        {
-          "kind": "host",
-          "source": "example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "strict"
-        }
-      ],
-      "approvedHost": "plain.example.test"
-    },
-    "timeoutMs": {
-      "extension": 30000,
-      "headless": 35000
-    },
-    "headless": "default"
-  },
-  {
-    "id": "audit_page/default",
-    "tool": "fox_audit_page",
-    "args": {},
-    "command": {
-      "action": "audit_page",
-      "data": {
-        "screenshot": true,
-        "fullPage": false
-      },
-      "containerScope": {
-        "containerName": "Golden Agent"
-      },
-      "confirmReadUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "blockedUrlRules": [
-        {
-          "kind": "host",
-          "source": "blocked.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "blocked.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "allowedUrlRules": [
-        {
-          "kind": "host",
-          "source": "example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "strict"
-        }
-      ]
-    },
-    "timeoutMs": {
-      "extension": 30000,
-      "headless": 35000
-    },
-    "headless": "default"
-  },
-  {
-    "id": "audit_page/options",
-    "tool": "fox_audit_page",
-    "args": {
-      "screenshot": false,
-      "fullPage": true,
-      "tabId": 2
-    },
-    "command": {
-      "action": "audit_page",
-      "tabId": 2,
-      "data": {
-        "screenshot": false,
-        "fullPage": true
-      },
-      "containerScope": {
-        "containerName": "Golden Agent"
-      },
-      "confirmReadUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "blockedUrlRules": [
-        {
-          "kind": "host",
-          "source": "blocked.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "blocked.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "allowedUrlRules": [
-        {
-          "kind": "host",
-          "source": "example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "strict"
-        }
-      ]
-    },
-    "timeoutMs": {
-      "extension": 30000,
-      "headless": 35000
-    },
-    "headless": "default"
   },
   {
     "id": "handle_dialog/accept",
@@ -3440,8 +3309,10 @@
   },
   {
     "id": "list_containers/default",
-    "tool": "fox_list_containers",
-    "args": {},
+    "tool": "fox_tabs",
+    "args": {
+      "what": "containers"
+    },
     "command": {
       "action": "list_containers",
       "data": {},
@@ -3457,10 +3328,13 @@
   },
   {
     "id": "open_in_container/name",
-    "tool": "fox_open_in_container",
+    "tool": "fox_tab",
     "args": {
+      "action": "create",
       "url": "https://plain.example.test/",
-      "containerName": "Work"
+      "container": {
+        "name": "Work"
+      }
     },
     "approval": "plain.example.test",
     "command": {
@@ -3483,10 +3357,13 @@
   },
   {
     "id": "open_in_container/cookie_store",
-    "tool": "fox_open_in_container",
+    "tool": "fox_tab",
     "args": {
+      "action": "create",
       "url": "https://plain.example.test/",
-      "cookieStoreId": "firefox-container-1",
+      "container": {
+        "cookieStoreId": "firefox-container-1"
+      },
       "active": false
     },
     "approval": "plain.example.test",
@@ -3510,10 +3387,13 @@
   },
   {
     "id": "open_in_container/blocked",
-    "tool": "fox_open_in_container",
+    "tool": "fox_tab",
     "args": {
+      "action": "create",
       "url": "https://blocked.example.test/",
-      "containerName": "Work"
+      "container": {
+        "name": "Work"
+      }
     },
     "command": null,
     "refusal": "URL 'https://blocked.example.test/' matches blocked_url_patterns entry 'blocked.example.test' in safety.json."

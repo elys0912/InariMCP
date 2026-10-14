@@ -129,7 +129,7 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
       expect(body.success).toBe(true);
 
       // same process, same policy: an ordinary tool is refused
-      const denied = await createToolHandler('fox_get_text')({});
+      const denied = await createToolHandler('fox_read')({ mode: 'text' });
       expect(denied.isError).toBe(true);
       const text = (denied.content as Array<{ text: string }>).map((c) => c.text).join('\n');
       expect(text).toContain('headless backend');

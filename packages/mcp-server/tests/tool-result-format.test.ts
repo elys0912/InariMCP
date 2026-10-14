@@ -219,12 +219,12 @@ describe('createToolHandler: sanitizing and screenshot links', () => {
 
     // An acting tool: approved by the human first, as the relay does it.
     getSafetyGuard().noteUrl({ url: 'https://example.test/' }, { tabId: 1 }, 'fox_get_text');
-    const args = { tabId: 1, selector: '#s', value: 'zzz' };
-    const asked = await createToolHandler('fox_select_option')(args);
+    const args = { kind: 'select', tabId: 1, selector: '#s', option: { value: 'zzz' } };
+    const asked = await createToolHandler('fox_set_value')(args);
     const request = findApprovalRequest(asked);
     expect(request).not.toBeNull();
     const { approvalToken } = answerFromElicitation(request!.requestId, true);
-    const result = await createToolHandler('fox_select_option')(args, { approvalToken });
+    const result = await createToolHandler('fox_set_value')(args, { approvalToken });
     expect(result.isError).toBe(true);
     const whole = text(result).join('\n');
     expect(whole).not.toContain(FAKE_JWT);

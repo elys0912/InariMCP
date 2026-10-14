@@ -122,11 +122,11 @@ Modules of `@inari-mcp/shared/node` (`packages/shared/src/node/`):
 
 `npm run typecheck:tests` (the second half of `npm run typecheck`) type-checks the tests with `tsconfig.test.json`: `packages/*/tests`, `tests/contract`, `tests/e2e`, `tests/scripts` and `tests/setup`. It uses `bundler` resolution and the same `@inari-mcp/shared` paths as `vitest.config.mts`, so no build is needed.
 
-Golden files (`tests/golden/`) record behaviour that must not change by accident: the BrowserCommand and safety-guard decision of each tool call (`tests/contract/tool-golden.test.ts`) and the `tools/list` of a session (`tests/contract/tools-list.test.ts`). When a change is intended, regenerate them with `UPDATE_GOLDEN=1 npx vitest run <test file>` and review the diff. `node scripts/tools-list-size.mjs` prints the size of both tool lists.
+Golden files (`tests/golden/`) record behaviour that must not change by accident: the BrowserCommand and safety-guard decision of each tool call (`tests/contract/tool-golden.test.ts`) and the `tools/list` of a session (`tests/contract/tools-list.test.ts`). When a change is intended, regenerate them with `UPDATE_GOLDEN=1 npx vitest run <test file>` and review the diff. `node scripts/tools-list-size.mjs` prints the size of the tool list.
 
-## Real-device check: tool consolidation
+## Real-device check: tools
 
-The 41 earlier tools became 21 (README: [Tool name migration](../README.md#tool-name-migration)). The tests cover the server side and the headless path (`npm run test:e2e`); this check covers the extension path in a real Firefox, and the headless path by hand. Record each step as OK / NG / not run, with the call, the result and the matching `daemon.log` lines for an NG.
+Inari MCP has 17 tools; related operations share one tool with a mode argument (README: [Features](../README.md#features)). The tests cover the server side and the headless path (`npm run test:e2e`); this check covers the extension path in a real Firefox, and the headless path by hand. Record each step as OK / NG / not run, with the call, the result and the matching `daemon.log` lines for an NG.
 
 Preparation:
 
@@ -139,11 +139,10 @@ Tool lists:
 
 | # | Session | Expected |
 |---|---|---|
-| 1-1 | `FOX_CAPS` unset | the 17 tools; no earlier names |
-| 1-2 | `FOX_CAPS=legacy` | the 31 earlier tools; replaced ones start their description with `[Deprecated: …]` |
-| 1-3 | `FOX_CAPS=core,human` | the `core` tools, `fox_request_approval`, `fox_detect_captcha` and `fox_safety_status` |
+| 1-1 | `FOX_CAPS` unset | the 17 tools |
+| 1-2 | `FOX_CAPS=core,human` | the `core` tools, `fox_request_approval`, `fox_detect_captcha` and `fox_safety_status` |
 
-New names (on both paths unless noted):
+Tool calls (on both paths unless noted):
 
 | # | Call | Expected |
 |---|---|---|
@@ -156,26 +155,17 @@ New names (on both paths unless noted):
 | 2-7 | `fox_interact` `{action: "highlight", selector}` | the element is outlined |
 | 2-8 | `fox_wait` `{for: "network_idle"}` while the page has a fetch running | extension: returns once it ended; afterwards the page's own `fetch` is back (in the page's console, `window.fetch.toString()` shows `[native code]`) |
 
-Earlier names (`FOX_CAPS=legacy`):
-
-| # | Call | Expected |
-|---|---|---|
-| 3-1 | `fox_get_text` `{}` twice | the same result as 2-5; only the first one ends with `Note: fox_get_text is deprecated; use fox_read with mode='text'.` |
-| 3-2 | `fox_create_tab` `{url}` | the same as the create step of 2-2 |
-| 3-3 | the `audit.jsonl` line of 3-2 | `"tool": "fox_tab"`, `"legacyTool": "fox_create_tab"` |
-
 Human approval:
 
 | # | Call | Expected |
 |---|---|---|
-| 4-1 | `fox_tab` `{action: "create", url}` | you are asked (MCP elicitation or the toolbar popup) whether to allow `fox_tab` on the URL's site, with the arguments; after approval the call runs once |
-| 4-2 | 4-1, declined | nothing runs; the result says it was declined |
-| 4-3 | `fox_interact` `{action: "scroll"}`, `fox_read` `{mode: "text"}`, `fox_tab` `{action: "switch", tabId}` (extension) | run without asking |
-| 4-4 | on a page the daemon knows about, `fox_set_value` `{selector, value}` twice (extension) | you are asked each time; after each approval it runs once |
-| 4-5 | move the tab to another site by hand, then 4-4 (the daemon does not know the URL) | you are asked for the old site; after approval the extension refuses with confirmation_required, you are asked for the real site, after approval it runs (the approved site reaches the extension) |
-| 4-6 | 4-1 with the earlier name `fox_create_tab` (`FOX_CAPS=legacy`) | the same flow; the question names `fox_create_tab` |
-| 4-7 | `fox_read` `{mode: "text"}` on the test host of `confirm_read_sites`, then on another page | asked on the test host only |
-| 4-8 | right after the daemon started, `fox_click` `{tabId: <an existing tab>, selector}` | refused without asking: the result says the call cannot be approved yet and to call `fox_tabs` first |
-| 4-9 | a local test page (`file://`), `fox_click` `{selector}` (extension) | you are asked for the site `file:`; after approval it runs |
+| 3-1 | `fox_tab` `{action: "create", url}` | you are asked (MCP elicitation or the toolbar popup) whether to allow `fox_tab` on the URL's site, with the arguments; after approval the call runs once |
+| 3-2 | 3-1, declined | nothing runs; the result says it was declined |
+| 3-3 | `fox_interact` `{action: "scroll"}`, `fox_read` `{mode: "text"}`, `fox_tab` `{action: "switch", tabId}` (extension) | run without asking |
+| 3-4 | on a page the daemon knows about, `fox_set_value` `{selector, value}` twice (extension) | you are asked each time; after each approval it runs once |
+| 3-5 | move the tab to another site by hand, then 3-4 (the daemon does not know the URL) | you are asked for the old site; after approval the extension refuses with confirmation_required, you are asked for the real site, after approval it runs (the approved site reaches the extension) |
+| 3-6 | `fox_read` `{mode: "text"}` on the test host of `confirm_read_sites`, then on another page | asked on the test host only |
+| 3-7 | right after the daemon started, `fox_click` `{tabId: <an existing tab>, selector}` | refused without asking: the result says the call cannot be approved yet and to call `fox_tabs` first |
+| 3-8 | a local test page (`file://`), `fox_click` `{selector}` (extension) | you are asked for the site `file:`; after approval it runs |
 
 Keep the steps that could not be checked on a real device separate in the report.

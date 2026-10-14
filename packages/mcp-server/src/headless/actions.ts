@@ -909,12 +909,10 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   press_key: dispatch(pressKey),
   get_text: dispatch(getText),
 
-  // --- approval / workflow ---
+  // --- approval ---
   request_approval: tabless(requestApproval),
-  run_workflow: UNSUPPORTED,
   solve_captcha: dispatch(solveCaptcha),
   cancel_human_wait: UNSUPPORTED,
-  audit_page: UNSUPPORTED,
 
   // --- P3-3 ---
   snapshot: dispatch(snapshot),

@@ -94,26 +94,26 @@ const page1 = `${fixtures.baseUrl}index.html`;
 const page2 = `${fixtures.baseUrl}page2.html`;
 const heading = 'InariMCP reviewer smoke test';
 
-const tabs0 = await call('fox_get_tabs');
+const tabs0 = await call('fox_tabs', { what: 'tabs' });
 const before = tabCount(tabs0);
-check('fox_get_tabs', !tabs0.isError && before >= 1, `tabs=${before}`);
+check('fox_tabs', !tabs0.isError && before >= 1, `tabs=${before}`);
 
 const nav = await call('fox_navigate', { action: 'goto', url: page1 });
 check('fox_navigate goto', !nav.isError, short(nav.text));
 
-const info = await call('fox_get_page_info');
-check('fox_get_page_info', !info.isError && info.data?.url === page1, short(info.data?.title));
+const info = await call('fox_read', { mode: 'info' });
+check('fox_read info', !info.isError && info.data?.url === page1, short(info.data?.title));
 
-const text = await call('fox_get_text');
-check('fox_get_text', !text.isError && (text.data?.text ?? '').includes(heading), short(text.data?.text, 60));
+const text = await call('fox_read', { mode: 'text' });
+check('fox_read text', !text.isError && (text.data?.text ?? '').includes(heading), short(text.data?.text, 60));
 
-const find = await call('fox_find_text', { query: heading });
-check('fox_find_text', !find.isError && find.data?.count >= 1, `count=${find.data?.count}`);
+const find = await call('fox_find', { by: 'text', text: heading });
+check('fox_find text', !find.isError && find.data?.count >= 1, `count=${find.data?.count}`);
 
 const opened = await call('fox_navigate', { action: 'goto', url: page2, newTab: true });
 const newTabId = opened.data?.tabId;
 check('fox_navigate newTab', !opened.isError && newTabId !== undefined, short(opened.text));
-const tabs1 = await call('fox_get_tabs');
+const tabs1 = await call('fox_tabs', { what: 'tabs' });
 const newTab = tabs1.data?.tabs?.find((t) => t.id === newTabId);
 check('  new tab is open on page 2', newTab?.url === page2, `tabs ${before} -> ${tabCount(tabs1)}`);
 
@@ -122,11 +122,11 @@ const imagePath = shot.data?.imagePath;
 check('fox_screenshot', !shot.isError && imagePath && existsSync(imagePath), imagePath ?? short(shot.text));
 
 if (newTabId !== undefined) {
-  const close = await call('fox_close_tab', { tabId: newTabId });
-  const tabs2 = await call('fox_get_tabs');
-  check('fox_close_tab', !close.isError && tabCount(tabs2) === before, `tabs -> ${tabCount(tabs2)}`);
+  const close = await call('fox_tab', { action: 'close', tabId: newTabId });
+  const tabs2 = await call('fox_tabs', { what: 'tabs' });
+  check('fox_tab close', !close.isError && tabCount(tabs2) === before, `tabs -> ${tabCount(tabs2)}`);
 } else {
-  check('fox_close_tab', false, 'skipped: no new tab');
+  check('fox_tab close', false, 'skipped: no new tab');
 }
 
 const safety = await call('fox_safety_status');

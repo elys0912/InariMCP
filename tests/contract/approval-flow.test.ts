@@ -152,7 +152,7 @@ function text(result: CallToolResult): string {
 /** The tab shows `url`, and the guard learns it from a read (which needs no approval). */
 async function showPage(url: string): Promise<void> {
   browser.tabUrl = url;
-  const result = await createToolHandler('fox_get_text')({});
+  const result = await createToolHandler('fox_read')({ mode: 'text' });
   expect(result.isError).toBeFalsy();
   expect(getSafetyGuard().urlFor()).toBe(url);
   browser.received = [];
@@ -415,10 +415,9 @@ describe('relay: ask, then retry once with the token', () => {
     expect(browser.received).toEqual([]);
   });
 
-  it.each([
-    ['fox_tab', { action: 'create', url: SITE_URL, active: true }],
-    ['fox_create_tab', { url: SITE_URL, active: true }],
-  ])('a grouped public tool and its deprecated name (%s): refused, approved, run once', async (tool, toolArgs) => {
+  it('a grouped public tool: refused, approved, run once', async () => {
+    const tool = 'fox_tab';
+    const toolArgs = { action: 'create', url: SITE_URL, active: true };
     const run = createToolHandler(tool);
     const asked: string[] = [];
     const result = await callWithApproval((approvalToken) => run(toolArgs, { approvalToken }), {

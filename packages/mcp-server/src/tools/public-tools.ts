@@ -1,7 +1,7 @@
 /**
- * The public tools (WP13 tool consolidation: 31 operations → 17 tools).
+ * The public tools: the 17 tools MCP clients list and call.
  *
- * Ten tools are the operations of schemas.ts as they are. The other seven
+ * Ten tools are an operation of schemas.ts as it is. The other seven
  * group several operations behind a discriminator argument (fox_wait
  * `for`, fox_tab `action`, ...); each value of it is a variant that runs
  * one operation (tools/operations.ts). The wire actions, the Extension, the
@@ -26,7 +26,6 @@ import { TOOL_SCHEMAS, callSchemaOf } from './schemas.js';
 import type { ObjectSchema, OperationName } from './schemas.js';
 import { toolAnnotations } from './classification.js';
 import type { ToolAnnotations } from './classification.js';
-import { isOneOf } from './one-of.js';
 
 export interface PublicVariant {
   /** The operation it runs, from its parsed arguments. */
@@ -39,13 +38,6 @@ export interface PublicVariant {
    * schema drops the keys it does not know.
    */
   toOp?(args: Record<string, unknown>): Record<string, unknown>;
-  /**
-   * The inverse of toOp: the variant's arguments (discriminator excluded)
-   * from the operation's. A call by the deprecated operation name is
-   * audited in the public tool's form with it (tools/operations.ts).
-   * Default: the same keys.
-   */
-  fromOp?(opArgs: Record<string, unknown>): Record<string, unknown>;
 }
 
 export interface PublicTool {
@@ -174,16 +166,13 @@ function foldAnnotations(variants: Record<string, PublicVariant>): ToolAnnotatio
   };
 }
 
-/**
- * A tool that is one operation as is. `description` replaces the
- * operation's own (FOX_CAPS=legacy keeps that one).
- */
-function asIs(op: OperationName, description?: string): PublicTool {
+/** A tool that is one operation as is, under the operation's name. */
+function asIs(op: OperationName, description: string): PublicTool {
   const def = TOOL_SCHEMAS[op];
   const variants = { default: { op: () => op, ops: [op] } };
   return {
     name: op,
-    description: description ?? def.description,
+    description,
     callSchema: callSchemaOf(def),
     listSchema: def.inputSchema,
     annotations: toolAnnotations(def),
@@ -292,7 +281,7 @@ const foxFind = grouped({
         text: z.string().describe('Text to search for in the page'),
         ...fieldsOf('fox_find_text', ['caseSensitive', 'entireWord', 'includeRectData', 'tabId']),
       },
-      run: { ...same('fox_find_text'), toOp: renamed({ text: 'query' }), fromOp: renamed({ query: 'text' }) },
+      run: { ...same('fox_find_text'), toOp: renamed({ text: 'query' }) },
     },
   },
 });
@@ -342,17 +331,6 @@ const foxTab = grouped({
             ...(cookieStoreId !== undefined ? { cookieStoreId } : {}),
           };
         },
-        fromOp: (opArgs) => {
-          const { containerName, cookieStoreId, ...rest } = opArgs;
-          if (containerName === undefined && cookieStoreId === undefined) return rest;
-          return {
-            ...rest,
-            container: {
-              ...(containerName !== undefined ? { name: containerName } : {}),
-              ...(cookieStoreId !== undefined ? { cookieStoreId } : {}),
-            },
-          };
-        },
       },
     },
     close: { fields: fieldsOf('fox_close_tab'), run: same('fox_close_tab') },
@@ -396,15 +374,6 @@ const foxSetValue = grouped({
         toOp: (args) => {
           const { option, ...rest } = args;
           return isRecord(option) ? { ...rest, ...option } : rest;
-        },
-        fromOp: (opArgs) => {
-          const option: Record<string, unknown> = {};
-          const rest: Record<string, unknown> = {};
-          for (const [key, value] of Object.entries(opArgs)) {
-            if (isOneOf(OPTION_KEYS, key)) option[key] = value;
-            else rest[key] = value;
-          }
-          return { ...rest, option };
         },
       },
     },
@@ -457,23 +426,28 @@ const foxWait = grouped({
 // Registry of the public tools
 // ---------------------------------------------------------------------------
 
-/**
- * Public descriptions of tools that are an operation as is: shorter than
- * the operation's, and naming the public tools.
- */
+/** Descriptions of the tools that are an operation as is. */
 const AS_IS_DESCRIPTIONS = {
   fox_screenshot:
     "Take a screenshot. Images are saved to files and returned as resource_link, never as base64 (saveToFile=false captures nothing, includeData has no effect, the same filename overwrites the file). scope: viewport (visible area; a background tab given by tabId is captured without switching to it; a discarded tab fails), full_page (entire page; falls back to the visible area with fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on sites listed in confirm_read_sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls and returns the interactive elements visible at each position). Headless: viewport and full_page only.",
   fox_snapshot:
     "Extension path: not implemented (returns an error); use fox_read or fox_find there. Headless: the accessibility tree of the page (or of the first element matching selector) as indented YAML text (Playwright ariaSnapshot), filtered by maxDepth, includeText and roles, cut at 50000 characters.",
+  fox_navigate:
+    "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R). goto / refresh with waitForLoad, and back / forward always, fail when the page does not finish loading within 25 s or the tab is closed (the navigation itself may still complete).",
   fox_click:
     "Click an element found by selector (CSS), xpath, text or x+y viewport coordinates, in that order. Top document only (not inside iframes or shadow DOM); fails on a disabled element. The element is scrolled into view and receives synthetic mousedown/mouseup/click events (isTrusted=false: pages that require real user input may ignore them); doubleClick / rightClick send dblclick / contextmenu. Returns the clicked element's info. Headless: selector or x+y only.",
   fox_type:
     "Type text into an input, textarea or contenteditable element found by selector, id, name or placeholder (in that order), else into the focused field; `text` is never used to find the element. Fails on a disabled element; password fields are refused. Sends synthetic key events (isTrusted=false) `delay` ms apart (0 = none; shortened so that all delays stay within 10 s); fox_set_value is faster for long values. clear empties the field first; pressEnter also submits the form like a real Enter unless a keydown handler cancels it. Headless: selector, text and clear only (with selector the text is appended unless clear, else the focused element receives the keys).",
-  // The operation's own text says "Not in any FOX_CAPS profile", which holds
-  // for the legacy names only: the public tool is in the core profile.
+  fox_press_key:
+    'Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta) on the element located by selector (CSS), xpath, text or id (checked in that order; it is focused first), else on the focused element. The key events are synthetic (isTrusted=false): page handlers see them, but the browser performs no default action (no focus move on Tab, no scrolling, no browser shortcuts). Plain Enter in a form field submits the form like a real Enter. Headless: selector only; real key presses, so on a password field keys that could change its value are refused (Enter, Tab, Escape, arrows, Home/End, PageUp/PageDown and lone modifiers are allowed).',
   fox_handle_dialog:
     'Extension path: not implemented (returns an error; commands to a tab showing an alert/confirm/prompt time out there). Headless only: wait for the next dialog and accept or dismiss it (promptText for prompts). Call it before the action that opens the dialog: it does not block other commands, and when no dialog comes within timeout it arms itself for the next dialog on the tab (30 s). Dialogs nobody handles are dismissed automatically after 2 s and reported in the next result of that tab.',
+  fox_request_approval:
+    'Ask the human at the browser a yes/no question and wait for the answer. Shown in the InariMCP toolbar popup in Firefox (badge + OS notification), never in the page. The answer is for you only: it approves no tool call — acting tools ask the human on their own when you call them. Unavailable in headless mode.',
+  fox_detect_captcha:
+    'Detect captchas on the page (reCAPTCHA, hCaptcha, Cloudflare Turnstile, generic image captchas). Reports what was found so the human can be asked to solve it. Does NOT auto-solve.',
+  fox_safety_status:
+    'Show the active safety guard policy: which calls ask the human for approval, read-only mode, blocked/allowed URL patterns and confirm_read_sites, rate-limit state, and audit log location.',
 } satisfies Partial<Record<OperationName, string>>;
 
 /**
@@ -487,17 +461,17 @@ const PUBLIC_TOOL_TABLE = {
   fox_find: foxFind,
   fox_tabs: foxTabs,
   fox_tab: foxTab,
-  fox_navigate: asIs('fox_navigate'),
+  fox_navigate: asIs('fox_navigate', AS_IS_DESCRIPTIONS.fox_navigate),
   fox_click: asIs('fox_click', AS_IS_DESCRIPTIONS.fox_click),
   fox_type: asIs('fox_type', AS_IS_DESCRIPTIONS.fox_type),
-  fox_press_key: asIs('fox_press_key'),
+  fox_press_key: asIs('fox_press_key', AS_IS_DESCRIPTIONS.fox_press_key),
   fox_set_value: foxSetValue,
   fox_interact: foxInteract,
   fox_wait: foxWait,
   fox_handle_dialog: asIs('fox_handle_dialog', AS_IS_DESCRIPTIONS.fox_handle_dialog),
-  fox_request_approval: asIs('fox_request_approval'),
-  fox_detect_captcha: asIs('fox_detect_captcha'),
-  fox_safety_status: asIs('fox_safety_status'),
+  fox_request_approval: asIs('fox_request_approval', AS_IS_DESCRIPTIONS.fox_request_approval),
+  fox_detect_captcha: asIs('fox_detect_captcha', AS_IS_DESCRIPTIONS.fox_detect_captcha),
+  fox_safety_status: asIs('fox_safety_status', AS_IS_DESCRIPTIONS.fox_safety_status),
 } satisfies Record<string, PublicTool>;
 
 export type PublicToolName = keyof typeof PUBLIC_TOOL_TABLE;
@@ -511,41 +485,3 @@ export function isPublicToolName(name: string): name is PublicToolName {
 
 /** Every public tool name, in tools/list order. */
 export const PUBLIC_TOOL_NAMES: readonly PublicToolName[] = Object.keys(PUBLIC_TOOLS).filter(isPublicToolName);
-
-/** The operations that are no public tool any more (the deprecated names). */
-export type LegacyOperationName = Exclude<OperationName, PublicToolName>;
-
-/** Whether `name` is a deprecated operation name. */
-export function isLegacyOperationName(name: string): name is LegacyOperationName {
-  return Object.hasOwn(LEGACY_REPLACEMENTS, name);
-}
-
-/**
- * Deprecated tool names (the operations that are no public tool any more)
- * and what replaces them: `[tool, discriminator value]`, or null when the
- * tool was removed (fox_run_workflow, fox_audit_page: not implemented on
- * any backend). The key set is checked by the type: every operation is a
- * public tool or listed here.
- */
-export const LEGACY_REPLACEMENTS: Readonly<Record<LegacyOperationName, readonly [PublicToolName, string] | null>> = {
-  fox_get_page_info: ['fox_read', 'info'],
-  fox_get_text: ['fox_read', 'text'],
-  fox_get_elements: ['fox_find', 'selector'],
-  fox_find_text: ['fox_find', 'text'],
-  fox_get_tabs: ['fox_tabs', 'tabs'],
-  fox_list_containers: ['fox_tabs', 'containers'],
-  fox_create_tab: ['fox_tab', 'create'],
-  fox_open_in_container: ['fox_tab', 'create'],
-  fox_close_tab: ['fox_tab', 'close'],
-  fox_switch_tab: ['fox_tab', 'switch'],
-  fox_select_option: ['fox_set_value', 'select'],
-  fox_hover: ['fox_interact', 'hover'],
-  fox_scroll: ['fox_interact', 'scroll'],
-  fox_highlight: ['fox_interact', 'highlight'],
-  fox_wait_for_element: ['fox_wait', 'element'],
-  fox_wait_for_network_idle: ['fox_wait', 'network_idle'],
-  fox_wait_for_navigation: ['fox_wait', 'navigation'],
-  fox_wait_for_url: ['fox_wait', 'url'],
-  fox_run_workflow: null,
-  fox_audit_page: null,
-};

@@ -64,12 +64,10 @@ const WIRE_ACTIONS = {
   press_key: "pressKey",
   get_text: "getText",
 
-  // --- Approval / workflow ---
+  // --- Approval ---
   request_approval: "requestApproval",
-  run_workflow: null,
   solve_captcha: "solveCaptcha",
   cancel_human_wait: "cancelHumanWait",
-  audit_page: null,
 
   // --- P3-3 actions (container / find keep their snake_case internal names) ---
   snapshot: null,

@@ -54,7 +54,6 @@ const ACTING: ReadonlyArray<[tool: string, args: Record<string, unknown>]> = [
   ['fox_navigate', { action: 'hard_refresh' }],
   ['fox_close_tab', { tabId: 1 }],
   ['fox_handle_dialog', { action: 'accept' }],
-  ['fox_run_workflow', { steps: [] }],
 ];
 /** Acting tools whose `url` is the site they act on. */
 const ACTING_ON_URL: ReadonlyArray<string> = ['fox_navigate', 'fox_create_tab', 'fox_open_in_container'];
@@ -67,7 +66,6 @@ const READING: ReadonlyArray<[tool: string, args: Record<string, unknown>]> = [
   ['fox_get_text', {}],
   ['fox_find_text', { query: 'x' }],
   ['fox_get_page_info', {}],
-  ['fox_audit_page', {}],
 ];
 const NOT_PAGE_READS: ReadonlyArray<[tool: string, args: Record<string, unknown>]> = [
   ['fox_screenshot', { scope: 'all_tabs' }],
@@ -555,7 +553,7 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     const g = handlerGuard();
     g.noteUrl({ url: 'https://d.test/' }, { tabId: 4 }, 'fox_get_text');
     stubBrowser({ success: true }); // no `data` at all
-    const result = await approvedCall('fox_close_tab', { tabId: 4 });
+    const result = await approvedCall('fox_tab', { action: 'close', tabId: 4 });
     expect(result.isError).toBeUndefined();
     expect(g.urlFor(4)).toBeNull();
   });
@@ -634,7 +632,7 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
   it('writes no audit line with audit_log off', async () => {
     handlerGuard({ auditLog: false });
     stubBrowser({ success: false, error: 'Element not found' });
-    const lines = await auditLinesOf(() => createToolHandler('fox_get_text')({ selector: '#a' }));
+    const lines = await auditLinesOf(() => createToolHandler('fox_read')({ mode: 'text', selector: '#a' }));
     expect(lines).toEqual([]);
   });
 
@@ -655,7 +653,7 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     const send = vi.spyOn(getConnectionManager(), 'sendCommand');
     let result: CallToolResult | undefined;
     const lines = await auditLinesOf(async () => {
-      result = await createToolHandler('fox_get_tabs')({ urlPattern: '(' });
+      result = await createToolHandler('fox_tabs')({ what: 'tabs', urlPattern: '(' });
     });
     expect(result?.isError).toBe(true);
     expect(send).not.toHaveBeenCalled();
@@ -672,11 +670,28 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
       sent.push(command);
       return { requestId: command.requestId, success: true } as BrowserResponse;
     });
-    // fox_set_value is also the name of a grouped public tool, whose call is parsed.
-    const parsedArgs: Record<string, Record<string, unknown>> = { fox_set_value: { selector: '#a', value: 'v' } };
-    for (const op of Object.keys(TOOL_SCHEMAS)) {
-      await createToolHandler(op)(parsedArgs[op] ?? {});
-    }
+    const calls: Array<[tool: string, args: Record<string, unknown>]> = [
+      ['fox_screenshot', {}], ['fox_snapshot', {}],
+      ['fox_find', { by: 'selector', selector: 'a' }], ['fox_find', { by: 'text', text: 'x' }],
+      ['fox_read', { mode: 'text' }], ['fox_read', { mode: 'info' }],
+      ['fox_tabs', { what: 'tabs' }], ['fox_tabs', { what: 'containers' }],
+      ['fox_navigate', { url: 'https://a.test/' }], ['fox_click', {}], ['fox_type', { text: 'x' }],
+      ['fox_press_key', { key: 'a' }], ['fox_set_value', { selector: '#a', value: 'v' }],
+      ['fox_set_value', { kind: 'select', selector: '#s', option: { value: 'a' } }],
+      ['fox_interact', { action: 'hover', selector: '#a' }], ['fox_interact', { action: 'scroll' }],
+      ['fox_interact', { action: 'highlight', selector: '#a' }],
+      ['fox_tab', { action: 'create' }],
+      ['fox_tab', { action: 'create', url: 'https://a.test/', container: { name: 'W' } }],
+      ['fox_tab', { action: 'close', tabId: 1 }], ['fox_tab', { action: 'switch', tabId: 1 }],
+      ['fox_wait', { for: 'element', selector: '#a' }], ['fox_wait', { for: 'network_idle' }],
+      ['fox_wait', { for: 'navigation' }], ['fox_wait', { for: 'url', url: 'https://a.test/' }],
+      ['fox_handle_dialog', { action: 'accept' }], ['fox_request_approval', { message: 'm' }],
+      ['fox_detect_captcha', {}], ['fox_safety_status', {}],
+    ];
+    const parsed = calls.map(([tool, raw]) => [tool, callSchemaFor(tool)!.parse(raw) as Record<string, unknown>] as const);
+    const ops = new Set(parsed.map(([tool, args]) => resolveOperation(tool, args).op));
+    expect(ops).toEqual(new Set(Object.keys(TOOL_SCHEMAS)));
+    for (const [tool, args] of parsed) await createToolHandler(tool)(args);
     const known = new Set<string>(BROWSER_ACTIONS);
     expect(sent.map((c) => c.action).filter((a) => !known.has(a))).toEqual([]);
     expect(sent.length).toBeGreaterThan(0);
@@ -704,17 +719,16 @@ describe('rate limit counts only calls that would run (2.B7)', () => {
   });
 });
 
-describe('call label (WP13: the name the caller used)', () => {
-  it('names the called tool in messages and audits it with legacyTool for a deprecated name', () => {
+describe('call label (the name the caller used)', () => {
+  it('names the called tool and its arguments in messages and the audit log, not the operation', () => {
     const g = guard({ readOnly: true, auditLog: true });
-    const args = { tabId: 7 };
-    const denial = g.check('fox_close_tab', args, 'stdio', null, {
-      tool: 'fox_old_close', args: { id: 7 }, replacedBy: 'fox_tab',
+    const denial = g.check('fox_close_tab', { tabId: 7 }, 'stdio', null, {
+      tool: 'fox_tab', args: { action: 'close', tabId: 7 },
     });
-    expect(denial?.error).toMatch(/^fox_old_close refused/);
+    expect(denial?.error).toMatch(/^fox_tab refused/);
     const lines = fs.readFileSync(getAuditLogPath(), 'utf-8').trim().split('\n');
-    expect(JSON.parse(lines.at(-1)!)).toMatchObject({
-      tool: 'fox_tab', legacyTool: 'fox_old_close', args: { id: 7 }, decision: 'read_only',
-    });
+    const line = JSON.parse(lines.at(-1)!) as Record<string, unknown>;
+    expect(line).toMatchObject({ tool: 'fox_tab', args: { action: 'close', tabId: 7 }, decision: 'read_only' });
+    expect(line).not.toHaveProperty('legacyTool');
   });
 });

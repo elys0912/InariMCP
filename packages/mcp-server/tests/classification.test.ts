@@ -14,7 +14,7 @@ import { DEFAULT_CONFIG, type SafetyConfig } from '../src/safety/config.js';
 const FORMER_NAMES = [
   'fox_screenshot_all_tabs', 'fox_get_value', 'fox_get_tab_info', 'fox_find_tabs',
   'fox_wait_for_change', 'fox_observe_element', 'fox_stop_observing',
-  'fox_scroll_and_capture', 'fox_focus_tab', 'fox_solve_captcha',
+  'fox_scroll_and_capture', 'fox_focus_tab', 'fox_solve_captcha', 'fox_run_workflow', 'fox_audit_page',
 ];
 
 function guard(overrides: Partial<SafetyConfig> = {}): SafetyGuard {
@@ -44,15 +44,14 @@ describe('tool sets derived from the schemas', () => {
   it('put the acting tools in ACTING_TOOLS', () => {
     expect([...ACTING_TOOLS].sort()).toEqual([
       'fox_click', 'fox_close_tab', 'fox_create_tab', 'fox_handle_dialog', 'fox_navigate',
-      'fox_open_in_container', 'fox_press_key', 'fox_run_workflow', 'fox_select_option',
-      'fox_set_value', 'fox_type',
+      'fox_open_in_container', 'fox_press_key', 'fox_select_option', 'fox_set_value', 'fox_type',
     ]);
   });
 
   it('put the tools that read a tab in PAGE_READ_TOOLS', () => {
     expect([...PAGE_READ_TOOLS].sort()).toEqual([
-      'fox_audit_page', 'fox_find_text', 'fox_get_elements', 'fox_get_page_info', 'fox_get_text',
-      'fox_screenshot', 'fox_snapshot',
+      'fox_find_text', 'fox_get_elements', 'fox_get_page_info', 'fox_get_text', 'fox_screenshot',
+      'fox_snapshot',
     ]);
   });
 
@@ -65,10 +64,11 @@ describe('tool sets derived from the schemas', () => {
   });
 
   // InariMCP (AMO): no tool runs caller-supplied JavaScript or records the
-  // page's console / network traffic.
-  it('define no script or logging tool', () => {
+  // page's console / network traffic, and the never implemented workflow
+  // tools are gone.
+  it('define no script, logging or workflow tool', () => {
     const classes = new Set(OPERATION_NAMES.map((name) => TOOL_SCHEMAS[name]!.classification));
-    expect([...classes].sort()).toEqual(['act', 'human', 'interact', 'observe', 'wait', 'workflow']);
+    expect([...classes].sort()).toEqual(['act', 'human', 'interact', 'observe', 'wait']);
   });
 
   // The decision per tool is recorded in tests/golden/guard-decisions.json
@@ -82,9 +82,9 @@ describe('tool sets derived from the schemas', () => {
   });
 });
 
-// The annotations per tool are recorded in tests/golden/tools-list-legacy.json
-// (and tests/contract/public-tools.test.ts for the public tools); these are the
-// rules that tie them to the guard, so an MCP client can rely on them.
+// The annotations of the public tools are recorded in tests/golden/tools-list.json
+// and tests/contract/public-tools.test.ts; these are the rules that tie the
+// operations' annotations to the guard, so an MCP client can rely on them.
 describe('toolAnnotations', () => {
   const annotated = OPERATION_NAMES.map((name) => [name, toolAnnotations(TOOL_SCHEMAS[name])] as const);
 

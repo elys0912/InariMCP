@@ -1,13 +1,9 @@
 /**
  * tools/handlers.ts: what the tests of the result format, the safety
  * metadata and the guard do not cover (R3 G-21 (b), §4 mimeTypeFor).
- *
- * The deprecation notice is reported once per name and process
- * (module state): no other test in this file calls fox_get_text.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { BrowserResponse } from '@inari-mcp/shared';
 import { createToolHandler } from '../src/tools/handlers.js';
 import { getConnectionManager } from '../src/connection/manager.js';
@@ -19,32 +15,16 @@ function stubBrowser(response: Partial<BrowserResponse>): void {
   );
 }
 
-const texts = (r: CallToolResult): string[] => r.content.map((c) => (c.type === 'text' ? c.text : ''));
-
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('a call by a deprecated name', () => {
-  it('gets the note at the end of its result and on stderr, once per name', async () => {
-    stubBrowser({ success: true, data: { text: 'hello' } });
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const note = "fox_get_text is deprecated; use fox_read with mode='text'.";
-
-    const first = await createToolHandler('fox_get_text')({});
-    expect(texts(first).at(-1)).toBe(`Note: ${note}`);
-
-    const second = await createToolHandler('fox_get_text')({});
-    expect(texts(second).some((t) => t.startsWith('Note: '))).toBe(false);
-
-    const lines = stderr.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('deprecated'));
-    expect(lines).toEqual([`[InariMCP] ${note}\n`]);
-  });
-
-  it('a current name gets no note', async () => {
-    stubBrowser({ success: true, data: { text: 'hello' } });
-    const result = await createToolHandler('fox_read')({ mode: 'text' });
-    expect(texts(result).some((t) => t.startsWith('Note: '))).toBe(false);
+// InariMCP (AMO): the earlier tool names of KitsuneMCP are no tools here.
+describe('a call by an earlier tool name', () => {
+  it('is refused as an unknown tool, and nothing is sent', async () => {
+    const send = vi.spyOn(getConnectionManager(), 'sendCommand');
+    await expect(createToolHandler('fox_get_text')({})).rejects.toThrow('fox_get_text: unknown tool');
+    expect(send).not.toHaveBeenCalled();
   });
 });
 

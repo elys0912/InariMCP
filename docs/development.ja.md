@@ -122,11 +122,11 @@ CIはパッケージをアップロードしない（Actionsのストレージ�
 
 `npm run typecheck:tests`（`npm run typecheck`の後半）は、`tsconfig.test.json`でテストを型検査する。対象は`packages/*/tests`、`tests/contract`、`tests/e2e`、`tests/scripts`、`tests/setup`。`bundler`の解決方法と、`vitest.config.mts`と同じ`@inari-mcp/shared`のパスを使うので、ビルドは要らない。
 
-ゴールデンファイル（`tests/golden/`）は、うっかり変えてはならない動作を記録している。ツール呼び出しごとのBrowserCommandと安全ガードの判定（`tests/contract/tool-golden.test.ts`）と、セッションの`tools/list`（`tests/contract/tools-list.test.ts`）である。意図して変更したときは`UPDATE_GOLDEN=1 npx vitest run <test file>`で作り直し、差分を確認する。`node scripts/tools-list-size.mjs`は両方のツール一覧のサイズを表示する。
+ゴールデンファイル（`tests/golden/`）は、うっかり変えてはならない動作を記録している。ツール呼び出しごとのBrowserCommandと安全ガードの判定（`tests/contract/tool-golden.test.ts`）と、セッションの`tools/list`（`tests/contract/tools-list.test.ts`）である。意図して変更したときは`UPDATE_GOLDEN=1 npx vitest run <test file>`で作り直し、差分を確認する。`node scripts/tools-list-size.mjs`はツール一覧のサイズを表示する。
 
-## 実機確認手順（ツール統合）
+## 実機確認手順（ツール）
 
-以前の41個のツールが21個になった（README: [ツール名の移行](../README.ja.md#ツール名の移行)）。テストが確認するのはサーバー側とヘッドレス経路（`npm run test:e2e`）で、この手順は実際のFirefoxでの拡張機能経路と、手作業でのヘッドレス経路を確認する。各手順をOK / NG / 未実施で記録し、NGのときは呼び出し、結果、対応する`daemon.log`の行を添える。
+Inari MCPのツールは17個で、関連する操作は1つのツールにまとめ、モード引数で切り替える（README: [特徴](../README.ja.md#特徴)）。テストが確認するのはサーバー側とヘッドレス経路（`npm run test:e2e`）で、この手順は実際のFirefoxでの拡張機能経路と、手作業でのヘッドレス経路を確認する。各手順をOK / NG / 未実施で記録し、NGのときは呼び出し、結果、対応する`daemon.log`の行を添える。
 
 準備:
 
@@ -139,11 +139,10 @@ CIはパッケージをアップロードしない（Actionsのストレージ�
 
 | # | セッション | 期待する結果 |
 |---|---|---|
-| 1-1 | `FOX_CAPS`未設定 | 17個のツール。以前の名前はない |
-| 1-2 | `FOX_CAPS=legacy` | 以前の31個のツール。置き換えられたものは説明が`[Deprecated: …]`で始まる |
-| 1-3 | `FOX_CAPS=core,human` | `core`のツール、`fox_request_approval`、`fox_detect_captcha`、`fox_safety_status` |
+| 1-1 | `FOX_CAPS`未設定 | 17個のツール |
+| 1-2 | `FOX_CAPS=core,human` | `core`のツール、`fox_request_approval`、`fox_detect_captcha`、`fox_safety_status` |
 
-新しい名前（特に記載がなければ両方の経路）:
+ツールの呼び出し（特に記載がなければ両方の経路）:
 
 | # | 呼び出し | 期待する結果 |
 |---|---|---|
@@ -156,26 +155,17 @@ CIはパッケージをアップロードしない（Actionsのストレージ�
 | 2-7 | `fox_interact` `{action: "highlight", selector}` | 要素に枠が付く |
 | 2-8 | ページでfetchが続いている間に`fox_wait` `{for: "network_idle"}` | 拡張機能: fetchが終わってから返る。その後、ページの`fetch`はページ自身のものに戻っている（ページのコンソールで`window.fetch.toString()`が`[native code]`を表示する） |
 
-以前の名前（`FOX_CAPS=legacy`）:
-
-| # | 呼び出し | 期待する結果 |
-|---|---|---|
-| 3-1 | `fox_get_text` `{}`を2回 | 2-5と同じ結果。末尾に`Note: fox_get_text is deprecated; use fox_read with mode='text'.`が付くのは1回目だけ |
-| 3-2 | `fox_create_tab` `{url}` | 2-2のcreateの手順と同じ |
-| 3-3 | 3-2の`audit.jsonl`の行 | `"tool": "fox_tab"`、`"legacyTool": "fox_create_tab"` |
-
 人による承認:
 
 | # | 呼び出し | 期待する結果 |
 |---|---|---|
-| 4-1 | `fox_tab` `{action: "create", url}` | URLのサイトでの`fox_tab`を許可するか、引数と一緒に尋ねられる（MCP elicitationかツールバーのポップアップ）。承認すると呼び出しが1回動く |
-| 4-2 | 4-1を拒否する | 何も動かない。結果に拒否されたと出る |
-| 4-3 | `fox_interact` `{action: "scroll"}`、`fox_read` `{mode: "text"}`、`fox_tab` `{action: "switch", tabId}`（拡張機能） | 尋ねずに動く |
-| 4-4 | daemonが把握しているページで`fox_set_value` `{selector, value}`を2回（拡張機能） | 毎回尋ねられる。承認するたびに1回動く |
-| 4-5 | タブを手で別のサイトへ移してから4-4（daemonはそのURLを知らない） | 前のサイトについて尋ねられる。承認すると拡張機能がconfirmation_requiredで拒否し、実際のサイトについて尋ねられ、承認すると動く（承認したサイトが拡張機能に届く） |
-| 4-6 | 4-1を以前の名前`fox_create_tab`で行う（`FOX_CAPS=legacy`） | 同じ流れ。確認の質問に`fox_create_tab`が出る |
-| 4-7 | `confirm_read_sites`のテスト用ホストで`fox_read` `{mode: "text"}`、続けて別のページで同じ呼び出し | テスト用ホストでだけ尋ねられる |
-| 4-8 | daemonを起動した直後に`fox_click` `{tabId: <あるタブ>, selector}` | 尋ねずに拒否される。結果に、まだ承認できないこと、先に`fox_tabs`を呼ぶことが出る |
-| 4-9 | ローカルのテスト用ページ（`file://`）で`fox_click` `{selector}`（拡張機能） | サイト`file:`について尋ねられる。承認すると動く |
+| 3-1 | `fox_tab` `{action: "create", url}` | URLのサイトでの`fox_tab`を許可するか、引数と一緒に尋ねられる（MCP elicitationかツールバーのポップアップ）。承認すると呼び出しが1回動く |
+| 3-2 | 3-1を拒否する | 何も動かない。結果に拒否されたと出る |
+| 3-3 | `fox_interact` `{action: "scroll"}`、`fox_read` `{mode: "text"}`、`fox_tab` `{action: "switch", tabId}`（拡張機能） | 尋ねずに動く |
+| 3-4 | daemonが把握しているページで`fox_set_value` `{selector, value}`を2回（拡張機能） | 毎回尋ねられる。承認するたびに1回動く |
+| 3-5 | タブを手で別のサイトへ移してから3-4（daemonはそのURLを知らない） | 前のサイトについて尋ねられる。承認すると拡張機能がconfirmation_requiredで拒否し、実際のサイトについて尋ねられ、承認すると動く（承認したサイトが拡張機能に届く） |
+| 3-6 | `confirm_read_sites`のテスト用ホストで`fox_read` `{mode: "text"}`、続けて別のページで同じ呼び出し | テスト用ホストでだけ尋ねられる |
+| 3-7 | daemonを起動した直後に`fox_click` `{tabId: <あるタブ>, selector}` | 尋ねずに拒否される。結果に、まだ承認できないこと、先に`fox_tabs`を呼ぶことが出る |
+| 3-8 | ローカルのテスト用ページ（`file://`）で`fox_click` `{selector}`（拡張機能） | サイト`file:`について尋ねられる。承認すると動く |
 
 実機で確認できなかった手順は、報告の中で別にしておく。

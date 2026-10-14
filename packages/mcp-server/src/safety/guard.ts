@@ -79,17 +79,6 @@ export interface CallLabel {
   tool: string;
   /** The arguments as called (audit log). */
   args: Record<string, unknown>;
-  /**
-   * Set when `tool` is a deprecated name: the tool that replaces it. The
-   * audit log records this as `tool` and the deprecated name as `legacyTool`.
-   */
-  replacedBy?: string;
-  /**
-   * With replacedBy: `args` in the form the replacing tool takes them
-   * (discriminator included), so the audit log shows a call the same way
-   * whichever name it was made by. `args` stays as called (approvals).
-   */
-  auditArgs?: Record<string, unknown>;
 }
 
 /** The decisions a denial carries: those of the audit log that refuse. */
@@ -497,8 +486,6 @@ export class SafetyGuard {
     if (!this.config.auditLog) return;
     if (label === undefined) {
       audit(toolName, args, url, decision, transport);
-    } else if (label.replacedBy !== undefined) {
-      audit(label.replacedBy, label.auditArgs ?? label.args, url, decision, transport, label.tool);
     } else {
       audit(label.tool, label.args, url, decision, transport);
     }

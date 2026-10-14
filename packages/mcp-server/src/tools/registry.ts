@@ -1,6 +1,5 @@
 /**
- * Tool registration — bridges the public tools (public-tools.ts), or with
- * FOX_CAPS=legacy the pre-consolidation tools (schemas.ts), to
+ * Tool registration — bridges the public tools (public-tools.ts) to
  * McpServer.registerTool().
  *
  * Uses the FOX_CAPS environment variable to control which tools are
@@ -15,12 +14,9 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { ZodRawShape } from 'zod';
-import { OPERATION_NAMES, SAFETY_STATUS_TOOL, TOOL_SCHEMAS } from './schemas.js';
-import type { OperationName } from './schemas.js';
-import { toolAnnotations } from './classification.js';
+import { SAFETY_STATUS_TOOL } from './schemas.js';
 import { PUBLIC_TOOLS, PUBLIC_TOOL_NAMES } from './public-tools.js';
 import type { PublicToolName } from './public-tools.js';
-import { deprecationNote } from './operations.js';
 import { isOneOf } from './one-of.js';
 import { ENV } from '@inari-mcp/shared';
 
@@ -38,56 +34,9 @@ export type ToolCallHandler = (
 // Profile definitions
 // ---------------------------------------------------------------------------
 
-/** The FOX_CAPS profile names (the same with and without `legacy`). */
-export const PROFILE_NAMES = ['core', 'workflow', 'human', 'container', 'wait'] as const;
+/** The FOX_CAPS profile names. */
+export const PROFILE_NAMES = ['core', 'human', 'container', 'wait'] as const;
 export type ProfileName = (typeof PROFILE_NAMES)[number];
-
-/**
- * Named profiles that group tool names, as they were before the WP13
- * consolidation (FOX_CAPS=legacy,<profile>).
- * `fox_safety_status` is always registered regardless of profile.
- * fox_wait_for_element is in core and in wait, as before WP13.
- */
-const LEGACY_PROFILES: Readonly<Record<ProfileName, readonly OperationName[]>> = {
-  core: [
-    'fox_navigate',
-    'fox_click',
-    'fox_type',
-    'fox_press_key',
-    'fox_screenshot',
-    'fox_snapshot',
-    'fox_get_elements',
-    'fox_get_text',
-    'fox_find_text',
-    'fox_get_tabs',
-    'fox_create_tab',
-    'fox_close_tab',
-    'fox_switch_tab',
-    'fox_wait_for_element',
-  ],
-
-  workflow: [
-    'fox_run_workflow',
-    'fox_audit_page',
-  ],
-
-  human: [
-    'fox_request_approval',
-    'fox_detect_captcha',
-  ],
-
-  container: [
-    'fox_list_containers',
-    'fox_open_in_container',
-  ],
-
-  wait: [
-    'fox_wait_for_element',
-    'fox_wait_for_network_idle',
-    'fox_wait_for_navigation',
-    'fox_wait_for_url',
-  ],
-};
 
 /**
  * Named profiles that group the public tools (tools/public-tools.ts).
@@ -111,9 +60,6 @@ const PROFILES: Readonly<Record<ProfileName, readonly PublicToolName[]>> = {
     'fox_wait',
     'fox_handle_dialog',
   ],
-  // The old workflow profile: fox_run_workflow and fox_audit_page are no
-  // public tools (not implemented), so only fox_safety_status is registered.
-  workflow: [],
   human: ['fox_request_approval', 'fox_detect_captcha'],
   // Containers are fox_tabs what=containers and fox_tab action=create with container.
   container: ['fox_tabs', 'fox_tab'],
@@ -123,38 +69,26 @@ const PROFILES: Readonly<Record<ProfileName, readonly PublicToolName[]>> = {
 /** Tool that is always registered regardless of profile (fox_safety_status). */
 export const ALWAYS_REGISTERED = SAFETY_STATUS_TOOL;
 
-/**
- * FOX_CAPS segment that selects the pre-consolidation tool names (the
- * operations of schemas.ts) instead of the public tools. Alone it means
- * all of them; the other segments then name LEGACY_PROFILES.
- */
-const LEGACY_SEGMENT = 'legacy';
-
 // ---------------------------------------------------------------------------
 // Profile resolution
 // ---------------------------------------------------------------------------
 
-/** Pre-consolidation names (FOX_CAPS contains `legacy`), or the public tools. */
-type ToolSet =
-  | { legacy: true; names: Set<OperationName> }
-  | { legacy: false; names: Set<PublicToolName> };
-
 /**
- * The tools of the profiles named by `segments` (every tool for none or
- * `all`), plus fox_safety_status. An unknown profile name is warned about
- * and ignored.
+ * Resolve the set of tool names that should be registered: the tools of the
+ * profiles named in `capsEnv` (comma-separated, or `all`), plus
+ * fox_safety_status. Every public tool when `capsEnv` is undefined, empty or
+ * names `all`. An unknown profile name is warned about and ignored.
  */
-function namesOf<T extends string>(
-  segments: string[],
-  all: readonly T[],
-  profiles: Readonly<Record<ProfileName, readonly T[]>>,
-  alwaysRegistered: T,
-): Set<T> {
-  if (segments.length === 0 || segments.includes('all')) return new Set(all);
-  const names = new Set<T>();
+function resolveToolNames(capsEnv: string | undefined): Set<PublicToolName> {
+  const segments = (capsEnv ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (segments.length === 0 || segments.includes('all')) return new Set(PUBLIC_TOOL_NAMES);
+  const names = new Set<PublicToolName>();
   for (const segment of segments) {
     if (isOneOf(PROFILE_NAMES, segment)) {
-      for (const t of profiles[segment]) names.add(t);
+      for (const t of PROFILES[segment]) names.add(t);
     } else {
       // Unknown profile name: warn but don't crash
       process.stderr.write(
@@ -162,27 +96,8 @@ function namesOf<T extends string>(
       );
     }
   }
-  names.add(alwaysRegistered);
+  names.add(ALWAYS_REGISTERED);
   return names;
-}
-
-/**
- * Resolve the set of tool names that should be registered.
- *
- * @param capsEnv - The `FOX_CAPS` value (comma-separated profile names,
- *                  or `"all"`, optionally with `legacy`). When
- *                  undefined/empty, all public tools are registered.
- */
-function resolveToolSet(capsEnv: string | undefined): ToolSet {
-  const all = (capsEnv ?? '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  const segments = all.filter((s) => s !== LEGACY_SEGMENT);
-  if (all.includes(LEGACY_SEGMENT)) {
-    return { legacy: true, names: namesOf(segments, OPERATION_NAMES, LEGACY_PROFILES, ALWAYS_REGISTERED) };
-  }
-  return { legacy: false, names: namesOf(segments, PUBLIC_TOOL_NAMES, PROFILES, ALWAYS_REGISTERED) };
 }
 
 // ---------------------------------------------------------------------------
@@ -208,17 +123,6 @@ function publicRegistration(name: PublicToolName): Registration {
   };
 }
 
-/** What tools/list shows for a pre-consolidation name (FOX_CAPS=legacy). */
-function legacyRegistration(name: OperationName): Registration {
-  const def = TOOL_SCHEMAS[name];
-  const note = deprecationNote(name);
-  return {
-    description: note === null ? def.description : `[Deprecated: ${note}] ${def.description}`,
-    inputSchema: def.inputSchema.shape,
-    annotations: { ...toolAnnotations(def) },
-  };
-}
-
 /**
  * Register browser tools with the MCP server.
  *
@@ -236,14 +140,9 @@ export function registerTools(
   capsOverride?: string,
 ): number {
   const capsEnv = capsOverride ?? process.env[ENV.FOX_CAPS];
-  const toolSet = resolveToolSet(capsEnv);
-  const registrations: Array<[string, Registration]> = toolSet.legacy
-    ? [...toolSet.names].map((name) => [name, legacyRegistration(name)])
-    : [...toolSet.names].map((name) => [name, publicRegistration(name)]);
-
   let count = 0;
-  for (const [toolName, registration] of registrations) {
-    server.registerTool(toolName, registration, handlerFactory(toolName));
+  for (const toolName of resolveToolNames(capsEnv)) {
+    server.registerTool(toolName, publicRegistration(toolName), handlerFactory(toolName));
     count++;
   }
 
