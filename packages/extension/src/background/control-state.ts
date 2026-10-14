@@ -4,7 +4,7 @@
 // memory copy changes before the write, so a pause takes effect at once even
 // while storage is still being written.
 
-import type { ConsentState, ControlView } from "../user-control";
+import type { ConsentState, ControlReply, ControlView } from "../user-control";
 
 /** storage.local keys. */
 const STORAGE_KEY = {
@@ -49,8 +49,9 @@ export function pauseSignal(): AbortSignal {
 }
 
 /**
- * Read the saved choices. A failed read leaves the defaults (undecided, not
- * paused): without consent nothing connects, which is the safe side.
+ * Read the saved choices. A failed read leaves the consent undecided (nothing
+ * connects) and pauses agent actions: the saved switch may be on, and
+ * allowing the connection again must not lift it.
  */
 export async function loadControlState(): Promise<ControlView> {
   try {
@@ -60,41 +61,45 @@ export async function loadControlState(): Promise<ControlView> {
     paused = stored[STORAGE_KEY.PAUSED] === true;
   } catch (error) {
     console.error("[InariMCP] Could not read the consent and pause state:", error);
+    paused = true;
   }
 
   return controlView();
 }
 
 /**
- * Write one choice. A failed write is only logged: the choice is in effect
- * already, and the page must show it as it is (not as it was).
+ * Write one choice; false when it could not be written. The choice is in
+ * effect already either way, and the page must show it as it is (not as it
+ * was), with a warning that it holds only until Firefox restarts.
  */
-async function save(items: Record<string, unknown>): Promise<void> {
+async function save(items: Record<string, unknown>): Promise<boolean> {
   try {
     await browser.storage.local.set(items);
+    return true;
   } catch (error) {
     console.error("[InariMCP] Could not save the consent and pause state:", error);
+    return false;
   }
 }
 
 /** The consent page: the user pressed Allow (true) or Don't allow (false). */
-export async function setConsent(granted: boolean): Promise<ControlView> {
+export async function setConsent(granted: boolean): Promise<ControlReply> {
   consent = granted ? "granted" : "denied";
   onChange(controlView(), "consent");
-  await save({ [STORAGE_KEY.CONSENT]: consent });
+  const saved = await save({ [STORAGE_KEY.CONSENT]: consent });
 
-  return controlView();
+  return { ...controlView(), saved };
 }
 
 /** The popup's pause switch. */
-export async function setPaused(next: boolean): Promise<ControlView> {
+export async function setPaused(next: boolean): Promise<ControlReply> {
   paused = next;
   if (next) {
     pauseController.abort();
     pauseController = new AbortController();
   }
   onChange(controlView(), "paused");
-  await save({ [STORAGE_KEY.PAUSED]: paused });
+  const saved = await save({ [STORAGE_KEY.PAUSED]: paused });
 
-  return controlView();
+  return { ...controlView(), saved };
 }

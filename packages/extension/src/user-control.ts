@@ -21,9 +21,9 @@ export const CONSENT_PAGE_PATH = "/dist/consent/consent.html";
 export const CONTROL_MESSAGE = {
   /** any extension page → background: {} → ControlView */
   GET: "inari:control:get",
-  /** consent page → background: { granted } → ControlView */
+  /** consent page → background: { granted } → ControlReply */
   SET_CONSENT: "inari:control:consent",
-  /** toolbar popup → background: { paused } → ControlView */
+  /** toolbar popup → background: { paused } → ControlReply */
   SET_PAUSED: "inari:control:pause",
 } as const;
 
@@ -34,6 +34,20 @@ export type ConsentState = "undecided" | "granted" | "denied";
 export interface ControlView {
   consent: ConsentState;
   paused: boolean;
+}
+
+/**
+ * The background's answer to SET_CONSENT / SET_PAUSED: the choices, and
+ * whether storage.local kept the change. A change that was not saved is in
+ * effect until Firefox restarts, then the last saved choice is back.
+ */
+export interface ControlReply extends ControlView {
+  saved: boolean;
+}
+
+/** Whether `value` is a reply that says the change was not saved. */
+export function isUnsavedReply(value: unknown): boolean {
+  return typeof value === "object" && value !== null && (value as Record<string, unknown>).saved === false;
 }
 
 /** `value` as a ControlView, or null when it is not one (a failed reply). */

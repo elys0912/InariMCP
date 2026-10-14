@@ -7,7 +7,7 @@ import { APPROVAL_MESSAGE, type ApprovalView } from '../approval';
 import { TOP_FRAME_ID } from '../background/constants';
 import type { ContentRequest } from '../content/types';
 import type { SetupState } from '../types/setup';
-import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, parseControlView, type ControlView } from '../user-control';
+import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, isUnsavedReply, parseControlView, type ControlView } from '../user-control';
 import { setupStateOfReply, setupStateOfFailure } from './setup-status';
 
 interface StatusResponse {
@@ -419,7 +419,11 @@ function setupPauseSwitch(): void {
   toggle?.addEventListener('change', () => { void applyPauseSwitch(toggle); });
 }
 
-/** Sends the switch's state to the background; puts the switch back if that fails. */
+/**
+ * Sends the switch's state to the background; puts the switch back if that
+ * fails, and warns when the background could not save it (it then holds
+ * until Firefox restarts).
+ */
 async function applyPauseSwitch(toggle: HTMLInputElement): Promise<void> {
   const reply = await browser.runtime
     .sendMessage({ type: CONTROL_MESSAGE.SET_PAUSED, paused: toggle.checked })
@@ -432,6 +436,7 @@ async function applyPauseSwitch(toggle: HTMLInputElement): Promise<void> {
   }
 
   renderControl(control);
+  if (isUnsavedReply(reply)) showToast(t('toastPauseNotSaved'), 'warning');
 }
 
 /** Opens the consent page in a tab (the popup closes when the tab opens). */

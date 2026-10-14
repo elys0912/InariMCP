@@ -102,6 +102,7 @@
   "popupPauseNote": { "message": "一時停止中: MCP クライアントからの命令はすべて拒否します。" },
   "statusNoConsent": { "message": "未許可" },
   "toastPauseFailed": { "message": "一時停止を切り替えられませんでした" },
+  "toastPauseNotSaved": { "message": "一時停止の切り替えを保存できませんでした。Firefox を再起動すると、前に保存した状態に戻ります" },
 
   "badgeTextNoConsent": { "message": "未許可" },
   "badgeNoConsent": { "message": "InariMCP: 未許可です（接続しません）。ポップアップから許可できます。" },
