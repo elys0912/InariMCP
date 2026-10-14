@@ -94,5 +94,36 @@
   "approvalMore": { "message": "ほかに $1 件が待機中です" },
   "approvalApprove": { "message": "承認" },
   "approvalDeny": { "message": "拒否" },
-  "toastApprovalGone": { "message": "このリクエストはすでに終了しています" }
+  "toastApprovalGone": { "message": "このリクエストはすでに終了しています" },
+
+  "popupConsentTitle": { "message": "まだ許可されていません" },
+  "popupConsentText": { "message": "許可の画面で許可するまで、Inari MCP for Firefox は Native Host に接続しません。" },
+  "popupConsentOpen": { "message": "許可の画面を開く" },
+  "popupPauseLabel": { "message": "エージェントの操作を一時停止" },
+  "popupPauseNote": { "message": "一時停止中: MCP クライアントからの命令はすべて拒否します。" },
+  "statusNoConsent": { "message": "未許可" },
+  "toastPauseFailed": { "message": "一時停止を切り替えられませんでした" },
+
+  "badgeTextNoConsent": { "message": "未許可" },
+  "badgeNoConsent": { "message": "InariMCP: 未許可です（接続しません）。ポップアップから許可できます。" },
+  "badgeTextPaused": { "message": "停止" },
+  "badgePaused": { "message": "InariMCP: 一時停止中（MCP クライアントからの命令を拒否します）" },
+  "badgeActive": { "message": "InariMCP: MCP クライアントが Firefox を操作しています" },
+
+  "consentPageTitle": { "message": "Inari MCP for Firefox: 許可の確認" },
+  "consentHeading": { "message": "Inari MCP for Firefox の接続を許可しますか？" },
+  "consentWhatTitle": { "message": "何をするか" },
+  "consentWhatText": { "message": "Inari MCP for Firefox は、このコンピューターの MCP クライアント（Claude Code など）が Firefox を操作できるようにします。ページの読み取り、スクリーンショット、クリック、入力、タブの操作をします。" },
+  "consentSendsTitle": { "message": "何を送るか" },
+  "consentSendsText": { "message": "開いているページの内容、スクリーンショット、URL、タブの一覧です。このコンピューターの Native Host を経由して MCP クライアントに渡ります。MCP クライアントはそれを AI の提供元に送ることがあります。" },
+  "consentNeedsTitle": { "message": "必要なもの" },
+  "consentNeedsText": { "message": "このコンピューターに別途インストールする InariMCP の Native Host。アドオンだけでは何もしません。" },
+  "consentDenyTitle": { "message": "許可しない場合" },
+  "consentDenyText": { "message": "アドオンは Native Host に接続せず、何もしません。あとからツールバーのボタンで許可できます。" },
+  "consentPrivacy": { "message": "プライバシーポリシー" },
+  "consentAllow": { "message": "許可する" },
+  "consentDeny": { "message": "許可しない" },
+  "consentStateGranted": { "message": "許可しました。Inari MCP for Firefox は Native Host に接続します。このタブは閉じてかまいません。エージェントの操作は、ツールバーのポップアップの一時停止スイッチでいつでも止められます。" },
+  "consentStateDenied": { "message": "許可しませんでした。Inari MCP for Firefox は接続せず、何もしません。あとからツールバーのボタンで許可できます。" },
+  "consentStateFailed": { "message": "回答を保存できませんでした。このページを再読み込みして、もう一度押してください。" }
 }

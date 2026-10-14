@@ -1,10 +1,13 @@
 // Runtime / tab / navigation / notification listeners (L5). Registered once
-// by background.ts (registerListeners).
+// by background.ts (registerListeners). Also opens the consent page on the
+// first install.
 
 import { errorMessage } from "../error-message";
 import { APPROVAL_MESSAGE } from "../approval";
+import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, type ControlView } from "../user-control";
 import { listApprovals, decideApproval, APPROVAL_NOTIFICATION_PREFIX } from "./approvals";
 import { LOG_RECORD_MESSAGE, TOP_FRAME_ID, LOGGING_STATE_QUERY } from "./constants";
+import { controlView, setConsent, setPaused } from "./control-state";
 import { handleCommand } from "./dispatch";
 import {
   isLoggingTab,
@@ -21,6 +24,15 @@ type SendResponse = (response: unknown) => void;
 
 export function registerListeners(): void {
   browser.runtime.onMessage.addListener(onRuntimeMessage);
+
+  // First install only (not updates): ask for consent before anything
+  // connects (user-control.ts).
+  browser.runtime.onInstalled.addListener((details) => {
+    if (details.reason !== "install") return;
+    openConsentPage().catch((error: unknown) => {
+      console.error("[InariMCP] Could not open the consent page:", errorMessage(error));
+    });
+  });
 
   // Logging tabs: inject the content script at document_start as soon as a new
   // document commits, so the page hooks catch the page's first scripts (the
@@ -83,6 +95,9 @@ function onRuntimeMessage(message: unknown, sender: MessageSender, sendResponse:
     answerApprovalMessage(msg, sender, sendResponse);
     return;
   }
+  if (msg.type === CONTROL_MESSAGE.GET || msg.type === CONTROL_MESSAGE.SET_CONSENT || msg.type === CONTROL_MESSAGE.SET_PAUSED) {
+    return answerControlMessage(msg, sender, sendResponse);
+  }
   if (msg.type === LOG_RECORD_MESSAGE) {
     sendResponse(answerLogRecords(msg, sender));
     return;
@@ -111,6 +126,40 @@ function answerApprovalMessage(msg: Record<string, unknown>, sender: MessageSend
       ? { success: true, approvals: listApprovals() }
       : decideApproval(msg.id, msg.approved),
   );
+}
+
+/**
+ * The consent and the pause switch (user-control.ts). Content scripts get
+ * nothing. The consent is answered only from the consent page, the pause
+ * switch only from the toolbar popup (not the popup page opened in a tab),
+ * like an approval decision. True when the answer is sent later.
+ */
+function answerControlMessage(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): boolean {
+  const fromConsentPage = isExtensionPage(sender) && sender.url === browser.runtime.getURL(CONSENT_PAGE_PATH);
+  const fromToolbarPopup = isExtensionPage(sender) && sender.tab === undefined;
+  let change: Promise<ControlView> | null;
+  if (msg.type === CONTROL_MESSAGE.GET) {
+    change = isExtensionPage(sender) ? Promise.resolve(controlView()) : null;
+  } else if (msg.type === CONTROL_MESSAGE.SET_CONSENT) {
+    change = fromConsentPage && typeof msg.granted === "boolean" ? setConsent(msg.granted) : null;
+  } else {
+    change = fromToolbarPopup && typeof msg.paused === "boolean" ? setPaused(msg.paused) : null;
+  }
+  if (change === null) {
+    console.error("[InariMCP] Refused control message from", sender.url);
+    sendResponse({ success: false, error: "Refused: not allowed from this page, or a malformed message" });
+    return false;
+  }
+
+  change.then(sendResponse, (error: unknown) => {
+    sendResponse({ success: false, error: errorMessage(error) });
+  });
+  return true;
+}
+
+/** A tab with the consent page. */
+function openConsentPage(): Promise<browser.tabs.Tab> {
+  return browser.tabs.create({ url: browser.runtime.getURL(CONSENT_PAGE_PATH) });
 }
 
 /**

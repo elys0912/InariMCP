@@ -15,6 +15,11 @@ import {
   requestApproval,
 } from '../../packages/extension/src/background/approvals.ts';
 
+// The badge counts approvals only once the user allowed the connection.
+vi.mock('../../packages/extension/src/background/control-state', () => ({
+  controlView: () => ({ consent: 'granted', paused: false }),
+}));
+
 interface Calls {
   badgeText: string[];
   created: string[];

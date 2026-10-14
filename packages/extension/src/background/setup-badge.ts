@@ -1,9 +1,13 @@
-// Setup state (popup guidance) and the toolbar badge (L2). The badge shows
-// the pending approval count reported by approvals.ts, else the setup state.
+// Setup state (popup guidance) and the toolbar badge (L2). The badge is
+// decided in one place (badgeFor) from the consent and the pause switch
+// (control-state.ts), the pending approval count (approvals.ts), the running
+// commands from the Native Host (dispatch.ts) and the setup state.
 
 import { errorMessage } from "../error-message";
 import { t } from "../i18n";
 import type { SetupState } from "../types/setup";
+import type { ControlView } from "../user-control";
+import { controlView } from "./control-state";
 import { hostStatus, sendToNativeHost } from "./native-connection";
 
 /** Native Host reply to `status` (packages/native-host/src/index.ts). */
@@ -78,14 +82,46 @@ const BADGE_TITLE_KEYS: Record<SetupState["kind"], string | null> = {
 };
 
 const APPROVAL_BADGE_COLOR = "#E5A00D";
+const NO_CONSENT_BADGE_COLOR = "#6C7086";
+const PAUSED_BADGE_COLOR = "#1E66F5";
+const ACTIVE_BADGE_COLOR = "#40A02B";
+/** Badge text while a command from the Native Host runs (no word to translate). */
+const ACTIVE_BADGE_TEXT = "●";
+const DEFAULT_TITLE = "InariMCP";
+
 let lastSetupState: SetupState = { kind: "connecting" };
 
 /** Pending approval requests, as approvals.ts last reported them. */
 let pendingApprovalCount = 0;
 
+/** Commands from the Native Host being handled now (dispatch.ts). */
+let activeHostCommands = 0;
+
 /** approvals.ts: the number of pending approval requests changed. */
 export function setPendingApprovalCount(count: number): void {
   pendingApprovalCount = count;
+  renderBadge();
+}
+
+/**
+ * dispatch.ts: a command from the Native Host started. The returned function
+ * marks its end; calling it again does nothing.
+ */
+export function startHostCommand(): () => void {
+  activeHostCommands++;
+  renderBadge();
+
+  let finished = false;
+  return () => {
+    if (finished) return;
+    finished = true;
+    activeHostCommands--;
+    renderBadge();
+  };
+}
+
+/** background.ts: the consent or the pause switch changed (control-state.ts). */
+export function refreshBadge(): void {
   renderBadge();
 }
 
@@ -94,26 +130,76 @@ function applyBadge(state: SetupState): void {
   renderBadge();
 }
 
+/** Everything the toolbar badge depends on. */
+export interface BadgeInputs {
+  control: ControlView;
+  pendingApprovals: number;
+  activeHostCommands: number;
+  setup: SetupState;
+}
+
+/** What the toolbar badge shows. */
+export interface BadgeView {
+  text: string;
+  color: string;
+  title: string;
+}
+
 /**
- * Pending approval requests take precedence (count on an amber badge): the
- * popup is where the human answers them. Otherwise the setup state.
+ * The badge for `inputs`: the first of these that applies, so one state is
+ * shown at a time.
+ *   1. not allowed yet  nothing connects until the user allows it
+ *   2. paused           every command from the Native Host is refused
+ *   3. approvals        the human answers them in the popup (count)
+ *   4. working          a command from the Native Host is running
+ *   5. setup state      "!" when the setup needs attention, else no text
+ * Approvals come before "working": a request_approval command is itself a
+ * running command until the human answers.
+ */
+export function badgeFor(inputs: BadgeInputs): BadgeView {
+  const { control, pendingApprovals, setup } = inputs;
+  if (control.consent !== "granted") {
+    return { text: t("badgeTextNoConsent"), color: NO_CONSENT_BADGE_COLOR, title: t("badgeNoConsent") };
+  }
+  if (control.paused) {
+    return { text: t("badgeTextPaused"), color: PAUSED_BADGE_COLOR, title: t("badgePaused") };
+  }
+  if (pendingApprovals > 0) {
+    const count = String(pendingApprovals);
+    return { text: count, color: APPROVAL_BADGE_COLOR, title: t("badgeApprovalPending", count) };
+  }
+  if (inputs.activeHostCommands > 0) {
+    return { text: ACTIVE_BADGE_TEXT, color: ACTIVE_BADGE_COLOR, title: t("badgeActive") };
+  }
+
+  const attention = setup.kind !== "ready" && setup.kind !== "connecting";
+  const titleKey = BADGE_TITLE_KEYS[setup.kind];
+  return {
+    text: attention ? "!" : "",
+    color: BADGE_COLOR,
+    title: titleKey === null ? DEFAULT_TITLE : t(titleKey),
+  };
+}
+
+/**
+ * Show the badge of the current state (the only place that sets it). Best
+ * effort: it runs inside the dispatcher for every command from the Native
+ * Host, and a badge that cannot be drawn must not fail that command.
  */
 function renderBadge(): void {
-  const pending = pendingApprovalCount;
-  if (pending > 0) {
-    browser.browserAction.setBadgeBackgroundColor({ color: APPROVAL_BADGE_COLOR }).catch(() => {});
-    browser.browserAction.setBadgeText({ text: String(pending) }).catch(() => {});
-    browser.browserAction.setTitle({ title: t("badgeApprovalPending", String(pending)) }).catch(() => {});
-    return;
+  try {
+    const badge = badgeFor({
+      control: controlView(),
+      pendingApprovals: pendingApprovalCount,
+      activeHostCommands,
+      setup: lastSetupState,
+    });
+    browser.browserAction.setBadgeBackgroundColor({ color: badge.color }).catch(() => {});
+    browser.browserAction.setBadgeText({ text: badge.text }).catch(() => {});
+    browser.browserAction.setTitle({ title: badge.title }).catch(() => {});
+  } catch (error) {
+    console.error("[InariMCP] Could not update the toolbar badge:", errorMessage(error));
   }
-  const state = lastSetupState;
-  const attention = state.kind !== "ready" && state.kind !== "connecting";
-  const titleKey = BADGE_TITLE_KEYS[state.kind];
-  browser.browserAction.setBadgeBackgroundColor({ color: BADGE_COLOR }).catch(() => {});
-  browser.browserAction.setBadgeText({ text: attention ? "!" : "" }).catch(() => {});
-  browser.browserAction
-    .setTitle({ title: titleKey === null ? "InariMCP" : t(titleKey) })
-    .catch(() => {});
 }
 
 /** Order of refreshSetupState calls, and the newest one whose state was applied. */

@@ -2,7 +2,8 @@
 // backoff, and requests the Extension sends itself (L1). Owns the connection
 // state; the rest of the background reacts to its events through the hooks
 // set by background.ts (setConnectionHooks), so this module imports none of
-// the modules above it.
+// the modules above it. It connects only after the user allowed it on the
+// consent page (setConnectionAllowed).
 
 import { errorMessage } from "../error-message";
 import { clipText } from "../text-clip";
@@ -22,6 +23,13 @@ const SEND_RETRY_DELAY_MS = TIMEOUTS.SEND_RETRY_DELAY;
 const CONNECT_SETTLE_MS = TIMEOUTS.CONNECT_SETTLE;
 
 const NATIVE_HOST_NAME = "inari_mcp";
+/**
+ * Off until the user allowed the connection on the consent page
+ * (background.ts sets it from control-state.ts). While off, nothing opens a
+ * port: not the startup, not the reconnect timers, not a request.
+ */
+let connectionAllowed = false;
+const NOT_ALLOWED_ERROR = "Not allowed to connect to the native host (Inari MCP for Firefox is not allowed yet)";
 let nativePort: browser.runtime.Port | null = null;
 let isConnected = false;
 // connectNative() returns a port even when the host is not registered; that
@@ -109,7 +117,27 @@ function scheduleReconnect(): void {
   setTimeout(connectNativeHost, delay);
 }
 
+/**
+ * Allow or withdraw the connection. Withdrawing closes the current port and
+ * fails its requests; the reconnect timers already set then do nothing.
+ * Allowing does not connect by itself: the caller does (recheckHost).
+ */
+export function setConnectionAllowed(allowed: boolean): void {
+  connectionAllowed = allowed;
+  const port = nativePort;
+  if (allowed || port === null) return;
+
+  isConnected = false;
+  hostConfirmed = false;
+  hostConfirmedAt = null;
+  nativePort = null;
+  releasePort(port);
+  rejectPending(port, NOT_ALLOWED_ERROR);
+  hooks.onDisconnected();
+}
+
 export function connectNativeHost(): void {
+  if (!connectionAllowed) return;
   if (isConnected && nativePort) {
     console.log("[InariMCP] Already connected");
     return;
@@ -325,6 +353,10 @@ function sendAttempt(message: NativeMessage, timeoutMs: number, retryCount: numb
       }, SEND_RETRY_DELAY_MS);
     };
 
+    if (!connectionAllowed) {
+      reject(new Error(NOT_ALLOWED_ERROR));
+      return;
+    }
     if (!isConnected || !nativePort) {
       connectNativeHost();
 

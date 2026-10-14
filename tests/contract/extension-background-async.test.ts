@@ -84,6 +84,8 @@ async function loadNativeConnection() {
   const mod = await import('../../packages/extension/src/background/native-connection.ts');
   const hooks = { onCommand: vi.fn(), onConfirmed: vi.fn(), onDisconnected: vi.fn() };
   mod.setConnectionHooks(hooks);
+  // The user's consent (background.ts sets it from control-state.ts).
+  mod.setConnectionAllowed(true);
   return { mod, ports, hooks };
 }
 
@@ -265,6 +267,9 @@ describe('setup state: overlapping refreshes (A-04)', () => {
   async function loadSetupBadge() {
     vi.resetModules();
     const requests: { options: unknown; deferred: Deferred }[] = [];
+    vi.doMock('../../packages/extension/src/background/control-state.ts', () => ({
+      controlView: () => ({ consent: 'granted', paused: false }),
+    }));
     vi.doMock('../../packages/extension/src/background/native-connection.ts', () => ({
       hostStatus: () => ({ confirmed: true, portOpen: true, lastError: null }),
       sendToNativeHost: (_m: unknown, options: unknown) =>
@@ -284,6 +289,7 @@ describe('setup state: overlapping refreshes (A-04)', () => {
   }
 
   afterEach(() => {
+    vi.doUnmock('../../packages/extension/src/background/control-state.ts');
     vi.doUnmock('../../packages/extension/src/background/native-connection.ts');
   });
 
@@ -455,7 +461,13 @@ describe('runtime.onMessage: messages that are not objects (E-23)', () => {
   it.each([null, undefined, 'text', 42])('%j is ignored without throwing', (message) => {
     const onMessage = fakeEvent();
     useFakeBrowser({
-      runtime: { onMessage, onMessageExternal: fakeEvent(), id: 'ext', getURL: (p: string) => `moz-extension://x${p}` },
+      runtime: {
+        onMessage,
+        onMessageExternal: fakeEvent(),
+        onInstalled: fakeEvent(),
+        id: 'ext',
+        getURL: (p: string) => `moz-extension://x${p}`,
+      },
       webNavigation: { onCommitted: fakeEvent() },
       tabs: { onRemoved: fakeEvent() },
     });

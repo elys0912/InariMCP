@@ -23,6 +23,22 @@
     </header>
 
     <main>
+      <!-- Not allowed yet: nothing connects until the consent page is answered. -->
+      <section id="consent" class="setup" hidden>
+        <h2 data-i18n="popupConsentTitle">Not allowed yet</h2>
+        <p class="setup-text" data-i18n="popupConsentText">InariMCP does not connect to the native host until you allow it.</p>
+        <button id="btn-open-consent" class="btn-small" data-i18n="popupConsentOpen">Open the permission page</button>
+      </section>
+
+      <!-- Pause switch: while on, the background refuses every command from the native host. -->
+      <section id="control" class="control" hidden>
+        <label class="switch-row">
+          <span data-i18n="popupPauseLabel">Pause agent actions</span>
+          <input id="pause-switch" class="switch" type="checkbox">
+        </label>
+        <p id="pause-note" class="control-note" data-i18n="popupPauseNote" hidden>Paused: every command from the MCP client is refused.</p>
+      </section>
+
       <!-- Approval requests are answered here, outside any web page. -->
       <section id="approvals" class="approvals" hidden>
         <h2 data-i18n="popupApprovalsTitle">Approval requests</h2>

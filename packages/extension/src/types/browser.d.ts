@@ -57,6 +57,23 @@ declare namespace browser {
         ) => boolean | void,
       ): void;
     };
+
+    interface InstalledDetails {
+      /** "install" | "update" | "browser_update" | ... */
+      reason: string;
+      temporary?: boolean;
+    }
+    const onInstalled: {
+      addListener(callback: (details: InstalledDetails) => void): void;
+    };
+  }
+
+  namespace storage {
+    interface StorageArea {
+      get(keys: string | string[]): Promise<Record<string, unknown>>;
+      set(items: Record<string, unknown>): Promise<void>;
+    }
+    const local: StorageArea;
   }
 
   namespace tabs {

@@ -125,5 +125,36 @@
   "approvalMore": { "message": "$1 more request(s) waiting", "description": "$1 = number of other pending requests" },
   "approvalApprove": { "message": "Approve" },
   "approvalDeny": { "message": "Deny" },
-  "toastApprovalGone": { "message": "This request is no longer pending" }
+  "toastApprovalGone": { "message": "This request is no longer pending" },
+
+  "popupConsentTitle": { "message": "Not allowed yet" },
+  "popupConsentText": { "message": "Inari MCP for Firefox does not connect to the native host until you allow it on the permission page." },
+  "popupConsentOpen": { "message": "Open the permission page" },
+  "popupPauseLabel": { "message": "Pause agent actions" },
+  "popupPauseNote": { "message": "Paused: every command from the MCP client is refused." },
+  "statusNoConsent": { "message": "Not allowed" },
+  "toastPauseFailed": { "message": "Could not change the pause switch" },
+
+  "badgeTextNoConsent": { "message": "OFF", "description": "Toolbar badge text (at most 4 characters): not allowed to connect yet" },
+  "badgeNoConsent": { "message": "InariMCP: not allowed yet (it does not connect). Open the popup to allow it." },
+  "badgeTextPaused": { "message": "II", "description": "Toolbar badge text (at most 4 characters): agent actions paused" },
+  "badgePaused": { "message": "InariMCP: paused (commands from the MCP client are refused)" },
+  "badgeActive": { "message": "InariMCP: the MCP client is operating Firefox" },
+
+  "consentPageTitle": { "message": "Inari MCP for Firefox: permission" },
+  "consentHeading": { "message": "Allow Inari MCP for Firefox to connect?" },
+  "consentWhatTitle": { "message": "What it does" },
+  "consentWhatText": { "message": "Inari MCP for Firefox lets an MCP client on this computer (such as Claude Code) operate Firefox: read pages, take screenshots, click, type and manage tabs." },
+  "consentSendsTitle": { "message": "What it sends" },
+  "consentSendsText": { "message": "The content of open pages, screenshots, URLs and the list of tabs. They go to the native host on this computer and from there to the MCP client, which may pass them on to its AI provider." },
+  "consentNeedsTitle": { "message": "What you need" },
+  "consentNeedsText": { "message": "The InariMCP native host, installed separately on this computer. The add-on alone does nothing." },
+  "consentDenyTitle": { "message": "If you do not allow it" },
+  "consentDenyText": { "message": "The add-on does not connect to the native host and does nothing. You can allow it later from the toolbar button." },
+  "consentPrivacy": { "message": "Privacy policy" },
+  "consentAllow": { "message": "Allow" },
+  "consentDeny": { "message": "Don't allow" },
+  "consentStateGranted": { "message": "Allowed. Inari MCP for Firefox connects to the native host. You can close this tab. To stop the agent at any time, use the pause switch in the toolbar popup." },
+  "consentStateDenied": { "message": "Not allowed. Inari MCP for Firefox does not connect and does nothing. You can allow it later from the toolbar button." },
+  "consentStateFailed": { "message": "Your answer could not be saved. Reload this page and try again." }
 }

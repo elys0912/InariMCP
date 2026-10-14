@@ -1,13 +1,16 @@
 // Command dispatcher (L4): one command from the Native Host or the popup,
-// through the checks (container scope, URL lists, protected domains) to its
-// handler, and the response back over Native Messaging. Which checks apply
-// to an action, and its handler, come from the action table
-// (action-table.ts).
+// through the checks (pause switch, container scope, URL lists, protected
+// domains) to its handler, and the response back over Native Messaging.
+// Which checks apply to an action, and its handler, come from the action
+// table (action-table.ts). While a command from the Native Host runs, the
+// toolbar badge shows it (setup-badge.ts).
 
 import { errorMessage } from "../error-message";
 import { describeAction, UNKNOWN_ACTION, type ActionContext, type ActionDescriptor } from "./action-table";
 import { parseContainerScope, enforceContainerScope, outOfScope } from "./container-scope";
+import { isPaused } from "./control-state";
 import { postToHost } from "./native-connection";
+import { startHostCommand } from "./setup-badge";
 import { resolveTab } from "./tab-target";
 import type { NativeMessage, CommandResult, ScopeFilter } from "./types";
 import { parseUrlPolicy, hasUrlLists, checkListedTarget, checkProtectedTarget } from "./url-policy";
@@ -20,11 +23,33 @@ import { resolveWireAction, toWireResponse } from "./wire";
  */
 export type CommandSource = "host" | "page";
 
+/**
+ * The answer to every command from the Native Host while the user has paused
+ * agent actions in the popup (control-state.ts). The error starts with
+ * "paused" so the MCP client can tell it from a browser failure.
+ */
+export const PAUSED_REFUSAL: CommandResult = {
+  success: false,
+  error: "paused: the user paused agent actions in the Inari MCP for Firefox toolbar popup",
+};
+
 export async function handleCommand(message: NativeMessage, source: CommandSource): Promise<CommandResult> {
-  const checked = await checkCommand(message, source);
-  const result = checked.kind === "refused" ? checked.result : await runChecked(checked);
-  postWireResponse(message, result);
-  return result;
+  // Commands from the user's own pages (the popup) are not the agent's.
+  if (source === "host" && isPaused()) {
+    const refusal = { ...PAUSED_REFUSAL };
+    postWireResponse(message, refusal);
+    return refusal;
+  }
+
+  const finishHostCommand = source === "host" ? startHostCommand() : undefined;
+  try {
+    const checked = await checkCommand(message, source);
+    const result = checked.kind === "refused" ? checked.result : await runChecked(checked);
+    postWireResponse(message, result);
+    return result;
+  } finally {
+    finishHostCommand?.();
+  }
 }
 
 /** A command that passed every check: what its handler runs with. */

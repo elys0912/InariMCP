@@ -37,14 +37,15 @@ npm run e2e:extension   # the Extension loads into Firefox as a temporary add-on
 
 ### Extension (esbuild)
 
-`scripts/build-extension.mjs` bundles the Extension with esbuild into three self-contained IIFE bundles, one per execution context, and copies the static files:
+`scripts/build-extension.mjs` bundles the Extension with esbuild into four self-contained IIFE bundles, one per execution context, and copies the static files:
 
 | Entry | Bundle | Loaded by |
 |---|---|---|
 | `src/background.ts` | `dist/background.js` | `manifest.json` `background.scripts` |
 | `src/content.ts` | `dist/content.js` | `manifest.json` `content_scripts` (and the early injection on tabs with logging on) |
 | `src/popup/popup.ts` | `dist/popup/popup.js` | `dist/popup/popup.html` (`browser_action.default_popup`) |
-| `src/popup/popup.html`, `src/popup/popup.css`, `src/content.css` | copied to `dist/` | |
+| `src/consent/consent.ts` | `dist/consent/consent.js` | `dist/consent/consent.html` (the consent page; the background opens it on the first install) |
+| `src/popup/popup.html`, `src/popup/popup.css`, `src/consent/consent.html`, `src/consent/consent.css`, `src/content.css` | copied to `dist/` | |
 
 `manifest.json` loads exactly one script per context. Details of the build:
 
