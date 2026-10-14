@@ -451,21 +451,12 @@ export function isLoopbackHost(host) {
   return h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h) || h === '::ffff:127.0.0.1';
 }
 
-/** envValue() of the first of `names` that is set and not blank (same rule as the shared endpoint resolution). */
-function firstEnvValue(env, ...names) {
-  for (const name of names) {
-    const value = envValue(env, name);
-    if (value !== undefined) return value;
-  }
-  return undefined;
-}
-
-/** Same port resolution as the daemon (FOX_HTTP_PORT, legacy CLAUDE_BROWSER_HTTP_PORT). */
+/** Same host and port resolution as the daemon (FOX_HOST, FOX_HTTP_PORT; blank counts as unset). */
 export function httpEndpoint(env) {
-  const raw = firstEnvValue(env, 'FOX_HTTP_PORT', 'CLAUDE_BROWSER_HTTP_PORT');
+  const raw = envValue(env, 'FOX_HTTP_PORT');
   const n = Number(raw);
   const port = raw !== undefined && Number.isInteger(n) && n > 0 && n <= MAX_PORT ? n : DEFAULT_HTTP_PORT;
-  const host = firstEnvValue(env, 'FOX_HOST', 'CLAUDE_BROWSER_HOST') ?? DEFAULT_HTTP_HOST;
+  const host = envValue(env, 'FOX_HOST') ?? DEFAULT_HTTP_HOST;
   return { host: isLoopbackHost(host) ? bareHost(host) : DEFAULT_HTTP_HOST, port };
 }
 

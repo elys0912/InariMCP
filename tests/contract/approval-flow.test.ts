@@ -203,7 +203,7 @@ describe('without approval, acting tools are refused', () => {
   it('a made-up or reused token does not help', async () => {
     const handler = createToolHandler('fox_navigate');
     const args = { action: 'goto', url: SITE_URL };
-    const fake = await handler(args, { approvalToken: 'kat_' + 'x'.repeat(43) });
+    const fake = await handler(args, { approvalToken: 'iat_' + 'x'.repeat(43) });
     expect(fake.isError).toBe(true);
     expect(text(fake)).toContain('was not accepted');
     expect(browser.received).toEqual([]);
@@ -241,7 +241,7 @@ describe('popup approval → one-time token', () => {
 
     const reply = await askBrowser(requestId, getConnectionManager());
     expect(reply).toMatchObject({ success: true, approved: true, reason: 'approved' });
-    expect(reply.approvalToken).toMatch(/^kat_/);
+    expect(reply.approvalToken).toMatch(/^iat_/);
 
     const sent = browser.received.find((c) => c.action === 'request_approval')!;
     expect(ApprovalPromptSchema.parse(sent.data)).toMatchObject({

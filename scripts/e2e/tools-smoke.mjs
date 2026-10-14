@@ -23,7 +23,7 @@
 //
 // Usage: node scripts/e2e/tools-smoke.mjs
 //   FOX_HOST / FOX_HTTP_PORT override the daemon address (default 127.0.0.1:8785;
-//   same rules as the installer: loopback hosts only, legacy CLAUDE_BROWSER_* names)
+//   same rules as the installer: loopback hosts only)
 // Requests are signed with the API token (the token itself is never sent).
 // Exit code: 0 = all checks pass, 1 = at least one failed
 

@@ -17,7 +17,7 @@ import * as fs from 'node:fs';
 import type * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ENV, ENV_DEFAULTS, isRecord, LEGACY_ENV } from '@inari-mcp/shared';
+import { ENV, ENV_DEFAULTS, isRecord } from '@inari-mcp/shared';
 
 import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, macMatches, newNonce, signRequest, verifyResponse } from '@inari-mcp/shared/node';
 import {
@@ -334,22 +334,19 @@ function daemonSetting(ctx: DoctorContext, key: string): string | undefined {
 }
 
 /**
- * A setting as the daemon reads it (resolveFoxEnv: FOX_* or else the legacy
- * name, blank = unset), from the running daemon's settings when they were
- * read, else from the environment a session would start it with.
+ * A setting as the daemon reads it (resolveFoxEnv: blank = unset), from the
+ * running daemon's settings when they were read, else from the environment a
+ * session would start it with.
  */
 function daemonSettingValue(
   ctx: DoctorContext,
-  foxKey: string,
-  legacyKey: string,
+  key: string,
 ): { value: string | undefined; fromDaemon: boolean } {
   const settings = ctx.daemon.info?.['settings'];
   if (isRecord(settings)) {
-    const env: Record<string, string> = {};
-    for (const key of [foxKey, legacyKey]) env[key] = daemonSetting(ctx, key) ?? '';
-    return { value: resolveFoxEnv(env, foxKey, legacyKey), fromDaemon: true };
+    return { value: resolveFoxEnv({ [key]: daemonSetting(ctx, key) ?? '' }, key), fromDaemon: true };
   }
-  return { value: resolveFoxEnv(sessionEnv(ctx), foxKey, legacyKey), fromDaemon: false };
+  return { value: resolveFoxEnv(sessionEnv(ctx), key), fromDaemon: false };
 }
 
 /** Environment a relay started by Claude Code would have: this shell's, plus the registration's `env`. */
@@ -813,7 +810,7 @@ export function checkBrowsers(ctx: DoctorContext): CheckResult {
 
 export function checkSafetyConfig(ctx: DoctorContext): CheckResult {
   const id = 'safety-config';
-  const { value: configured, fromDaemon } = daemonSettingValue(ctx, ENV.FOX_SAFETY_CONFIG, LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG);
+  const { value: configured, fromDaemon } = daemonSettingValue(ctx, ENV.FOX_SAFETY_CONFIG);
   const file = configured !== undefined ? path.resolve(ctx.deps.cwd, configured) : path.join(ctx.dataDir, 'safety.json');
   const relative = configured !== undefined && !path.isAbsolute(configured)
     ? ` (relative ${ENV.FOX_SAFETY_CONFIG} depends on the daemon's working directory)`
@@ -838,7 +835,7 @@ export function checkSafetyConfig(ctx: DoctorContext): CheckResult {
  */
 export function checkScreenshots(ctx: DoctorContext): CheckResult {
   const id = 'screenshots';
-  const { value: configured, fromDaemon } = daemonSettingValue(ctx, ENV.FOX_SCREENSHOTS_DIR, LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR);
+  const { value: configured, fromDaemon } = daemonSettingValue(ctx, ENV.FOX_SCREENSHOTS_DIR);
   const defaultDir = path.join(ctx.dataDir, 'screenshots');
   const whose = fromDaemon ? 'the running daemon' : 'this session';
   if (configured === undefined) {

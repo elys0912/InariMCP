@@ -81,7 +81,7 @@ describe('DaemonClient against an impostor', () => {
     const { port, seen } = await impostor();
     const c = client(port);
     expect(await c.checkHealth()).toBe(true);
-    const result = await c.callTool('fox_type', { text: 'secret input' }, undefined, 'kat_' + 'x'.repeat(43));
+    const result = await c.callTool('fox_type', { text: 'secret input' }, undefined, 'iat_' + 'x'.repeat(43));
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toMatch(/cannot prove it holds this session's API token/);
     expect(JSON.stringify(result.content)).toMatch(/The call was not sent/);

@@ -16,9 +16,10 @@
  * through (`allowed_by_human`).
  *
  *   request: expires REQUEST_TTL_MS after creation; one token at most.
- *   token:   `kat_` + 32 random bytes (base64url); stored only as its
- *            SHA-256; expires TOKEN_TTL_MS after issue; consumed by the
- *            first presentation, whether or not the target matches.
+ *   token:   `iat_` (Inari approval token) + 32 random bytes (base64url);
+ *            stored only as its SHA-256; expires TOKEN_TTL_MS after issue;
+ *            consumed by the first presentation, whether or not the target
+ *            matches.
  *
  * Nothing in the page or in the LLM's own tool calls can create a token:
  * tokens are issued only by the daemon's approval endpoints
@@ -56,7 +57,7 @@ export const TOKEN_TTL_MS = 60_000;
 /** Upper bound of open requests; the oldest is dropped beyond it. */
 export const MAX_PENDING_REQUESTS = 32;
 
-const TOKEN_PREFIX = 'kat_';
+const TOKEN_PREFIX = 'iat_';
 /** Random bytes in a token (before base64url). */
 const TOKEN_BYTES = 32;
 

@@ -106,7 +106,7 @@ Modules of `@inari-mcp/shared/node` (`packages/shared/src/node/`):
 | Module | Contents |
 |---|---|
 | `paths` | files under `~/.inari-mcp/` (data and logs directories, API token, `daemon.log`, `native-host.log`, audit log, default `safety.json` and screenshots directory), resolved at call time |
-| `endpoint` | `FOX_HOST` / `FOX_HTTP_PORT` / `FOX_WS_PORT` (and the legacy names), loopback check |
+| `endpoint` | `FOX_HOST` / `FOX_HTTP_PORT` / `FOX_WS_PORT`, loopback check |
 | `token` | reading the API token; creating it (daemon only) |
 | `health` | judging a `GET /health` answer (daemon singleton check, relay, Native Host, doctor) |
 | `log` | 5 MB rotation to `<file>.old` (rename, or copy-truncate), line stamps `<ISO time> [<pid>] `, the `[InariMCP:<role>]` stderr logger |

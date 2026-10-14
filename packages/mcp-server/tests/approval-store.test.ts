@@ -128,7 +128,7 @@ describe('ApprovalStore: tokens', () => {
   it('a token is accepted once for its target, then never again (single use)', () => {
     const store = new ApprovalStore();
     const token = issued(store);
-    expect(token).toMatch(/^kat_[A-Za-z0-9_-]{43}$/);
+    expect(token).toMatch(/^iat_[A-Za-z0-9_-]{43}$/);
     const grant = store.consume(token, 'fox_click', TARGET.argsHash);
     expect(grant).toMatchObject({ target: TARGET, via: 'browser' });
     expect(store.consume(token, 'fox_click', TARGET.argsHash)).toBeNull();
@@ -157,7 +157,7 @@ describe('ApprovalStore: tokens', () => {
   it('unknown or malformed tokens are refused', () => {
     const store = new ApprovalStore();
     issued(store);
-    expect(store.consume('kat_' + 'A'.repeat(43), 'fox_click', TARGET.argsHash)).toBeNull();
+    expect(store.consume('iat_' + 'A'.repeat(43), 'fox_click', TARGET.argsHash)).toBeNull();
     expect(store.consume('', 'fox_click', TARGET.argsHash)).toBeNull();
     expect(store.consume('not-a-token', 'fox_click', TARGET.argsHash)).toBeNull();
   });

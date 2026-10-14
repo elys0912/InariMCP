@@ -352,26 +352,24 @@ The relay and the Native Host authenticate the daemon, and the daemon them, with
 
 ### Environment variables
 
-The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSER_*` name (inherited from the fork) still works as a fallback when the `FOX_*` one isn't set. The daemon takes an empty or blank `FOX_HEADLESS`, `FOX_HEADLESS_STARTUP_TIMEOUT`, `FOX_EXECUTABLE`, `FOX_SAFETY_CONFIG`, `FOX_SCREENSHOTS_DIR`, `FOX_READ_ONLY`, `FOX_APPROVAL_ELICITATION` or `FOX_DAEMON_IDLE_TIMEOUT` as not set (the legacy name where there is one, else the default, applies); the Native Host does the same with `FOX_SCREENSHOTS_DIR`, `FOX_SCREENSHOT_RETENTION_DAYS` and `FOX_NATIVE_HOST_LOG`.
+The names below are the ones the code reads. The daemon takes an empty or blank `FOX_HEADLESS`, `FOX_HEADLESS_STARTUP_TIMEOUT`, `FOX_EXECUTABLE`, `FOX_SAFETY_CONFIG`, `FOX_SCREENSHOTS_DIR`, `FOX_READ_ONLY`, `FOX_APPROVAL_ELICITATION` or `FOX_DAEMON_IDLE_TIMEOUT` as not set (the default applies); the Native Host does the same with `FOX_SCREENSHOTS_DIR`, `FOX_SCREENSHOT_RETENTION_DAYS` and `FOX_NATIVE_HOST_LOG`.
 
 | Variable | Default | Read by | Description |
 |---|---|---|---|
-| `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host, uninstaller | Address of the HTTP/WS server. Loopback addresses only (127.0.0.0/8, `::1`, `localhost`): with any other value the daemon logs an error and does not start. An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_HOST` |
-| `FOX_HTTP_PORT` | `8785` | daemon, relay, Native Host, uninstaller | HTTP port (also the daemon's singleton lock). An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_HTTP_PORT` |
-| `FOX_WS_PORT` | `8786` | daemon, Native Host | WebSocket port the Native Host connects to. An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_WS_PORT` |
+| `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host, uninstaller | Address of the HTTP/WS server. Loopback addresses only (127.0.0.0/8, `::1`, `localhost`): with any other value the daemon logs an error and does not start. An empty or blank value counts as unset (the default applies) |
+| `FOX_HTTP_PORT` | `8785` | daemon, relay, Native Host, uninstaller | HTTP port (also the daemon's singleton lock). An empty or blank value counts as unset (the default applies) |
+| `FOX_WS_PORT` | `8786` | daemon, Native Host | WebSocket port the Native Host connects to. An empty or blank value counts as unset (the default applies) |
 | `FOX_CAPS` | unset (all tools) | relay | Tool profiles, comma-separated (see [below](#fox_caps-profiles)). **Not a safety boundary** — it only trims which tool schemas this session registers, to save context tokens. The daemon accepts every tool from every caller; actual restrictions (read-only, URL limits, container scope) come from `safety.json` / the safety guard |
-| `FOX_HEADLESS` | unset | daemon | `1` / `true` / `yes` uses the headless Playwright backend; anything else leaves it off (an unrecognised value such as `on` is logged as a warning). Legacy: `CLAUDE_BROWSER_HEADLESS` |
-| `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | Launch timeout of the headless Firefox in **milliseconds** (not seconds). Legacy: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
-| `FOX_EXECUTABLE` | Playwright's Firefox | daemon (headless only) | Path to the Firefox binary Playwright launches. Legacy: `CLAUDE_BROWSER_EXECUTABLE` |
-| `FOX_SCREENSHOTS_DIR` | `~/.inari-mcp/screenshots` | Native Host (extension path), daemon (headless path, `GET /screenshots`) | Where screenshots are saved; a relative path is taken from the working directory of the process. Legacy: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
+| `FOX_HEADLESS` | unset | daemon | `1` / `true` / `yes` uses the headless Playwright backend; anything else leaves it off (an unrecognised value such as `on` is logged as a warning) |
+| `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | Launch timeout of the headless Firefox in **milliseconds** (not seconds) |
+| `FOX_EXECUTABLE` | Playwright's Firefox | daemon (headless only) | Path to the Firefox binary Playwright launches |
+| `FOX_SCREENSHOTS_DIR` | `~/.inari-mcp/screenshots` | Native Host (extension path), daemon (headless path, `GET /screenshots`) | Where screenshots are saved; a relative path is taken from the working directory of the process |
 | `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | At each Native Host start, the screenshots it saved that are older than this many days are deleted, those saved under a `filename` you chose included (it lists them in `.named-screenshots` in the same directory) (`0` keeps everything; a negative or non-numeric value means `30`). Other files in the directory, and headless screenshots, are never deleted |
-| `FOX_READ_ONLY` | unset | daemon | `1` / `true` / `yes` forces read-only mode. Legacy: `CLAUDE_BROWSER_READ_ONLY` |
-| `FOX_SAFETY_CONFIG` | `~/.inari-mcp/safety.json` | daemon | Alternate path of the safety policy file. Legacy: `CLAUDE_BROWSER_SAFETY_CONFIG` |
+| `FOX_READ_ONLY` | unset | daemon | `1` / `true` / `yes` forces read-only mode |
+| `FOX_SAFETY_CONFIG` | `~/.inari-mcp/safety.json` | daemon | Alternate path of the safety policy file |
 | `FOX_APPROVAL_ELICITATION` | on | relay, daemon | `0` / `false` / `off` / `no` turns approval through MCP elicitation off: tool calls are then always approved in the Firefox popup. The relay and the daemon each read their own environment: a relay with it off never asks through elicitation; a daemon with it off does not take elicitation answers, so a "yes" given there is asked again in the popup |
 | `FOX_DAEMON_IDLE_TIMEOUT` | `600` | daemon | Seconds without a relay, a Native Host or a running call before the daemon exits (`0` = never) |
 | `FOX_NATIVE_HOST_LOG` | `~/.inari-mcp/logs/native-host.log` | Native Host | Log file path; `0` / `off` / `false` / `no` / `none` disables file logging |
-
-`FOX_PORT`, `FOX_DEBUG` and `FOX_CONTAINER` are defined in `packages/shared` but not read anywhere.
 
 ### `FOX_CAPS` profiles
 

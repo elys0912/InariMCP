@@ -22,12 +22,7 @@ process.env['HOME'] = home;
 process.env['USERPROFILE'] = home;
 
 // Settings that could point back at real files.
-for (const name of [
-  'FOX_SAFETY_CONFIG',
-  'FOX_SCREENSHOTS_DIR',
-  'CLAUDE_BROWSER_SAFETY_CONFIG',
-  'CLAUDE_BROWSER_SCREENSHOTS_DIR',
-]) {
+for (const name of ['FOX_SAFETY_CONFIG', 'FOX_SCREENSHOTS_DIR']) {
   delete process.env[name];
 }
 

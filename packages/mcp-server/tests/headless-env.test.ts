@@ -24,10 +24,10 @@ describe('isTruthyEnv', () => {
 });
 
 describe('isHeadlessEnabled', () => {
-  it('reads FOX_HEADLESS and the legacy CLAUDE_BROWSER_HEADLESS', () => {
+  it('reads FOX_HEADLESS, not the old CLAUDE_BROWSER_HEADLESS', () => {
     expect(isHeadlessEnabled({})).toBe(false);
     expect(isHeadlessEnabled({ FOX_HEADLESS: '1' })).toBe(true);
-    expect(isHeadlessEnabled({ CLAUDE_BROWSER_HEADLESS: 'true' })).toBe(true);
+    expect(isHeadlessEnabled({ CLAUDE_BROWSER_HEADLESS: 'true' })).toBe(false);
   });
 
   it('FOX_HEADLESS=0 / false is off (it used to count as on)', () => {
@@ -35,9 +35,9 @@ describe('isHeadlessEnabled', () => {
     expect(isHeadlessEnabled({ FOX_HEADLESS: 'false' })).toBe(false);
   });
 
-  it('the FOX_ name wins over the legacy one, an empty FOX_ value falls through', () => {
-    expect(isHeadlessEnabled({ FOX_HEADLESS: '0', CLAUDE_BROWSER_HEADLESS: '1' })).toBe(false);
-    expect(isHeadlessEnabled({ FOX_HEADLESS: '', CLAUDE_BROWSER_HEADLESS: '1' })).toBe(true);
+  it('an empty or blank FOX_HEADLESS is off', () => {
+    expect(isHeadlessEnabled({ FOX_HEADLESS: '' })).toBe(false);
+    expect(isHeadlessEnabled({ FOX_HEADLESS: ' ' })).toBe(false);
   });
 });
 
@@ -56,20 +56,18 @@ describe('unrecognizedHeadlessValue', () => {
 });
 
 describe('resolveFoxEnv', () => {
-  it('returns the value without surrounding white space, the FOX_ name first (H-16)', () => {
-    expect(resolveFoxEnv({ FOX_EXECUTABLE: '  /opt/ff/firefox \n' }, 'FOX_EXECUTABLE', 'CLAUDE_BROWSER_EXECUTABLE'))
-      .toBe('/opt/ff/firefox');
-    expect(resolveFoxEnv({ FOX_EXECUTABLE: ' ', CLAUDE_BROWSER_EXECUTABLE: ' /legacy ' }, 'FOX_EXECUTABLE', 'CLAUDE_BROWSER_EXECUTABLE'))
-      .toBe('/legacy');
-    expect(resolveFoxEnv({}, 'FOX_EXECUTABLE', 'CLAUDE_BROWSER_EXECUTABLE')).toBeUndefined();
+  it('returns the value without surrounding white space; blank is unset (H-16)', () => {
+    expect(resolveFoxEnv({ FOX_EXECUTABLE: '  /opt/ff/firefox \n' }, 'FOX_EXECUTABLE')).toBe('/opt/ff/firefox');
+    expect(resolveFoxEnv({ FOX_EXECUTABLE: ' ' }, 'FOX_EXECUTABLE')).toBeUndefined();
+    expect(resolveFoxEnv({}, 'FOX_EXECUTABLE')).toBeUndefined();
   });
 });
 
 describe('headlessStartupTimeoutMs', () => {
-  it('uses the setting, the legacy name, and falls back to the default', () => {
+  it('uses the setting, else the default (the old CLAUDE_BROWSER_* name is not read)', () => {
     expect(headlessStartupTimeoutMs({ FOX_HEADLESS_STARTUP_TIMEOUT: '1234' })).toBe(1234);
-    expect(headlessStartupTimeoutMs({ CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT: '99' })).toBe(99);
     const def = ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT;
+    expect(headlessStartupTimeoutMs({ CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT: '99' })).toBe(def);
     expect(headlessStartupTimeoutMs({})).toBe(def);
     expect(headlessStartupTimeoutMs({ FOX_HEADLESS_STARTUP_TIMEOUT: 'abc' })).toBe(def);
     expect(headlessStartupTimeoutMs({ FOX_HEADLESS_STARTUP_TIMEOUT: '-5' })).toBe(def);
@@ -139,21 +137,11 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
     }
   });
 
-  it('the legacy CLAUDE_BROWSER_HEADLESS is judged the same way', () => {
-    vi.stubEnv('CLAUDE_BROWSER_HEADLESS', 'yes');
-    expect(checkHeadlessContainerScope(config)?.safetyDecision).toBe('out_of_scope');
-    expect(headlessContainerScopeWarning(config)).toContain('headless');
-    expect(scopedGuard().check('fox_get_text', {})?.safetyDecision).toBe('out_of_scope');
-
-    vi.stubEnv('CLAUDE_BROWSER_HEADLESS', 'false');
-    expect(checkHeadlessContainerScope(config)).toBeNull();
-
-    // the FOX_ name wins, an empty FOX_ value falls through to the old one
-    vi.stubEnv('FOX_HEADLESS', '0');
-    vi.stubEnv('CLAUDE_BROWSER_HEADLESS', '1');
-    expect(checkHeadlessContainerScope(config)).toBeNull();
+  it('the old CLAUDE_BROWSER_HEADLESS selects no headless backend', () => {
     vi.stubEnv('FOX_HEADLESS', '');
-    expect(checkHeadlessContainerScope(config)?.safetyDecision).toBe('out_of_scope');
+    vi.stubEnv('CLAUDE_BROWSER_HEADLESS', 'yes');
+    expect(checkHeadlessContainerScope(config)).toBeNull();
+    expect(scopedGuard().check('fox_get_text', {})).toBeNull();
   });
 
   it('records the refusal in the audit log', () => {

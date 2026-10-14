@@ -125,29 +125,18 @@ describe('loadConfig (2.B2)', () => {
   });
 
   // R2-B L-5: a blank FOX_SAFETY_CONFIG is unset, as for every other daemon
-  // setting, so the legacy name is read.
-  it('a blank FOX_SAFETY_CONFIG falls through to CLAUDE_BROWSER_SAFETY_CONFIG', () => {
-    const file = path.join(dir, 'legacy.json');
+  // setting. InariMCP (AMO): the old CLAUDE_BROWSER_SAFETY_CONFIG is not read.
+  it('WP-G T-5: with FOX_SAFETY_CONFIG blank, fox_safety_status names the default file by its full path', () => {
+    const file = path.join(dir, 'old-name.json');
     fs.writeFileSync(file, '{ "read_only": true }');
     vi.stubEnv('HOME', dir);
     vi.stubEnv('USERPROFILE', dir);
-    vi.stubEnv('FOX_SAFETY_CONFIG', '  ');
+    vi.stubEnv('FOX_SAFETY_CONFIG', ' ');
     vi.stubEnv('CLAUDE_BROWSER_SAFETY_CONFIG', file);
     vi.stubEnv('FOX_READ_ONLY', '');
     const cfg = loadConfig();
-    expect(cfg.configError).toBeUndefined();
-    expect(cfg.readOnly).toBe(true);
-    // WP-G T-5: fox_safety_status names the file that was read.
-    expect(new SafetyGuard(cfg).status().configFile).toBe(file);
-  });
-
-  it('WP-G T-5: with both settings blank, fox_safety_status names the default file by its full path', () => {
-    vi.stubEnv('HOME', dir);
-    vi.stubEnv('USERPROFILE', dir);
-    vi.stubEnv('FOX_SAFETY_CONFIG', ' ');
-    vi.stubEnv('CLAUDE_BROWSER_SAFETY_CONFIG', '');
-    expect(new SafetyGuard({ ...DEFAULT_CONFIG }).status().configFile)
-      .toBe(path.join(dir, '.inari-mcp', 'safety.json'));
+    expect(cfg.readOnly).toBe(false);
+    expect(new SafetyGuard(cfg).status().configFile).toBe(path.join(dir, '.inari-mcp', 'safety.json'));
   });
 
   // Windows ignores the mode bits (see the WP2 note on 0o600 / 0o700).

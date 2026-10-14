@@ -352,26 +352,24 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 ### 環境変数
 
-下表はコードが読む名前。注記のあるものは、フォーク元から引き継いだ古い`CLAUDE_BROWSER_*`の名前も、`FOX_*`版が未設定の場合のフォールバックとして使える。daemonは、空または空白だけの`FOX_HEADLESS`・`FOX_HEADLESS_STARTUP_TIMEOUT`・`FOX_EXECUTABLE`・`FOX_SAFETY_CONFIG`・`FOX_SCREENSHOTS_DIR`・`FOX_READ_ONLY`・`FOX_APPROVAL_ELICITATION`・`FOX_DAEMON_IDLE_TIMEOUT`を未設定として扱う（旧名があれば旧名、なければ既定値を使う）。Native Hostも`FOX_SCREENSHOTS_DIR`・`FOX_SCREENSHOT_RETENTION_DAYS`・`FOX_NATIVE_HOST_LOG`を同じように扱う。
+下表はコードが読む名前。daemonは、空または空白だけの`FOX_HEADLESS`・`FOX_HEADLESS_STARTUP_TIMEOUT`・`FOX_EXECUTABLE`・`FOX_SAFETY_CONFIG`・`FOX_SCREENSHOTS_DIR`・`FOX_READ_ONLY`・`FOX_APPROVAL_ELICITATION`・`FOX_DAEMON_IDLE_TIMEOUT`を未設定として扱う（既定値を使う）。Native Hostも`FOX_SCREENSHOTS_DIR`・`FOX_SCREENSHOT_RETENTION_DAYS`・`FOX_NATIVE_HOST_LOG`を同じように扱う。
 
 | 変数 | 既定値 | 読むプロセス | 説明 |
 |---|---|---|---|
-| `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host、アンインストーラ | HTTP/WSサーバーのアドレス。ループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）だけ。それ以外ならdaemonはエラーをログに出して起動しない。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HOST` |
-| `FOX_HTTP_PORT` | `8785` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
-| `FOX_WS_PORT` | `8786` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_WS_PORT` |
+| `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host、アンインストーラ | HTTP/WSサーバーのアドレス。ループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）だけ。それ以外ならdaemonはエラーをログに出して起動しない。空または空白だけの値は未設定として扱う（既定値を使う） |
+| `FOX_HTTP_PORT` | `8785` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空または空白だけの値は未設定として扱う（既定値を使う） |
+| `FOX_WS_PORT` | `8786` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空または空白だけの値は未設定として扱う（既定値を使う） |
 | `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
-| `FOX_HEADLESS` | 未設定 | daemon | `1` / `true` / `yes`でヘッドレスPlaywrightバックエンドを使う。それ以外は無効（`on`など認識できない値は警告をログに出す）。旧名: `CLAUDE_BROWSER_HEADLESS` |
-| `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない）。旧名: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
-| `FOX_EXECUTABLE` | PlaywrightのFirefox | daemon（ヘッドレスのみ） | Playwrightが起動するFirefoxバイナリのパス。旧名: `CLAUDE_BROWSER_EXECUTABLE` |
-| `FOX_SCREENSHOTS_DIR` | `~/.inari-mcp/screenshots` | Native Host（拡張機能経路）、daemon（ヘッドレス経路、`GET /screenshots`） | スクリーンショットの保存先。相対パスはそのプロセスの作業ディレクトリから解決する。旧名: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
+| `FOX_HEADLESS` | 未設定 | daemon | `1` / `true` / `yes`でヘッドレスPlaywrightバックエンドを使う。それ以外は無効（`on`など認識できない値は警告をログに出す） |
+| `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない） |
+| `FOX_EXECUTABLE` | PlaywrightのFirefox | daemon（ヘッドレスのみ） | Playwrightが起動するFirefoxバイナリのパス |
+| `FOX_SCREENSHOTS_DIR` | `~/.inari-mcp/screenshots` | Native Host（拡張機能経路）、daemon（ヘッドレス経路、`GET /screenshots`） | スクリーンショットの保存先。相対パスはそのプロセスの作業ディレクトリから解決する |
 | `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | Native Hostが起動するたびに、自分が保存したスクリーンショットのうち、この日数より古いものを削除する。`filename`を指定して保存したものも含む（同じディレクトリの`.named-screenshots`に名前を記録する）（`0`ですべて残す。負の値や数値でない値は`30`として扱う）。ディレクトリにあるほかのファイルと、ヘッドレスのスクリーンショットは削除しない |
-| `FOX_READ_ONLY` | 未設定 | daemon | `1` / `true` / `yes`で読み取り専用モードを強制する。旧名: `CLAUDE_BROWSER_READ_ONLY` |
-| `FOX_SAFETY_CONFIG` | `~/.inari-mcp/safety.json` | daemon | 安全ポリシーファイルの代替パス。旧名: `CLAUDE_BROWSER_SAFETY_CONFIG` |
+| `FOX_READ_ONLY` | 未設定 | daemon | `1` / `true` / `yes`で読み取り専用モードを強制する |
+| `FOX_SAFETY_CONFIG` | `~/.inari-mcp/safety.json` | daemon | 安全ポリシーファイルの代替パス |
 | `FOX_APPROVAL_ELICITATION` | 有効 | 中継、daemon | `0` / `false` / `off` / `no`でMCP elicitationによる承認を無効にする。ツールの呼び出しは常にFirefoxのポップアップで承認することになる。中継とdaemonはそれぞれ自分の環境変数を読む。無効にした中継はelicitationで尋ねない。無効にしたdaemonはelicitationの回答を受け付けないので、そこで「はい」と答えた要求はポップアップで改めて尋ねる |
 | `FOX_DAEMON_IDLE_TIMEOUT` | `600` | daemon | 中継・Native Host・実行中の呼び出しがどれもない状態が何秒続いたらdaemonが終了するか（`0`で終了しない） |
 | `FOX_NATIVE_HOST_LOG` | `~/.inari-mcp/logs/native-host.log` | Native Host | ログファイルのパス。`0` / `off` / `false` / `no` / `none`でファイルへのログを無効化する |
-
-`FOX_PORT`、`FOX_DEBUG`、`FOX_CONTAINER`は`packages/shared`に定義があるが、どこからも読まれない。
 
 ### `FOX_CAPS`のプロファイル
 

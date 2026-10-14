@@ -7,10 +7,10 @@
  * so the Native Host writes them to disk here and hands the server only
  * `imagePath`.
  *
- * Directory: FOX_SCREENSHOTS_DIR → CLAUDE_BROWSER_SCREENSHOTS_DIR (legacy)
- * → ~/.inari-mcp/screenshots — the same resolution as the MCP Server's
- * utils/screenshot.ts getScreenshotsDir(), so GET /screenshots lists these
- * files too (as long as both processes see the same environment).
+ * Directory: FOX_SCREENSHOTS_DIR → ~/.inari-mcp/screenshots — the same
+ * resolution as the MCP Server's utils/screenshot.ts getScreenshotsDir(), so
+ * GET /screenshots lists these files too (as long as both processes see the
+ * same environment).
  *
  * Hardening:
  *  - filenames are reduced to a basename with a safe character set, and the
@@ -30,7 +30,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ENV, LEGACY_ENV, isRecord, shortId } from '@inari-mcp/shared';
+import { ENV, isRecord, shortId } from '@inari-mcp/shared';
 import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, defaultScreenshotsDir, screenshotStem } from '@inari-mcp/shared/node';
 
 /** Image types accepted in a screenshot data URL. */
@@ -50,16 +50,13 @@ function isImageMime(value: string): value is ImageMime {
 }
 
 /**
- * FOX_SCREENSHOTS_DIR, then the legacy name, then the default. A blank
- * value counts as unset, so `FOX_SCREENSHOTS_DIR=` falls through to the
- * legacy name instead of hiding it (same convention as shared's FOX_HOST).
+ * FOX_SCREENSHOTS_DIR, else the default. A blank value counts as unset, so
+ * `FOX_SCREENSHOTS_DIR=` is the default (same convention as shared's
+ * FOX_HOST).
  */
 export function getScreenshotsDir(env: NodeJS.ProcessEnv = process.env): string {
-  for (const name of [ENV.FOX_SCREENSHOTS_DIR, LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR]) {
-    const raw = env[name]?.trim();
-    if (raw !== undefined && raw !== '') return path.resolve(raw);
-  }
-  return defaultScreenshotsDir();
+  const raw = env[ENV.FOX_SCREENSHOTS_DIR]?.trim();
+  return raw === undefined || raw === '' ? defaultScreenshotsDir() : path.resolve(raw);
 }
 
 /**

@@ -19,7 +19,7 @@
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ENV_PREFIX, LEGACY_ENV, shortId } from '@inari-mcp/shared';
+import { ENV_PREFIX, shortId } from '@inari-mcp/shared';
 import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from '@inari-mcp/shared/node';
 import { spawnDaemonBreakaway } from './breakaway.js';
 
@@ -232,12 +232,11 @@ export async function startOutsideJob(
   return { ok: false, errors };
 }
 
-/** FOX_* settings (and the legacy names) of `env`, for the spec file. */
+/** FOX_* settings of `env`, for the spec file. */
 export function daemonEnvFrom(env: NodeJS.ProcessEnv): Record<string, string> {
-  const legacy = new Set<string>(Object.values(LEGACY_ENV));
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) {
-    if (v !== undefined && (k.startsWith(ENV_PREFIX) || legacy.has(k))) out[k] = v;
+    if (v !== undefined && k.startsWith(ENV_PREFIX)) out[k] = v;
   }
   return out;
 }

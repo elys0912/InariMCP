@@ -25,20 +25,17 @@ describe('shared/node endpoint', () => {
     expect(resolveHost({ FOX_HOST: '' })).toBe('127.0.0.1');
   });
 
-  it('an empty FOX_HOST falls through to CLAUDE_BROWSER_HOST', () => {
-    expect(resolveHost({ FOX_HOST: '', CLAUDE_BROWSER_HOST: '127.0.0.2' })).toBe('127.0.0.2');
-    expect(resolveHost({ FOX_HOST: '127.0.0.3', CLAUDE_BROWSER_HOST: '127.0.0.2' })).toBe('127.0.0.3');
+  // InariMCP (AMO): the CLAUDE_BROWSER_* names of the fork are not read.
+  it('the old CLAUDE_BROWSER_* names are not read', () => {
+    expect(resolveHost({ FOX_HOST: '', CLAUDE_BROWSER_HOST: '127.0.0.2' })).toBe('127.0.0.1');
+    expect(resolveHttpPort(undefined, { CLAUDE_BROWSER_HTTP_PORT: '9001' })).toBe(8785);
+    expect(resolveWsPort(undefined, { CLAUDE_BROWSER_WS_PORT: '9002' })).toBe(8786);
   });
 
   it('a blank FOX_HOST counts as unset and a set one is trimmed (R3 N-1)', () => {
     expect(resolveHost({ FOX_HOST: ' ' })).toBe('127.0.0.1');
-    expect(resolveHost({ FOX_HOST: '\t', CLAUDE_BROWSER_HOST: ' 127.0.0.2 ' })).toBe('127.0.0.2');
-    expect(resolveHost({ FOX_HOST: ' 127.0.0.1 ' })).toBe('127.0.0.1');
-  });
-
-  it('an empty FOX_*_PORT falls through to the legacy port variable', () => {
-    expect(resolveHttpPort(undefined, { FOX_HTTP_PORT: '', CLAUDE_BROWSER_HTTP_PORT: '9001' })).toBe(9001);
-    expect(resolveWsPort(undefined, { FOX_WS_PORT: '', CLAUDE_BROWSER_WS_PORT: '9002' })).toBe(9002);
+    expect(resolveHost({ FOX_HOST: '\t' })).toBe('127.0.0.1');
+    expect(resolveHost({ FOX_HOST: ' 127.0.0.2 ' })).toBe('127.0.0.2');
   });
 
   it('a blank FOX_*_PORT counts as unset without a warning; a set one is trimmed (R3 N-1)', () => {
@@ -46,16 +43,16 @@ describe('shared/node endpoint', () => {
     const onInvalid = (name: string): void => {
       reports.push(name);
     };
-    expect(resolveHttpPort(onInvalid, { FOX_HTTP_PORT: ' ', CLAUDE_BROWSER_HTTP_PORT: '9001' })).toBe(9001);
+    expect(resolveHttpPort(onInvalid, { FOX_HTTP_PORT: ' ' })).toBe(8785);
     expect(resolveWsPort(onInvalid, { FOX_WS_PORT: ' ' })).toBe(8786);
-    expect(resolveHttpPort(onInvalid, { FOX_HTTP_PORT: ' 8785 ' })).toBe(8785);
+    expect(resolveHttpPort(onInvalid, { FOX_HTTP_PORT: ' 9001 ' })).toBe(9001);
     expect(reports).toEqual([]);
   });
 
-  it('an invalid port is reported under the name it was read from', () => {
+  it('an invalid port is reported under its name, and the default applies', () => {
     const reports: string[] = [];
-    const port = resolveHttpPort((name) => reports.push(name), { FOX_HTTP_PORT: '', CLAUDE_BROWSER_HTTP_PORT: 'x' });
+    const port = resolveHttpPort((name) => reports.push(name), { FOX_HTTP_PORT: 'x' });
     expect(port).toBe(8785);
-    expect(reports).toEqual(['CLAUDE_BROWSER_HTTP_PORT']);
+    expect(reports).toEqual(['FOX_HTTP_PORT']);
   });
 });

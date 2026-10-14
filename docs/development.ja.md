@@ -106,7 +106,7 @@ CIはパッケージをアップロードしない（Actionsのストレージ�
 | モジュール | 内容 |
 |---|---|
 | `paths` | `~/.inari-mcp/`の下のファイル（データとログのディレクトリ、APIトークン、`daemon.log`、`native-host.log`、監査ログ、既定の`safety.json`とスクリーンショットのディレクトリ）。呼び出し時に解決する |
-| `endpoint` | `FOX_HOST` / `FOX_HTTP_PORT` / `FOX_WS_PORT`（と旧名）、ループバックの判定 |
+| `endpoint` | `FOX_HOST` / `FOX_HTTP_PORT` / `FOX_WS_PORT`、ループバックの判定 |
 | `token` | APIトークンの読み込みと作成（作成はdaemonだけ） |
 | `health` | `GET /health`の応答の判定（daemonの多重起動確認、中継、Native Host、doctor） |
 | `log` | 5 MBでの`<file>.old`へのローテーション（名前の変更、またはcopy-truncate）、行頭の`<ISO時刻> [<pid>] `、`[InariMCP:<role>]`のstderrロガー |
