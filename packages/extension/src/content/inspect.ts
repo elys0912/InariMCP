@@ -213,7 +213,7 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
     ) {
       elements.push({
         tag: el.tagName.toLowerCase(),
-        text: clipText(el.textContent?.trim() ?? "", LIMITS.SNAPSHOT_TEXT) || null,
+        text: shownText(el, LIMITS.SNAPSHOT_TEXT),
         selector: generateSelector(el),
         position: {
           x: Math.round(rect.left + rect.width / 2),
