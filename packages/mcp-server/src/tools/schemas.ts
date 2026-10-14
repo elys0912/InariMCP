@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { READ_SELECTOR_RULE_TEXT } from '@inari-mcp/shared';
 
 // ---------------------------------------------------------------------------
 // Tool classification (used by SafetyGuard and the MCP annotations)
@@ -8,9 +9,11 @@ import { z } from 'zod';
  * The single source of the tool classes; see tools/classification.ts for
  * what the SafetyGuard and the MCP annotations derive from it.
  *   - observe:  reads the page or browser state, changes nothing
- *   - interact: changes UI state only (hover, scroll, overlay, active tab),
- *               never page data; allowed in read-only mode
- *   - act:      changes page or browser state (input, navigation, tabs)
+ *   - interact: changes UI state only (scroll, overlay, active tab), never
+ *               page data, and returns no page content; allowed in
+ *               read-only mode
+ *   - act:      changes page or browser state (input, navigation, tabs,
+ *               and hover, which runs the page's own handlers)
  *   - wait / human: as named
  */
 export type ToolClassification =
@@ -92,6 +95,25 @@ const timeoutMs = z.number().int().positive().max(MAX_TIMEOUT_ARG_MS).optional()
 const URL_PATTERN_NOTE =
   'JavaScript regex, case-sensitive, unanchored (matches anywhere in the full URL); ' +
   'use [Ee]xample for a case-insensitive part.';
+
+/**
+ * The fields whose value the tools mask (shared/src/field-mask.ts), for the
+ * descriptions of the tools that return values.
+ */
+export const MASKED_FIELDS_NOTE =
+  'password, hidden, one-time-code and payment card (autocomplete cc-*) fields, and the options of such a select';
+
+/**
+ * Shared by the tools whose CSS selector is checked before it is used
+ * (reads, waits, scroll, highlight: shared/src/field-mask.ts
+ * readSelectorProblem, and headless/helpers.ts playwrightDialectProblem).
+ */
+export const READ_SELECTOR_NOTE =
+  `${READ_SELECTOR_RULE_TEXT} Headless: plain CSS only (no xpath=, text=, role=, //, >> or other Playwright selector forms).`;
+
+/** Shared by the tools that find an element without reading it. */
+export const ELEMENT_LOCATION_NOTE =
+  "Returns at most the element's tag, generated selector and position, never its text, value or links.";
 
 // =========================================================================
 // Observe tools (read-only)
@@ -442,7 +464,8 @@ const OPERATIONS = {
   },
   fox_hover: {
     inputSchema: foxHoverSchema,
-    classification: 'interact',
+    classification: 'act',
+    annotations: { destructiveHint: false },
   },
   fox_scroll: {
     inputSchema: foxScrollSchema,

@@ -57,7 +57,7 @@ import {
   RELAY_ID_HEADER,
   compareDaemonSettings,
   readApiTokenFile,
-  resolveHost,
+  resolveDaemonHost,
   resolveHttpPort,
 } from '../utils/endpoint.js';
 import { headlessStartupTimeoutMs } from '../utils/headless-env.js';
@@ -217,9 +217,13 @@ export class DaemonClient {
   /** `protocol` of the last healthy /health answer (undefined from an old daemon). */
   private daemonProtocol: unknown = undefined;
 
+  /**
+   * A FOX_HOST that is not a loopback address throws (resolveDaemonHost):
+   * tool arguments are never sent to another machine in plain text.
+   */
   constructor(relayId: string, options: DaemonClientOptions = {}) {
     this.relayId = relayId;
-    this.host = options.host ?? resolveHost();
+    this.host = options.host ?? resolveDaemonHost();
     this.port = options.port ?? resolveHttpPort();
     this.readToken = options.readToken ?? (() => readApiTokenFile());
   }

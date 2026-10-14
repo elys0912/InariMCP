@@ -95,7 +95,7 @@ CI does not upload the packages (to save Actions storage); make them locally at 
 |---|---|---|
 | `@inari-mcp/shared` | zod schemas (protocol, actions, Native Host messages), action names, constants (`ENV`, …), small utilities. No Node.js APIs (`packages/shared/tests/browser-safe.test.ts` checks this) | daemon, relay, Native Host; the Extension only for exports that do not pull in zod |
 | `@inari-mcp/shared/action-names` | the browser command action names, zod-free | the Extension |
-| `@inari-mcp/shared/field-mask` | which form fields have their value masked (`[MASKED]`), import-free | the Extension |
+| `@inari-mcp/shared/field-mask` | which form fields have their value masked (`[MASKED]`), and the CSS selectors the reading tools refuse (`[value…]`, `[selected]`, `:checked`, `:default`), import-free | the Extension (the headless backend through `@inari-mcp/shared`) |
 | `@inari-mcp/shared/approval-site` | the site a human approval is bound to (`approvalSiteOf`), import-free | the Extension (the daemon through `@inari-mcp/shared`) |
 | `@inari-mcp/shared/url-pattern-limit` | the length and shape limits of a `urlPattern` argument, import-free | the Extension (the daemon through `@inari-mcp/shared`) |
 | `@inari-mcp/shared/node` | helpers of the Node.js processes (below) | daemon, relay, Native Host, doctor |
@@ -107,7 +107,7 @@ Modules of `@inari-mcp/shared/node` (`packages/shared/src/node/`):
 | Module | Contents |
 |---|---|
 | `paths` | files under `~/.inari-mcp/` (data and logs directories, API token, `daemon.log`, `native-host.log`, audit log, default `safety.json` and screenshots directory), resolved at call time |
-| `endpoint` | `FOX_HOST` / `FOX_HTTP_PORT` / `FOX_WS_PORT`, loopback check |
+| `endpoint` | `FOX_HOST` / `FOX_HTTP_PORT` / `FOX_WS_PORT`, loopback check (`resolveDaemonHost`: the daemon, the Native Host and the relays refuse a `FOX_HOST` that is not a loopback address) |
 | `token` | reading the API token; creating it (daemon only) |
 | `health` | judging a `GET /health` answer (daemon singleton check, relay, Native Host, doctor) |
 | `log` | 5 MB rotation to `<file>.old` (rename, or copy-truncate), line stamps `<ISO time> [<pid>] `, the `[InariMCP:<role>]` stderr logger |

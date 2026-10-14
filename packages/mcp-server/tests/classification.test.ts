@@ -40,10 +40,11 @@ describe('tool sets derived from the schemas', () => {
     }
   });
 
-  // Decision #9: the tools that change page or browser state, each asked about.
+  // Decision #9: the tools that change page or browser state, each asked
+  // about; hover too, since the page's own handlers run.
   it('put the acting tools in ACTING_TOOLS', () => {
     expect([...ACTING_TOOLS].sort()).toEqual([
-      'fox_click', 'fox_close_tab', 'fox_create_tab', 'fox_handle_dialog', 'fox_navigate',
+      'fox_click', 'fox_close_tab', 'fox_create_tab', 'fox_handle_dialog', 'fox_hover', 'fox_navigate',
       'fox_open_in_container', 'fox_press_key', 'fox_select_option', 'fox_set_value', 'fox_type',
     ]);
   });

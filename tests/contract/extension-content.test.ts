@@ -85,7 +85,8 @@ import * as wait from "./packages/extension/src/content/wait";
 import * as inspect from "./packages/extension/src/content/inspect";
 import * as overlay from "./packages/extension/src/content/overlay";
 import * as captcha from "./packages/extension/src/content/captcha";
-(globalThis as Record<string, unknown>).__fox = { dom, input, wait, inspect, overlay, captcha };
+import * as handler from "./packages/extension/src/content/handler";
+(globalThis as Record<string, unknown>).__fox = { dom, input, wait, inspect, overlay, captcha, handler };
 `;
 
 /** What the Firefox content-script sandbox gives the script, stubbed. */
@@ -514,6 +515,62 @@ describe('password fields on the extension path', () => {
     expect(r['t']).toEqual([refused, refused, 'pw-secret-3']);
     expect(r['allowed']).toBe('typed');
     expect(r['plain']).toBe(true);
+  });
+});
+
+describe('options of a masked select, selectors that test a value, and what the non-reads return', () => {
+  real('fox_find and fox_read text mask an option of a masked select (value and text) and a cc-name field', async () => {
+    await load(
+      '<select id="m" autocomplete="cc-exp-month"><option value="secret-1" selected>secret-2</option></select>' +
+      '<select id="c" autocomplete="country"><option value="jp">Japan</option></select>' +
+      '<input id="n" autocomplete="cc-name" value="secret-3">',
+    );
+    const r = await run<{ options: unknown[]; text: unknown; name: unknown }>(
+      `return {
+         options: f.inspect.getElements({ selector: 'option' }).elements.map((e) => [e.value, e.text]),
+         text: f.inspect.getText({ selector: '#m option' }).text,
+         name: f.inspect.getElements({ selector: '#n' }).elements[0].value,
+       };`,
+    );
+    expect(r).toEqual({ options: [['[MASKED]', '[MASKED]'], ['jp', 'Japan']], text: '[MASKED]', name: '[MASKED]' });
+  });
+
+  real('the reading commands refuse a selector with [value…], [selected], :checked or :default before using it', async () => {
+    await load('<input id="h" type="hidden" name="csrf" value="secret"><select id="m"><option selected>a</option></select>');
+    const r = await run<{ refused: string[]; plain: unknown }>(
+      `const command = async (message) => {
+         try { await f.handler.runContentCommand(message); return 'ran'; } catch (e) { return e.message; }
+       };
+       return {
+         refused: [
+           await command({ action: 'getElements', selector: 'input[name=csrf][value^="s"]' }),
+           await command({ action: 'getText', selector: '#m option:checked' }),
+           await command({ action: 'getText', selector: '#m option[selected]' }),
+           await command({ action: 'highlight', selector: '[value]', duration: 0 }),
+           await command({ action: 'waitForElement', selector: 'option:DEFAULT', timeout: 200 }),
+           await command({ action: 'scroll', toElement: 'input[VALUE]' }),
+           await command({ action: 'scroll', selector: ':checked', direction: 'down' }),
+         ],
+         plain: (await f.handler.runContentCommand({ action: 'getElements', selector: '#h' })).count,
+       };`,
+    );
+    for (const message of r.refused) expect(message).toContain('Selector refused');
+    expect(r.plain).toBe(1);
+  });
+
+  real('wait, hover, highlight and scroll toElement return tag, selector and position only', async () => {
+    await load('<a id="a" href="https://example.test/secret-1">secret-2</a>');
+    const r = await run<{ keys: string[][]; json: string }>(
+      `const results = [
+         await f.wait.waitForElement({ selector: '#a', timeout: 1000 }),
+         await f.input.hoverElement({ selector: '#a' }),
+         f.inspect.highlightElement({ selector: '#a', duration: 0 }),
+         await f.input.performScroll({ toElement: '#a' }),
+       ];
+       return { keys: results.map((x) => Object.keys(x.element).sort()), json: JSON.stringify(results) };`,
+    );
+    expect(r.keys).toEqual(Array(4).fill(['position', 'selector', 'tag']));
+    expect(r.json).not.toContain('secret');
   });
 });
 

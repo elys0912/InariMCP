@@ -9,7 +9,7 @@
 // __fox_injected guard below, so they must have no top-level side effects.
 
 import { errorMessage } from "./error-message";
-import { handleMessage } from "./content/handler";
+import { runContentCommand } from "./content/handler";
 import type { ContentMessage } from "./content/types";
 
 (function () {
@@ -29,7 +29,7 @@ import type { ContentMessage } from "./content/types";
       _sender: browser.runtime.MessageSender,
       sendResponse: (response: unknown) => void,
     ): boolean => {
-      handleMessage(message as ContentMessage)
+      runContentCommand(message as ContentMessage)
         .then(sendResponse)
         .catch((error: unknown) =>
           sendResponse({

@@ -88,14 +88,59 @@ function checkApprovedUrl(url: string | undefined, approvedSite: string | undefi
   };
 }
 
-/** A read of `url`: refused when it matches confirm_read_sites, unless approved for its site. */
+const VIEW_SOURCE_PREFIX = "view-source:";
+
+/**
+ * How many view-source: / about:reader wrappers findReadRule takes off
+ * (`view-source:about:reader?url=...` has two). A URL wrapped deeper counts
+ * as matching (the human is asked) rather than going unchecked.
+ */
+const MAX_SHOWN_PAGE_DEPTH = 3;
+
+/** The page a view-source: or about:reader URL shows, or null for any other URL. */
+function shownPageUrl(url: string): string | null {
+  if (url.toLowerCase().startsWith(VIEW_SOURCE_PREFIX)) return url.slice(VIEW_SOURCE_PREFIX.length);
+  try {
+    const parsed = new URL(url);
+    const isReader = parsed.protocol === "about:" && parsed.pathname.toLowerCase() === "reader";
+    return isReader ? parsed.searchParams.get("url") : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The first confirm_read_sites rule `url` matches, or the page it shows
+ * matches: a view-source: or about:reader tab has no host of its own, so a
+ * host rule could never match it. Past MAX_SHOWN_PAGE_DEPTH wrappers, the
+ * first rule (fail closed).
+ */
+function findReadRule(url: string, rules: CompiledUrlRule[]): CompiledUrlRule | undefined {
+  let current: string | null = url;
+  for (let depth = 0; current !== null; depth++) {
+    if (depth > MAX_SHOWN_PAGE_DEPTH) return rules[0];
+    const matched = findUrlRule(current, rules);
+    if (matched) return matched;
+    current = shownPageUrl(current);
+  }
+  return undefined;
+}
+
+/**
+ * A read of `url`: refused when it matches confirm_read_sites, unless
+ * approved for its site. Fails closed when the tab's URL is unknown.
+ */
 function checkReadSite(
   url: string | undefined,
   rules: CompiledUrlRule[],
   approvedSite: string | undefined,
 ): CommandResult | null {
-  const matched = findUrlRule(url, rules);
-  if (!url || !matched || isApprovedSite(url, approvedSite)) return null;
+  if (!url) {
+    return { success: false, error: "Could not read the target tab's URL for the confirm_read_sites check" };
+  }
+
+  const matched = findReadRule(url, rules);
+  if (!matched || isApprovedSite(url, approvedSite)) return null;
   return {
     success: false,
     safetyDecision: "confirmation_required",
@@ -107,10 +152,13 @@ function checkReadSite(
 
 /**
  * Whether a multi-tab read must skip this tab (screenshot_all_tabs): it
- * matches the attached confirm_read_sites rules.
+ * matches the attached confirm_read_sites rules (or the page it shows
+ * does), or its URL is unknown.
  */
 export function isReadConfirmTab(tab: browser.tabs.Tab, confirmReadRules: CompiledUrlRule[]): boolean {
-  return confirmReadRules.length > 0 && findUrlRule(tab.url, confirmReadRules) !== undefined;
+  if (confirmReadRules.length === 0) return false;
+
+  return !tab.url || findReadRule(tab.url, confirmReadRules) !== undefined;
 }
 
 export const NO_URL_LISTS: UrlLists = { blocked: [], allowed: [], allowlistActive: false };

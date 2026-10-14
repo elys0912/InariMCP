@@ -1,14 +1,18 @@
 // Observation and display: page info, element lists, highlight, scroll
 // snapshots, full-page dimensions and text.
 
+import { maskedText } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
 import { DEFAULTS, HIGHLIGHT_STYLE, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
 import {
+  isMaskedField,
   isVisible,
   generateSelector,
   getElementInfo,
+  getElementLocation,
   findElement,
   sleep,
+  shownText,
   shownValue,
 } from "./dom";
 import type {
@@ -37,7 +41,7 @@ export function getPageInfo(): Record<string, unknown> {
         type: htmlEl.type || null,
         id: el.id || null,
         name: htmlEl.name || null,
-        text: clipText(el.textContent?.trim() ?? "", LIMITS.PAGE_INFO_TEXT) || null,
+        text: shownText(el, LIMITS.PAGE_INFO_TEXT),
         href: (el as HTMLAnchorElement).href || null,
         value: shownValue(el, htmlEl.value, LIMITS.PAGE_INFO_TEXT),
         placeholder: htmlEl.placeholder || null,
@@ -126,6 +130,10 @@ function removeHighlight(): void {
   }
 }
 
+/**
+ * fox_interact highlight. UI only and no read (no confirm_read_sites
+ * check): it returns where the element is, not its content.
+ */
 export function highlightElement(
   options: HighlightOptions,
 ): Record<string, unknown> {
@@ -176,7 +184,7 @@ export function highlightElement(
     highlightTimer = setTimeout(removeHighlight, options.duration || TIMEOUTS.HIGHLIGHT);
   }
 
-  return { highlighted: true, element: getElementInfo(element) };
+  return { highlighted: true, element: getElementLocation(element) };
 }
 
 function getVisibleInteractiveElements(): Record<string, unknown>[] {
@@ -197,7 +205,7 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
     ) {
       elements.push({
         tag: el.tagName.toLowerCase(),
-        text: clipText(el.textContent?.trim() ?? "", LIMITS.SNAPSHOT_TEXT) || null,
+        text: shownText(el, LIMITS.SNAPSHOT_TEXT),
         selector: generateSelector(el),
         position: {
           x: Math.round(rect.left + rect.width / 2),
@@ -284,8 +292,9 @@ export function getText(
   }
 
   const maxLength = options.maxLength || DEFAULTS.TEXT_MAX_LENGTH;
-  const text =
-    (element as HTMLElement).innerText || element.textContent || "";
+  const rawText = (element as HTMLElement).innerText || element.textContent || "";
+  // A masked field read as itself (an option of a masked select, a masked textarea).
+  const text = maskedText(rawText, isMaskedField(element));
 
   return {
     text: clipText(text, maxLength),

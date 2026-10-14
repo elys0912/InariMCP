@@ -1,6 +1,7 @@
 // Message dispatch of the content script: one command from the background
 // to its handler.
 
+import { assertReadSelector } from "@inari-mcp/shared/field-mask";
 import { solveCaptcha } from "./captcha";
 import {
   performClick,
@@ -20,8 +21,39 @@ import {
   getText,
 } from "./inspect";
 import { cancelHumanWait } from "./overlay";
-import type { ContentMessage } from "./types";
+import type { ContentAction, ContentMessage } from "./types";
 import { waitForElement, waitForNetworkIdle } from "./wait";
+
+/**
+ * The CSS selector fields of the commands that run without a human
+ * approval (reads, waits, scroll, highlight), checked here once for all of
+ * them (shared/src/field-mask.ts readSelectorProblem) before any handler
+ * uses them. A new such command gets a row here.
+ */
+const READ_SELECTOR_FIELDS: Partial<Record<ContentAction, readonly string[]>> = {
+  getElements: ["selector"],
+  getText: ["selector"],
+  highlight: ["selector"],
+  scroll: ["selector", "toElement"],
+  waitForElement: ["selector"],
+};
+
+/** Refuse a reading command whose selector could test a masked value. */
+function assertReadSelectors(message: ContentMessage): void {
+  for (const field of READ_SELECTOR_FIELDS[message.action] ?? []) {
+    const selector: unknown = Object.getOwnPropertyDescriptor(message, field)?.value;
+    if (typeof selector === "string") assertReadSelector(selector);
+  }
+}
+
+/**
+ * One command from the background (content.ts): its read selectors checked,
+ * then handleMessage.
+ */
+export async function runContentCommand(message: ContentMessage): Promise<Record<string, unknown>> {
+  assertReadSelectors(message);
+  return handleMessage(message);
+}
 
 export async function handleMessage(
   message: ContentMessage,

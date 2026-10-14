@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import * as http from 'node:http';
 import * as path from 'node:path';
 
-import { resolveHost, resolveHttpPort } from '../utils/endpoint.js';
+import { resolveDaemonHost, resolveHttpPort } from '../utils/endpoint.js';
 import { PACKAGE_ROOT, PACKAGE_VERSION } from '../version.js';
 import { runChecks, type CheckResult, type DoctorDeps, type HttpReply, type RunResult } from './checks.js';
 
@@ -40,10 +40,22 @@ function run(cmd: string, args: string[], timeoutMs: number): RunResult {
   };
 }
 
+/** The daemon's host, or undefined when FOX_HOST is refused (not loopback): then the daemon counts as down. */
+function daemonHost(): string | undefined {
+  try {
+    return resolveDaemonHost();
+  } catch {
+    return undefined;
+  }
+}
+
 function get(urlPath: string, headers: Record<string, string>, timeoutMs: number): Promise<HttpReply | undefined> {
+  const host = daemonHost();
+  if (host === undefined) return Promise.resolve(undefined);
+
   return new Promise((resolve) => {
     const req = http.get(
-      { host: resolveHost(), port: resolveHttpPort(), path: urlPath, headers, timeout: timeoutMs },
+      { host, port: resolveHttpPort(), path: urlPath, headers, timeout: timeoutMs },
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));

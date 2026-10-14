@@ -22,7 +22,13 @@
 import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
 import { isRecord } from '@inari-mcp/shared';
-import { TOOL_SCHEMAS, callSchemaOf } from './schemas.js';
+import {
+  ELEMENT_LOCATION_NOTE,
+  MASKED_FIELDS_NOTE,
+  READ_SELECTOR_NOTE,
+  TOOL_SCHEMAS,
+  callSchemaOf,
+} from './schemas.js';
 import type { ObjectSchema, OperationName } from './schemas.js';
 import { toolAnnotations } from './classification.js';
 import type { ToolAnnotations } from './classification.js';
@@ -259,7 +265,8 @@ const tabId = z.number().int().optional().describe('Tab ID (defaults to active t
 const foxRead = grouped({
   name: 'fox_read',
   description:
-    "Read the page. mode 'info': URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, h1-h3 headings; password values masked; headless: URL and title only. mode 'text': visible text of the page or of the element `selector`, cheaper than a screenshot.",
+    "Read the page. mode 'info': URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, h1-h3 headings; headless: URL and title only. mode 'text': visible text of the page or of the element `selector`, cheaper than a screenshot. " +
+    `Values and texts of ${MASKED_FIELDS_NOTE} read as [MASKED]. ${READ_SELECTOR_NOTE}`,
   discriminator: 'mode',
   discriminatorDescription: "What to read: 'info' (page overview) or 'text' (visible text)",
   variants: {
@@ -271,7 +278,9 @@ const foxRead = grouped({
 const foxFind = grouped({
   name: 'fox_find',
   description:
-    "Find in the page. by 'selector': elements matching a CSS selector (the first `limit`, plus the total count), each with tag, id, classes, name, type, text (200 chars), value (passwords masked), href, src, placeholder, ariaLabel, role, disabled, checked, visible, viewport position (incl. centerX/centerY) and a generated selector; headless: tag, text and box only, at most 50. by 'text': count matches of `text` with Firefox's browser.find (all frames, also outside the viewport), optionally with rects; `text` is the words to search for, not an element locator as in fox_click.",
+    "Find in the page. by 'selector': elements matching a CSS selector (the first `limit`, plus the total count), each with tag, id, classes, name, type, text (200 chars), value, href, src, placeholder, ariaLabel, role, disabled, checked, visible, viewport position (incl. centerX/centerY) and a generated selector; headless: tag, text and box only, at most 50. " +
+    `Values and texts of ${MASKED_FIELDS_NOTE} read as [MASKED]. ${READ_SELECTOR_NOTE} ` +
+    "by 'text': count matches of `text` with Firefox's browser.find (all frames, also outside the viewport), optionally with rects; `text` is the words to search for, not an element locator as in fox_click.",
   discriminator: 'by',
   discriminatorDescription: "'selector' (CSS selector) or 'text' (full-text search)",
   variants: {
@@ -391,7 +400,9 @@ const foxSetValue = grouped({
 const foxInteract = grouped({
   name: 'fox_interact',
   description:
-    "Change UI state only, never page data (allowed in read-only mode). action 'hover': dispatch synthetic mouseenter / mouseover events on the element (isTrusted=false: JavaScript hover handlers run, CSS :hover styles do not apply). action 'scroll': scroll the page or the element `selector` by direction and amount, or scroll the element toElement into view. action 'highlight': show a colored overlay (and optional label) on the element for visual debugging.",
+    "Hover, scroll or highlight. action 'hover': dispatch synthetic mouseenter / mouseover events on the element (isTrusted=false: JavaScript hover handlers run, CSS :hover styles do not apply); since the page's own handlers run, it asks the human first like the acting tools, and read-only mode refuses it. action 'scroll': scroll the page or the element `selector` by direction and amount, or scroll the element toElement into view. action 'highlight': show a colored overlay (and optional label) on the element for visual debugging. Scroll and highlight change UI state only, never page data, and are allowed in read-only mode; " +
+    `for them: ${READ_SELECTOR_NOTE} ` +
+    ELEMENT_LOCATION_NOTE,
   discriminator: 'action',
   discriminatorDescription: "'hover', 'scroll' or 'highlight'",
   variants: {
@@ -404,7 +415,9 @@ const foxInteract = grouped({
 const foxWait = grouped({
   name: 'fox_wait',
   description:
-    "Wait for a page condition; fails after timeout (ms). for 'element': an element matching selector appears (and is visible, unless visible=false). for 'network_idle': the page's own top-frame fetch/XHR requests have been idle for idleTime ms; requests already in flight when the call starts are not seen; headless: Playwright networkidle, idleTime ignored. for 'navigation': the tab's next top-level navigation finishes (waitUntil load or domcontentloaded; optionally only one matching urlPattern); a navigation that finished before the call is missed, so prefer for 'url' when the destination is known; headless: urlPattern ignored. for 'url': the URL equals url or matches the urlPattern regex (one of them required); returns at once if it already does.",
+    "Wait for a page condition; fails after timeout (ms). for 'element': an element matching selector appears (and is visible, unless visible=false). " +
+    `${ELEMENT_LOCATION_NOTE} ${READ_SELECTOR_NOTE} ` +
+    "for 'network_idle': the page's own top-frame fetch/XHR requests have been idle for idleTime ms; requests already in flight when the call starts are not seen; headless: Playwright networkidle, idleTime ignored. for 'navigation': the tab's next top-level navigation finishes (waitUntil load or domcontentloaded; optionally only one matching urlPattern); a navigation that finished before the call is missed, so prefer for 'url' when the destination is known; headless: urlPattern ignored. for 'url': the URL equals url or matches the urlPattern regex (one of them required); returns at once if it already does.",
   discriminator: 'for',
   discriminatorDescription: "'element', 'network_idle', 'navigation' or 'url'",
   variants: {

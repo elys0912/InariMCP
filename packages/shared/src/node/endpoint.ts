@@ -10,7 +10,12 @@
  * is used without its surrounding blanks. A port must be an integer in
  * 1..65535; anything else falls back to the default (reported through
  * `onInvalid` when given).
+ *
+ * The host is taken through resolveDaemonHost() on both ends, which refuses
+ * a FOX_HOST that is not a loopback address.
  */
+
+import * as net from 'node:net';
 
 import { ENV, ENV_DEFAULTS, MAX_PORT } from '../constants.js';
 
@@ -50,11 +55,12 @@ function resolvePortVar(
 }
 
 /**
- * FOX_HOST, trimmed. An empty or blank value counts as unset, so `FOX_HOST=`
- * (or `FOX_HOST=' '`) is the default: it must not become `''`, which binds
- * every interface, nor `' '`, which no socket accepts.
+ * FOX_HOST, trimmed and unchecked: only through resolveDaemonHost(), which
+ * refuses one that is not loopback. An empty or blank value counts as unset,
+ * so `FOX_HOST=` (or `FOX_HOST=' '`) is the default: it must not become `''`,
+ * which binds every interface, nor `' '`, which no socket accepts.
  */
-export function resolveHost(env: Env = process.env): string {
+function resolveHost(env: Env): string {
   return nonBlank(env[ENV.FOX_HOST]) ?? ENV_DEFAULTS.FOX_HOST;
 }
 
@@ -67,11 +73,59 @@ export function resolveWsPort(onInvalid?: InvalidPortHandler, env: Env = process
 }
 
 /**
- * True for addresses only this machine can reach (127.0.0.0/8, ::1,
- * localhost). Anything else — 0.0.0.0 in particular — exposes the daemon's
- * ports to the network.
+ * 127.0.0.0/8 mapped into IPv6, as the WHATWG URL parser writes it
+ * (`::ffff:127.0.0.1` → `::ffff:7f00:1`).
+ */
+const IPV4_MAPPED_LOOPBACK_RE = /^::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}$/;
+
+/** An IPv6 address in the one spelling of the WHATWG URL parser (`0:0:0:0:0:0:0:1` → `::1`), or null. */
+function canonicalIPv6(address: string): string | null {
+  try {
+    return new URL(`http://[${address}]/`).hostname.slice(1, -1);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True for addresses only this machine can reach: `localhost`, an IPv4
+ * address in 127.0.0.0/8, and the IPv6 `::1` or 127.0.0.0/8 mapped into
+ * IPv6 (`::ffff:127.0.0.1`), in any spelling of the address. A name that
+ * only looks like one (`127.999.0.1`, `127.1`) is no IP address: it would
+ * go to the name resolver, so it is refused. Anything else, 0.0.0.0 in
+ * particular, exposes the daemon's ports to the network.
  */
 export function isLoopbackHost(host: string): boolean {
   const h = host.trim().toLowerCase().replace(/^\[(.*)\]$/, '$1');
-  return h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h) || h === '::ffff:127.0.0.1';
+  if (h === 'localhost') return true;
+
+  switch (net.isIP(h)) {
+    case 4:
+      return h.startsWith('127.');
+    case 6: {
+      const canonical = canonicalIPv6(h);
+      return canonical === '::1' || (canonical !== null && IPV4_MAPPED_LOOPBACK_RE.test(canonical));
+    }
+    default:
+      return false;
+  }
+}
+
+/**
+ * FOX_HOST (resolveHost) for every process on the daemon link: the daemon
+ * binds it, the Native Host and the relays connect to it. The link is plain
+ * HTTP and WebSocket and carries page content and tool arguments, so a
+ * host that is not a loopback address (isLoopbackHost) throws instead of
+ * being used.
+ */
+export function resolveDaemonHost(env: Env = process.env): string {
+  const host = resolveHost(env);
+  if (!isLoopbackHost(host)) {
+    throw new Error(
+      `${ENV.FOX_HOST}=${host} is not a loopback address (127.0.0.0/8, ::1, localhost). ` +
+      'The daemon serves plain HTTP and WebSocket and is reached on this machine only: ' +
+      `unset ${ENV.FOX_HOST} or set it to 127.0.0.1.`,
+    );
+  }
+  return host;
 }

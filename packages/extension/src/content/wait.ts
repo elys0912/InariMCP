@@ -1,10 +1,14 @@
 // Waits: element, network idle.
 
 import { DELAYS, TIMEOUTS } from "./constants";
-import { findElement, isVisible, getElementInfo, sleep } from "./dom";
+import { findElement, isVisible, getElementLocation, sleep } from "./dom";
 import { activeRequestCount, beginNetworkCount, interceptionStatus } from "./page-hooks";
 import type { WaitOptions, NetworkIdleOptions } from "./types";
 
+/**
+ * fox_wait for an element. A wait is no read (no confirm_read_sites check):
+ * it returns where the element is, not its content.
+ */
 export async function waitForElement(
   options: WaitOptions,
 ): Promise<Record<string, unknown>> {
@@ -16,7 +20,7 @@ export async function waitForElement(
     const element = findElement(options);
     if (element) {
       if (!options.visible || isVisible(element)) {
-        return { found: true, element: getElementInfo(element) };
+        return { found: true, element: getElementLocation(element) };
       }
     }
     await sleep(interval);

@@ -54,6 +54,8 @@ const ACTING: ReadonlyArray<[tool: string, args: Record<string, unknown>]> = [
   ['fox_navigate', { action: 'hard_refresh' }],
   ['fox_close_tab', { tabId: 1 }],
   ['fox_handle_dialog', { action: 'accept' }],
+  // The page's own hover handlers run.
+  ['fox_hover', { selector: '#h' }],
 ];
 /** Acting tools whose `url` is the site they act on. */
 const ACTING_ON_URL: ReadonlyArray<string> = ['fox_navigate', 'fox_create_tab', 'fox_open_in_container'];
@@ -71,7 +73,6 @@ const NOT_PAGE_READS: ReadonlyArray<[tool: string, args: Record<string, unknown>
   ['fox_screenshot', { scope: 'all_tabs' }],
   ['fox_get_tabs', {}],
   ['fox_list_containers', {}],
-  ['fox_hover', { selector: '#h' }],
   ['fox_scroll', {}],
   ['fox_highlight', { selector: '#h' }],
   ['fox_switch_tab', { tabId: 1 }],
@@ -192,6 +193,7 @@ describe('approval by tool class (decision #9)', () => {
       ['fox_tabs', { what: 'tabs' }, null, null],
       ['fox_wait', { for: 'element', selector: '#w' }, null, null],
       ['fox_interact', { action: 'scroll' }, null, null],
+      ['fox_interact', { action: 'hover', selector: '#h' }, 'confirmation_required', 'confirmation_required'],
       ['fox_tab', { action: 'switch', tabId: 1 }, null, null],
       ['fox_safety_status', {}, null, null],
       ['fox_tab', { action: 'create', url: 'https://plain.example.test/' }, 'confirmation_required', 'confirmation_required'],

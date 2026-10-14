@@ -712,6 +712,18 @@ describe('doctor: screenshots and logs', () => {
   });
 });
 
+describe('doctor: a FOX_HOST that is not a loopback address', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('names the refused FOX_HOST where the daemon address would be', async () => {
+    vi.stubEnv('FOX_HOST', '0.0.0.0');
+    const d = byId(await runChecks(deps(undefined)), 'daemon');
+    expect(d.detail).toContain('no daemon address: FOX_HOST=0.0.0.0 is not a loopback address');
+  });
+});
+
 describe('doctor: token, powershell, foreign daemons', () => {
   it('a token readable by other users → WARN with the chmod commands (POSIX only)', async () => {
     writeToken(TOKEN);

@@ -41,8 +41,11 @@
 //                                its site).
 //                   "readPerTab" (self) multi-tab read: the handler skips
 //                                tabs matching those rules.
-//                   "none"       changes no page data (UI only, waits, tab
-//                                list, approvals, status).
+//                   "none"       changes no page data and returns no text,
+//                                value or link of the page (UI only, waits,
+//                                tab list, approvals, status): about an
+//                                element only its tag, selector and
+//                                position.
 //   needsTabId      (tab only) an explicit tabId is required; the active tab
 //                   is not used as a fallback.
 //   skipUrlReport   (tab only) no URL report after the call (the tab is gone).
@@ -211,7 +214,8 @@ const ACTIONS = {
   // --- Content script (form / input, wait / observe, text) ---
   setValue: { scope: "tab", approval: "act", handler: toContentScript("setValue") },
   selectOption: { scope: "tab", approval: "act", handler: toContentScript("selectOption") },
-  hover: { scope: "tab", approval: "none", handler: toContentScript("hover") },
+  // The page's own hover handlers run: acting, though no input is given.
+  hover: { scope: "tab", approval: "act", handler: toContentScript("hover") },
   scrollAndCapture: { scope: "tab", approval: "read", handler: toContentScript("scrollAndCapture") },
   pressKey: { scope: "tab", approval: "act", handler: toContentScript("pressKey") },
   getText: { scope: "tab", approval: "read", handler: toContentScript("getText") },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskSensitiveArgs, sanitizeResult, sanitizeString } from '../src/safety/sanitizer.js';
+import { maskSensitiveArgs, sanitizeResult, sanitizeString, sanitizeUrl } from '../src/safety/sanitizer.js';
 
 // Built at runtime so no token-shaped literal sits in the repository.
 const FAKE_JWT = `eyJ${'a'.repeat(12)}.${'b'.repeat(10)}.${'c'.repeat(10)}`;
@@ -33,6 +33,42 @@ describe('maskSensitiveArgs', () => {
   it('matches keys whatever their case or separator (promptText as in the schema)', () => {
     expect(maskSensitiveArgs({ 'Prompt-Text': 'x', promptText: 'p', Password: 'q', selector: 's' }))
       .toEqual({ 'Prompt-Text': '***', promptText: '***', Password: '***', selector: 's' });
+  });
+
+  it('masks the option of fox_set_value kind "select" and the key of fox_press_key', () => {
+    expect(maskSensitiveArgs({ kind: 'select', selector: '#m', option: { value: '05', text: 'May' } }))
+      .toEqual({ kind: 'select', selector: '#m', option: { value: '***', text: '***' } });
+    expect(maskSensitiveArgs({ key: 'a', ctrl: false })).toEqual({ key: '***', ctrl: false });
+  });
+
+  it('masks inside nested objects and arrays at any depth, and leaves other values as they are', () => {
+    expect(maskSensitiveArgs({
+      a: [{ value: 'v', b: { text: 't', url: 'https://a.test/?token=x' } }, 'https://a.test/#access_token=y', 3],
+      option: { index: 2 },
+      roles: ['button'],
+      empty: null,
+    })).toEqual({
+      a: [{ value: '***', b: { text: '***', url: 'https://a.test/?token=[MASKED]' } }, 'https://a.test/#access_token=[MASKED]', 3],
+      option: { index: 2 },
+      roles: ['button'],
+      empty: null,
+    });
+  });
+
+  it('does not mutate a nested input', () => {
+    const args = { option: { value: 'v' } };
+    maskSensitiveArgs(args);
+    expect(args).toEqual({ option: { value: 'v' } });
+  });
+});
+
+describe('sanitizeUrl', () => {
+  it('masks the secrets of a URL as in a url argument, and keeps null', () => {
+    expect(sanitizeUrl('https://a.test/cb?code=1&access_token=abc#id_token=t')).toBe(
+      'https://a.test/cb?code=1&access_token=[MASKED]#id_token=[MASKED]',
+    );
+    expect(sanitizeUrl('https://a.test/page')).toBe('https://a.test/page');
+    expect(sanitizeUrl(null)).toBeNull();
   });
 });
 
