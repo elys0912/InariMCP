@@ -25,6 +25,7 @@ export const CLAUDE_NAME = 'inari-mcp';
 export const SERVICE_NAME = 'inari-mcp';
 export const MIN_NODE_MAJOR = 20;
 export const CLAUDE_SCOPES = ['user', 'local', 'project'];
+/** Default port of the daemon's HTTP bridge (same as ENV_DEFAULTS.FOX_HTTP_PORT of @inari-mcp/shared). */
 export const DEFAULT_HTTP_PORT = 8785;
 export const DEFAULT_HTTP_HOST = '127.0.0.1';
 /** Highest TCP port number (same as MAX_PORT of @inari-mcp/shared). */

@@ -1,7 +1,7 @@
 // DOM helpers: element location, locators, selectors / XPath, element info,
 // the masked-value rule and the password field guard.
 
-import { isMaskedField as isMaskedFieldInfo, MASKED_VALUE } from "@inari-mcp/shared/field-mask";
+import { isMaskedField as isMaskedByRule, MASKED_VALUE } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
 import { abortedError, isAborted, whenAborted } from "./abort";
 import { LIMITS } from "./constants";
@@ -55,10 +55,11 @@ export function isPasswordField(element: Element): boolean {
 
 /**
  * Whether the element's value is masked in what the tools return (password,
- * hidden, one-time code and payment card fields: shared/src/field-mask.ts).
+ * hidden, one-time code and payment card fields): the rule of
+ * shared/src/field-mask.ts on what the element says.
  */
 export function isMaskedField(element: Element): boolean {
-  return isMaskedFieldInfo({
+  return isMaskedByRule({
     localName: element.localName,
     type: isInputElement(element) ? element.type : "",
     autocomplete: element.getAttribute("autocomplete"),
