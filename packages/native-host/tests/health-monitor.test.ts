@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS } from '@inari-mcp/shared';
 import { HealthMonitor, type MonitoredLauncher } from '../src/health-monitor.js';
-import type { HealthVerdict } from '@kitsune-mcp/shared/node';
+import type { HealthVerdict } from '@inari-mcp/shared/node';
 
 function fakeLauncher(verdict: HealthVerdict | Error, portInUse = false): MonitoredLauncher & { starts: number } {
   const fake = {
@@ -22,7 +22,7 @@ function fakeLauncher(verdict: HealthVerdict | Error, portInUse = false): Monito
   return fake;
 }
 
-describe('HealthMonitor.check (4.A3)', () => {
+describe('HealthMonitor.check', () => {
   it('never rejects, even when the probe throws', async () => {
     const monitor = new HealthMonitor(fakeLauncher(new Error('boom')));
     await expect(monitor.check()).resolves.toBeUndefined();
@@ -82,7 +82,7 @@ describe('HealthMonitor.check (4.A3)', () => {
     expect(launcher.starts).toBe(ENV_DEFAULTS.MAX_RESTART_ATTEMPTS);
   });
 
-  it('counts missing checks afresh after a failed start (V-4)', async () => {
+  it('counts missing checks afresh after a failed start', async () => {
     const launcher = fakeLauncher({ kind: 'down' });
     launcher.start = vi.fn(async () => {
       launcher.starts++;

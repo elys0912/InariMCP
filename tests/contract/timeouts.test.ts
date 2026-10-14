@@ -19,8 +19,8 @@
  *   2. the relay margin covers the daemon's headless startup wait.
  *   3. daemon > extension when a timeout argument is given (arg + 5 s),
  *      including every default the tool schemas fill in.
- *   4. the only timeout argument keys in the tool schemas are `timeout` and
- *      `timeoutMs` (the keys both relay and daemon read).
+ *   4. the only timeout argument key in the tool schemas is `timeout` (the
+ *      key both relay and daemon read).
  *   5. daemon > extension for content.ts fallbacks (no argument).
  *   6. native-host bookkeeping TTL > daemon's longest base timeout, and >
  *      the daemon's wait for the largest timeout argument the schemas
@@ -37,7 +37,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { ZodTypeAny } from 'zod';
-import { BROWSER_ACTIONS, ENV_DEFAULTS, type BrowserAction } from '@kitsune-mcp/shared';
+import { BROWSER_ACTIONS, ENV_DEFAULTS, type BrowserAction } from '@inari-mcp/shared';
 import {
   maxCommandTimeoutMs,
   resolveCommandTimeout,
@@ -53,9 +53,7 @@ const ARG_SETS: readonly Record<string, unknown>[] = [
   {},
   { timeout: 1_000 },
   { timeout: 60_000 },
-  { timeoutMs: 600_000 },
   { timeout: 3_600_000 },
-  { timeoutMs: 45_000, timeout: 90_000 },
 ];
 
 function daemonTimeout(action: BrowserAction, args: Record<string, unknown>, kind: BrowserKind): number {
@@ -98,21 +96,18 @@ describe('2. relay margin covers the headless startup wait', () => {
     expect(relayTimeoutMarginMs({})).toBeGreaterThan(ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT);
   });
 
-  it('R-13: the margin follows a raised FOX_HEADLESS_STARTUP_TIMEOUT (and its legacy name)', () => {
+  it('the margin follows a raised FOX_HEADLESS_STARTUP_TIMEOUT', () => {
     const raised = 10 * ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT;
     expect(relayTimeoutMarginMs({ FOX_HEADLESS_STARTUP_TIMEOUT: String(raised) })).toBeGreaterThan(raised);
-    expect(relayTimeoutMarginMs({ CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT: String(raised) })).toBeGreaterThan(raised);
   });
 });
 
 describe('3. daemon waits longer than an explicit browser-side wait', () => {
   it('resolveCommandTimeout >= argument + 5 s for every action / transport', () => {
     for (const arg of [1, 1_000, 30_000, 90_000, 200_000, 3_600_000]) {
-      for (const key of ['timeout', 'timeoutMs']) {
-        for (const action of BROWSER_ACTIONS) {
-          for (const kind of KINDS) {
-            expect(daemonTimeout(action, { [key]: arg }, kind)).toBeGreaterThanOrEqual(arg + 5_000);
-          }
+      for (const action of BROWSER_ACTIONS) {
+        for (const kind of KINDS) {
+          expect(daemonTimeout(action, { timeout: arg }, kind)).toBeGreaterThanOrEqual(arg + 5_000);
         }
       }
     }
@@ -132,13 +127,13 @@ describe('3. daemon waits longer than an explicit browser-side wait', () => {
 });
 
 describe('4. timeout argument keys', () => {
-  it('tool schemas only use `timeout` / `timeoutMs`', () => {
+  it('tool schemas only use `timeout`', () => {
     const keys = new Set<string>();
     for (const def of Object.values(TOOL_SCHEMAS)) {
       const shape = (def.inputSchema as unknown as { shape: Record<string, unknown> }).shape;
       for (const key of Object.keys(shape)) if (/timeout/i.test(key)) keys.add(key);
     }
-    expect([...keys].sort()).toEqual(['timeout', 'timeoutMs']);
+    expect([...keys].sort()).toEqual(['timeout']);
   });
 });
 
@@ -158,7 +153,6 @@ describe('5. daemon waits longer than the extension-side fallbacks', () => {
   it.each([
     ['solve_captcha', 'CAPTCHA'],
     ['wait_for_element', 'WAIT_ELEMENT'],
-    ['wait_for_change', 'DEFAULT'],
     ['wait_for_network_idle', 'NETWORK_IDLE'],
   ] as const)('%s: daemon base > content.ts TIMEOUTS.%s', (action, key) => {
     expect(content[key]).toBeTypeOf('number');
@@ -168,7 +162,7 @@ describe('5. daemon waits longer than the extension-side fallbacks', () => {
   });
 });
 
-describe('5b. extension-side waits without a timeout argument end before the daemon (WP5)', () => {
+describe('5b. extension-side waits without a timeout argument end before the daemon', () => {
   const content = readNumericObjectConstant(readExtensionTree('content'), 'TIMEOUTS');
   const background = readNumericObjectConstant(readExtensionTree('background'), 'TIMEOUTS');
 
@@ -205,7 +199,7 @@ describe('6. native-host in-flight bookkeeping outlives the daemon timeout', () 
       .reduce((a, b) => a * b, 1);
     expect(ttl).toBe(600_000);
     expect(ttl).toBeGreaterThan(maxCommandTimeoutMs({}));
-    // ... and the daemon's wait for the largest timeout argument (WP30).
+    // ... and the daemon's wait for the largest timeout argument.
     expect(ttl).toBeGreaterThan(maxCommandTimeoutMs({ timeout: MAX_TIMEOUT_ARG_MS }));
   });
 

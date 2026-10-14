@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { interpretCallResponse, truncate } from '../../scripts/e2e/smoke-core.mjs';
+import { approvalRequestId, interpretCallResponse, truncate } from '../../scripts/e2e/smoke-core.mjs';
 
 // ---------------------------------------------------------------------------
 // scripts/e2e/tools-smoke.mjs helpers
@@ -42,13 +42,27 @@ describe('tools-smoke: interpretCallResponse', () => {
     expect(interpretCallResponse(null).isError).toBe(true);
   });
 
-  it('reports a 2xx body without a result object (array, {}) as an error (R3 §4)', () => {
+  it('reports a 2xx body without a result object (array, {}) as an error', () => {
     for (const body of [[], ['ok'], {}, { success: true }, { success: true, result: [] }, { result: null }]) {
       const r = interpretCallResponse(answer(200, body));
       expect(r.isError, JSON.stringify(body)).toBe(true);
       expect(r.text, JSON.stringify(body)).toMatch(/^HTTP 200: /);
       expect(r.content).toEqual([]);
     }
+  });
+
+  it('approvalRequestId: the request of a confirmation_required result, else undefined', () => {
+    const refused = (details: unknown) => interpretCallResponse(answer(200, {
+      success: false,
+      result: { isError: true, content: [{ type: 'text', text: 'fox_click needs human approval' }, { type: 'text', text: JSON.stringify(details) }] },
+    }));
+    expect(approvalRequestId(refused({ confirmationRequired: true, approval: { requestId: 'r-1' } }))).toBe('r-1');
+    // Not approvable yet (no approval block), another refusal, a success.
+    expect(approvalRequestId(refused({ confirmationRequired: true }))).toBeUndefined();
+    expect(approvalRequestId(refused({ decision: 'read_only' }))).toBeUndefined();
+    expect(approvalRequestId(interpretCallResponse(answer(200, {
+      success: true, result: { content: [{ type: 'text', text: '{"confirmationRequired":true,"approval":{"requestId":"x"}}' }] },
+    })))).toBeUndefined();
   });
 
   it('truncate counts code points (does not split a surrogate pair)', () => {

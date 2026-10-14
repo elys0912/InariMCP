@@ -1,12 +1,13 @@
 /**
- * KitsuneMCP - Popup Script
+ * InariMCP - Popup Script
  */
 
-import { t } from '../i18n';
+import { localizePage, t } from '../i18n';
 import { APPROVAL_MESSAGE, type ApprovalView } from '../approval';
 import { TOP_FRAME_ID } from '../background/constants';
 import type { ContentRequest } from '../content/types';
 import type { SetupState } from '../types/setup';
+import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, requestControl, type ControlView } from '../user-control';
 import { setupStateOfReply, setupStateOfFailure } from './setup-status';
 
 interface StatusResponse {
@@ -58,7 +59,7 @@ interface SetupGuide {
   notice?: boolean;
 }
 
-const LOG_DIR = '~/.kitsune-mcp/logs';
+const LOG_DIR = '~/.inari-mcp/logs';
 
 function installerCommand(os: string): string {
   return os === 'win'
@@ -244,8 +245,8 @@ function secondsLeft(view: ApprovalView): string {
 
 /** The countdown line under a request. */
 function approvalNoteText(view: ApprovalView): string {
-  return view.kind === 'protected_action'
-    ? t('approvalProtectedNote', secondsLeft(view))
+  return view.kind === 'tool_call'
+    ? t('approvalToolCallNote', secondsLeft(view))
     : t('approvalMessageNote', secondsLeft(view));
 }
 
@@ -268,10 +269,10 @@ function approvalCard(view: ApprovalView, onDecide: (id: string, approved: boole
 
   const title = document.createElement('p');
   title.className = 'approval-title';
-  title.textContent = view.kind === 'protected_action' ? t('approvalProtectedTitle') : t('approvalMessageTitle');
+  title.textContent = view.kind === 'tool_call' ? t('approvalToolCallTitle') : t('approvalMessageTitle');
   card.appendChild(title);
 
-  if (view.kind === 'protected_action') {
+  if (view.kind === 'tool_call') {
     card.appendChild(approvalRow(t('approvalSite'), view.host ?? ''));
     card.appendChild(approvalRow(t('approvalTool'), view.toolName ?? ''));
     if (view.url) card.appendChild(approvalRow(t('approvalPage'), view.url));
@@ -320,20 +321,44 @@ const APPROVAL_ARM_DELAY_MS = 800;
 /** The request on screen, since when, and how many others are queued. */
 let shownApproval: { id: string; more: number; shownAt: number } | null = null;
 
-/**
- * Show the oldest pending request (one at a time: the buttons never move
- * under the cursor), with a count of the others. The card is rebuilt only
- * when the request on screen changes; otherwise just the countdown updates.
- */
-async function refreshApprovals(): Promise<void> {
-  let approvals: ApprovalView[] = [];
+/** The pending requests as the background lists them (none when it cannot answer). */
+async function fetchApprovals(): Promise<ApprovalView[]> {
   try {
     const reply = await browser.runtime.sendMessage({ type: APPROVAL_MESSAGE.LIST }) as ApprovalListResponse;
-    approvals = reply?.success && Array.isArray(reply.approvals) ? reply.approvals : [];
+    return reply?.success && Array.isArray(reply.approvals) ? reply.approvals : [];
   } catch {
-    approvals = [];
+    return [];
   }
+}
 
+/** Keep the buttons of `card` disabled until APPROVAL_ARM_DELAY_MS after `shownAt`. */
+function armLater(card: HTMLElement, shownAt: number): void {
+  const armIn = shownAt + APPROVAL_ARM_DELAY_MS - Date.now();
+  if (armIn <= 0) return;
+
+  const buttons = card.querySelectorAll('button');
+  buttons.forEach((b) => { b.disabled = true; });
+  setTimeout(() => buttons.forEach((b) => { b.disabled = false; }), armIn);
+}
+
+/** The line under the card: how many other requests wait (none when 0). */
+function queuedNote(more: number): HTMLElement[] {
+  if (more === 0) return [];
+
+  const queued = document.createElement('p');
+  queued.className = 'approval-queued';
+  queued.textContent = t('approvalMore', String(more));
+  return [queued];
+}
+
+/**
+ * Show the first pending request (one at a time: the buttons never move
+ * under the cursor; the background lists the tool_call requests first), with
+ * a count of the others. The card is rebuilt only when the request on screen
+ * changes; otherwise just the countdown updates.
+ */
+async function refreshApprovals(): Promise<void> {
+  const approvals = await fetchApprovals();
   const list = document.getElementById('approval-list');
   setHidden('approvals', approvals.length === 0);
   if (!list) return;
@@ -354,20 +379,8 @@ async function refreshApprovals(): Promise<void> {
   const shownAt = shownApproval?.id === view.id ? shownApproval.shownAt : Date.now();
   shownApproval = { id: view.id, more, shownAt };
   const card = approvalCard(view, (id, approved) => { void decide(id, approved); });
-  const armIn = shownAt + APPROVAL_ARM_DELAY_MS - Date.now();
-  if (armIn > 0) {
-    const buttons = card.querySelectorAll('button');
-    buttons.forEach((b) => { b.disabled = true; });
-    setTimeout(() => buttons.forEach((b) => { b.disabled = false; }), armIn);
-  }
-  const children: HTMLElement[] = [card];
-  if (more > 0) {
-    const queued = document.createElement('p');
-    queued.className = 'approval-queued';
-    queued.textContent = t('approvalMore', String(more));
-    children.push(queued);
-  }
-  list.replaceChildren(...children);
+  armLater(card, shownAt);
+  list.replaceChildren(card, ...queuedNote(more));
 }
 
 async function decide(id: string, approved: boolean): Promise<void> {
@@ -384,13 +397,61 @@ async function decide(id: string, approved: boolean): Promise<void> {
   await refreshApprovals();
 }
 
-/** Fill every [data-i18n] element with its localized message. */
-function localizePage(): void {
-  document.documentElement.lang = browser.i18n.getUILanguage();
-  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => {
-    const key = el.dataset.i18n;
-    if (key) el.textContent = t(key);
-  });
+// ---------------------------------------------------------------------------
+// Consent and pause switch
+// ---------------------------------------------------------------------------
+//
+// The background holds both (background/control-state.ts; the messages are
+// in user-control.ts). Without consent the popup only offers to open the
+// consent page again; with it, the pause switch and, under it, a link to the
+// consent page to withdraw the consent.
+
+function renderControl(control: ControlView): void {
+  const granted = control.consent === 'granted';
+  setHidden('consent', granted);
+  setHidden('control', !granted);
+  const toggle = document.getElementById('pause-switch') as HTMLInputElement | null;
+  if (toggle) toggle.checked = control.paused;
+  setHidden('pause-note', !control.paused);
+  // Recheck would only report "Connecting..." without consent.
+  const recheck = document.getElementById('btn-test-connection') as HTMLButtonElement | null;
+  if (recheck) recheck.disabled = !granted;
+  if (!granted) updateStatus('disconnected', t('statusNoConsent'));
+}
+
+/** The pause switch: the background refuses or accepts commands from now on. */
+function setupPauseSwitch(): void {
+  const toggle = document.getElementById('pause-switch') as HTMLInputElement | null;
+  toggle?.addEventListener('change', () => { void applyPauseSwitch(toggle); });
+}
+
+/**
+ * Sends the switch's state to the background; puts the switch back if that
+ * fails, and warns when the background could not save it (it then holds
+ * until Firefox restarts).
+ */
+async function applyPauseSwitch(toggle: HTMLInputElement): Promise<void> {
+  const reply = await requestControl({ type: CONTROL_MESSAGE.SET_PAUSED, paused: toggle.checked });
+  if (reply === null) {
+    toggle.checked = !toggle.checked;
+    showToast(t('toastPauseFailed'), 'error');
+    return;
+  }
+
+  renderControl(reply);
+  if (!reply.saved) showToast(t('toastPauseNotSaved'), 'warning');
+}
+
+/** Opens the consent page in a tab (the popup closes when the tab opens). */
+function openConsentPage(): void {
+  void browser.tabs.create({ url: browser.runtime.getURL(CONSENT_PAGE_PATH) }).then(() => window.close());
+}
+
+/** The buttons that open the consent page: to allow, and to withdraw. */
+function setupConsentButtons(): void {
+  for (const id of ['btn-open-consent', 'btn-change-consent']) {
+    document.getElementById(id)?.addEventListener('click', openConsentPage);
+  }
 }
 
 /** The active tab's title and URL at the top of the popup. */
@@ -403,66 +464,71 @@ function showCurrentTab(tab: browser.tabs.Tab): void {
 
 /** Screenshot button: capture through the background and download the image. */
 function setupScreenshotButton(): void {
-  document.getElementById('btn-screenshot')?.addEventListener('click', async () => {
-    try {
-      const result = await browser.runtime.sendMessage({
-        target: 'background',
-        action: 'screenshot',
-      }) as ScreenshotResponse;
+  document.getElementById('btn-screenshot')?.addEventListener('click', () => { void downloadScreenshot(); });
+}
 
-      if (result.success && result.imageData) {
-        showToast(t('toastScreenshotCaptured'), 'success');
-        const link = document.createElement('a');
-        link.href = result.imageData;
-        link.download = `screenshot-${Date.now()}.png`;
-        link.click();
-      } else {
-        showToast(result.error || t('toastScreenshotFailed'), 'error');
-      }
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : t('toastUnknownError');
-      showToast(msg, 'error');
+async function downloadScreenshot(): Promise<void> {
+  try {
+    const result = await browser.runtime.sendMessage({
+      target: 'background',
+      action: 'screenshot',
+    }) as ScreenshotResponse;
+
+    if (result.success && result.imageData) {
+      showToast(t('toastScreenshotCaptured'), 'success');
+      const link = document.createElement('a');
+      link.href = result.imageData;
+      link.download = `screenshot-${Date.now()}.png`;
+      link.click();
+    } else {
+      showToast(result.error || t('toastScreenshotFailed'), 'error');
     }
-  });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : t('toastUnknownError');
+    showToast(msg, 'error');
+  }
 }
 
 /** Page info button: copy the page info of `tab` (top frame) to the clipboard. */
 function setupPageInfoButton(tab: browser.tabs.Tab): void {
-  document.getElementById('btn-pageinfo')?.addEventListener('click', async () => {
-    try {
-      const result = await browser.tabs.sendMessage(
-        tab.id,
-        { action: 'getPageInfo' } satisfies ContentRequest,
-        { frameId: TOP_FRAME_ID },
-      ) as PageInfoResponse;
+  document.getElementById('btn-pageinfo')?.addEventListener('click', () => { void copyPageInfo(tab); });
+}
 
-      console.log('Page Info:', result);
-      const count = result.interactiveElements?.length ?? 0;
-      showToast(t('toastFoundElements', String(count)), 'success');
+async function copyPageInfo(tab: browser.tabs.Tab): Promise<void> {
+  try {
+    const result = await browser.tabs.sendMessage(
+      tab.id,
+      { action: 'getPageInfo' } satisfies ContentRequest,
+      { frameId: TOP_FRAME_ID },
+    ) as PageInfoResponse;
 
-      await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
-      showToast(t('toastPageInfoCopied'), 'success');
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : t('toastUnknownError');
-      showToast(msg, 'error');
-    }
-  });
+    const count = result.interactiveElements?.length ?? 0;
+    showToast(t('toastFoundElements', String(count)), 'success');
+
+    await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+    showToast(t('toastPageInfoCopied'), 'success');
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : t('toastUnknownError');
+    showToast(msg, 'error');
+  }
 }
 
 /** Copy button of the setup command. */
 function setupCopyCommandButton(): void {
-  document.getElementById('btn-copy-command')?.addEventListener('click', async () => {
-    const command = document.getElementById('setup-command-text')?.textContent ?? '';
-    try {
-      await navigator.clipboard.writeText(command);
-      showToast(t('toastCopied'), 'success');
-    } catch {
-      showToast(t('toastCopyFailed'), 'error');
-    }
-  });
+  document.getElementById('btn-copy-command')?.addEventListener('click', () => { void copySetupCommand(); });
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+async function copySetupCommand(): Promise<void> {
+  const command = document.getElementById('setup-command-text')?.textContent ?? '';
+  try {
+    await navigator.clipboard.writeText(command);
+    showToast(t('toastCopied'), 'success');
+  } catch {
+    showToast(t('toastCopyFailed'), 'error');
+  }
+}
+
+async function init(): Promise<void> {
   localizePage();
   const os = await browser.runtime.getPlatformInfo().then(info => info.os, () => '');
 
@@ -482,11 +548,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     void refreshStatus(os, true);
   });
   setupCopyCommandButton();
+  setupConsentButtons();
+  setupPauseSwitch();
 
-  void refreshStatus(os, false);
+  // Without consent nothing connects: the status would only say
+  // "Connecting...". A failed query shows neither section.
+  const control = await requestControl({ type: CONTROL_MESSAGE.GET });
+  if (control !== null) renderControl(control);
+  if (control === null || control.consent === 'granted') void refreshStatus(os, false);
 
   // Pending approval requests: shown first, refreshed while the popup is open
   // (new requests arrive, others time out).
   void refreshApprovals();
   setInterval(() => { void refreshApprovals(); }, APPROVAL_POLL_MS);
-});
+}
+
+document.addEventListener('DOMContentLoaded', () => { void init(); });

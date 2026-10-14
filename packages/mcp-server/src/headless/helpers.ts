@@ -4,7 +4,7 @@
  */
 
 import type { z } from 'zod';
-import { BrowserActionSchema, formatZodIssues, type BrowserAction } from '@kitsune-mcp/shared';
+import { assertReadSelector, BrowserActionSchema, formatZodIssues, MASKED_VALUE, type BrowserAction } from '@inari-mcp/shared';
 import { GET_ELEMENTS_MAX } from './limits.js';
 
 /**
@@ -14,11 +14,11 @@ import { GET_ELEMENTS_MAX } from './limits.js';
  * no defaults of their own. Anything else (a direct execute() call) fails
  * with the zod issues.
  */
-export function parseArgs<S extends z.ZodTypeAny>(
-  schema: S,
+export function parseArgs<T>(
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   args: Record<string, unknown>,
   action: string,
-): z.output<S> {
+): T {
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
     throw new Error(`Invalid arguments for ${action}: ${formatZodIssues(parsed.error.issues)}`);
@@ -76,6 +76,95 @@ export function filterAriaSnapshot(yaml: string, o: AriaFilter): string {
   return lines.join('\n');
 }
 
+/** What the masked fields under a snapshot's root show (headless/actions.ts snapshot). */
+export interface MaskedSnapshotTexts {
+  /** The values of masked input and textarea fields. */
+  values: string[];
+  /** The label and the text of the selected option of each masked select. */
+  selectedOptions: string[];
+}
+
+/** Text as an aria snapshot shows it (Playwright's normalizeWhiteSpace). */
+function ariaText(text: string): string {
+  return text.replace(/[\u200b\u00ad]/g, '').trim().replace(/\s+/g, ' ');
+}
+
+/** One character escaped inside a double-quoted YAML value, as Playwright escapes it. */
+function escapeYamlChar(c: string): string {
+  switch (c) {
+    case '\\': return '\\\\';
+    case '"': return '\\"';
+    case '\b': return '\\b';
+    case '\f': return '\\f';
+    case '\n': return '\\n';
+    case '\r': return '\\r';
+    case '\t': return '\\t';
+    default: return `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`;
+  }
+}
+
+/**
+ * The line endings by which `text` shows as the value of a node: `: text`,
+ * or quoted when YAML needs it (Playwright's yamlEscapeValueIfNeeded).
+ */
+function valueLineEndings(text: string): string[] {
+  // eslint-disable-next-line no-control-regex -- the control characters are what Playwright escapes
+  const quoted = `"${text.replace(/[\\"\x00-\x1f\x7f-\x9f]/g, escapeYamlChar)}"`;
+  return [`: ${text}`, `: ${quoted}`];
+}
+
+/**
+ * One line of the snapshot with a masked value replaced, or a masked
+ * select's choice left out. An option's name holds its label, its text or
+ * both (Firefox names `<option label="Thirty-one">2031</option>`
+ * "Thirty-one2031"), so a selected option whose name contains one of
+ * `selectedNames` loses its `[selected]`.
+ */
+function maskAriaLine(line: string, valueEndings: string[], selectedNames: string[]): string {
+  const ending = valueEndings.find((e) => line.endsWith(e));
+  if (ending !== undefined) return `${line.slice(0, line.length - ending.length)}: ${MASKED_VALUE}`;
+  const isSelectedOption = line.trimStart().startsWith('- option "') && line.includes(' [selected]');
+  if (isSelectedOption && selectedNames.some((name) => line.includes(name))) {
+    return line.replace(' [selected]', '');
+  }
+  return line;
+}
+
+/**
+ * Shortest masked value also replaced wherever else it appears in the
+ * snapshot (in an accessible name, say). A shorter one would mask ordinary
+ * words and numbers of the page.
+ */
+const MIN_MASKED_ANYWHERE = 4;
+
+/** `text` with every occurrence of each of `values` replaced by MASKED_VALUE. */
+function maskEverywhere(text: string, values: string[]): string {
+  return values.filter((v) => v.length >= MIN_MASKED_ANYWHERE)
+    .reduce((masked, value) => masked.split(value).join(MASKED_VALUE), text);
+}
+
+/**
+ * Mask what Playwright's ariaSnapshot() shows of masked fields (the rule of
+ * shared/src/field-mask.ts): the value of an input or textarea, which it
+ * renders after the node (`- textbox "Password": value`, or a `- text:`
+ * line below it), becomes `[MASKED]`; the selected option of a select loses
+ * its `[selected]`. Then a value of MIN_MASKED_ANYWHERE characters or more
+ * is replaced wherever else it is left, such as inside the name of a node
+ * that the field labels. The YAML has no link back to the elements, so every
+ * line that shows such a value is masked, also one that belongs to another
+ * node: it errs on the side of masking.
+ */
+export function maskAriaSnapshot(yaml: string, masked: MaskedSnapshotTexts): string {
+  const shown = (texts: string[]): string[] => texts.map(ariaText).filter((t) => t !== '');
+  const values = shown(masked.values);
+  const valueEndings = values.flatMap(valueLineEndings);
+  // As a name shows inside the double quotes of the YAML.
+  const selectedNames = shown(masked.selectedOptions).map((t) => JSON.stringify(t).slice(1, -1));
+  if (valueEndings.length === 0 && selectedNames.length === 0) return yaml;
+  const byLine = yaml.split('\n').map((line) => maskAriaLine(line, valueEndings, selectedNames)).join('\n');
+  return maskEverywhere(byLine, values);
+}
+
 export interface IgnoredParam {
   key: string;
   /** Schema default: a value equal to it is not worth a warning. */
@@ -93,7 +182,7 @@ export const HEADLESS_IGNORED: Readonly<Partial<Record<BrowserAction, readonly I
   refresh: [{ key: 'bypassCache', def: false, note: 'cache is not bypassed' }],
   screenshot: [
     { key: 'saveToFile', def: true, note: 'the screenshot is always saved to a file' },
-    // fox_screenshot timeout is the all_tabs time budget (WP5); scope
+    // fox_screenshot timeout is the all_tabs time budget; scope
     // all_tabs is not supported here, a single capture has no own timeout.
     { key: 'timeout', note: 'it is the all_tabs time budget; all_tabs is not supported in headless mode' },
   ],
@@ -140,8 +229,6 @@ export const HEADLESS_IGNORED: Readonly<Partial<Record<BrowserAction, readonly I
   wait_for_navigation: [
     { key: 'urlPattern', note: "any navigation ends the wait; use fox_wait with for='url'" },
   ],
-  inject_observer: [{ key: 'observerId', note: 'one observer per page' }],
-  remove_observer: [{ key: 'observerId', note: 'one observer per page' }],
 };
 
 /** One warning per parameter that was set to something other than its default and is ignored. */
@@ -156,4 +243,43 @@ export function ignoredParamWarnings(action: string, args: Record<string, unknow
     out.push(`${p.key}: ignored in headless mode (${p.note})`);
   }
   return out;
+}
+
+/** An engine prefix of a Playwright selector (`xpath=`, `internal:role=`, `*css=`): the name its parser accepts before `=`. */
+const SELECTOR_ENGINE_RE = /^[a-zA-Z_0-9+:*-]+$/;
+
+/**
+ * Why Playwright would not read `selector` as plain CSS, or null. These are
+ * the other forms of its selector parser (playwright-core
+ * parseSelectorString): a chain with `>>`, an engine prefix (`xpath=`,
+ * `text=`, `role=`, `internal:attr=`, also `css=`), a quoted text selector,
+ * and an XPath (`//`, `(//`, `..`). Those engines test attributes and states
+ * (`@value`, `role=option[selected]`) that readSelectorProblem does not read,
+ * so the reading actions take plain CSS only.
+ */
+export function playwrightDialectProblem(selector: string): string | null {
+  if (selector.includes('>>')) return 'it chains selectors with >>';
+
+  const part = selector.trim();
+  const eq = part.indexOf('=');
+  if (eq !== -1 && SELECTOR_ENGINE_RE.test(part.slice(0, eq).trim())) {
+    return `it names a Playwright selector engine (${part.slice(0, eq).trim()}=)`;
+  }
+  if (part.startsWith('"') || part.startsWith("'")) return 'it is a Playwright text selector (quoted)';
+  if (/^\(*\/\//.test(part) || part.startsWith('..')) return 'it is an XPath';
+  return null;
+}
+
+/**
+ * Refuse the selector of a headless reading action: what the Extension
+ * refuses (assertReadSelector), and anything Playwright would not read as
+ * plain CSS (playwrightDialectProblem).
+ */
+export function assertHeadlessReadSelector(selector: string): void {
+  const problem = playwrightDialectProblem(selector);
+  if (problem !== null) {
+    throw new Error(`Selector refused: ${problem}; the reading tools take a CSS selector only`);
+  }
+
+  assertReadSelector(selector);
 }

@@ -1,5 +1,6 @@
 // Input: click, type, scroll, set / select values, hover, key presses.
 
+import { MASKED_VALUE } from "@inari-mcp/shared/field-mask";
 import { DEFAULTS, DELAYS, TIMEOUTS } from "./constants";
 import {
   findElement,
@@ -8,10 +9,12 @@ import {
   locatorOf,
   sleep,
   getElementInfo,
+  getElementLocation,
   isTextInput,
   isInputElement,
   isButtonElement,
   isSelectElement,
+  isMaskedField,
   locatorWithoutText,
   hasLocator,
   assertNotPasswordField,
@@ -186,19 +189,18 @@ function pressEnterOn(target: Element, submit: boolean): string {
   return implicitSubmit(form);
 }
 
-export async function performType(
-  options: TypeOptions,
-): Promise<Record<string, unknown>> {
+/**
+ * The element fox_type types into: the one its locator finds, else (no
+ * locator, or focusFirst: false and nothing found) the focused editable
+ * field. Refused when there is none, when it is disabled, and when it is a
+ * password field without allowPassword.
+ */
+function findTypeTarget(options: TypeOptions): Element {
   // `text` is what to type, never a locator (see locatorWithoutText).
   const locator = locatorWithoutText(options);
   const located = hasLocator(locator);
   let element: Element | null = located ? findElement(locator) : null;
-
-  // No locator (or focusFirst: false and nothing found): the focused field.
-  if (!element && (!located || options.focusFirst === false)) {
-    const active = document.activeElement;
-    if (active && active !== document.body && isEditable(active)) element = active;
-  }
+  if (!element && (!located || options.focusFirst === false)) element = focusedEditable();
 
   if (!element) {
     throw located
@@ -216,8 +218,66 @@ export async function performType(
         : `Focused element is disabled: ${JSON.stringify(elementIdentity(element))}`,
     );
   }
-
   assertNotPasswordField(element, options);
+  return element;
+}
+
+/** The focused element when it is an editable field (not the body), else null. */
+function focusedEditable(): Element | null {
+  const active = document.activeElement;
+  return active && active !== document.body && isEditable(active) ? active : null;
+}
+
+/** Empty the field (a text input's value, an editable region's text) and fire input. */
+function clearTarget(element: Element): void {
+  if (isTextInput(element)) {
+    element.value = "";
+  } else if (isContentEditable(element)) {
+    element.textContent = "";
+  }
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/** Put the whole text in at once (after what is there, unless `clear`), then fire input and change. */
+function typeInstantly(element: Element, text: string, clear: boolean): void {
+  if (isTextInput(element)) {
+    element.value = clear ? text : element.value + text;
+  } else if (isContentEditable(element)) {
+    element.textContent = clear ? text : (element.textContent || "") + text;
+  }
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/** One character: keydown, keypress, the character put in, input, keyup. */
+function typeCharacter(element: Element, char: string): void {
+  const keyInit: KeyboardEventInit = { key: char, bubbles: true, cancelable: true };
+  element.dispatchEvent(new KeyboardEvent("keydown", keyInit));
+  element.dispatchEvent(new KeyboardEvent("keypress", keyInit));
+
+  if (isTextInput(element)) {
+    element.value += char;
+  } else if (isContentEditable(element)) {
+    document.execCommand("insertText", false, char);
+  }
+
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new KeyboardEvent("keyup", keyInit));
+}
+
+/** Type the text one character at a time, `delay` ms apart (each wait can be aborted), then fire change. */
+async function typeByKeys(element: Element, text: string, delay: number): Promise<void> {
+  for (const char of text) {
+    typeCharacter(element, char);
+    if (delay > 0) await sleep(delay);
+  }
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+export async function performType(
+  options: TypeOptions,
+): Promise<Record<string, unknown>> {
+  const element = findTypeTarget(options);
 
   // focus() exists on HTML and SVG elements alike (HTMLOrSVGElement).
   (element as HTMLElement).focus();
@@ -225,46 +285,12 @@ export async function performType(
   await sleep(DELAYS.SCROLL_INTO_VIEW);
 
   const text = options.text || "";
-
-  if (options.clear) {
-    if (isTextInput(element)) {
-      element.value = "";
-    } else if (isContentEditable(element)) {
-      element.textContent = "";
-    }
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-  }
+  const clear = Boolean(options.clear);
+  if (clear) clearTarget(element);
 
   const delay = typingDelay(text.length, options.delay, TIMEOUTS.TYPING_BUDGET);
-  if (options.instant) {
-    if (isTextInput(element)) {
-      element.value = options.clear ? text : element.value + text;
-    } else if (isContentEditable(element)) {
-      element.textContent = options.clear
-        ? text
-        : (element.textContent || "") + text;
-    }
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-  } else {
-    for (const char of text) {
-      const keyInit: KeyboardEventInit = { key: char, bubbles: true, cancelable: true };
-      element.dispatchEvent(new KeyboardEvent("keydown", keyInit));
-      element.dispatchEvent(new KeyboardEvent("keypress", keyInit));
-
-      if (isTextInput(element)) {
-        element.value += char;
-      } else if (isContentEditable(element)) {
-        document.execCommand("insertText", false, char);
-      }
-
-      element.dispatchEvent(new Event("input", { bubbles: true }));
-      element.dispatchEvent(new KeyboardEvent("keyup", keyInit));
-
-      if (delay > 0) await sleep(delay);
-    }
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-  }
+  if (options.instant) typeInstantly(element, text, clear);
+  else await typeByKeys(element, text, delay);
 
   const enter = options.pressEnter
     ? pressEnterOn(element, options.submitForm !== false)
@@ -327,23 +353,26 @@ function scrollTowards(element: Element | null, direction: ScrollDirection, amou
 
 /**
  * fox_scroll. toElement first: scroll that element into view. Else scroll
- * the element of selector / xpath / id, or the window, by direction.
+ * the element of selector, or the window, by direction.
  * Kept as the reference behaviour (the headless backend follows it): a
  * selector that matches nothing scrolls the window, a toElement that matches
  * nothing falls through to the direction, and without a direction nothing
  * moves. `position` is always the measured {x, y} after the scroll.
+ * A scroll is no read (no confirm_read_sites check): toElement returns
+ * where the element is, not its content. Its selectors are checked by
+ * handler.ts (READ_LOCATOR_FIELDS).
  */
 export async function performScroll(
   options: ScrollOptions,
 ): Promise<Record<string, unknown>> {
-  const element = options.selector || options.xpath || options.id ? findElement(options) : null;
+  const element = options.selector ? findElement({ selector: options.selector }) : null;
 
   if (options.toElement) {
     const targetElement = findElement({ selector: options.toElement });
     if (targetElement) {
       targetElement.scrollIntoView({ behavior: "smooth", block: "center" });
       await sleep(DELAYS.SCROLL_TO_ELEMENT);
-      return { scrolled: true, element: getElementInfo(targetElement), position: scrollPosition(null) };
+      return { scrolled: true, element: getElementLocation(targetElement), position: scrollPosition(null) };
     }
   }
 
@@ -378,6 +407,11 @@ export function setValue(
   return { set: true, element: getElementInfo(element) };
 }
 
+/**
+ * fox_interact hover: runs the page's own hover handlers, so it is an acting
+ * command (approved for the site). It returns where the element is, not
+ * its content.
+ */
 export async function hoverElement(
   options: FindElementOptions,
 ): Promise<Record<string, unknown>> {
@@ -406,12 +440,12 @@ export async function hoverElement(
     }),
   );
 
-  return { hovered: true, element: getElementInfo(element) };
+  return { hovered: true, element: getElementLocation(element) };
 }
 
-export async function pressKey(
+export function pressKey(
   options: PressKeyOptions,
-): Promise<Record<string, unknown>> {
+): Record<string, unknown> {
   // Same locator resolution as fox_click (`key` is not a locator); without
   // one, the focused element receives the key.
   const locator = locatorOf(options);
@@ -478,9 +512,11 @@ export function selectOption(
 
   sel.dispatchEvent(new Event("change", { bubbles: true }));
 
-  return {
-    selected: true,
-    value: sel.value,
-    text: sel.options[sel.selectedIndex]?.text,
-  };
+  return selectedOptionResult(sel);
+}
+
+/** What select_option answers: the chosen value and text, masked for a masked select (a card expiry), as a read of it would be. */
+function selectedOptionResult(sel: HTMLSelectElement): Record<string, unknown> {
+  if (isMaskedField(sel)) return { selected: true, value: MASKED_VALUE, text: MASKED_VALUE };
+  return { selected: true, value: sel.value, text: sel.options[sel.selectedIndex]?.text };
 }

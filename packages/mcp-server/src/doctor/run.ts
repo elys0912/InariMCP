@@ -1,9 +1,9 @@
 /**
- * `node dist/index.js --doctor` (or `kitsune-mcp doctor`): run the checks of
+ * `node dist/index.js --doctor` (or `inari-mcp doctor`): run the checks of
  * checks.ts with the real environment and print one line per item.
  *
- *   OK    node            v24.16.0 (engines >=18.0.0)
- *   WARN  daemon          nothing answers on http://127.0.0.1:8765
+ *   OK    node            v24.16.0 (engines >=20)
+ *   WARN  daemon          nothing answers on http://127.0.0.1:8785
  *         fix: normal when unused: ...
  *
  * Exit code 1 when any item FAILs, else 0.
@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process';
 import * as http from 'node:http';
 import * as path from 'node:path';
 
-import { resolveHost, resolveHttpPort } from '../utils/endpoint.js';
+import { resolveDaemonHost, resolveHttpPort } from '../utils/endpoint.js';
 import { PACKAGE_ROOT, PACKAGE_VERSION } from '../version.js';
 import { runChecks, type CheckResult, type DoctorDeps, type HttpReply, type RunResult } from './checks.js';
 
@@ -40,10 +40,22 @@ function run(cmd: string, args: string[], timeoutMs: number): RunResult {
   };
 }
 
+/** The daemon's host, or undefined when FOX_HOST is refused (not loopback): then the daemon counts as down. */
+function daemonHost(): string | undefined {
+  try {
+    return resolveDaemonHost();
+  } catch {
+    return undefined;
+  }
+}
+
 function get(urlPath: string, headers: Record<string, string>, timeoutMs: number): Promise<HttpReply | undefined> {
+  const host = daemonHost();
+  if (host === undefined) return Promise.resolve(undefined);
+
   return new Promise((resolve) => {
     const req = http.get(
-      { host: resolveHost(), port: resolveHttpPort(), path: urlPath, headers, timeout: timeoutMs },
+      { host, port: resolveHttpPort(), path: urlPath, headers, timeout: timeoutMs },
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));
@@ -83,7 +95,7 @@ export function formatResults(results: readonly CheckResult[]): string {
 /** Print the report; resolves with the exit code. */
 export async function runDoctor(deps: DoctorDeps = defaultDoctorDeps()): Promise<number> {
   const results = await runChecks(deps);
-  process.stdout.write(`KitsuneMCP doctor v${PACKAGE_VERSION} (${deps.platform}, node v${deps.nodeVersion})\n\n`);
+  process.stdout.write(`Inari MCP doctor v${PACKAGE_VERSION} (${deps.platform}, node v${deps.nodeVersion})\n\n`);
   process.stdout.write(formatResults(results));
   return results.some((r) => r.status === 'FAIL') ? 1 : 0;
 }

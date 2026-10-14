@@ -105,11 +105,11 @@ describe('processMessage replies (shared/host-messages.ts)', () => {
   it('status reports a running daemon with its relays and version', async () => {
     const up = {
       host: '127.0.0.1',
-      httpPort: 8765,
+      httpPort: 8785,
       checkHealth: vi.fn(async () => true),
       fetchDaemonInfo: vi.fn(async () => ({ relays: 2, version: '9.9.9' })),
     } as unknown as ServerLauncher;
-    const connected = { url: 'ws://127.0.0.1:8766', isConnected: true, send: vi.fn(() => true) } as unknown as ServerConnection;
+    const connected = { url: 'ws://127.0.0.1:8786', isConnected: true, send: vi.fn(() => true) } as unknown as ServerConnection;
     processMessage({ action: 'status', requestId: 's2' }, up, connected);
     await vi.waitFor(() => expect(decodeFrames(out)).toHaveLength(1));
     expect(decodeFrames(out)[0]).toMatchObject({
@@ -129,7 +129,7 @@ describe('processMessage replies (shared/host-messages.ts)', () => {
   });
 });
 
-// B-KM-04: every Extension answer to a server command passes through here.
+// Every Extension answer to a server command passes through here.
 describe('server command → Extension → response to the server', () => {
   const PNG_URL = `data:image/png;base64,${Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]).toString('base64')}`;
   /** Above the 1 MB Native Messaging limit (host → extension). */
@@ -141,7 +141,7 @@ describe('server command → Extension → response to the server', () => {
 
   beforeEach(() => {
     out = captureStdout();
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-host-shots-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-host-shots-'));
     vi.stubEnv('FOX_SCREENSHOTS_DIR', dir);
     toServer = [];
     server = {

@@ -23,7 +23,7 @@ function touch(name: string, ageDays: number): string {
 }
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-ret-'));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-ret-'));
   vi.stubEnv('FOX_SCREENSHOTS_DIR', dir);
 });
 afterEach(() => {
@@ -52,7 +52,7 @@ describe('pruneScreenshots', () => {
     expect(fs.existsSync(recent)).toBe(true);
   });
 
-  it('never deletes files with a caller-chosen or foreign name', () => {
+  it('never deletes files it did not save, whatever their name', () => {
     const named = touch('my-page.png', 400);
     const other = touch('notes.txt', 400);
     const lookalike = touch('screenshot_old.png', 400);
@@ -73,6 +73,23 @@ describe('pruneScreenshots', () => {
     expect(pruneScreenshots(30)).toBe(1);
   });
 
+  it('prunes files saved under a caller-chosen name after the same period (no saved screenshot outlives it)', () => {
+    const old = saveScreenshot(PNG_URL, 'checkout-page');
+    const recent = saveScreenshot(PNG_URL, 'landing');
+    const t = new Date(Date.now() - 40 * DAY);
+    fs.utimesSync(old, t, t);
+    const userFile = touch('holiday.png', 400);
+    expect(pruneScreenshots(30)).toBe(1);
+    expect(fs.existsSync(old)).toBe(false);
+    expect(fs.existsSync(recent)).toBe(true);
+    expect(fs.existsSync(userFile)).toBe(true);
+    // The deleted name leaves the index: a file of that name written later
+    // by someone else is not taken for one of ours.
+    const later = touch('checkout-page.png', 400);
+    expect(pruneScreenshots(30)).toBe(0);
+    expect(fs.existsSync(later)).toBe(true);
+  });
+
   it('does not throw when the directory does not exist', () => {
     vi.stubEnv('FOX_SCREENSHOTS_DIR', path.join(dir, 'missing'));
     expect(pruneScreenshots(30)).toBe(0);
@@ -86,7 +103,7 @@ describe('screenshotsDirNeedsAclCheck', () => {
   });
 
   it('flags a directory outside the home directory on Windows, not one inside', () => {
-    vi.stubEnv('FOX_SCREENSHOTS_DIR', path.join(os.homedir(), '.kitsune-mcp', 'screenshots'));
+    vi.stubEnv('FOX_SCREENSHOTS_DIR', path.join(os.homedir(), '.inari-mcp', 'screenshots'));
     expect(screenshotsDirNeedsAclCheck('win32')).toBe(false);
     vi.stubEnv('FOX_SCREENSHOTS_DIR', path.parse(os.homedir()).root + 'shared-shots');
     expect(screenshotsDirNeedsAclCheck('win32')).toBe(true);

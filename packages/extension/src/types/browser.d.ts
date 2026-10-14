@@ -1,5 +1,5 @@
 // Minimal type declarations for Firefox WebExtension `browser.*` APIs
-// used by KitsuneMCP background script.
+// used by InariMCP background script.
 
 declare namespace browser {
   namespace runtime {
@@ -20,7 +20,6 @@ declare namespace browser {
 
     interface MessageSender {
       tab?: tabs.Tab;
-      frameId?: number;
       id?: string;
       url?: string;
     }
@@ -57,6 +56,23 @@ declare namespace browser {
         ) => boolean | void,
       ): void;
     };
+
+    interface InstalledDetails {
+      /** "install" | "update" | "browser_update" | ... */
+      reason: string;
+      temporary?: boolean;
+    }
+    const onInstalled: {
+      addListener(callback: (details: InstalledDetails) => void): void;
+    };
+  }
+
+  namespace storage {
+    interface StorageArea {
+      get(keys: string | string[]): Promise<Record<string, unknown>>;
+      set(items: Record<string, unknown>): Promise<void>;
+    }
+    const local: StorageArea;
   }
 
   namespace tabs {
@@ -106,10 +122,6 @@ declare namespace browser {
     }
 
     function captureTab(tabId: number, options?: ImageDetails): Promise<string>;
-    function executeScript(
-      tabId: number,
-      details: { code?: string; file?: string; runAt?: string; frameId?: number },
-    ): Promise<unknown[]>;
     function goBack(tabId: number): Promise<void>;
     function goForward(tabId: number): Promise<void>;
 
@@ -131,16 +143,12 @@ declare namespace browser {
   }
 
   namespace webNavigation {
-    interface CommittedDetails {
+    /** onCompleted / onDOMContentLoaded details. */
+    interface NavigationDetails {
       tabId: number;
       frameId: number;
       url: string;
     }
-    const onCommitted: {
-      addListener(callback: (details: CommittedDetails) => void): void;
-    };
-    /** onCompleted / onDOMContentLoaded details (same shape as onCommitted). */
-    type NavigationDetails = CommittedDetails;
     interface NavigationEvent {
       addListener(callback: (details: NavigationDetails) => void): void;
       removeListener(callback: (details: NavigationDetails) => void): void;
@@ -242,10 +250,12 @@ declare namespace browser {
       contexts: string[];
     }): void;
 
+    function remove(menuItemId: string): Promise<void>;
+
     const onClicked: {
       addListener(
         callback: (
-          info: { menuItemId: string; frameId?: number },
+          info: { menuItemId: string },
           tab: tabs.Tab,
         ) => void,
       ): void;

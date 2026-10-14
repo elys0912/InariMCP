@@ -4,3 +4,6 @@ export * from './actions.js';
 export * from './constants.js';
 export * from './util.js';
 export * from './host-messages.js';
+export * from './field-mask.js';
+export * from './approval-site.js';
+export * from './url-pattern-limit.js';

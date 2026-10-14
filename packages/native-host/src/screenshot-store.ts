@@ -7,10 +7,10 @@
  * so the Native Host writes them to disk here and hands the server only
  * `imagePath`.
  *
- * Directory: FOX_SCREENSHOTS_DIR → CLAUDE_BROWSER_SCREENSHOTS_DIR (legacy)
- * → ~/.kitsune-mcp/screenshots — the same resolution as the MCP Server's
- * utils/screenshot.ts getScreenshotsDir(), so GET /screenshots lists these
- * files too (as long as both processes see the same environment).
+ * Directory: FOX_SCREENSHOTS_DIR → ~/.inari-mcp/screenshots — the same
+ * resolution as the MCP Server's utils/screenshot.ts getScreenshotsDir(), so
+ * GET /screenshots lists these files too (as long as both processes see the
+ * same environment).
  *
  * Hardening:
  *  - filenames are reduced to a basename with a safe character set, and the
@@ -18,17 +18,20 @@
  *  - directory created 0o700, files written 0o600 (POSIX; ignored on Windows,
  *    where the ACL inherited from the user profile applies instead)
  *
- * Retention: pruneScreenshots() deletes files this module generated a name
- * for (`screenshot_<ms>_<random>[_tabN].ext`) once they are older than
- * FOX_SCREENSHOT_RETENTION_DAYS (default 30, 0 = keep forever). Files with a
- * caller-chosen name are never deleted.
+ * Retention: pruneScreenshots() deletes the files this module saved once
+ * they are older than FOX_SCREENSHOT_RETENTION_DAYS (default 30, 0 = keep
+ * forever): those it generated a name for
+ * (`screenshot_<ms>_<random>[_tabN].ext`), and those saved under a
+ * caller-chosen name, which it lists in NAMED_INDEX as it writes them. Any
+ * other file in the directory is never deleted (FOX_SCREENSHOTS_DIR may
+ * point to a directory that holds the user's own images).
  */
 
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ENV, LEGACY_ENV, isRecord, shortId } from '@kitsune-mcp/shared';
-import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, defaultScreenshotsDir, screenshotStem } from '@kitsune-mcp/shared/node';
+import { ENV, isRecord, shortId } from '@inari-mcp/shared';
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, defaultScreenshotsDir, screenshotStem } from '@inari-mcp/shared/node';
 
 /** Image types accepted in a screenshot data URL. */
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const;
@@ -47,16 +50,13 @@ function isImageMime(value: string): value is ImageMime {
 }
 
 /**
- * FOX_SCREENSHOTS_DIR, then the legacy name, then the default. A blank
- * value counts as unset, so `FOX_SCREENSHOTS_DIR=` falls through to the
- * legacy name instead of hiding it (same convention as shared's FOX_HOST).
+ * FOX_SCREENSHOTS_DIR, else the default. A blank value counts as unset, so
+ * `FOX_SCREENSHOTS_DIR=` is the default (same convention as shared's
+ * FOX_HOST).
  */
 export function getScreenshotsDir(env: NodeJS.ProcessEnv = process.env): string {
-  for (const name of [ENV.FOX_SCREENSHOTS_DIR, LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR]) {
-    const raw = env[name]?.trim();
-    if (raw !== undefined && raw !== '') return path.resolve(raw);
-  }
-  return defaultScreenshotsDir();
+  const raw = env[ENV.FOX_SCREENSHOTS_DIR]?.trim();
+  return raw === undefined || raw === '' ? defaultScreenshotsDir() : path.resolve(raw);
 }
 
 /**
@@ -66,6 +66,12 @@ export function getScreenshotsDir(env: NodeJS.ProcessEnv = process.env): string 
  */
 const GENERATED_NAME_RE = /^screenshot_\d{13}_[a-z0-9]{1,6}(?:_tab\d+|_\d+)?\.(?:png|jpg|webp)$/;
 const DEFAULT_RETENTION_DAYS = 30;
+/**
+ * Index of the files saved under a caller-chosen name (one name per line),
+ * in the screenshots directory: what pruneScreenshots() may delete besides
+ * the generated names.
+ */
+const NAMED_INDEX = '.named-screenshots';
 const MS_PER_DAY = 86_400_000;
 /** Longest part of an unsupported data URL header quoted in the error. */
 const MAX_HEAD_IN_ERROR = 60;
@@ -77,30 +83,79 @@ export function retentionDays(env: NodeJS.ProcessEnv = process.env): number {
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_RETENTION_DAYS;
 }
 
+/** The names listed in NAMED_INDEX (none when it does not exist). */
+function readNamedIndex(dir: string): Set<string> {
+  try {
+    const text = fs.readFileSync(path.join(dir, NAMED_INDEX), 'utf-8');
+    return new Set(text.split('\n').filter((name) => name !== ''));
+  } catch {
+    return new Set();
+  }
+}
+
+/** Add a caller-chosen name to NAMED_INDEX (once). Never throws: the file is saved either way. */
+function addToNamedIndex(dir: string, name: string): void {
+  try {
+    if (readNamedIndex(dir).has(name)) return;
+    fs.appendFileSync(path.join(dir, NAMED_INDEX), `${name}\n`, { mode: PRIVATE_FILE_MODE });
+  } catch {
+    // Not listed: the file is kept until it is deleted by hand.
+  }
+}
+
+/** Delete `filePath` when it is older than `days`; whether it was deleted. */
+function removeIfOlder(filePath: string, days: number, now: number): boolean {
+  try {
+    if (now - fs.statSync(filePath).mtimeMs <= days * MS_PER_DAY) return false;
+    fs.unlinkSync(filePath);
+    return true;
+  } catch {
+    // vanished or locked: leave it for the next start
+    return false;
+  }
+}
+
 /**
- * Delete generated-name screenshots older than `days` (0 = keep all).
- * Returns the number of files removed; never throws.
+ * Rewrite NAMED_INDEX with the names of `indexedNames` whose file is still
+ * in `dir`. Nothing to do for an empty index. Never throws.
+ */
+function rewriteNamedIndex(dir: string, indexedNames: ReadonlySet<string>): void {
+  if (indexedNames.size === 0) return;
+
+  const kept = [...indexedNames].filter((name) => fs.existsSync(path.join(dir, name)));
+  try {
+    fs.writeFileSync(path.join(dir, NAMED_INDEX), kept.map((name) => `${name}\n`).join(''), { mode: PRIVATE_FILE_MODE });
+  } catch {
+    // Rewritten at the next start.
+  }
+}
+
+/**
+ * Delete the screenshots this module saved (generated names, and the
+ * caller-chosen names in NAMED_INDEX) that are older than `days`
+ * (0 = keep all), and drop the names of files no longer there from the
+ * index. Returns the number of files removed; never throws.
  */
 export function pruneScreenshots(days: number = retentionDays(), now: number = Date.now()): number {
   if (days <= 0) return 0;
+
   const dir = getScreenshotsDir();
-  let removed = 0;
+  let entries: string[];
   try {
-    for (const name of fs.readdirSync(dir)) {
-      if (!GENERATED_NAME_RE.test(name)) continue;
-      const filePath = path.join(dir, name);
-      try {
-        if (now - fs.statSync(filePath).mtimeMs > days * MS_PER_DAY) {
-          fs.unlinkSync(filePath);
-          removed++;
-        }
-      } catch {
-        // vanished or locked: leave it for the next start
-      }
-    }
+    entries = fs.readdirSync(dir);
   } catch {
     // directory does not exist yet
+    return 0;
   }
+
+  const indexedNames = readNamedIndex(dir);
+  let removed = 0;
+  for (const name of entries) {
+    if (!GENERATED_NAME_RE.test(name) && !indexedNames.has(name)) continue;
+    if (removeIfOlder(path.join(dir, name), days, now)) removed++;
+  }
+  rewriteNamedIndex(dir, indexedNames);
+
   return removed;
 }
 
@@ -175,6 +230,7 @@ export function saveScreenshotFile(
 
   const overwritten = fs.existsSync(filePath);
   fs.writeFileSync(filePath, bytes, { mode: PRIVATE_FILE_MODE });
+  if (!GENERATED_NAME_RE.test(name)) addToNamedIndex(dir, name);
   // `mode` only applies on creation; tighten an overwritten file too.
   try {
     fs.chmodSync(filePath, PRIVATE_FILE_MODE);

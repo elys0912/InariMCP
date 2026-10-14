@@ -1,13 +1,27 @@
 // DOM helpers: element location, locators, selectors / XPath, element info,
-// and the password field guard.
+// the masked-value rule and the password field guard.
 
+import {
+  isMaskedField as isMaskedByRule,
+  MASKED_VALUE,
+  maskedText,
+  PASSWORD_AUTOCOMPLETE_TOKENS,
+  type MaskFieldInfo,
+} from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
+import { abortedError, isAborted, whenAborted } from "./abort";
 import { LIMITS } from "./constants";
-import type { FindElementOptions, ElementInfo } from "./types";
+import type { FindElementOptions, ElementInfo, ElementLocation, ElementPosition } from "./types";
 
-/** An element's `value` as a truncated string (null when it has none). */
+/**
+ * An element's `value` as a truncated string. `value` is a string on form
+ * fields and a number on e.g. <li> / <progress>; anything else (none, or an
+ * object) is null.
+ */
 export function truncatedValue(value: unknown, max: number): string | null {
-  return value === undefined || value === null ? null : clipText(String(value), max);
+  if (typeof value === "string") return clipText(value, max);
+  if (typeof value === "number" || typeof value === "boolean") return clipText(String(value), max);
+  return null;
 }
 
 // Element kinds by localName, not instanceof (elements of another realm,
@@ -29,9 +43,6 @@ export function isSelectElement(el: Element): el is HTMLSelectElement {
   return el.localName === "select";
 }
 
-/** autocomplete tokens that mark a password field. */
-const PASSWORD_AUTOCOMPLETE_TOKENS: readonly string[] = ["current-password", "new-password"];
-
 /**
  * An input of type password, or one whose autocomplete has a password
  * token. autocomplete is a space-separated token list compared without
@@ -43,6 +54,43 @@ export function isPasswordField(element: Element): boolean {
   if (element.type === "password") return true;
   const tokens = (element.getAttribute("autocomplete") ?? "").toLowerCase().split(/\s+/);
   return tokens.some((token) => PASSWORD_AUTOCOMPLETE_TOKENS.includes(token));
+}
+
+/** What the masked-value rule reads from the element (an <option>: with its <select>). */
+function maskFieldInfo(element: Element): MaskFieldInfo {
+  const info: MaskFieldInfo = {
+    localName: element.localName,
+    type: isInputElement(element) ? element.type : "",
+    autocomplete: element.getAttribute("autocomplete"),
+  };
+  if (element.localName !== "option") return info;
+
+  const select = element.closest("select");
+  return { ...info, select: select === null ? null : maskFieldInfo(select) };
+}
+
+/**
+ * Whether the element's value is masked in what the tools return (password,
+ * hidden, one-time code and payment card fields, and the options of such a
+ * select): the rule of shared/src/field-mask.ts on what the element says.
+ */
+export function isMaskedField(element: Element): boolean {
+  return isMaskedByRule(maskFieldInfo(element));
+}
+
+/** An element's value as the tools return it: MASKED_VALUE for a masked field, else truncated. */
+export function shownValue(element: Element, value: unknown, max: number): string | null {
+  return isMaskedField(element) ? MASKED_VALUE : truncatedValue(value, max);
+}
+
+/**
+ * An element's text as the tools return it, truncated; null when it has
+ * none. MASKED_VALUE for a masked field that has text: the label of an
+ * option of a masked select, or the initial text of a masked textarea.
+ */
+export function shownText(element: Element, max: number): string | null {
+  const text = clipText(element.textContent?.trim() ?? "", max);
+  return text === "" ? null : maskedText(text, isMaskedField(element));
 }
 
 export function assertNotPasswordField(
@@ -59,8 +107,25 @@ export function assertNotPasswordField(
   }
 }
 
+/**
+ * Wait `ms` between two steps of a command. Ends at once with
+ * abortedError() when the running commands are told to stop (the pause
+ * switch, abort.ts): every loop and wait that steps with it -- typing,
+ * polling, scroll_and_capture -- stops at its next step.
+ */
 export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  if (isAborted()) return Promise.reject(abortedError());
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      stopListening();
+      resolve();
+    }, ms);
+    const stopListening = whenAborted(() => {
+      clearTimeout(timer);
+      reject(abortedError());
+    });
+  });
 }
 
 export function isVisible(element: Element): boolean {
@@ -167,7 +232,7 @@ export function locatorOf(options: FindElementOptions): FindElementOptions {
   for (const key of keys) {
     if (options[key] !== undefined && options[key] !== "") locator[key] = options[key];
   }
-  return locator as FindElementOptions;
+  return locator;
 }
 
 /**
@@ -177,7 +242,8 @@ export function locatorOf(options: FindElementOptions): FindElementOptions {
  * it is about to type.
  */
 export function locatorWithoutText(options: FindElementOptions): FindElementOptions {
-  const { text: _data, ...locator } = locatorOf(options);
+  const locator = locatorOf(options);
+  delete locator.text;
   return locator;
 }
 
@@ -287,39 +353,27 @@ export function generateSelector(element: Element): string {
   return path.join(" > ");
 }
 
-/**
- * XPath locating `element`. Values are quoted as XPath string literals
- * (escapeXPathString) -- CSS.escape produces CSS escapes, which XPath does
- * not understand. Elements outside the HTML namespace (SVG, MathML) are
- * matched by local-name(), since a plain name test does not find them.
- */
-export function generateXPath(element: Element): string {
-  if (element.id) return `//*[@id=${escapeXPathString(element.id)}]`;
-
-  const HTML_NS = "http://www.w3.org/1999/xhtml";
-  const parts: string[] = [];
-  let current: Element | null = element;
-
-  while (current) {
-    let index = 1;
-    for (let sib = current.previousElementSibling; sib; sib = sib.previousElementSibling) {
-      if (sib.localName === current.localName && sib.namespaceURI === current.namespaceURI) index++;
-    }
-    const step = current.namespaceURI === HTML_NS
-      ? current.localName
-      : `*[local-name()=${escapeXPathString(current.localName)}]`;
-    parts.unshift(`${step}[${index}]`);
-    current = current.parentElement;
-  }
-
-  return "/" + parts.join("/");
+/** The element's box in viewport coordinates, with its center. */
+function elementPosition(element: Element): ElementPosition {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: rect.left,
+    y: rect.top,
+    width: rect.width,
+    height: rect.height,
+    centerX: rect.left + rect.width / 2,
+    centerY: rect.top + rect.height / 2,
+  };
 }
 
+/**
+ * What a read (fox_find by selector) and an acting command, both checked
+ * for the site, return about an element: its value and text masked by the
+ * masked-value rule.
+ */
 export function getElementInfo(element: Element): ElementInfo {
-  const rect = element.getBoundingClientRect();
   // Property reads only: on an element without them they are undefined (→ null below).
   const htmlEl = element as HTMLInputElement;
-  const isPassword = isPasswordField(element);
 
   return {
     tag: element.tagName.toLowerCase(),
@@ -327,8 +381,8 @@ export function getElementInfo(element: Element): ElementInfo {
     classes: Array.from(element.classList),
     name: htmlEl.name || null,
     type: htmlEl.type || null,
-    text: clipText(element.textContent?.trim() ?? "", LIMITS.ELEMENT_TEXT) || null,
-    value: isPassword ? "[MASKED]" : truncatedValue(htmlEl.value, LIMITS.ELEMENT_TEXT),
+    text: shownText(element, LIMITS.ELEMENT_TEXT),
+    value: shownValue(element, htmlEl.value, LIMITS.ELEMENT_TEXT),
     href: (element as HTMLAnchorElement).href || null,
     src: (element as HTMLImageElement).src || null,
     placeholder: htmlEl.placeholder || null,
@@ -337,14 +391,21 @@ export function getElementInfo(element: Element): ElementInfo {
     disabled: "disabled" in htmlEl ? htmlEl.disabled : false,
     checked: htmlEl.checked ?? false,
     visible: isVisible(element),
-    position: {
-      x: rect.left,
-      y: rect.top,
-      width: rect.width,
-      height: rect.height,
-      centerX: rect.left + rect.width / 2,
-      centerY: rect.top + rect.height / 2,
-    },
+    position: elementPosition(element),
     selector: generateSelector(element),
+  };
+}
+
+/**
+ * Where an element is, and nothing of its content (no text, value, href or
+ * src): what the commands that are not reads return (waits, hover,
+ * highlight, scroll). They run without the confirm_read_sites check, so
+ * they must not read the page through the element they found.
+ */
+export function getElementLocation(element: Element): ElementLocation {
+  return {
+    tag: element.tagName.toLowerCase(),
+    selector: generateSelector(element),
+    position: elementPosition(element),
   };
 }

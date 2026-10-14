@@ -1,29 +1,29 @@
 {
-  "name": "@kitsune-mcp/server",
-  "version": "0.2.0",
+  "name": "@inari-mcp/server",
+  "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "author": "elys0912",
-  "homepage": "https://github.com/elys0912/KitsuneMCP",
+  "homepage": "https://github.com/elys0912/InariMCP",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/elys0912/KitsuneMCP.git",
+    "url": "git+https://github.com/elys0912/InariMCP.git",
     "directory": "packages/mcp-server"
   },
   "bugs": {
-    "url": "https://github.com/elys0912/KitsuneMCP/issues"
+    "url": "https://github.com/elys0912/InariMCP/issues"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "kitsune-mcp": "dist/index.js"
+    "inari-mcp": "dist/index.js"
   },
   "scripts": {
     "build": "tsc -b",
     "clean": "rimraf --glob dist \"*.tsbuildinfo\""
   },
   "dependencies": {
-    "@kitsune-mcp/shared": "*",
+    "@inari-mcp/shared": "*",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "ws": "^8.18.0",
     "zod": "^3.23.0"

@@ -6,13 +6,12 @@
  * of the rules (url-pattern.ts is not browser code), imported here.
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { WireUrlRuleSchema } from '@kitsune-mcp/shared';
+import { describe, expect, it } from 'vitest';
+import { WireUrlRuleSchema } from '@inari-mcp/shared';
 import { compileUrlPatterns, type PatternListName } from '../../packages/mcp-server/src/safety/url-pattern.js';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG } from '../../packages/mcp-server/src/safety/config.js';
 import * as ext from '../../packages/extension/src/url-rule.ts';
-import type { PageHookSink } from '../../packages/extension/src/content/page-hooks.ts';
 
 /** A wire rule as the Extension reads and compiles it (null if unusable). */
 const compileWire = (wire: unknown): ext.CompiledUrlRule | null => {
@@ -66,13 +65,13 @@ const URLS = [
   'http://[::ffff:192.168.0.1]/', 'http://[::ffff:c0a8:1]/a', 'http://[fe80::1%25eth0]/',
 ];
 
-const LISTS: PatternListName[] = ['blocked', 'allowed', 'protected'];
+const LISTS: PatternListName[] = ['blocked', 'allowed', 'confirmRead'];
 
 describe('host / regex rules: Extension matcher = server matcher', () => {
   for (const list of LISTS) {
     it(`${list} list`, () => {
-      // Patterns that are an error in this list (bare regex in allowed) are
-      // never sent: the guard fails closed instead.
+      // Patterns that are an error (a bare regex) are never sent: the guard
+      // fails closed instead.
       const { patterns } = compileUrlPatterns(PATTERNS, list);
       expect(patterns.length).toBeGreaterThan(5);
       for (const p of patterns) {
@@ -90,7 +89,7 @@ describe('host / regex rules: Extension matcher = server matcher', () => {
 
 describe('blocked / allowed decision: Extension = guard', () => {
   it.each([
-    ['blocked only', ['example.test', 'paypal\\.test'], []],
+    ['blocked only', ['example.test', 'paypal.test'], []],
     ['allowed only', [], ['example.test/admin', '*.sub.test']],
     ['both', ['example.test/admin'], ['example.test']],
   ] as const)('%s', (_label, blockedSrc, allowedSrc) => {
@@ -98,7 +97,6 @@ describe('blocked / allowed decision: Extension = guard', () => {
       ...DEFAULT_CONFIG,
       auditLog: false,
       maxActionsPerMinute: 0,
-      protectedUrlPatterns: [],
       blockedUrlPatterns: [...blockedSrc],
       allowedUrlPatterns: [...allowedSrc],
     });
@@ -122,7 +120,7 @@ describe('blocked / allowed decision: Extension = guard', () => {
 
 describe('hosts the URL parser rewrites, and a rule without `port`', () => {
   /** The single pattern of `source`, which must compile without a fatal issue. */
-  const only = (source: string, list: PatternListName = 'protected') => {
+  const only = (source: string, list: PatternListName = 'confirmRead') => {
     const { patterns, issues } = compileUrlPatterns([source], list);
     expect(issues.filter((i) => i.fatal), source).toEqual([]);
     return patterns[0]!;
@@ -160,11 +158,11 @@ describe('hosts the URL parser rewrites, and a rule without `port`', () => {
   });
 
   it('an IPv6 zone id is refused as a pattern and matches nothing as a URL', () => {
-    const { patterns, issues } = compileUrlPatterns(['[fe80::1%25eth0]'], 'protected');
+    const { patterns, issues } = compileUrlPatterns(['[fe80::1%25eth0]'], 'confirmRead');
     expect(patterns).toEqual([]);
     expect(issues.map((i) => i.fatal)).toEqual([true]);
     // The URL parser does not accept one either, so no host rule can match
-    // it; a protected regex rule still tests the raw URL (matchRaw), which
+    // it; a confirm-read regex rule still tests the raw URL (matchRaw), which
     // errs on the safe side.
     const zoned = 'http://[fe80::1%25eth0]/';
     for (const source of ['[::1]', 'example.test']) {
@@ -190,79 +188,11 @@ describe('hosts the URL parser rewrites, and a rule without `port`', () => {
   });
 });
 
-describe('content script: protected pages pause recording (content/log-store.ts)', () => {
-  const PAGE_HOOKS = '../../packages/extension/src/content/page-hooks.ts';
-  const g = globalThis as Record<string, unknown>;
-  type LogStore = typeof import('../../packages/extension/src/content/log-store.ts');
-  let log: LogStore;
-  /** What log-store hands to the page hooks: they ask it before recording. */
-  let sink: PageHookSink | undefined;
-
-  beforeAll(async () => {
-    // The page hooks need Firefox's Xray wrappers: replaced by a stub that
-    // keeps the sink log-store installs them with.
-    vi.resetModules();
-    vi.doMock(PAGE_HOOKS, () => ({
-      installPageHooks: (s: PageHookSink) => { sink = s; },
-      interceptionStatus: () => ({ fetch: false, xhr: false, console: false }),
-      injectionStatus: () => ({ readyStateAtInit: null, readyStateAtHookInstall: null }),
-    }));
-    log = await import('../../packages/extension/src/content/log-store.ts');
-  });
-
-  afterAll(() => {
-    vi.doUnmock(PAGE_HOOKS);
-    delete g.window;
-  });
-
-  /** start_logging with the wire rules the server sends for `sources`. */
-  const startWith = (sources: string[]): void => {
-    log.startLogging({ protectedPatterns: compileUrlPatterns(sources, 'protected').patterns.map((p) => p.wire) });
-  };
-
-  /** Would the page hooks record an entry on a document at `href`? */
-  const recordsAt = (href: string): boolean => {
-    g.window = { location: { href } };
-    if (!sink) throw new Error('log-store installed no page hooks');
-    return sink.shouldRecord();
-  };
-
-  it('no patterns: no page is protected', () => {
-    startWith([]);
-    expect(recordsAt('https://example.test/admin')).toBe(true);
-  });
-
-  it('the current document URL decides, as the wire rules match it', () => {
-    startWith(['example.test/admin', '*.bank.test']);
-    for (const href of [
-      'https://example.test/admin',
-      'https://example.test/admin/users?x=1',
-      'https://example.test/%61dmin', // protected rules decode percent-escapes
-      'https://example.test/ADMIN',
-      'https://a.bank.test/',
-    ]) {
-      expect(recordsAt(href), href).toBe(false);
-    }
-    for (const href of ['https://example.test/', 'https://bank.test/', 'https://example.test.attacker.test/admin']) {
-      expect(recordsAt(href), href).toBe(true);
-    }
-  });
-
-  it('a same-document move onto a protected URL pauses recording; stop_logging ends it', () => {
-    startWith(['example.test/admin']);
-    expect(recordsAt('https://example.test/public')).toBe(true);
-    expect(recordsAt('https://example.test/admin/1')).toBe(false); // history.pushState
-    expect(recordsAt('https://example.test/public')).toBe(true);
-    log.stopLogging();
-    expect(recordsAt('https://example.test/public')).toBe(false);
-  });
-});
-
-describe('R2-C fail-closed wire input', () => {
+describe('fail-closed wire input', () => {
   const hostWire = (path: string | null, pathMatch: 'strict' | 'loose' = 'loose') =>
     ({ kind: 'host', source: 'x', scheme: null, hosts: 'tree', host: 'example.test', port: null, path, pathMatch });
 
-  it('E-03: a list that is there but not an array is one unusable entry; undefined is no list', () => {
+  it('a list that is there but not an array is one unusable entry; undefined is no list', () => {
     expect(ext.compileUrlRules(undefined)).toEqual({ rules: [], invalid: 0 });
     for (const raw of [null, 'https://a.example', 42, {}, { 0: hostWire(null) }, true]) {
       expect(ext.compileUrlRules(raw), JSON.stringify(raw)).toEqual({ rules: [], invalid: 1 });
@@ -270,7 +200,7 @@ describe('R2-C fail-closed wire input', () => {
     expect(ext.compileUrlRules([])).toEqual({ rules: [], invalid: 0 });
   });
 
-  it('A-01: a host rule whose path holds a query or fragment is unusable', () => {
+  it('a host rule whose path holds a query or fragment is unusable', () => {
     for (const pathMatch of ['strict', 'loose'] as const) {
       for (const path of ['/a?x=1', '/a#f', '/?', '/#']) {
         expect(ext.parseUrlRule(hostWire(path, pathMatch)), `${pathMatch} ${path}`).toBeNull();
@@ -282,7 +212,7 @@ describe('R2-C fail-closed wire input', () => {
 
   // That the server refuses `? # %3F %23` in a path is checked by
   // packages/mcp-server/tests/url-pattern.test.ts.
-  it('A-01: percent-escapes of other characters still decode into a rule the Extension can use', () => {
+  it('percent-escapes of other characters still decode into a rule the Extension can use', () => {
     for (const list of LISTS) {
       const { patterns } = compileUrlPatterns([...PATTERNS, 'example.test/%61dmin'], list);
       const { invalid } = ext.compileUrlRules(patterns.map((p) => JSON.parse(JSON.stringify(p.wire))));
@@ -291,11 +221,10 @@ describe('R2-C fail-closed wire input', () => {
   });
 });
 
-describe('legacy form (older MCP Servers: protectedUrlPatterns strings)', () => {
-  it('a string is a regex over the raw URL, as before (flag i)', () => {
+describe('a plain string is no rule (the legacy string form is gone)', () => {
+  it('is counted as unusable, so the command is refused as config_error', () => {
     const { rules, invalid } = ext.compileUrlRules(['bank\\.test', '(']);
-    expect(invalid).toBe(1);
-    expect(ext.urlRuleMatches(rules[0]!, 'https://x.test/?next=BANK.test')).toBe(true);
-    expect(ext.urlRuleMatches(rules[0]!, 'https://other.test/')).toBe(false);
+    expect(rules).toEqual([]);
+    expect(invalid).toBe(2);
   });
 });

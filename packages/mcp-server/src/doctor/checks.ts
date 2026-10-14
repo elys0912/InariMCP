@@ -1,11 +1,11 @@
 /**
- * `kitsune-mcp --doctor`: the checks.
+ * `inari-mcp --doctor`: the checks.
  *
- * Every check reads only. Nothing here creates ~/.kitsune-mcp or the API
+ * Every check reads only. Nothing here creates ~/.inari-mcp or the API
  * token, writes a log, starts a daemon or runs `claude` (whose `mcp get`
  * would start the MCP server). The only processes started are `reg query`
  * (Windows registry) and a one-line PowerShell probe; the only requests are
- * GET /health and a signed GET /daemon/info, sent without X-Kitsune-Relay so
+ * GET /health and a signed GET /daemon/info, sent without X-Inari-Relay so
  * the doctor does not count as a Claude Code session for the idle timer.
  *
  * Each check returns OK / WARN / FAIL (SKIP when it cannot be decided, e.g.
@@ -17,19 +17,20 @@ import * as fs from 'node:fs';
 import type * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ENV, ENV_DEFAULTS, isRecord, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { ENV, ENV_DEFAULTS, isRecord } from '@inari-mcp/shared';
 
-import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, macMatches, newNonce, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
+import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, macMatches, newNonce, signRequest, verifyResponse } from '@inari-mcp/shared/node';
 import {
   apiTokenPath,
   daemonLogPath,
-  dataDir as kitsuneDataDir,
-  kitsuneHealth,
+  dataDir as inariDataDir,
+  inariHealth,
   logsDir,
   nativeHostLogPath,
+  protocolText,
   type HealthVerdict,
-} from '@kitsune-mcp/shared/node';
-import { DAEMON_SETTING_KEYS, compareDaemonSettings, readApiTokenFile, resolveHost, resolveHttpPort } from '../utils/endpoint.js';
+} from '@inari-mcp/shared/node';
+import { DAEMON_SETTING_KEYS, compareDaemonSettings, readApiTokenFile, resolveDaemonHost, resolveHttpPort } from '../utils/endpoint.js';
 import { resolveFoxEnv } from '../utils/headless-env.js';
 import { MAX_LOG_BYTES } from '../utils/log-file.js';
 import { HEALTH_PROBE_TIMEOUT_MS } from '../daemon/probe.js';
@@ -127,14 +128,14 @@ const LOG_TAIL_BYTES = 64 * KIB;
  * has not been rotated (an old build, or a writer that does not rotate).
  */
 const UNROTATED_LOG_BYTES = 2 * MAX_LOG_BYTES;
-const NM_HOST_NAME = 'kitsune_mcp';
-const CLAUDE_SERVER_NAME = 'kitsune-mcp';
+const NM_HOST_NAME = 'inari_mcp';
+const CLAUDE_SERVER_NAME = 'inari-mcp';
 /** Node.js major assumed when package.json has no readable engines.node. */
-const DEFAULT_NODE_MAJOR = 18;
+const DEFAULT_NODE_MAJOR = 20;
 const DEFAULT_NODE_ENGINES = `>=${DEFAULT_NODE_MAJOR}.0.0`;
 /**
  * Lines the doctor looks for in native-host.log. They mirror the Native
- * Host's own log calls (native-host/src/index.ts: "KitsuneMCP Native Host
+ * Host's own log calls (native-host/src/index.ts: "InariMCP Native Host
  * v<version> starting"; server-launcher.ts and health-monitor.ts: "max start
  * attempts ..."); a change there must be made here too.
  */
@@ -169,7 +170,7 @@ export async function probeDaemon(deps: DoctorDeps, token: string | undefined): 
   const reply = await deps.get('/health', { [AUTH_HEADER.nonce]: nonce }, HEALTH_PROBE_TIMEOUT_MS);
   if (reply === undefined) return { kind: 'down' };
   const health = parseJson(reply.raw);
-  if (kitsuneHealth(reply.status, health) === undefined || !isRecord(health)) return { kind: 'foreign' };
+  if (inariHealth(reply.status, health) === undefined || !isRecord(health)) return { kind: 'foreign' };
   if (health['protocol'] !== DAEMON_PROTOCOL_VERSION) return { kind: 'incompatible', health };
   if (token === undefined) return { kind: 'unverified', health };
   if (!macMatches(health['proof'], computeMac(token, MAC_LABEL.health, nonce))) return { kind: 'impostor', health };
@@ -202,8 +203,8 @@ function toEntry(name: string, scope: ClaudeEntry['scope'], raw: unknown): Claud
   return { name, scope, command: typeof raw['command'] === 'string' ? raw['command'] : '', args, env };
 }
 
-/** An MCP server entry that is KitsuneMCP: by name, or by running some mcp-server/dist/index.js. */
-function isKitsuneEntry(e: ClaudeEntry): boolean {
+/** An MCP server entry that is InariMCP: by name, or by running some mcp-server/dist/index.js. */
+function isInariEntry(e: ClaudeEntry): boolean {
   return e.name === CLAUDE_SERVER_NAME || e.args.some((a) => /mcp-server[\\/]dist[\\/]index\.js$/i.test(a));
 }
 
@@ -216,7 +217,7 @@ function samePath(a: string, b: string, platform: NodeJS.Platform): boolean {
 }
 
 /**
- * KitsuneMCP entries of Claude Code's configuration, read from the files
+ * InariMCP entries of Claude Code's configuration, read from the files
  * (`claude mcp get` would start the server to test the connection).
  */
 export function readClaudeRegistrations(deps: DoctorDeps): DoctorContext['claude'] {
@@ -226,7 +227,7 @@ export function readClaudeRegistrations(deps: DoctorDeps): DoctorContext['claude
     if (!isRecord(servers)) return;
     for (const [name, raw] of Object.entries(servers)) {
       const e = toEntry(name, scope, raw);
-      if (e !== undefined && isKitsuneEntry(e)) entries.push(e);
+      if (e !== undefined && isInariEntry(e)) entries.push(e);
     }
   };
 
@@ -251,8 +252,17 @@ export function readClaudeRegistrations(deps: DoctorDeps): DoctorContext['claude
   return { configPath, entries, ...(error !== undefined ? { error } : {}) };
 }
 
+/** The daemon's URL for the messages; a refused FOX_HOST (not loopback) is named with the reason instead. */
+function daemonBaseUrl(port: number): string {
+  try {
+    return `http://${resolveDaemonHost()}:${port}`;
+  } catch (err) {
+    return `(no daemon address: ${err instanceof Error ? err.message : String(err)})`;
+  }
+}
+
 export async function gatherContext(deps: DoctorDeps): Promise<DoctorContext> {
-  const dataDir = kitsuneDataDir();
+  const dataDir = inariDataDir();
   const tokenPath = apiTokenPath();
   const token = readApiTokenFile(tokenPath);
   const port = resolveHttpPort();
@@ -262,7 +272,7 @@ export async function gatherContext(deps: DoctorDeps): Promise<DoctorContext> {
     tokenPath,
     token,
     port,
-    baseUrl: `http://${resolveHost()}:${port}`,
+    baseUrl: daemonBaseUrl(port),
     daemon: await probeDaemon(deps, token),
     claude: readClaudeRegistrations(deps),
     nm: findNmRegistrations(deps),
@@ -333,22 +343,19 @@ function daemonSetting(ctx: DoctorContext, key: string): string | undefined {
 }
 
 /**
- * A setting as the daemon reads it (resolveFoxEnv: FOX_* or else the legacy
- * name, blank = unset), from the running daemon's settings when they were
- * read, else from the environment a session would start it with.
+ * A setting as the daemon reads it (resolveFoxEnv: blank = unset), from the
+ * running daemon's settings when they were read, else from the environment a
+ * session would start it with.
  */
 function daemonSettingValue(
   ctx: DoctorContext,
-  foxKey: string,
-  legacyKey: string,
+  key: string,
 ): { value: string | undefined; fromDaemon: boolean } {
   const settings = ctx.daemon.info?.['settings'];
   if (isRecord(settings)) {
-    const env: Record<string, string> = {};
-    for (const key of [foxKey, legacyKey]) env[key] = daemonSetting(ctx, key) ?? '';
-    return { value: resolveFoxEnv(env, foxKey, legacyKey), fromDaemon: true };
+    return { value: resolveFoxEnv({ [key]: daemonSetting(ctx, key) ?? '' }, key), fromDaemon: true };
   }
-  return { value: resolveFoxEnv(sessionEnv(ctx), foxKey, legacyKey), fromDaemon: false };
+  return { value: resolveFoxEnv(sessionEnv(ctx), key), fromDaemon: false };
 }
 
 /** Environment a relay started by Claude Code would have: this shell's, plus the registration's `env`. */
@@ -365,7 +372,7 @@ function sessionEnv(ctx: DoctorContext): Record<string, string | undefined> {
 // Checks
 // ---------------------------------------------------------------------------
 
-/** The first number of an engines range (`>=18.0.0` → 18), if any. */
+/** The first number of an engines range (`>=20` → 20), if any. */
 function majorOf(range: string): number | undefined {
   const digits = /(\d+)/.exec(range)?.[1];
   return digits === undefined ? undefined : Number(digits);
@@ -674,14 +681,14 @@ export function checkDaemon(ctx: DoctorContext): CheckResult {
       return {
         id,
         status: 'FAIL',
-        detail: `${ctx.baseUrl}/health does not answer as KitsuneMCP (another program holds the port)`,
+        detail: `${ctx.baseUrl}/health does not answer as Inari MCP (another program holds the port)`,
         fix: `stop that program, or set ${ENV.FOX_HTTP_PORT} / ${ENV.FOX_WS_PORT} to free ports for both Claude Code and Firefox`,
       };
     case 'incompatible':
       return {
         id,
         status: 'FAIL',
-        detail: `daemon of another protocol (protocol ${String(health?.['protocol'] ?? '1 or older')}, version ${version}; this build needs ${DAEMON_PROTOCOL_VERSION})`,
+        detail: `daemon of another protocol (protocol ${protocolText(health?.['protocol'])}, version ${version}; this build needs ${DAEMON_PROTOCOL_VERSION})`,
         fix: `${stopByPid(ctx)} (an older daemon has no --stop-daemon); then restart Firefox; the next tool call starts the installed daemon`,
       };
     case 'impostor':
@@ -792,7 +799,7 @@ export function checkBrowsers(ctx: DoctorContext): CheckResult {
       id,
       status: 'WARN',
       detail: 'no browser connected',
-      fix: 'start Firefox with the KitsuneMCP extension (a temporary add-on must be loaded again in about:debugging after each restart); see native-host.log',
+      fix: 'start Firefox with the Inari MCP extension (a temporary add-on must be loaded again in about:debugging after each restart); see native-host.log',
     };
   }
   if (nativeHosts !== undefined && nativeHosts > 1) {
@@ -812,7 +819,7 @@ export function checkBrowsers(ctx: DoctorContext): CheckResult {
 
 export function checkSafetyConfig(ctx: DoctorContext): CheckResult {
   const id = 'safety-config';
-  const { value: configured, fromDaemon } = daemonSettingValue(ctx, ENV.FOX_SAFETY_CONFIG, LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG);
+  const { value: configured, fromDaemon } = daemonSettingValue(ctx, ENV.FOX_SAFETY_CONFIG);
   const file = configured !== undefined ? path.resolve(ctx.deps.cwd, configured) : path.join(ctx.dataDir, 'safety.json');
   const relative = configured !== undefined && !path.isAbsolute(configured)
     ? ` (relative ${ENV.FOX_SAFETY_CONFIG} depends on the daemon's working directory)`
@@ -837,7 +844,7 @@ export function checkSafetyConfig(ctx: DoctorContext): CheckResult {
  */
 export function checkScreenshots(ctx: DoctorContext): CheckResult {
   const id = 'screenshots';
-  const { value: configured, fromDaemon } = daemonSettingValue(ctx, ENV.FOX_SCREENSHOTS_DIR, LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR);
+  const { value: configured, fromDaemon } = daemonSettingValue(ctx, ENV.FOX_SCREENSHOTS_DIR);
   const defaultDir = path.join(ctx.dataDir, 'screenshots');
   const whose = fromDaemon ? 'the running daemon' : 'this session';
   if (configured === undefined) {
@@ -877,7 +884,7 @@ function tail(file: string, bytes = LOG_TAIL_BYTES): string {
   }
 }
 
-export function checkLogs(ctx: DoctorContext): CheckResult {
+export function checkLogs(): CheckResult {
   const id = 'logs';
   const logs = logsDir();
   const rawHostLog = process.env[ENV.FOX_NATIVE_HOST_LOG]?.trim();

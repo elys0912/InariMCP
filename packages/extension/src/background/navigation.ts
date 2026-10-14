@@ -18,10 +18,9 @@ export async function navigateTo(
       await navigate();
       return { success: true, url: data.url, waited: false };
     }
-    const outcome = await waitForTabLoad(
-      browser.tabs, tab.id, navigate, (t) => t.status === "complete",
-      { ...TAB_LOAD_OPTIONS, requireLoading: true },
-    );
+    const outcome = await waitForTabLoad(browser.tabs, tab.id, {
+      ...TAB_LOAD_OPTIONS, trigger: navigate, isLoaded: (t) => t.status === "complete", requireLoading: true,
+    });
     // Report the URL actually loaded (after redirects), so the server's guard
     // tracks the real page; fall back to the requested URL.
     const updated = await browser.tabs.get(tab.id).catch(() => undefined);
@@ -48,13 +47,12 @@ export async function navigateNewTab(
       // starts loading (seen on the first new tab after Firefox starts).
       // Treat about:blank as loaded only when it is what was asked for.
       const wantsBlank = data.url === "about:blank";
-      const outcome = await waitForTabLoad(
-        browser.tabs,
-        tabId,
-        () => Promise.resolve(),
-        (tab) => tab.status === "complete" && (wantsBlank || tab.url !== "about:blank"),
-        { ...TAB_LOAD_OPTIONS, requireLoading: false },
-      );
+      const outcome = await waitForTabLoad(browser.tabs, tabId, {
+        ...TAB_LOAD_OPTIONS,
+        trigger: () => Promise.resolve(),
+        isLoaded: (tab) => tab.status === "complete" && (wantsBlank || tab.url !== "about:blank"),
+        requireLoading: false,
+      });
       if (outcome !== "complete") {
         const now = await browser.tabs.get(tabId).catch(() => undefined);
         return { success: false, error: tabLoadError(outcome, TAB_LOAD_OPTIONS.timeoutMs, now?.url), tabId };
@@ -80,10 +78,9 @@ export async function navigateHistory(
     // Same load wait as navigate: a history entry of the same document
     // (pushState / hash) or a page restored without loading settles after
     // TAB_LOAD_SETTLE with the tab's current state.
-    const outcome = await waitForTabLoad(
-      browser.tabs, tab.id, go, (t) => t.status === "complete",
-      { ...TAB_LOAD_OPTIONS, requireLoading: true },
-    );
+    const outcome = await waitForTabLoad(browser.tabs, tab.id, {
+      ...TAB_LOAD_OPTIONS, trigger: go, isLoaded: (t) => t.status === "complete", requireLoading: true,
+    });
     const updated = await browser.tabs.get(tab.id).catch(() => undefined);
     if (outcome !== "complete") {
       return { success: false, error: tabLoadError(outcome, TAB_LOAD_OPTIONS.timeoutMs, updated?.url) };

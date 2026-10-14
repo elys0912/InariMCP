@@ -2,16 +2,16 @@
 
 import { errorMessage } from "../error-message";
 import type { ContentRequest } from "../content/types";
-import { findUrlRule, type CompiledUrlRule } from "../url-rule";
+import type { CompiledUrlRule } from "../url-rule";
 import { DEFAULTS, TIMEOUTS, TOP_FRAME_ID } from "./constants";
 import { isTabInScope } from "./container-scope";
 import { noTargetTab, resolveTab } from "./tab-target";
 import { urlPatternArg, shouldSkipTab, urlMatches, positiveOr } from "./tab-wait";
 import type { ScreenshotOptions, CommandResult, ScopeFilter, UrlLists } from "./types";
-import { NO_URL_LISTS, violatesUrlLists } from "./url-policy";
+import { NO_URL_LISTS, isReadConfirmTab, violatesUrlLists } from "./url-policy";
 
 const NO_IMAGE_NOTE =
-  "saveToFile is false: no image was captured. KitsuneMCP returns screenshots only " +
+  "saveToFile is false: no image was captured. Inari MCP returns screenshots only " +
   "as saved files (resource_link), never inline.";
 
 export async function takeScreenshot(
@@ -115,7 +115,7 @@ async function captureFullPageImage(
       };
     }
   } catch (error) {
-    console.warn("[KitsuneMCP] Full-page capture failed, using visible area:", error);
+    console.warn("[InariMCP] Full-page capture failed, using visible area:", error);
   }
   return {
     success: true,
@@ -130,7 +130,7 @@ async function captureFullPageImage(
 export async function screenshotAllTabs(
   options: ScreenshotOptions = {},
   scope: ScopeFilter | null = null,
-  protectedRules: CompiledUrlRule[] = [],
+  confirmReadRules: CompiledUrlRule[] = [],
   lists: UrlLists = NO_URL_LISTS,
 ): Promise<CommandResult> {
   try {
@@ -145,35 +145,8 @@ export async function screenshotAllTabs(
       targetTabs = targetTabs.filter((t) => urlMatches(t.url, urlPattern));
     }
 
-    // Tabs on blocked / not allowlisted sites, then protected domains
-    // (banking, payments, ...) are excluded. Only the counts are reported --
-    // never the URL or title of excluded tabs. Both counts are always
-    // reported (0 included); the reasons only when a tab was excluded.
-    const beforeLists = targetTabs.length;
-    targetTabs = targetTabs.filter((t) => violatesUrlLists(t.url, lists) === null);
-    const excludedBlocked = beforeLists - targetTabs.length;
-    const beforeProtected = targetTabs.length;
-    if (protectedRules.length > 0) {
-      targetTabs = targetTabs.filter((t) => findUrlRule(t.url, protectedRules) === undefined);
-    }
-    const excludedProtected = beforeProtected - targetTabs.length;
-    const excluded = {
-      excludedProtected,
-      excludedBlocked,
-      ...(excludedBlocked > 0
-        ? {
-          excludedBlockedReason:
-            "Tabs on sites refused by blocked_url_patterns / allowed_url_patterns in safety.json were not captured.",
-        }
-        : {}),
-      ...(excludedProtected > 0
-        ? {
-          excludedReason:
-            "Tabs matching protected_url_patterns in safety.json were not captured " +
-            "(set confirm_protected_actions to false to include them).",
-        }
-        : {}),
-    };
+    const { kept, excluded } = excludeRefusedTabs(targetTabs, lists, confirmReadRules);
+    targetTabs = kept;
 
     if (options.saveToFile === false) {
       return {
@@ -197,23 +170,60 @@ export async function screenshotAllTabs(
       }),
       { perTabMs: TIMEOUTS.CAPTURE_TAB, budgetMs, keepData: options.includeData === true },
     );
-    const count = results.filter((r) => r.success).length;
-    const failed = results.length - count;
-
-    return {
-      // Nothing captured although there were tabs to capture: a failure.
-      success: results.length === 0 || count > 0,
-      ...(results.length > 0 && count === 0
-        ? { error: `No tab could be captured (${failed} failed; see screenshots[].error)` }
-        : {}),
-      screenshots: results,
-      count,
-      failed,
-      ...excluded,
-    };
+    return { ...capturedTabsResult(results), ...excluded };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
+}
+
+const BLOCKED_TABS_REASON =
+  "Tabs on sites refused by blocked_url_patterns / allowed_url_patterns in safety.json were not captured.";
+const READ_SITE_TABS_REASON =
+  "Tabs on sites of confirm_read_sites in safety.json were not captured " +
+  "(capture each of them with a single-tab screenshot, which asks the human).";
+
+/**
+ * Tabs on blocked / not allowlisted sites, then tabs on confirm_read_sites
+ * sites, are left out of screenshot all_tabs. Only the counts are reported --
+ * never the URL or title of excluded tabs. Both counts are always reported
+ * (0 included); the reasons only when a tab was excluded.
+ */
+function excludeRefusedTabs(
+  tabs: browser.tabs.Tab[],
+  lists: UrlLists,
+  confirmReadRules: CompiledUrlRule[],
+): { kept: browser.tabs.Tab[]; excluded: Record<string, unknown> } {
+  const listed = tabs.filter((t) => violatesUrlLists(t.url, lists) === null);
+  const kept = listed.filter((t) => !isReadConfirmTab(t, confirmReadRules));
+  const excludedBlocked = tabs.length - listed.length;
+  const excludedReadSites = listed.length - kept.length;
+
+  return {
+    kept,
+    excluded: {
+      excludedReadSites,
+      excludedBlocked,
+      ...(excludedBlocked > 0 ? { excludedBlockedReason: BLOCKED_TABS_REASON } : {}),
+      ...(excludedReadSites > 0 ? { excludedReadSitesReason: READ_SITE_TABS_REASON } : {}),
+    },
+  };
+}
+
+/** The result of screenshot all_tabs from the capture of each tab. */
+function capturedTabsResult(results: Record<string, unknown>[]): CommandResult {
+  const count = results.filter((r) => r.success).length;
+  const failed = results.length - count;
+
+  return {
+    // Nothing captured although there were tabs to capture: a failure.
+    success: results.length === 0 || count > 0,
+    ...(results.length > 0 && count === 0
+      ? { error: `No tab could be captured (${failed} failed; see screenshots[].error)` }
+      : {}),
+    screenshots: results,
+    count,
+    failed,
+  };
 }
 
 /**

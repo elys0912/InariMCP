@@ -17,7 +17,7 @@ import { manualForPlatform, manualMarkdown } from '../../scripts/lib/texts.mjs';
 // Command line
 // ---------------------------------------------------------------------------
 
-describe('lookup (R2-A SC-C4)', () => {
+describe('lookup', () => {
   it('returns the listed text and throws for an unlisted key', () => {
     const table = { same: 'a', different: 'b' };
     expect(lookup(table, 'same', 'state')).toBe('a');
@@ -132,11 +132,11 @@ describe('parseUninstallArgs', () => {
 
 describe('host manifest', () => {
   it('is the Native Messaging manifest Firefox expects', () => {
-    const m = buildManifest({ wrapperPath: 'C:\\Users\\u\\.kitsune-mcp\\native-host\\run-host.cmd', geckoId: 'id@example' });
+    const m = buildManifest({ wrapperPath: 'C:\\Users\\u\\.inari-mcp\\native-host\\run-host.cmd', geckoId: 'id@example' });
     expect(JSON.parse(serializeJson(m))).toEqual({
-      name: 'kitsune_mcp',
-      description: 'KitsuneMCP Native Messaging Host',
-      path: 'C:\\Users\\u\\.kitsune-mcp\\native-host\\run-host.cmd',
+      name: 'inari_mcp',
+      description: 'InariMCP Native Messaging Host',
+      path: 'C:\\Users\\u\\.inari-mcp\\native-host\\run-host.cmd',
       type: 'stdio',
       allowed_extensions: ['id@example'],
     });
@@ -146,15 +146,15 @@ describe('host manifest', () => {
     const win = nmManifestTargets({ platform: 'win32', home: 'C:\\Users\\u', env: {}, exists: () => false });
     expect(win).toEqual([expect.objectContaining({
       registryKey: WIN_REG_KEY,
-      file: 'C:\\Users\\u\\.kitsune-mcp\\native-host\\kitsune_mcp.json',
+      file: 'C:\\Users\\u\\.inari-mcp\\native-host\\inari_mcp.json',
     })]);
 
     const linux = nmManifestTargets({
       platform: 'linux', home: '/home/u', env: {}, exists: (p: string) => p === '/home/u/.var/app/org.mozilla.firefox',
     });
     expect(linux.map((t: { file: string }) => t.file)).toEqual([
-      '/home/u/.mozilla/native-messaging-hosts/kitsune_mcp.json',
-      '/home/u/.var/app/org.mozilla.firefox/.mozilla/native-messaging-hosts/kitsune_mcp.json',
+      '/home/u/.mozilla/native-messaging-hosts/inari_mcp.json',
+      '/home/u/.var/app/org.mozilla.firefox/.mozilla/native-messaging-hosts/inari_mcp.json',
     ]);
   });
 });
@@ -164,12 +164,12 @@ describe('nmManifestTargets', () => {
   const files = (t: { file: string }[]) => t.map((x) => x.file);
   const ids = (t: { id: string }[]) => t.map((x) => x.id);
 
-  it('win32: one registry value and the manifest under ~/.kitsune-mcp', () => {
+  it('win32: one registry value and the manifest under ~/.inari-mcp', () => {
     const t = nmManifestTargets({ platform: 'win32', home: 'C:\\Users\\u', env: {}, exists: never });
     expect(t).toHaveLength(1);
     expect(t[0]).toMatchObject({
       id: 'windows',
-      registryKey: 'HKCU\\Software\\Mozilla\\NativeMessagingHosts\\kitsune_mcp',
+      registryKey: 'HKCU\\Software\\Mozilla\\NativeMessagingHosts\\inari_mcp',
       file: dataPaths('win32', 'C:\\Users\\u').winManifestPath,
     });
     // `all` changes nothing on Windows: there is only one location.
@@ -178,14 +178,14 @@ describe('nmManifestTargets', () => {
 
   it('darwin: one directory for every edition, and no registry key', () => {
     const t = nmManifestTargets({ platform: 'darwin', home: '/Users/u', env: {}, exists: never, all: true });
-    expect(files(t)).toEqual(['/Users/u/Library/Application Support/Mozilla/NativeMessagingHosts/kitsune_mcp.json']);
+    expect(files(t)).toEqual(['/Users/u/Library/Application Support/Mozilla/NativeMessagingHosts/inari_mcp.json']);
     expect(t[0].registryKey).toBeUndefined();
     expect(t[0].id).toBe('macos');
   });
 
   it('linux: only ~/.mozilla when nothing else is detected', () => {
     const t = nmManifestTargets({ platform: 'linux', home: '/home/u', env: {}, exists: never });
-    expect(files(t)).toEqual(['/home/u/.mozilla/native-messaging-hosts/kitsune_mcp.json']);
+    expect(files(t)).toEqual(['/home/u/.mozilla/native-messaging-hosts/inari_mcp.json']);
   });
 
   it('linux: XDG uses $XDG_CONFIG_HOME when absolute and ~/.config otherwise', () => {
@@ -193,12 +193,12 @@ describe('nmManifestTargets', () => {
       files(nmManifestTargets({ platform: 'linux', home: '/home/u', env, exists: (p: string) => p === present }));
 
     expect(xdg({ XDG_CONFIG_HOME: '/custom/cfg' }, '/custom/cfg/mozilla'))
-      .toContain('/custom/cfg/mozilla/native-messaging-hosts/kitsune_mcp.json');
+      .toContain('/custom/cfg/mozilla/native-messaging-hosts/inari_mcp.json');
     // relative value: ignored, ~/.config is used instead
     expect(xdg({ XDG_CONFIG_HOME: 'relative/cfg' }, '/home/u/.config/mozilla'))
-      .toContain('/home/u/.config/mozilla/native-messaging-hosts/kitsune_mcp.json');
+      .toContain('/home/u/.config/mozilla/native-messaging-hosts/inari_mcp.json');
     expect(xdg({}, '/home/u/.config/mozilla'))
-      .toContain('/home/u/.config/mozilla/native-messaging-hosts/kitsune_mcp.json');
+      .toContain('/home/u/.config/mozilla/native-messaging-hosts/inari_mcp.json');
     // the directory is not there: no XDG target
     expect(xdg({ XDG_CONFIG_HOME: '/custom/cfg' }, '/nowhere')).toHaveLength(1);
   });
@@ -207,7 +207,7 @@ describe('nmManifestTargets', () => {
     for (const present of ['/home/u/snap/firefox', '/snap/firefox']) {
       const t = nmManifestTargets({ platform: 'linux', home: '/home/u', env: {}, exists: (p: string) => p === present });
       expect(ids(t)).toEqual(['linux', 'snap']);
-      expect(files(t)[1]).toBe('/home/u/snap/firefox/common/.mozilla/native-messaging-hosts/kitsune_mcp.json');
+      expect(files(t)[1]).toBe('/home/u/snap/firefox/common/.mozilla/native-messaging-hosts/inari_mcp.json');
       expect(t[1].note).toMatch(/portal/);
     }
   });
@@ -221,7 +221,7 @@ describe('nmManifestTargets', () => {
       const t = nmManifestTargets({ platform: 'linux', home: '/home/u', env: {}, exists: (p: string) => p === present });
       expect(ids(t)).toEqual(['linux', 'flatpak:org.mozilla.firefox']);
       // the manifest always goes into the per-user Flatpak data directory
-      expect(files(t)[1]).toBe('/home/u/.var/app/org.mozilla.firefox/.mozilla/native-messaging-hosts/kitsune_mcp.json');
+      expect(files(t)[1]).toBe('/home/u/.var/app/org.mozilla.firefox/.mozilla/native-messaging-hosts/inari_mcp.json');
     }
   });
 
@@ -229,17 +229,17 @@ describe('nmManifestTargets', () => {
     const t = nmManifestTargets({ platform: 'linux', home: '/home/u', env: {}, exists: never, all: true });
     expect(ids(t)).toEqual(['linux', 'linux-xdg', 'snap', 'flatpak:org.mozilla.firefox']);
     expect(files(t)).toEqual([
-      '/home/u/.mozilla/native-messaging-hosts/kitsune_mcp.json',
-      '/home/u/.config/mozilla/native-messaging-hosts/kitsune_mcp.json',
-      '/home/u/snap/firefox/common/.mozilla/native-messaging-hosts/kitsune_mcp.json',
-      '/home/u/.var/app/org.mozilla.firefox/.mozilla/native-messaging-hosts/kitsune_mcp.json',
+      '/home/u/.mozilla/native-messaging-hosts/inari_mcp.json',
+      '/home/u/.config/mozilla/native-messaging-hosts/inari_mcp.json',
+      '/home/u/snap/firefox/common/.mozilla/native-messaging-hosts/inari_mcp.json',
+      '/home/u/.var/app/org.mozilla.firefox/.mozilla/native-messaging-hosts/inari_mcp.json',
     ]);
     // `all` honours $XDG_CONFIG_HOME too
     const xdg = nmManifestTargets({ platform: 'linux', home: '/home/u', env: { XDG_CONFIG_HOME: '/cfg' }, exists: never, all: true });
-    expect(files(xdg)[1]).toBe('/cfg/mozilla/native-messaging-hosts/kitsune_mcp.json');
+    expect(files(xdg)[1]).toBe('/cfg/mozilla/native-messaging-hosts/inari_mcp.json');
   });
 
-  it('names every manifest file kitsune_mcp.json', () => {
+  it('names every manifest file inari_mcp.json', () => {
     for (const platform of ['win32', 'darwin', 'linux']) {
       const home = platform === 'win32' ? 'C:\\Users\\u' : '/home/u';
       for (const t of nmManifestTargets({ platform, home, env: {}, exists: never, all: true })) {
@@ -255,25 +255,25 @@ describe('nmManifestTargets', () => {
 
 describe('manual steps (--help / --manual)', () => {
   it("quotes this machine's paths for the shell, even with a space and a single quote", () => {
-    const dataDir = "/home/my user/it's/.kitsune-mcp";
-    const q = "'/home/my user/it'\\''s/.kitsune-mcp'";
-    const v = { repoRoot: '/src/Kitsune MCP', nodePath: '/opt/node 20/bin/node', dataDir };
+    const dataDir = "/home/my user/it's/.inari-mcp";
+    const q = "'/home/my user/it'\\''s/.inari-mcp'";
+    const v = { repoRoot: '/src/Inari MCP', nodePath: '/opt/node 20/bin/node', dataDir };
     const uninstall = manualForPlatform('uninstall', 'linux', v);
     expect(uninstall).toContain(`rm -rf ${q}/native-host\``);
     expect(uninstall).toContain(`rm -rf ${q}\` (API token`);
-    expect(uninstall).toContain("'/opt/node 20/bin/node' '/src/Kitsune MCP'/packages/mcp-server/dist/index.js --stop-daemon");
+    expect(uninstall).toContain("'/opt/node 20/bin/node' '/src/Inari MCP'/packages/mcp-server/dist/index.js --stop-daemon");
     const install = manualForPlatform('install', 'darwin', v);
     expect(install).toContain(`mkdir -p ${q}/native-host && chmod 700 ${q} ${q}/native-host`);
-    expect(install).toContain("cd '/src/Kitsune MCP'/packages/native-host || exit 1");
+    expect(install).toContain("cd '/src/Inari MCP'/packages/native-host || exit 1");
     // the real path never appears unquoted
     expect(uninstall + install).not.toContain(` ${dataDir}`);
   });
 
-  it('uses "$HOME/.kitsune-mcp" as the placeholder and the configured port', () => {
+  it('uses "$HOME/.inari-mcp" as the placeholder and the configured port', () => {
     const md = manualMarkdown('uninstall');
-    expect(md).toContain('rm -rf "$HOME/.kitsune-mcp"/native-host');
-    expect(md).not.toContain('~/.kitsune-mcp/native-host`');
-    expect(md).toContain('lsof -tiTCP:8765');
+    expect(md).toContain('rm -rf "$HOME/.inari-mcp"/native-host');
+    expect(md).not.toContain('~/.inari-mcp/native-host`');
+    expect(md).toContain('lsof -tiTCP:8785');
     const v = { repoRoot: '/r', nodePath: '/n', dataDir: '/d', port: 9999 };
     expect(manualForPlatform('uninstall', 'linux', v)).toContain('lsof -tiTCP:9999');
     expect(manualForPlatform('uninstall', 'win32', v)).toContain('findstr :9999');
@@ -284,9 +284,9 @@ describe('manual steps (--help / --manual)', () => {
 // The reference manifest shipped in the repository
 // ---------------------------------------------------------------------------
 
-describe('packages/native-host/kitsune_mcp.json (manual-setup template)', () => {
+describe('packages/native-host/inari_mcp.json (manual-setup template)', () => {
   const repoRoot = path.resolve(__dirname, '..', '..');
-  const template = JSON.parse(fs.readFileSync(path.join(repoRoot, 'packages', 'native-host', 'kitsune_mcp.json'), 'utf8'));
+  const template = JSON.parse(fs.readFileSync(path.join(repoRoot, 'packages', 'native-host', 'inari_mcp.json'), 'utf8'));
   const extManifest = JSON.parse(fs.readFileSync(path.join(repoRoot, 'packages', 'extension', 'manifest.json'), 'utf8'));
   const geckoId = extManifest.browser_specific_settings.gecko.id;
 

@@ -1,8 +1,8 @@
 /**
- * KitsuneMCP shared daemon (`node dist/index.js --daemon`).
+ * InariMCP shared daemon (`node dist/index.js --daemon`).
  *
- * The one process that owns the HTTP (FOX_HTTP_PORT, default 8765) and
- * WebSocket (FOX_WS_PORT, default 8766) ports, and with them the
+ * The one process that owns the HTTP (FOX_HTTP_PORT, default 8785) and
+ * WebSocket (FOX_WS_PORT, default 8786) ports, and with them the
  * SafetyGuard (rate limit, audit log, current URL), the browser connection
  * manager, the ws-bridge the Native Host connects to, and the headless
  * backend. Every Claude Code session reaches it through its own stdio relay
@@ -24,7 +24,7 @@
 import * as http from 'node:http';
 import type { WebSocketServer } from 'ws';
 
-import { ENV } from '@kitsune-mcp/shared';
+import { ENV } from '@inari-mcp/shared';
 import { startHttpBridge } from '../transport/http-bridge.js';
 import { startWebSocketServer } from '../transport/ws-bridge.js';
 import { getConnectionManager, type BrowserConnectionManager } from '../connection/manager.js';
@@ -32,9 +32,8 @@ import { isHeadlessEnabled, unrecognizedHeadlessValue } from '../utils/headless-
 import { getSafetyGuard } from '../safety/guard.js';
 import { headlessContainerScopeWarning } from '../safety/container.js';
 import {
-  isLoopbackHost,
   loadOrCreateApiToken,
-  resolveHost,
+  resolveDaemonHost,
   resolveHttpPort,
   resolveWsPort,
   effectiveDaemonSettings,
@@ -43,7 +42,7 @@ import {
 import { errorMessage } from '../utils/errors.js';
 import { DaemonActivity, SHUTDOWN_DRAIN_MS, resolveIdleTimeoutMs } from './activity.js';
 import { PACKAGE_VERSION } from '../version.js';
-import { stderrLogger, type HealthVerdict } from '@kitsune-mcp/shared/node';
+import { stderrLogger, type HealthVerdict } from '@inari-mcp/shared/node';
 import { probeExistingDaemon } from './probe.js';
 
 const log = stderrLogger('daemon');
@@ -212,14 +211,10 @@ async function startHeadless(): Promise<void> {
   if (containerWarning !== null) log(`WARNING: ${containerWarning}`);
 
   connectionManager.registerBrowser('headless', (command) => {
-    headless.execute(command.action, command.tabId, command.data ?? {})
-      .then((result) => {
-        connectionManager.handleResponse({
-          requestId: command.requestId,
-          success: result['success'] === true,
-          data: result,
-          error: typeof result['error'] === 'string' ? result['error'] : undefined,
-        });
+    // runCommand: behind the approval floor (headless/approval-floor.ts).
+    headless.runCommand(command)
+      .then((response) => {
+        connectionManager.handleResponse(response);
       })
       .catch((err: unknown) => {
         connectionManager.handleResponse({
@@ -233,7 +228,7 @@ async function startHeadless(): Promise<void> {
 
 /** How the daemon ends when the HTTP port (the singleton lock) is taken. */
 export interface OccupiedPortExit {
-  /** 0 when another healthy KitsuneMCP daemon of ours owns the port, 1 otherwise. */
+  /** 0 when another healthy InariMCP daemon of ours owns the port, 1 otherwise. */
   code: 0 | 1;
   /** Who owns the port (logged). */
   message: string;
@@ -244,12 +239,12 @@ export function occupiedPortExit(occupant: HealthVerdict, host: string, httpPort
   const freePorts = `${ENV.FOX_HTTP_PORT} (and ${ENV.FOX_WS_PORT}) to free ports`;
   switch (occupant.kind) {
     case 'ok':
-      return { code: 0, message: `another KitsuneMCP daemon already owns ${host}:${httpPort} — exiting` };
+      return { code: 0, message: `another Inari MCP daemon already owns ${host}:${httpPort} — exiting` };
     case 'impostor':
       return {
         code: 1,
         message:
-          `port ${host}:${httpPort} answers as a KitsuneMCP daemon but cannot prove it holds ` +
+          `port ${host}:${httpPort} answers as an Inari MCP daemon but cannot prove it holds ` +
           'this user\'s API token (a daemon started before the token file was replaced, ' +
           'another user\'s daemon, or a program impersonating it). ' +
           `Stop it, or set ${freePorts}.`,
@@ -258,7 +253,7 @@ export function occupiedPortExit(occupant: HealthVerdict, host: string, httpPort
       return {
         code: 1,
         message:
-          `port ${host}:${httpPort} is owned by a KitsuneMCP daemon of another protocol ` +
+          `port ${host}:${httpPort} is owned by an Inari MCP daemon of another protocol ` +
           `(${String(occupant.protocol)}${occupant.version ? `, v${occupant.version}` : ''}): stop it and retry.`,
       };
     default:
@@ -279,19 +274,25 @@ interface DaemonEndpoint {
   headlessMode: boolean;
 }
 
-function resolveDaemonEndpoint(): DaemonEndpoint {
-  const host = resolveHost();
+/**
+ * The endpoint, or null (logged) when FOX_HOST is not a loopback address:
+ * the HTTP and WebSocket ports carry page content in plain text, so the
+ * daemon refuses to start rather than listen where other machines reach it
+ * (resolveDaemonHost, the same check as the Native Host and the relays).
+ */
+function resolveDaemonEndpoint(): DaemonEndpoint | null {
+  let host: string;
+  try {
+    host = resolveDaemonHost();
+  } catch (err) {
+    log(`ERROR: ${errorMessage(err)}`);
+    return null;
+  }
+
   const headlessMode = isHeadlessEnabled();
   const odd = unrecognizedHeadlessValue();
   if (odd !== undefined) {
     log(`WARNING: ${ENV.FOX_HEADLESS}='${odd}' is not 1/true/yes — headless mode is OFF`);
-  }
-  if (!isLoopbackHost(host)) {
-    log(
-      `WARNING: ${ENV.FOX_HOST}=${host} is not a loopback address — the HTTP and WebSocket ` +
-      'ports are reachable from other machines. Every endpoint except /health still needs ' +
-      'the API token, but browser control should stay local: unset it unless you really need this.',
-    );
   }
   return { host, httpPort: resolveHttpPort(), wsPort: resolveWsPort(), headlessMode };
 }
@@ -307,10 +308,31 @@ function readyGate(): { ready: Promise<void>; markReady: () => void; failReady: 
   return { ready, markReady, failReady };
 }
 
+/**
+ * Boot headless Firefox, after the ports (no Firefox for a daemon that lost
+ * the port). On failure the tool calls already waiting for `ready` get the
+ * reason (500) instead of a dropped connection, then the error is rethrown
+ * and the daemon exits as before (index.ts).
+ */
+async function startHeadlessBackend(
+  httpServer: http.Server,
+  activity: DaemonActivity,
+  failReady: (err: Error) => void,
+): Promise<void> {
+  try {
+    await startHeadless();
+  } catch (err: unknown) {
+    failReady(err instanceof Error ? err : new Error(String(err)));
+    await activity.waitForIdle(STARTUP_FAILURE_ANSWER_MS);
+    await closeHttpServer(httpServer, STARTUP_FAILURE_ANSWER_MS);
+    throw err;
+  }
+}
+
 function logStartup(endpoint: DaemonEndpoint, idleMs: number): void {
   const { host, httpPort, wsPort, headlessMode } = endpoint;
   for (const line of [
-    `kitsune-mcp v${PACKAGE_VERSION} (PID ${process.pid})`,
+    `inari-mcp v${PACKAGE_VERSION} (PID ${process.pid})`,
     `HTTP  : ${host}:${httpPort}`,
     `WS    : ${host}:${wsPort}`,
     `Mode  : ${headlessMode ? 'headless' : 'extension'}`,
@@ -320,8 +342,12 @@ function logStartup(endpoint: DaemonEndpoint, idleMs: number): void {
 
 export async function runDaemon(deps: RunDaemonDeps = {}): Promise<void> {
   const exit = deps.exit ?? ((code: number): void => process.exit(code));
-  const connectionManager = getConnectionManager();
   const endpoint = resolveDaemonEndpoint();
+  if (endpoint === null) {
+    exit(1);
+    return;
+  }
+  const connectionManager = getConnectionManager();
   const { host, httpPort, wsPort, headlessMode } = endpoint;
   const activity = new DaemonActivity();
   const settings = snapshotDaemonSettings();
@@ -393,18 +419,7 @@ export async function runDaemon(deps: RunDaemonDeps = {}): Promise<void> {
   }
 
   // --- Headless backend (after the ports: don't boot Firefox for a loser) ---
-  if (headlessMode) {
-    try {
-      await startHeadless();
-    } catch (err: unknown) {
-      // Tool calls already waiting for `ready` get the reason (500) instead
-      // of a dropped connection; then the daemon exits as before (index.ts).
-      failReady(err instanceof Error ? err : new Error(String(err)));
-      await activity.waitForIdle(STARTUP_FAILURE_ANSWER_MS);
-      await closeHttpServer(httpServer, STARTUP_FAILURE_ANSWER_MS);
-      throw err;
-    }
-  }
+  if (headlessMode) await startHeadlessBackend(httpServer, activity, failReady);
   markReady();
 
   const idleMs = resolveIdleTimeoutMs();

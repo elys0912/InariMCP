@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { ServerConnection, type ConnectionTarget } from '../src/ws-client.js';
-import { AUTH_PROTOCOL, MAC_LABEL, computeMac, newNonce } from '@kitsune-mcp/shared/node';
+import { AUTH_PROTOCOL, MAC_LABEL, computeMac, frameText, newNonce } from '@inari-mcp/shared/node';
 
 const TOKEN = 'b'.repeat(64);
 
@@ -37,7 +37,7 @@ async function scriptedServer(script: Script): Promise<{ port: number; received:
   const received: string[] = [];
   const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   wss.on('connection', (ws) => {
-    ws.on('message', (raw) => received.push(raw.toString()));
+    ws.on('message', (raw) => received.push(frameText(raw)));
     script(ws, received);
   });
   await new Promise<void>((resolve) => wss.once('listening', () => resolve()));
@@ -51,7 +51,7 @@ function daemonScript(serverToken: string, afterAuth?: (ws: WebSocket) => void):
     const serverNonce = newNonce();
     ws.send(JSON.stringify({ type: 'auth_challenge', protocol: AUTH_PROTOCOL, nonce: serverNonce }));
     ws.once('message', (raw) => {
-      const auth = JSON.parse(raw.toString()) as { nonce: string; mac: string };
+      const auth = JSON.parse(frameText(raw)) as { nonce: string; mac: string };
       if (auth.mac !== computeMac(TOKEN, MAC_LABEL.wsClient, serverNonce, auth.nonce)) {
         ws.close(1008, 'auth failed');
         return;

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { UNKNOWN_VERSION, logStamp, readPackageVersion, stderrLogger } from '@kitsune-mcp/shared/node';
+import { UNKNOWN_VERSION, logStamp, readPackageVersion, stderrLogger } from '@inari-mcp/shared/node';
 
 describe('logStamp', () => {
   it('is "<ISO time> [<pid>] " (the line prefix of daemon.log and native-host.log)', () => {
@@ -16,11 +16,11 @@ describe('stderrLogger', () => {
     vi.restoreAllMocks();
   });
 
-  it('writes "[KitsuneMCP:<role>] <msg>" lines, or "[KitsuneMCP] <msg>" without a role', () => {
+  it('writes "[InariMCP:<role>] <msg>" lines, or "[InariMCP] <msg>" without a role', () => {
     const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     stderrLogger('Relay')('hello');
     stderrLogger()('bare');
-    expect(write.mock.calls.map((c) => String(c[0]))).toEqual(['[KitsuneMCP:Relay] hello\n', '[KitsuneMCP] bare\n']);
+    expect(write.mock.calls.map((c) => String(c[0]))).toEqual(['[InariMCP:Relay] hello\n', '[InariMCP] bare\n']);
   });
 
   it('never throws when stderr is gone', () => {
@@ -34,7 +34,7 @@ describe('stderrLogger', () => {
 describe('readPackageVersion', () => {
   let dir: string;
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-version-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-version-'));
   });
   afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });

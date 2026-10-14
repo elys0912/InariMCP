@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { parseHostMessage } from '@kitsune-mcp/shared';
+import { parseHostMessage } from '@inari-mcp/shared';
 
-describe('parseHostMessage (4.C5)', () => {
+describe('parseHostMessage', () => {
   it('accepts the host-local messages and rejects a screenshot without image data', () => {
     expect(parseHostMessage({ action: 'ping', requestId: 1 })).toMatchObject({ ok: true, message: { action: 'ping', requestId: 1 } });
     expect(parseHostMessage({ action: 'saveScreenshot', data: { imageData: 'data:image/png;base64,AA' }, filename: 7 }))

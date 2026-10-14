@@ -1,5 +1,5 @@
 /**
- * KitsuneMCP Native Messaging Host — main entry point.
+ * InariMCP Native Messaging Host — main entry point.
  *
  * Bridges the Firefox Extension (stdin/stdout, Native Messaging protocol)
  * and the MCP Server (WebSocket client to its ws-bridge):
@@ -58,7 +58,7 @@ function housekeeping(): void {
 
 async function main(): Promise<void> {
   log('========================================');
-  log(`KitsuneMCP Native Host v${HOST_VERSION} starting (PID ${process.pid})`);
+  log(`InariMCP Native Host v${HOST_VERSION} starting (PID ${process.pid})`);
   log(`log file: ${activeLogPath() ?? '(disabled by FOX_NATIVE_HOST_LOG)'}`);
 
   const launcher = new ServerLauncher();

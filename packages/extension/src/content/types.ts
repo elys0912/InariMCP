@@ -13,6 +13,16 @@ export interface FindElementOptions {
   role?: string;
 }
 
+/** An element's box in viewport coordinates, with its center. */
+export interface ElementPosition {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+}
+
 export interface ElementInfo {
   tag: string;
   id: string | null;
@@ -29,15 +39,15 @@ export interface ElementInfo {
   disabled: boolean;
   checked: boolean;
   visible: boolean;
-  position: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    centerX: number;
-    centerY: number;
-  };
+  position: ElementPosition;
   selector: string;
+}
+
+/** An element without its content: tag, generated selector and position (dom.ts getElementLocation). */
+export interface ElementLocation {
+  tag: string;
+  selector: string;
+  position: ElementPosition;
 }
 
 export interface ClickOptions extends FindElementOptions {
@@ -58,8 +68,12 @@ export interface TypeOptions extends FindElementOptions {
 
 export type ScrollDirection = "up" | "down" | "left" | "right" | "top" | "bottom";
 
-/** fox_scroll arguments (the server schema: direction, amount, selector, toElement). */
-export interface ScrollOptions extends Pick<FindElementOptions, "selector" | "xpath" | "id"> {
+/**
+ * fox_scroll arguments (the server schema: direction, amount, selector,
+ * toElement). Its element is found by CSS selector only (handler.ts
+ * READ_LOCATOR_FIELDS).
+ */
+export interface ScrollOptions extends Pick<FindElementOptions, "selector"> {
   toElement?: string;
   direction?: ScrollDirection;
   amount?: number;
@@ -76,32 +90,9 @@ export interface WaitOptions extends FindElementOptions {
   visible?: boolean;
 }
 
-/** waitForChange filter: "text" is characterData. */
-export type ChangeType = "childList" | "attributes" | "text";
-
-export interface WaitForChangeOptions {
-  selector?: string;
-  timeout?: number;
-  changeType?: ChangeType;
-  waitForAll?: boolean;
-  subtree?: boolean;
-  attributes?: boolean;
-  characterData?: boolean;
-  attributeOldValue?: boolean;
-}
-
 export interface NetworkIdleOptions {
   timeout?: number;
   idleTime?: number;
-}
-
-export interface ObserveOptions {
-  selector: string;
-  observerId?: string;
-  /** fox_inject_observer switches (default true each). */
-  observeAttributes?: boolean;
-  observeChildList?: boolean;
-  observeSubtree?: boolean;
 }
 
 export interface ScrollCaptureOptions {
@@ -109,12 +100,6 @@ export interface ScrollCaptureOptions {
   delay?: number;
   maxScrolls?: number;
   restore?: boolean;
-}
-
-export interface ClickAndWaitOptions extends ClickOptions {
-  waitTimeout?: number;
-  waitForSelector?: string;
-  waitForChange?: boolean;
 }
 
 export interface SetValueOptions extends FindElementOptions {
@@ -145,61 +130,55 @@ export interface CaptchaOptions {
   timeout?: number;
 }
 
-export interface LoggingOptions {
-  clearExisting?: boolean;
-  protectedPatterns?: unknown;
-}
-
-export interface ClearLogsOptions {
-  console?: boolean;
-  network?: boolean;
-}
-
 export interface GetElementsOptions {
   selector?: string;
   limit?: number;
 }
 
-export interface StopObservingOptions {
-  observerId: string;
-}
+/** Options of an action that reads none (any object; nothing is read from it). */
+type NoOptions = object;
 
 /**
  * The options each background → content action carries next to `action`
- * (one key per case of handler.ts handleMessage). `{}`: no options read.
+ * (one key per handler of handler.ts CONTENT_HANDLERS).
  */
 export interface ContentOptionsByAction {
   click: ClickOptions;
   type: TypeOptions;
   scroll: ScrollOptions;
-  getPageInfo: {};
+  getPageInfo: NoOptions;
   getElements: GetElementsOptions;
   highlight: HighlightOptions;
   waitForElement: WaitOptions;
-  waitForChange: WaitForChangeOptions;
   waitForNetworkIdle: NetworkIdleOptions;
-  observeElement: ObserveOptions;
-  stopObserving: StopObservingOptions;
   scrollAndCapture: ScrollCaptureOptions;
-  clickAndWait: ClickAndWaitOptions;
-  captureFullPage: {};
-  inspectElement: {};
-  getValue: FindElementOptions;
+  captureFullPage: NoOptions;
   setValue: SetValueOptions;
   hover: FindElementOptions;
   selectOption: SelectOptionOptions;
   pressKey: PressKeyOptions;
   getText: TextOptions;
+  hasMaskedFields: NoOptions;
   solveCaptcha: CaptchaOptions;
-  cancelHumanWait: {};
-  startLogging: LoggingOptions;
-  stopLogging: {};
-  flushLogs: {};
-  clearLogs: ClearLogsOptions;
+  cancelHumanWait: NoOptions;
 }
 
 /** Action name of a background → content message. */
 export type ContentAction = keyof ContentOptionsByAction;
+
+/** What the background puts next to a command's options (action-table.ts toContentScript). */
+export interface ContentEnvelope {
+  /**
+   * Acting commands only: the origin (scheme://host[:port], site-origin.ts)
+   * of the page the human approval was checked on.
+   */
+  approvedOrigin?: string;
+  /**
+   * Commands from the Native Host: the background's pause count when the
+   * command was let through (abort.ts isSentBeforeAbort).
+   */
+  pauseCount?: number;
+}
 
 /**
  * A background → content message as the background builds it: the action
@@ -220,46 +199,7 @@ export type ContentMessage = {
   [A in ContentAction]: { action: A } & ContentOptionsByAction[A];
 }[ContentAction];
 
-export interface ConsoleLogEntry {
-  level: string;
-  timestamp: string;
-  message: string;
-  url: string;
-}
-
-export interface NetworkLogEntry {
-  type: string;
-  method: string;
-  url: string;
-  requestHeaders?: Record<string, string>;
-  requestBody?: string | null;
-  startTime: string;
-  pageUrl: string;
-  status?: number;
-  statusText?: string;
-  duration?: number;
-  responseHeaders?: Record<string, string>;
-  responseBody?: string;
-  error?: string;
-}
-
 export interface CaptchaWidget {
   type: string;
   solved: boolean | null;
-}
-
-export interface ObserverRecord {
-  observer: MutationObserver;
-  changes: MutationChange[];
-  target: string;
-}
-
-export interface MutationChange {
-  type: string;
-  timestamp: number;
-  target: string;
-  addedNodes: string[];
-  removedNodes: string[];
-  attributeName: string | null;
-  oldValue: string | null;
 }

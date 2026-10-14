@@ -88,7 +88,6 @@ export function createOverlayBanner(config: {
     banner.appendChild(textWrap);
 
     let settled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     function finish(value: string): void {
       if (settled) return;
       settled = true;
@@ -111,6 +110,6 @@ export function createOverlayBanner(config: {
     }
 
     (document.body || document.documentElement).appendChild(banner);
-    timer = setTimeout(() => finish("timeout"), config.timeoutMs);
+    const timer = setTimeout(() => finish("timeout"), config.timeoutMs);
   });
 }

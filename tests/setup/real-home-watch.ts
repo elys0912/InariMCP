@@ -1,5 +1,5 @@
 /**
- * Global setup: report changes to the real ~/.kitsune-mcp made during the run.
+ * Global setup: report changes to the real ~/.inari-mcp made during the run.
  *
  * tests/setup/isolate-home.ts should make this impossible. The check only
  * warns: a daemon or Native Host in real use (or another checkout running
@@ -40,7 +40,7 @@ function snapshot(dir: string): Snapshot {
 }
 
 export default function setup(): () => void {
-  const dir = path.join(os.homedir(), '.kitsune-mcp');
+  const dir = path.join(os.homedir(), '.inari-mcp');
   const before = snapshot(dir);
   return () => {
     const after = snapshot(dir);

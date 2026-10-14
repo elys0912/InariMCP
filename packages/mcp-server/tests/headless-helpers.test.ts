@@ -3,24 +3,25 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { AnyZodObject, ZodTypeAny } from 'zod';
 import {
+  assertHeadlessReadSelector,
   countOccurrences,
   filterAriaSnapshot,
   HEADLESS_IGNORED,
+  maskAriaSnapshot,
   ignoredParamWarnings,
   parseArgs,
+  playwrightDialectProblem,
 } from '../src/headless/helpers.js';
 import { CAPTCHA_SELECTORS } from '../src/headless/actions.js';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
+import { callSchemaFor, resolveOperation } from '../src/tools/operations.js';
 import { readExtensionSource } from '../../../tests/contract/helpers/extension-source.js';
 import { HEADLESS_COMMAND_TIMEOUT_MS } from '../src/connection/manager.js';
 import {
   ELEMENT_TIMEOUT_MS,
   HISTORY_TIMEOUT_MS,
   NAVIGATE_TIMEOUT_MS,
-  SCRIPT_TIMEOUT_MS,
   SELECT_OPTION_TIMEOUT_MS,
-  WAIT_AND_ACT_DEFAULT_MS,
-  WAIT_AND_ACT_POLL_MS,
 } from '../src/headless/limits.js';
 
 describe('parseArgs', () => {
@@ -32,7 +33,7 @@ describe('parseArgs', () => {
   });
 
   it('names the action and every field at fault when they do not fit', () => {
-    // The field names, not zod's wording (H-27).
+    // The field names, not zod's wording.
     let message = '';
     try {
       parseArgs(schema, { timeout: '5' }, 'wait_for_element');
@@ -89,7 +90,62 @@ describe('filterAriaSnapshot', () => {
   });
 });
 
-describe('countOccurrences (find_text, H-7)', () => {
+describe('maskAriaSnapshot (the masked fields of fox_snapshot)', () => {
+  const none = { values: [], selectedOptions: [] };
+
+  it('masks a value shown after its node, plain or quoted', () => {
+    const yaml = [
+      '- textbox "Password": hunter2',
+      '- textbox "Card": "4111: 1111"',
+      '- textbox "Name": Alice',
+    ].join('\n');
+    expect(maskAriaSnapshot(yaml, { values: ['hunter2', '4111: 1111'], selectedOptions: [] }).split('\n')).toEqual([
+      '- textbox "Password": [MASKED]',
+      '- textbox "Card": [MASKED]',
+      '- textbox "Name": Alice',
+    ]);
+  });
+
+  it('masks a value shown as a text line below its node, after normalizing its white space', () => {
+    const yaml = ['- textbox "Code":', '  - /placeholder: 6 digits', '  - text: 12 34'].join('\n');
+    expect(maskAriaSnapshot(yaml, { values: ['  12\n34 '], selectedOptions: [] })).toBe(
+      ['- textbox "Code":', '  - /placeholder: 6 digits', '  - text: [MASKED]'].join('\n'),
+    );
+  });
+
+  it('leaves out the choice of a masked select', () => {
+    const yaml = ['- combobox "Month":', '  - option "01"', '  - option "02" [selected]'].join('\n');
+    expect(maskAriaSnapshot(yaml, { values: [], selectedOptions: ['02'] })).toBe(
+      ['- combobox "Month":', '  - option "01"', '  - option "02"'].join('\n'),
+    );
+  });
+
+  it('leaves out the choice of a masked select whose option is named by its label and text', () => {
+    const yaml = ['- combobox "Year":', '  - option "2030"', '  - option "Thirty-one2031" [selected]'].join('\n');
+    expect(maskAriaSnapshot(yaml, { values: [], selectedOptions: ['Thirty-one', '2031'] })).toBe(
+      ['- combobox "Year":', '  - option "2030"', '  - option "Thirty-one2031"'].join('\n'),
+    );
+  });
+
+  it('changes nothing without masked values, and ignores empty ones', () => {
+    const yaml = '- textbox "Search": shoes';
+    expect(maskAriaSnapshot(yaml, none)).toBe(yaml);
+    expect(maskAriaSnapshot(yaml, { values: ['', ' '], selectedOptions: [''] })).toBe(yaml);
+  });
+
+  it('masks a value of 4 characters or more left elsewhere, such as in a name', () => {
+    expect(maskAriaSnapshot('- group "Code 123456":', { values: ['123456'], selectedOptions: [] }))
+      .toBe('- group "Code [MASKED]":');
+    expect(maskAriaSnapshot('- listitem: page 12 of 30', { values: ['12'], selectedOptions: [] }))
+      .toBe('- listitem: page 12 of 30');
+  });
+
+  it('does not mask a line whose value only ends with the masked one', () => {
+    expect(maskAriaSnapshot('- textbox "A": xab', { values: ['ab'], selectedOptions: [] })).toBe('- textbox "A": xab');
+  });
+});
+
+describe('countOccurrences (find_text)', () => {
   const TEXT = 'Cat cat concatenate. CAT_x (cat)';
 
   it('counts case-insensitively by default, case-sensitively on request', () => {
@@ -130,17 +186,17 @@ describe('ignoredParamWarnings', () => {
     expect(ignoredParamWarnings('click', { xpath: '//a' })).toHaveLength(1);
   });
 
-  it('type clear is honoured with a selector and warned about without one (H-2)', () => {
+  it('type clear is honoured with a selector and warned about without one', () => {
     expect(ignoredParamWarnings('type', { clear: true, selector: '#a' })).toEqual([]);
     expect(ignoredParamWarnings('type', { clear: true })).toEqual([expect.stringContaining('clear')]);
   });
 
-  it('get_elements warns only for a limit above what headless returns (H-8)', () => {
+  it('get_elements warns only for a limit above what headless returns', () => {
     expect(ignoredParamWarnings('get_elements', { limit: 10 })).toEqual([]);
     expect(ignoredParamWarnings('get_elements', { limit: 500 })).toEqual([expect.stringContaining('limit')]);
   });
 
-  it('honoured parameters give no warning (H-7, H-15)', () => {
+  it('honoured parameters give no warning', () => {
     expect(ignoredParamWarnings('find_text', { caseSensitive: true, entireWord: true })).toEqual([]);
     expect(ignoredParamWarnings('highlight', { duration: 100 })).toEqual([]);
     expect(ignoredParamWarnings('wait_for_element', { visible: false })).toEqual([]);
@@ -151,7 +207,7 @@ describe('ignoredParamWarnings', () => {
     expect(ignoredParamWarnings('screenshot', { saveToFile: false })).toHaveLength(1);
   });
 
-  it('WP5 arguments: type delay 0 is what headless does anyway; screenshot timeout is ignored', () => {
+  it('ignored arguments: type delay 0 is what headless does anyway; screenshot timeout is ignored', () => {
     expect(ignoredParamWarnings('type', { delay: 0 })).toEqual([]);
     expect(ignoredParamWarnings('screenshot', { timeout: 5000 })).toEqual([
       expect.stringContaining('timeout'),
@@ -160,15 +216,23 @@ describe('ignoredParamWarnings', () => {
 });
 
 describe('HEADLESS_IGNORED against the tool schemas', () => {
-  // Action -> ignored keys, from the exported table (H-17: no longer parsed from the source).
+  // Action -> ignored keys, from the exported table (no longer parsed from the source).
   const table = new Map<string, string[]>(
     Object.entries(HEADLESS_IGNORED).map(([action, params]) => [action, (params ?? []).map((p) => p.key)]),
   );
 
-  // Which tools send which wire action, as recorded by tests/contract/tool-golden.test.ts.
-  interface Entry { id: string; tool: string; command: { action: string; data: Record<string, unknown> } | null }
+  // Which operations send which wire action, from the tool calls recorded by
+  // tests/contract/tool-golden.test.ts.
+  interface Entry {
+    id: string;
+    tool: string;
+    args: Record<string, unknown>;
+    command: { action: string; data: Record<string, unknown> } | null;
+  }
   const golden = JSON.parse(fs.readFileSync(new URL('../../../tests/golden/tool-commands.json', import.meta.url), 'utf-8')) as Entry[];
-  const toolsOf = (wire: string) => [...new Set(golden.filter((e) => e.command?.action === wire).map((e) => e.tool))];
+  const operationOf = (e: Entry): string =>
+    resolveOperation(e.tool, callSchemaFor(e.tool)!.parse(e.args) as Record<string, unknown>).op;
+  const toolsOf = (wire: string) => [...new Set(golden.filter((e) => e.command?.action === wire).map(operationOf))];
 
   it('lists the ignored parameters', () => {
     expect(table.size).toBeGreaterThan(10);
@@ -203,7 +267,7 @@ describe('HEADLESS_IGNORED against the tool schemas', () => {
   });
 });
 
-describe('captcha detection: the same strings as the Extension (H-12)', () => {
+describe('captcha detection: the same strings as the Extension', () => {
   it('every selector and token name of CAPTCHA_SELECTORS appears in content/captcha.ts', () => {
     const extension = readExtensionSource('content/captcha.ts');
     for (const [name, value] of Object.entries(CAPTCHA_SELECTORS)) {
@@ -212,20 +276,46 @@ describe('captcha detection: the same strings as the Extension (H-12)', () => {
   });
 });
 
-describe('wait_and_act values for zero or negative arguments', () => {
-  it('equal the tool schema defaults', () => {
-    const shape = (TOOL_SCHEMAS['fox_wait_and_act']!.inputSchema as AnyZodObject).shape;
-    expect(shape['timeoutMs'].parse(undefined)).toBe(WAIT_AND_ACT_DEFAULT_MS);
-    expect(shape['pollIntervalMs'].parse(undefined)).toBe(WAIT_AND_ACT_POLL_MS);
-  });
-});
-
-describe('step timeouts stay below the headless command timeout (R-3)', () => {
+describe('step timeouts stay below the headless command timeout', () => {
   it('every single-step timeout, and the two waits of type / set_value together, end first', () => {
-    for (const ms of [NAVIGATE_TIMEOUT_MS, HISTORY_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, SELECT_OPTION_TIMEOUT_MS, SCRIPT_TIMEOUT_MS]) {
+    for (const ms of [NAVIGATE_TIMEOUT_MS, HISTORY_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, SELECT_OPTION_TIMEOUT_MS]) {
       expect(ms).toBeLessThan(HEADLESS_COMMAND_TIMEOUT_MS);
     }
     expect(2 * ELEMENT_TIMEOUT_MS).toBeLessThan(HEADLESS_COMMAND_TIMEOUT_MS);
     expect(2 * SELECT_OPTION_TIMEOUT_MS).toBeLessThan(HEADLESS_COMMAND_TIMEOUT_MS);
+  });
+});
+
+describe('selectors of the headless reading actions: plain CSS only', () => {
+  it.each([
+    ['an xpath= engine', "xpath=//input[@type='hidden'][starts-with(@value,'a')]"],
+    ['an XPath without a prefix', '//input[starts-with(@value,"a")]'],
+    ['an XPath in parentheses', '(//option)[1]'],
+    ['a parent XPath', '..'],
+    ['a role engine', 'role=option[selected]'],
+    ['an internal engine', 'internal:role=option[selected=true]'],
+    ['a text engine', 'text=Card'],
+    ['a css= prefix (still an engine name)', 'css=option'],
+    ['an engine with spaces around =', ' xpath = //input'],
+    ['a capturing engine', '*css=select'],
+    ['a chain', 'select >> internal:role=option[selected]'],
+    ['a quoted text selector', '"Card number"'],
+  ])('refuses %s', (_what, selector) => {
+    expect(playwrightDialectProblem(selector)).not.toBeNull();
+    expect(() => assertHeadlessReadSelector(selector)).toThrow(/^Selector refused: .*CSS selector only/);
+  });
+
+  it.each([
+    ['an id', '#login'],
+    ['an attribute with = inside the brackets', 'a[href="https://a.test/?q=1"]'],
+    ['a type and a name', 'input[type=hidden][name=csrf]'],
+    ['a child combinator', 'ul > li:nth-child(2)'],
+  ])('accepts %s', (_what, selector) => {
+    expect(playwrightDialectProblem(selector)).toBeNull();
+    expect(() => assertHeadlessReadSelector(selector)).not.toThrow();
+  });
+
+  it('refuses what the Extension refuses as well', () => {
+    expect(() => assertHeadlessReadSelector('option[selected]')).toThrow(/^Selector refused: it tests the value or selected attribute/);
   });
 });

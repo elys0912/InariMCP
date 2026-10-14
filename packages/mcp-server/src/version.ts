@@ -13,7 +13,7 @@
  */
 
 import * as path from 'node:path';
-import { readPackageVersion, UNKNOWN_VERSION } from '@kitsune-mcp/shared/node';
+import { readPackageVersion, UNKNOWN_VERSION } from '@inari-mcp/shared/node';
 
 /** Directory holding this package's package.json. */
 export const PACKAGE_ROOT = path.resolve(__dirname, '..');

@@ -51,7 +51,6 @@ function harness(results: Record<string, RunResult>, consume = true): Harness {
   return { deps, calls, files };
 }
 
-const ok: RunResult = { code: 0, stdout: '', stderr: '' };
 const bad = (stderr: string): RunResult => ({ code: 1, stdout: '', stderr });
 
 describe('wmiStrategy', () => {
@@ -86,7 +85,7 @@ describe('schtasksStrategy', () => {
     const h = harness({});
     await schtasksStrategy.start(spec, h.deps);
     expect(h.calls.map((c) => c.args[0])).toEqual(['/Create', '/Run', '/Delete']);
-    expect(h.calls[0]!.args).toEqual(expect.arrayContaining(['/F', '/TN', 'KitsuneMCP-daemon-T1', '/XML']));
+    expect(h.calls[0]!.args).toEqual(expect.arrayContaining(['/F', '/TN', 'InariMCP-daemon-T1', '/XML']));
     expect(h.files.size).toBe(0);
   });
 
@@ -146,14 +145,14 @@ describe('startOutsideJob', () => {
 });
 
 describe('daemonEnvFrom', () => {
-  it('keeps FOX_* and legacy names, drops the rest', () => {
+  it('keeps FOX_* names, drops the rest', () => {
     const env = daemonEnvFrom({
       FOX_HTTP_PORT: '1',
-      CLAUDE_BROWSER_HTTP_PORT: '2',
+      OTHER_HTTP_PORT: '2',
       PATH: 'x',
       SECRET_TOKEN: 'y',
       FOX_EMPTY: undefined,
     });
-    expect(env).toEqual({ FOX_HTTP_PORT: '1', CLAUDE_BROWSER_HTTP_PORT: '2' });
+    expect(env).toEqual({ FOX_HTTP_PORT: '1' });
   });
 });

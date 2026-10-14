@@ -9,9 +9,9 @@
 import { CLAUDE_NAME, DEFAULT_HTTP_PORT, HOST_NAME, WIN_REG_KEY, shellQuote } from './core.mjs';
 
 const WIN = {
-  repo: 'C:\\path\\to\\KitsuneMCP',
+  repo: 'C:\\path\\to\\InariMCP',
   node: 'C:\\Program Files\\nodejs\\node.exe',
-  data: '%USERPROFILE%\\.kitsune-mcp',
+  data: '%USERPROFILE%\\.inari-mcp',
 };
 /**
  * macOS / Linux values are shell words, already quoted (shellQuote for real
@@ -19,9 +19,9 @@ const WIN = {
  * quote in the path.
  */
 const UNIX = {
-  repo: shellQuote('/path/to/KitsuneMCP'),
+  repo: shellQuote('/path/to/InariMCP'),
   node: shellQuote('/usr/local/bin/node'),
-  data: '"$HOME/.kitsune-mcp"',
+  data: '"$HOME/.inari-mcp"',
 };
 
 function manualInstallWindows(v) {
@@ -78,7 +78,7 @@ the Native Host starts the daemon again (and recreates the token and logs).
 4. Remove the extension in Firefox (about:addons, or about:debugging for a temporary add-on), or quit Firefox.
 5. Stop the daemon: \`"${v.node}" "${v.repo}\\packages\\mcp-server\\dist\\index.js" --stop-daemon\`.
    Without the API token: \`netstat -ano | findstr :${v.port ?? DEFAULT_HTTP_PORT}\` shows the PID in the LISTENING line; \`taskkill /PID <pid> /F\`.
-   Close Claude Code sessions that still use KitsuneMCP (they start the daemon again on the next tool call).
+   Close Claude Code sessions that still use Inari MCP (they start the daemon again on the next tool call).
 6. Optional: \`rmdir /s /q "${v.data}"\` (API token, safety.json, logs, screenshots).
 `;
 }
@@ -95,7 +95,7 @@ the Native Host starts the daemon again (and recreates the token and logs).
 4. Remove the extension in Firefox (about:addons, or about:debugging for a temporary add-on), or quit Firefox.
 5. Stop the daemon: \`${v.node} ${v.repo}/packages/mcp-server/dist/index.js --stop-daemon\`.
    Without the API token: \`kill $(lsof -tiTCP:${v.port ?? DEFAULT_HTTP_PORT} -sTCP:LISTEN)\` (or find the PID with \`ss -ltnp 'sport = :${v.port ?? DEFAULT_HTTP_PORT}'\`).
-   Close Claude Code sessions that still use KitsuneMCP (they start the daemon again on the next tool call).
+   Close Claude Code sessions that still use Inari MCP (they start the daemon again on the next tool call).
 6. Optional: \`rm -rf ${v.data}\` (API token, safety.json, logs, screenshots).
 `;
 }
@@ -125,14 +125,14 @@ export function manualForPlatform(kind, platform, v) {
 export function installUsage() {
   return `Usage: node scripts/install.mjs [options]      (npm run setup -- [options])
 
-Registers the KitsuneMCP Native Messaging host for Firefox (Windows / macOS /
+Registers the Inari MCP Native Messaging host for Firefox (Windows / macOS /
 Linux, no PowerShell needed) and, on request, the MCP server with Claude Code.
 Safe to run again: unchanged files and registrations are left alone.
 
-  1. checks Node.js (>= 18) and the build output (packages/*/dist)
-  2. creates ~/.kitsune-mcp/native-host/ with the host wrapper (run-host.cmd / run-host.sh)
+  1. checks Node.js (>= 20) and the build output (packages/*/dist)
+  2. creates ~/.inari-mcp/native-host/ with the host wrapper (run-host.cmd / run-host.sh)
   3. writes ${HOST_NAME}.json where Firefox reads it
-       Windows: ~/.kitsune-mcp/native-host/${HOST_NAME}.json + registry ${WIN_REG_KEY}
+       Windows: ~/.inari-mcp/native-host/${HOST_NAME}.json + registry ${WIN_REG_KEY}
        macOS:   ~/Library/Application Support/Mozilla/NativeMessagingHosts/
        Linux:   ~/.mozilla/native-messaging-hosts/ (+ XDG / Snap / Flatpak directories when present)
   4. with --register-claude: claude mcp add --scope <scope> ${CLAUDE_NAME} -- <node> <server entry>
@@ -155,16 +155,16 @@ Compatibility: --skip-build (default now) and --no-register-claude are accepted.
 export function uninstallUsage() {
   return `Usage: node scripts/uninstall.mjs [options]    (npm run teardown -- [options])
 
-Removes the KitsuneMCP registration, in an order that keeps it removed:
+Removes the Inari MCP registration, in an order that keeps it removed:
   1. removes the Firefox Native Messaging registration (registry key / manifest files),
      so the extension cannot start the Native Host again
-  2. removes ~/.kitsune-mcp/native-host/ (host wrapper)
+  2. removes ~/.inari-mcp/native-host/ (host wrapper)
   3. removes the Claude Code registration (--unregister-claude, or when confirmed)
   4. stops this repository's Native Host processes, then the daemon: over its signed
-     POST /daemon/shutdown when ~/.kitsune-mcp/api_token is present (running calls finish,
+     POST /daemon/shutdown when ~/.inari-mcp/api_token is present (running calls finish,
      Firefox is closed), else SIGTERM, then SIGKILL after --grace seconds (Windows cannot
      signal gracefully)
-  5. with --purge: deletes ~/.kitsune-mcp/ (API token, safety.json, logs, screenshots)
+  5. with --purge: deletes ~/.inari-mcp/ (API token, safety.json, logs, screenshots)
 The repository and the Firefox extension are not touched (remove the extension in Firefox).
 
 Options:
@@ -174,7 +174,7 @@ Options:
       --keep-claude        keep the Claude Code registration
       --no-stop            do not stop running processes
       --grace SECONDS      wait before SIGKILL (default 5)
-      --purge              also delete ~/.kitsune-mcp/
+      --purge              also delete ~/.inari-mcp/
       --manual             print the manual uninstallation steps (Markdown) and exit
   -h, --help               this help
 

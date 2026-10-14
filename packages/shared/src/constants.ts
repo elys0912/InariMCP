@@ -7,7 +7,6 @@ export const MAX_PORT = 65_535;
 export const MS_PER_SECOND = 1_000;
 
 export const ENV = {
-  FOX_PORT: 'FOX_PORT',
   FOX_HOST: 'FOX_HOST',
   FOX_HTTP_PORT: 'FOX_HTTP_PORT',
   FOX_WS_PORT: 'FOX_WS_PORT',
@@ -18,15 +17,12 @@ export const ENV = {
   FOX_SCREENSHOTS_DIR: 'FOX_SCREENSHOTS_DIR',
   /** Days to keep screenshots the Native Host saved (Native Host screenshot-store.ts). */
   FOX_SCREENSHOT_RETENTION_DAYS: 'FOX_SCREENSHOT_RETENTION_DAYS',
-  FOX_DEBUG: 'FOX_DEBUG',
-  FOX_CONTAINER: 'FOX_CONTAINER',
   FOX_READ_ONLY: 'FOX_READ_ONLY',
-  FOX_ALLOW_SCRIPTS: 'FOX_ALLOW_SCRIPTS',
   FOX_SAFETY_CONFIG: 'FOX_SAFETY_CONFIG',
   FOX_NATIVE_HOST_LOG: 'FOX_NATIVE_HOST_LOG',
   FOX_DAEMON_IDLE_TIMEOUT: 'FOX_DAEMON_IDLE_TIMEOUT',
   /**
-   * `0` / `false` / `off` / `no`: never approve protected-site actions via
+   * `0` / `false` / `off` / `no`: never approve tool calls via
    * MCP elicitation; always ask in the Extension's toolbar popup. Read by the
    * relay (skips elicitation) and by the daemon (refuses
    * POST /approval/elicitation). Default: ENV_DEFAULTS.FOX_APPROVAL_ELICITATION.
@@ -34,24 +30,11 @@ export const ENV = {
   FOX_APPROVAL_ELICITATION: 'FOX_APPROVAL_ELICITATION',
 } as const;
 
-export const LEGACY_ENV = {
-  CLAUDE_BROWSER_HOST: 'CLAUDE_BROWSER_HOST',
-  CLAUDE_BROWSER_HTTP_PORT: 'CLAUDE_BROWSER_HTTP_PORT',
-  CLAUDE_BROWSER_WS_PORT: 'CLAUDE_BROWSER_WS_PORT',
-  CLAUDE_BROWSER_HEADLESS: 'CLAUDE_BROWSER_HEADLESS',
-  CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT: 'CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT',
-  CLAUDE_BROWSER_EXECUTABLE: 'CLAUDE_BROWSER_EXECUTABLE',
-  CLAUDE_BROWSER_SCREENSHOTS_DIR: 'CLAUDE_BROWSER_SCREENSHOTS_DIR',
-  CLAUDE_BROWSER_READ_ONLY: 'CLAUDE_BROWSER_READ_ONLY',
-  CLAUDE_BROWSER_ALLOW_SCRIPTS: 'CLAUDE_BROWSER_ALLOW_SCRIPTS',
-  CLAUDE_BROWSER_SAFETY_CONFIG: 'CLAUDE_BROWSER_SAFETY_CONFIG',
-} as const;
-
 /** Default values for environment variables */
 export const ENV_DEFAULTS = {
   FOX_HOST: '127.0.0.1',
-  FOX_HTTP_PORT: 8765,
-  FOX_WS_PORT: 8766,
+  FOX_HTTP_PORT: 8785,
+  FOX_WS_PORT: 8786,
   FOX_HEADLESS_STARTUP_TIMEOUT: 45_000,
   HEALTH_CHECK_INTERVAL_MS: 10_000,
   HEALTH_CHECK_MAX_FAILURES: 2,
@@ -59,7 +42,7 @@ export const ENV_DEFAULTS = {
   BACKOFF_BASE_MS: 2_000,
   BACKOFF_MAX_MS: 60_000,
   /**
-   * Whether protected-site approvals may be given through MCP elicitation
+   * Whether tool-call approvals may be given through MCP elicitation
    * when FOX_APPROVAL_ELICITATION is unset. The single place to change the
    * default: elicitation answers reach the daemon through a local HTTP call
    * that any process holding the API token can make, while the popup needs a

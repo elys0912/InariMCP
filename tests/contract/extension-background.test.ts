@@ -1,18 +1,13 @@
 /**
  * Extension background (background.ts and background/*.ts): routing and
- * robustness fixes of WP5 (review 3.A2-A9, 5.2, 5.7, 3.security). Functions
+ * robustness (waits that end, failures instead of exceptions). Functions
  * of the side-effect-free modules under background/ are imported directly;
  * the rest is checked on the source text (helpers/extension-source.ts).
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { compileUrlRules, type CompiledUrlRule } from '../../packages/extension/src/url-rule.ts';
+import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
 import { checkListedTarget } from '../../packages/extension/src/background/url-policy.ts';
-import {
-  reloadMatchingTabs,
-  reloadAllTabs,
-  reloadTabsByUrl,
-} from '../../packages/extension/src/background/reload.ts';
 import { navigateHistory } from '../../packages/extension/src/background/navigation.ts';
 import {
   captureTabsWithin,
@@ -23,21 +18,11 @@ import {
   describeNativeMessage,
   nextReconnectAttempts,
 } from '../../packages/extension/src/background/native-connection.ts';
-import { ACTION_TABLE } from '../../packages/extension/src/background/action-table.ts';
 import { handleCommand } from '../../packages/extension/src/background/dispatch.ts';
 import { registerListeners } from '../../packages/extension/src/background/listeners.ts';
-import {
-  startLoggingOnTab,
-  stopLoggingOnTab,
-  getLogsOfTab,
-  clearLogsOfTab,
-} from '../../packages/extension/src/background/logging.ts';
-import { LOG_RECORD_MESSAGE, TOP_FRAME_ID } from '../../packages/extension/src/background/constants.ts';
 import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 const background = readExtensionTree('background');
-
-const NO_LISTS = { blocked: [], allowed: [], allowlistActive: false };
 
 /** A tab with only the fields a test needs. */
 const fakeTab = (fields: { id: number; url?: string; cookieStoreId?: string }): browser.tabs.Tab =>
@@ -46,9 +31,6 @@ const fakeTab = (fields: { id: number; url?: string; cookieStoreId?: string }): 
 /** A host rule over a whole domain tree, in the wire form the server sends. */
 const hostRule = (host: string): Record<string, unknown> =>
   ({ kind: 'host', source: host, scheme: null, hosts: 'tree', host, path: null, pathMatch: 'loose' });
-
-/** The same, compiled. */
-const hostRules = (...hosts: string[]): CompiledUrlRule[] => compileUrlRules(hosts.map(hostRule)).rules;
 
 /** Install a fake `browser` global for one test (afterEach removes it). */
 const useFakeBrowser = (fake: unknown): void => {
@@ -84,10 +66,16 @@ function fakeTabs(initial: { status: string; url: string }) {
 type WaitForTabLoad = (
   tabs: unknown,
   tabId: number,
-  trigger: () => Promise<unknown>,
-  isLoaded: (tab: { status: string }) => boolean,
-  options: { timeoutMs: number; settleMs: number; requireLoading: boolean },
+  options: {
+    trigger: () => Promise<unknown>;
+    isLoaded: (tab: { status: string }) => boolean;
+    timeoutMs: number;
+    settleMs: number;
+    requireLoading: boolean;
+  },
 ) => Promise<'complete' | 'timeout' | 'removed'>;
+
+const isComplete = (t: { status: string }): boolean => t.status === 'complete';
 
 let waitForTabLoad: WaitForTabLoad;
 
@@ -101,15 +89,18 @@ afterEach(() => {
   delete (globalThis as { browser?: unknown }).browser;
 });
 
-describe('3.A6 / 5.11 waitForTabLoad', () => {
+describe('waitForTabLoad', () => {
   it('ignores a "complete" left over from the previous page and fails on timeout', async () => {
     vi.useFakeTimers();
     const tabs = fakeTabs({ status: 'complete', url: 'https://old.test/' });
-    const done = waitForTabLoad(tabs, 7, async () => {
-      // stale event of the old document, before the new load starts
-      tabs.onUpdated.fire(7, { status: 'complete' }, { ...tabs.tab });
-      tabs.tab.status = 'loading';
-    }, (t) => t.status === 'complete', { timeoutMs: 5_000, settleMs: 1_000, requireLoading: true });
+    const done = waitForTabLoad(tabs, 7, {
+      trigger: async () => {
+        // stale event of the old document, before the new load starts
+        tabs.onUpdated.fire(7, { status: 'complete' }, { ...tabs.tab });
+        tabs.tab.status = 'loading';
+      },
+      isLoaded: isComplete, timeoutMs: 5_000, settleMs: 1_000, requireLoading: true,
+    });
     await vi.advanceTimersByTimeAsync(5_000);
     await expect(done).resolves.toBe('timeout');
     expect(tabs.onUpdated.size()).toBe(0);
@@ -118,41 +109,47 @@ describe('3.A6 / 5.11 waitForTabLoad', () => {
 
   it('completes after loading → complete, and reports a closed tab as removed', async () => {
     const tabs = fakeTabs({ status: 'complete', url: 'https://old.test/' });
-    const opts = { timeoutMs: 5_000, settleMs: 1_000, requireLoading: true };
-    const loaded = waitForTabLoad(tabs, 7, async () => {
-      tabs.onUpdated.fire(7, { status: 'loading' }, { ...tabs.tab, status: 'loading' });
-      tabs.onUpdated.fire(7, { status: 'complete' }, { ...tabs.tab, status: 'complete' });
-    }, (t) => t.status === 'complete', opts);
+    const opts = { isLoaded: isComplete, timeoutMs: 5_000, settleMs: 1_000, requireLoading: true };
+    const loaded = waitForTabLoad(tabs, 7, {
+      ...opts,
+      trigger: async () => {
+        tabs.onUpdated.fire(7, { status: 'loading' }, { ...tabs.tab, status: 'loading' });
+        tabs.onUpdated.fire(7, { status: 'complete' }, { ...tabs.tab, status: 'complete' });
+      },
+    });
     await expect(loaded).resolves.toBe('complete');
 
-    const closed = waitForTabLoad(tabs, 7, async () => {
-      tabs.onUpdated.fire(7, { status: 'loading' }, { ...tabs.tab, status: 'loading' });
-      tabs.onRemoved.fire(7, {});
-    }, (t) => t.status === 'complete', opts);
+    const closed = waitForTabLoad(tabs, 7, {
+      ...opts,
+      trigger: async () => {
+        tabs.onUpdated.fire(7, { status: 'loading' }, { ...tabs.tab, status: 'loading' });
+        tabs.onRemoved.fire(7, {});
+      },
+    });
     await expect(closed).resolves.toBe('removed');
   });
 
   it('settles on the current state when no load starts within settleMs', async () => {
     vi.useFakeTimers();
-    const opts = { timeoutMs: 5_000, settleMs: 1_000, requireLoading: true };
+    const opts = { trigger: async () => {}, isLoaded: isComplete, timeoutMs: 5_000, settleMs: 1_000, requireLoading: true };
     // Same-document navigation: nothing loads, the tab is already complete.
     const settled = fakeTabs({ status: 'complete', url: 'https://same.test/#a' });
-    const done = waitForTabLoad(settled, 7, async () => {}, (t) => t.status === 'complete', opts);
+    const done = waitForTabLoad(settled, 7, opts);
     await vi.advanceTimersByTimeAsync(1_000);
     await expect(done).resolves.toBe('complete');
     expect(settled.onUpdated.size()).toBe(0);
 
     // Still loading at the settle point: the wait runs into its timeout.
     const slow = fakeTabs({ status: 'loading', url: 'https://slow.test/' });
-    const late = waitForTabLoad(slow, 7, async () => {}, (t) => t.status === 'complete', opts);
+    const late = waitForTabLoad(slow, 7, opts);
     await vi.advanceTimersByTimeAsync(5_000);
     await expect(late).resolves.toBe('timeout');
   });
 
   it('requireLoading false: the current state counts at once', async () => {
     const tabs = fakeTabs({ status: 'complete', url: 'https://new.test/' });
-    const done = waitForTabLoad(tabs, 7, async () => {}, (t) => t.status === 'complete', {
-      timeoutMs: 5_000, settleMs: 1_000, requireLoading: false,
+    const done = waitForTabLoad(tabs, 7, {
+      trigger: async () => {}, isLoaded: isComplete, timeoutMs: 5_000, settleMs: 1_000, requireLoading: false,
     });
     await expect(done).resolves.toBe('complete');
     expect(tabs.get).toHaveBeenCalledTimes(1);
@@ -161,15 +158,17 @@ describe('3.A6 / 5.11 waitForTabLoad', () => {
 
   it('a trigger that rejects rejects the wait and removes the listeners', async () => {
     const tabs = fakeTabs({ status: 'complete', url: 'https://x.test/' });
-    const done = waitForTabLoad(tabs, 7, async () => { throw new Error('tabs.reload failed'); },
-      (t) => t.status === 'complete', { timeoutMs: 5_000, settleMs: 1_000, requireLoading: true });
+    const done = waitForTabLoad(tabs, 7, {
+      trigger: async () => { throw new Error('tabs.reload failed'); },
+      isLoaded: isComplete, timeoutMs: 5_000, settleMs: 1_000, requireLoading: true,
+    });
     await expect(done).rejects.toThrow('tabs.reload failed');
     expect(tabs.onUpdated.size()).toBe(0);
     expect(tabs.onRemoved.size()).toBe(0);
   });
 });
 
-describe('3.A4 handleCommand end to end (fake browser)', () => {
+describe('handleCommand end to end (fake browser)', () => {
   const agentTab = fakeTab({ id: 1, url: 'https://app.example.test/page', cookieStoreId: 'c-agent' });
   const bankTab = fakeTab({ id: 2, url: 'https://bank.example.test/', cookieStoreId: 'c-agent' });
   const outsideTab = fakeTab({ id: 3, url: 'https://app.example.test/other', cookieStoreId: 'firefox-default' });
@@ -205,7 +204,7 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
     const result = await handleCommand({
       action: 'get_page_info',
       ...scopeMessage,
-      protectedUrlRules: [hostRule('bank.example.test')],
+      confirmReadUrlRules: [hostRule('bank.example.test')],
     }, 'host');
     expect(result).toMatchObject({ success: true, tab: { id: 1 }, url: agentTab.url });
     expect(sent).toEqual([{ tabId: 1, frameId: 0 }]);
@@ -215,16 +214,16 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
 
   it('refuses on the pinned tab, not on whichever tab became active', async () => {
     const { sent } = dispatcherBrowser([bankTab, agentTab]);
+    // Approved for the site of the tab that becomes active, not the pinned one.
     const result = await handleCommand({
       action: 'click',
       ...scopeMessage,
-      protectedUrlRules: [hostRule('bank.example.test')],
+      approvedHost: 'app.example.test',
     }, 'host');
     expect(result).toMatchObject({
       success: false,
       safetyDecision: 'confirmation_required',
       url: bankTab.url,
-      matchedPattern: 'bank.example.test',
     });
     expect(sent).toEqual([]);
   });
@@ -237,10 +236,11 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
     expect(sent).toEqual([]);
   });
 
-  // B-KM-03: approvedHost lets one approved call through on exactly that host.
+  // approvedHost lets one approved call through on exactly that host.
   describe('approvedHost (a human approved this call for one hostname)', () => {
     const subdomainTab = fakeTab({ id: 4, url: 'https://pay.bank.example.test/', cookieStoreId: 'c-agent' });
-    const protectedMessage = { ...scopeMessage, protectedUrlRules: [hostRule('bank.example.test')] };
+    // An acting command: the Extension asks for the approval itself, no rule attached.
+    const actingMessage = { ...scopeMessage };
 
     /** dispatcherBrowser, with the subdomain tab known to tabs.get as well. */
     function approvalBrowser(active: browser.tabs.Tab): { tabId: number; frameId: number }[] {
@@ -251,14 +251,14 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
       return sent;
     }
 
-    it('the approved host: the handler runs on the protected tab', async () => {
+    it('the approved host: the handler runs on that tab', async () => {
       const sent = approvalBrowser(bankTab);
-      const result = await handleCommand({ action: 'click', ...protectedMessage, approvedHost: 'bank.example.test' }, 'host');
+      const result = await handleCommand({ action: 'click', ...actingMessage, approvedHost: 'bank.example.test' }, 'host');
       expect(result.safetyDecision).toBeUndefined();
       expect(sent).toEqual([{ tabId: 2, frameId: 0 }]);
     });
 
-    it('a subdomain or another host of the protected tree: confirmation_required, no handler', async () => {
+    it('a subdomain or another host: confirmation_required, no handler', async () => {
       for (const [active, approvedHost] of [
         [subdomainTab, 'bank.example.test'],
         [bankTab, 'pay.bank.example.test'],
@@ -266,7 +266,7 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
         [bankTab, 'example.test'],
       ] as const) {
         const sent = approvalBrowser(active);
-        const result = await handleCommand({ action: 'click', ...protectedMessage, approvedHost }, 'host');
+        const result = await handleCommand({ action: 'click', ...actingMessage, approvedHost }, 'host');
         expect(result, `${active.url} / ${approvedHost}`).toMatchObject({
           success: false,
           safetyDecision: 'confirmation_required',
@@ -276,37 +276,24 @@ describe('3.A4 handleCommand end to end (fake browser)', () => {
       }
     });
 
-    it('start_logging (checked in its handler) follows the same rule', async () => {
-      const approved = approvalBrowser(bankTab);
-      const ok = await handleCommand({ action: 'start_logging', ...protectedMessage, approvedHost: 'bank.example.test' }, 'host');
-      expect(ok.safetyDecision).toBeUndefined();
-      expect(approved).toEqual([{ tabId: 2, frameId: 0 }]);
-
-      const refused = approvalBrowser(subdomainTab);
-      const denied = await handleCommand({ action: 'start_logging', ...protectedMessage, approvedHost: 'bank.example.test' }, 'host');
-      expect(denied).toMatchObject({ success: false, safetyDecision: 'confirmation_required', url: subdomainTab.url });
-      expect(refused).toEqual([]);
-    });
   });
 });
 
-describe('WP38 no active tab: a failure result, not a TypeError', () => {
-  it('get_page_info and execute_script answer "No target tab" when tabs.query finds none', async () => {
+describe('no active tab: a failure result, not a TypeError', () => {
+  it('get_page_info answers "No target tab" when tabs.query finds none', async () => {
     useFakeBrowser({
       tabs: {
         query: async () => [],
         sendMessage: async () => { throw new Error('nothing may be sent'); },
-        executeScript: async () => { throw new Error('nothing may run'); },
       },
     });
-    const { getPageInfo, executeScript } = await import('../../packages/extension/src/background/page-actions.ts');
+    const { getPageInfo } = await import('../../packages/extension/src/background/page-actions.ts');
     expect(await getPageInfo(undefined)).toEqual({ success: false, error: 'No target tab' });
-    expect(await executeScript(undefined, { script: '1' })).toEqual({ success: false, error: 'No target tab' });
     expect(await handleCommand({ action: 'get_page_info' }, 'host')).toEqual({ success: false, error: 'No target tab' });
   });
 });
 
-describe('E-21 get_page_info fails like the other content script tools', () => {
+describe('get_page_info fails like the other content script tools', () => {
   const pageTab = { id: 1, url: 'https://app.example.test/', title: 'App' };
   const failingSend = (message: string) => ({
     tabs: {
@@ -320,7 +307,7 @@ describe('E-21 get_page_info fails like the other content script tools', () => {
     useFakeBrowser(failingSend('Could not establish connection. Receiving end does not exist.'));
     const { getPageInfo } = await import('../../packages/extension/src/background/page-actions.ts');
     const pageInfo = await getPageInfo(undefined);
-    expect(pageInfo).toMatchObject({ success: false, error: expect.stringMatching(/^KitsuneMCP cannot reach this page/) });
+    expect(pageInfo).toMatchObject({ success: false, error: expect.stringMatching(/^Inari MCP cannot reach this page/) });
     expect(pageInfo).toEqual(await handleCommand({ action: 'get_elements' }, 'host'));
   });
 
@@ -331,7 +318,7 @@ describe('E-21 get_page_info fails like the other content script tools', () => {
   });
 });
 
-describe('WP30 go_back / go_forward wait for the load like navigate', () => {
+describe('go_back / go_forward wait for the load like navigate', () => {
   it('returns the URL after the history load completes, not after a fixed delay', async () => {
     vi.useFakeTimers();
     const tabs = fakeTabs({ status: 'complete', url: 'https://b.test/' });
@@ -359,34 +346,33 @@ describe('WP30 go_back / go_forward wait for the load like navigate', () => {
   });
 });
 
-describe('3.A2 reconnect backoff', () => {
+describe('reconnect backoff', () => {
   it('starts over only after a confirmed connection stayed up for the stable period', async () => {
     const next = nextReconnectAttempts;
     expect(next(4, null, 10_000)).toBe(4); // host never answered
     expect(next(4, 2_000, 10_000)).toBe(4); // crashed right after answering
     expect(next(4, 10_000, 10_000)).toBe(0);
     // That connectNative() itself does not reset the counter is run on fake
-    // ports in extension-background-async.test.ts (E-7).
+    // ports in extension-background-async.test.ts.
   });
 });
 
-describe('3.A3 / 5.1 frame routing', () => {
-  it('every tabs.sendMessage call names a frame', () => {
+describe('frame routing', () => {
+  it('every tabs.sendMessage call names the top frame, the only one with the content script', () => {
     const calls = [...background.matchAll(/browser\.tabs\s*\.sendMessage\(([\s\S]*?)\)(?:\s*as|\s*\.|;)/g)];
     expect(calls.length).toBeGreaterThan(0);
-    for (const [call] of calls) expect(call, call).toMatch(/frameId/);
-    expect(background).toMatch(/frameId: number = TOP_FRAME_ID/);
+    for (const [call] of calls) expect(call, call).toMatch(/\{ frameId: TOP_FRAME_ID \}/);
   });
 });
 
-describe('3.A5 capture of the target tab', () => {
-  // takeScreenshot itself is run in 'WP30 screenshot of a background tab' below.
+describe('capture of the target tab', () => {
+  // takeScreenshot itself is run in 'screenshot of a background tab' below.
   it('no background source calls captureVisibleTab(windowId)', () => {
     expect(background).not.toMatch(/\.captureVisibleTab\(/);
   });
 });
 
-describe('WP30 screenshot of a background tab keeps the active tab', () => {
+describe('screenshot of a background tab keeps the active tab', () => {
   it('captures the tabId given without tabs.update; a discarded tab fails', async () => {
     const update = vi.fn(async () => ({}));
     const captureTab = vi.fn(async (id: number) => `data:image/png;base64,${id}`);
@@ -419,33 +405,6 @@ describe('WP30 screenshot of a background tab keeps the active tab', () => {
   //   (same / other window) returns that tab's image, not a blank one.
 });
 
-describe('3.A8 reload_all / reload_by_url skip protected tabs', () => {
-  it('reloads only unprotected in-scope tabs and reports the excluded count', async () => {
-    const reloaded: number[] = [];
-    (globalThis as { browser?: unknown }).browser = {
-      tabs: {
-        query: async () => [
-          { id: 1, url: 'https://news.example.test/' },
-          { id: 2, url: 'https://bank.example.test/' },
-        ],
-        reload: async (id: number) => { reloaded.push(id); },
-      },
-    };
-    try {
-      const protectedRules = compileUrlRules([
-        { kind: 'host', source: 'bank.example.test', scheme: null, hosts: 'tree', host: 'bank.example.test', path: null, pathMatch: 'loose' },
-      ]).rules;
-      const result = await reloadMatchingTabs(() => true, false, null, protectedRules, NO_LISTS);
-      expect(reloaded).toEqual([1]);
-      expect(result).toMatchObject({ success: true, reloadedCount: 1, excludedProtected: 1, excludedBlocked: 0 });
-    } finally {
-      delete (globalThis as { browser?: unknown }).browser;
-    }
-    expect(ACTION_TABLE.get('reloadAll')?.protectedCheck).toBe('handler');
-    expect(ACTION_TABLE.get('reloadByUrl')?.protectedCheck).toBe('handler');
-  });
-});
-
 describe('WP5b URL rules and urlPattern arguments', () => {
   it('refuses a target tab on a blocked or not allowlisted site, fails closed without a tab', async () => {
     const host = (h: string, pathMatch: string) =>
@@ -472,8 +431,6 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     expect(valid.ok && valid.pattern?.flags).toBe('');
   });
 
-  // That an unusable protectedUrlRules does not fall back to the legacy
-  // protectedUrlPatterns is run in extension-fail-closed.test.ts (E-03).
   it('close_tab reports the closed tab id, without a URL', async () => {
     const tab = fakeTab({ id: 5, url: 'https://ok.test/' });
     const removed: number[] = [];
@@ -483,10 +440,11 @@ describe('WP5b URL rules and urlPattern arguments', () => {
         remove: async (id: number) => { removed.push(id); },
       },
     });
-    expect(await handleCommand({ action: 'close_tab', tabId: 5 }, 'host')).toEqual({ success: true, closed: 5 });
+    expect(await handleCommand({ action: 'close_tab', tabId: 5, approvedHost: 'ok.test' }, 'host'))
+      .toEqual({ success: true, closed: 5 });
     expect(removed).toEqual([5]);
   });
-  it('url-rule.ts is bundled into background.js and content.js (manifest and early injection load one file)', () => {
+  it('url-rule.ts is bundled into background.js, which the manifest loads; nothing injects content.js', () => {
     const manifest = JSON.parse(readExtensionSource('../manifest.json')) as {
       background: { scripts: string[] };
       content_scripts: { js: string[] }[];
@@ -494,10 +452,9 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     expect(manifest.background.scripts).toEqual(['dist/background.js']);
     expect(manifest.content_scripts[0]!.js).toEqual(['dist/content.js']);
     expect(background).toMatch(/^import \{[^}]*\bfindUrlRule\b[^}]*\} from "\.\.?\/url-rule";$/m);
-    expect(readExtensionTree('content')).toMatch(/^import \{[^}]*\bfindUrlRule\b[^}]*\} from "\.\.?\/url-rule";$/m);
-    // The early injection runs content.js alone, once.
-    const files = [...background.matchAll(/executeScript\([^)]*\bfile: "([^"]+)"/g)].map((m) => m[1]);
-    expect(files).toEqual(['/dist/content.js']);
+    // The content script only answers commands: it checks no URL rule itself.
+    expect(readExtensionTree('content')).not.toMatch(/from "\.\.?\/url-rule"/);
+    expect(background).not.toMatch(/\.executeScript\(/);
   });
 
   it('refuses a command whose URL rules could not all be used (config_error)', async () => {
@@ -512,13 +469,13 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     const result = await handleCommand({
       action: 'click',
       // 42 is not a rule: an unusable entry must not silently narrow the policy.
-      protectedUrlRules: [hostRule('bank.test'), 42],
+      confirmReadUrlRules: [hostRule('bank.test'), 42],
     }, 'host');
     expect(result).toMatchObject({ success: false, safetyDecision: 'config_error' });
     expect(result.error).toMatch(/1 URL pattern\(s\)/);
   });
 
-  it('checks the blocked / allowed lists before the protected domains', async () => {
+  it('checks the blocked / allowed lists before the approval', async () => {
     const tab = fakeTab({ id: 1, url: 'https://bank.test/pay' });
     useFakeBrowser({
       tabs: {
@@ -530,178 +487,70 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     const result = await handleCommand({
       action: 'click',
       blockedUrlRules: [hostRule('bank.test')],
-      protectedUrlRules: [hostRule('bank.test')],
     }, 'host');
     expect(result).toMatchObject({ success: false, safetyDecision: 'blocked_url' });
   });
 
-  it('screenshot all_tabs and reload_all skip list-violating tabs (excludedBlocked)', async () => {
+  it('screenshot all_tabs skips list-violating tabs (excludedBlocked)', async () => {
     const tabs = [
       fakeTab({ id: 1, url: 'https://ok.test/' }),
       fakeTab({ id: 2, url: 'https://blocked.test/' }),
     ];
     const captured: number[] = [];
-    const reloaded: number[] = [];
     useFakeBrowser({
       tabs: {
         query: async () => tabs,
         captureTab: async (id: number) => { captured.push(id); return `data:${id}`; },
-        reload: async (id: number) => { reloaded.push(id); },
       },
     });
     const blockedUrlRules = [hostRule('blocked.test')];
     expect(await handleCommand({ action: 'screenshot_all_tabs', blockedUrlRules }, 'host'))
-      .toMatchObject({ success: true, count: 1, failed: 0, excludedBlocked: 1, excludedProtected: 0 });
+      .toMatchObject({ success: true, count: 1, failed: 0, excludedBlocked: 1, excludedReadSites: 0 });
     expect(captured).toEqual([1]);
-    expect(await handleCommand({ action: 'reload_all', blockedUrlRules }, 'host'))
-      .toMatchObject({ success: true, reloadedCount: 1, excludedBlocked: 1, excludedProtected: 0 });
-    expect(reloaded).toEqual([1]);
   });
 
-  it('WP38 both excluded counts are always there, 0 included', async () => {
+  it('both excluded counts are always there, 0 included', async () => {
     const tabs = [fakeTab({ id: 1, url: 'https://ok.test/' })];
     useFakeBrowser({
       tabs: {
         query: async () => tabs,
         captureTab: async (id: number) => `data:${id}`,
-        reload: async () => {},
       },
     });
-    for (const action of ['screenshot_all_tabs', 'reload_all']) {
-      const result = await handleCommand({ action }, 'host');
-      expect(result, action).toMatchObject({ success: true, excludedBlocked: 0, excludedProtected: 0 });
-      expect(result, action).not.toHaveProperty('excludedBlockedReason');
-      expect(result, action).not.toHaveProperty('excludedReason');
-    }
-  });
-});
-
-describe('5.2 log buffers', () => {
-  interface LogFns {
-    appendLogRecords(target: Record<string, unknown>[], incoming: unknown, limit: number): number;
-    queryNetworkLogs(entries: Record<string, unknown>[], options: Record<string, unknown>): Record<string, unknown>;
-  }
-  let fns: LogFns;
-  beforeAll(async () => {
-    fns = await import('../../packages/extension/src/background/log-records.ts') as unknown as LogFns;
+    const result = await handleCommand({ action: 'screenshot_all_tabs' }, 'host');
+    expect(result).toMatchObject({ success: true, excludedBlocked: 0, excludedReadSites: 0 });
+    expect(result).not.toHaveProperty('excludedBlockedReason');
+    expect(result).not.toHaveProperty('excludedReadSitesReason');
   });
 
-  it('keeps the newest entries up to the limit, as plain data only', () => {
-    const buffer: Record<string, unknown>[] = [{ message: 'old' }];
-    fns.appendLogRecords(buffer, [{ message: 'a', fn: () => 1 }, 'junk', { message: 'b' }], 2);
-    expect(buffer).toEqual([{ message: 'a' }, { message: 'b' }]);
-  });
-
-  it('get_network_logs: an invalid urlPattern is an error, not a throw; matching is case-sensitive', () => {
-    expect(fns.queryNetworkLogs([{ url: 'https://a.test/' }], { urlPattern: '(' })).toMatchObject({ success: false });
-    const logs = [{ url: 'https://A.test/x' }, { url: 'https://a.test/y' }];
-    expect(fns.queryNetworkLogs(logs, { urlPattern: 'a\\.test' }))
-      .toMatchObject({ success: true, returnedCount: 1, logs: [{ url: 'https://a.test/y' }] });
-  });
-});
-
-describe('5.2 log buffers across a navigation', () => {
-  type MessageListener = (
-    message: unknown,
-    sender: browser.runtime.MessageSender,
-    sendResponse: (response: unknown) => void,
-  ) => boolean | void;
-
-  /** registerListeners() on a fake browser; returns the two listeners used here. */
-  function loggingBrowser(): { post: (sender: browser.runtime.MessageSender, payload: Record<string, unknown>) => unknown; close: (tabId: number) => void } {
-    let onMessage: MessageListener | undefined;
-    let onRemoved: ((tabId: number) => void) | undefined;
+  it('screenshot all_tabs skips confirm_read_sites tabs with excludedReadSitesReason', async () => {
+    const tabs = [
+      fakeTab({ id: 1, url: 'https://ok.test/' }),
+      fakeTab({ id: 2, url: 'https://bank.test/' }),
+    ];
+    const captured: number[] = [];
     useFakeBrowser({
-      runtime: {
-        id: 'kitsune@test',
-        getURL: (path: string) => `moz-extension://kitsune${path}`,
-        onMessage: { addListener: (fn: MessageListener) => { onMessage = fn; } },
-        onMessageExternal: { addListener: () => {} },
-      },
       tabs: {
-        get: async (id: number) => fakeTab({ id }),
-        // Every content-script round trip (startLogging, flushLogs, ...) answers empty.
-        sendMessage: async () => ({}),
-        onRemoved: { addListener: (fn: (tabId: number) => void) => { onRemoved = fn; } },
+        query: async () => tabs,
+        captureTab: async (id: number) => { captured.push(id); return `data:${id}`; },
       },
-      webNavigation: { onCommitted: { addListener: () => {} } },
     });
-    registerListeners();
-    return {
-      post: (sender, payload) => {
-        let answer: unknown;
-        onMessage!({ type: LOG_RECORD_MESSAGE, ...payload }, sender, (r) => { answer = r; });
-        return answer;
-      },
-      close: (tabId) => onRemoved!(tabId),
-    };
-  }
-
-  const sender = (tab: browser.tabs.Tab, frameId: number): browser.runtime.MessageSender =>
-    ({ tab, frameId, id: 'kitsune@test', url: tab.url });
-
-  it('takes batches from the top frame of a logging tab only, across navigations', async () => {
-    const { post } = loggingBrowser();
-    const page = fakeTab({ id: 11, url: 'https://app.test/one' });
-    const bank = fakeTab({ id: 11, url: 'https://bank.test/pay' });
-    const page2 = fakeTab({ id: 11, url: 'https://app.test/two' });
-    const protectedRules = hostRules('bank.test');
-
-    expect(await startLoggingOnTab(page, {}, protectedRules, undefined))
-      .toMatchObject({ success: true, consoleLogsCount: 0, networkLogsCount: 0, bufferLimit: 500 });
-
-    expect(post(sender(page, TOP_FRAME_ID), { console: [{ message: 'one' }], network: [{ url: 'https://api.test/' }] }))
-      .toEqual({ accepted: true });
-    // Not the top frame, and not a tab logging is on for: refused outright.
-    expect(post({ ...sender(page, 1), url: 'https://ad.test/' }, { console: [{ message: 'iframe' }] }))
-      .toEqual({ accepted: false, reason: 'not_top_frame' });
-    expect(post(sender(fakeTab({ id: 12, url: 'https://app.test/' }), TOP_FRAME_ID), { console: [{ message: 'other tab' }] }))
-      .toEqual({ accepted: false, reason: 'not_logging' });
-    // Navigated to a protected page: the buffer drops the batch (recording
-    // is paused there) and the reply says so (WP38), so the page drops what
-    // it still holds.
-    expect(post(sender(bank, TOP_FRAME_ID), { console: [{ message: 'secret' }] }))
-      .toEqual({ accepted: false, reason: 'protected_page' });
-    expect(await getLogsOfTab('getConsoleLogs', bank, {}, []))
-      .toMatchObject({ success: true, pausedForProtectedDomain: true, totalCount: 1 });
-    // Back on a normal page: the same buffer continues.
-    post(sender(page2, TOP_FRAME_ID), { console: [{ message: 'two' }] });
-    expect(await getLogsOfTab('getConsoleLogs', page2, {}, [])).toMatchObject({
+    const result = await handleCommand({ action: 'screenshot_all_tabs', confirmReadUrlRules: [hostRule('bank.test')] }, 'host');
+    expect(result).toMatchObject({
       success: true,
-      loggingEnabled: true,
-      pausedForProtectedDomain: false,
-      logs: [{ message: 'one' }, { message: 'two' }],
+      count: 1,
+      excludedBlocked: 0,
+      excludedReadSites: 1,
+      excludedReadSitesReason: expect.stringContaining('confirm_read_sites'),
     });
-
-    // stop_logging keeps the buffer readable but takes no further batches.
-    expect(await stopLoggingOnTab(page2)).toMatchObject({ success: true, consoleLogsCount: 2, networkLogsCount: 1 });
-    expect(post(sender(page2, TOP_FRAME_ID), { console: [{ message: 'late' }] })).toEqual({ accepted: false, reason: 'not_logging' });
-    expect(await getLogsOfTab('getConsoleLogs', page2, {}, []))
-      .toMatchObject({ loggingEnabled: false, returnedCount: 2 });
-
-    // clear_logs honours the console / network flags.
-    expect(await clearLogsOfTab(page2, { console: false }))
-      .toMatchObject({ success: true, consoleLogsCount: 2, networkLogsCount: 0 });
-    expect(await clearLogsOfTab(page2, {}))
-      .toMatchObject({ success: true, consoleLogsCount: 0, networkLogsCount: 0 });
-  });
-
-  it('closing the tab drops its buffer', async () => {
-    const { post, close } = loggingBrowser();
-    const tab = fakeTab({ id: 13, url: 'https://app.test/' });
-    await startLoggingOnTab(tab, {}, [], undefined);
-    expect(post(sender(tab, TOP_FRAME_ID), { console: [{ message: 'x' }] })).toEqual({ accepted: true });
-    expect(await getLogsOfTab('getConsoleLogs', tab, {}, [])).toMatchObject({ totalCount: 1, loggingEnabled: true });
-
-    close(13);
-    expect(await getLogsOfTab('getConsoleLogs', tab, {}, [])).toMatchObject({ totalCount: 0, loggingEnabled: false });
-    expect(post(sender(tab, TOP_FRAME_ID), { console: [{ message: 'y' }] })).toEqual({ accepted: false, reason: 'not_logging' });
+    expect(result).not.toHaveProperty('excludedReason');
+    expect(captured).toEqual([1]);
   });
 });
 
-describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
-  const EXTENSION_ID = 'kitsune@test';
-  const POPUP_URL = 'moz-extension://kitsune/popup/popup.html';
+describe('runtime.onMessage sender checks (fake browser)', () => {
+  const EXTENSION_ID = 'inari@test';
+  const POPUP_URL = 'moz-extension://inari/popup/popup.html';
   type Listener = (message: unknown, sender: browser.runtime.MessageSender, sendResponse: (r: unknown) => void) => boolean | void;
 
   /** registerListeners() on a fake browser; `send` / `sendExternal` call its two message listeners. */
@@ -716,15 +565,14 @@ describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
     useFakeBrowser({
       runtime: {
         id: EXTENSION_ID,
-        getURL: (p: string) => `moz-extension://kitsune${p}`,
+        getURL: (p: string) => `moz-extension://inari${p}`,
         onMessage: { addListener: (fn: Listener) => { onMessage = fn; } },
         onMessageExternal: { addListener: (fn: Listener) => { onExternal = fn; } },
+        onInstalled: { addListener: () => {} },
       },
       tabs: {
-        onRemoved: { addListener: () => {} },
         query: async () => { queries++; return []; },
       },
-      webNavigation: { onCommitted: { addListener: () => {} } },
     });
     registerListeners();
     const call = (fn: Listener | undefined, message: unknown, sender: browser.runtime.MessageSender): Promise<unknown> =>
@@ -741,19 +589,19 @@ describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
 
   const pageTab = fakeTab({ id: 4, url: 'https://app.example.test/' });
   /** A content script: this extension's id, but the web page's URL. */
-  const contentScript: browser.runtime.MessageSender = { id: EXTENSION_ID, url: pageTab.url, tab: pageTab, frameId: 0 };
+  const contentScript: browser.runtime.MessageSender = { id: EXTENSION_ID, url: pageTab.url, tab: pageTab };
   /** The toolbar popup: an extension page outside any tab. */
   const popup: browser.runtime.MessageSender = { id: EXTENSION_ID, url: POPUP_URL };
   /** The popup page opened in a tab. */
   const popupInTab: browser.runtime.MessageSender = { ...popup, tab: fakeTab({ id: 9, url: POPUP_URL }) };
 
-  const APPROVALS_REFUSED = { success: false, error: 'Approval requests are answered in the KitsuneMCP toolbar popup' };
+  const APPROVALS_REFUSED = { success: false, error: 'Approval requests are answered in the Inari MCP toolbar popup' };
   const COMMAND_REFUSED = { success: false, error: 'Background commands are only accepted from extension pages' };
 
   it('a content script can neither list nor decide approvals, nor drive the dispatcher', async () => {
     const { send, tabQueries } = listenersBrowser();
-    expect(await send({ type: 'kitsune:approvals:list' }, contentScript)).toEqual(APPROVALS_REFUSED);
-    expect(await send({ type: 'kitsune:approvals:decide', id: 'a', approved: true }, contentScript)).toEqual(APPROVALS_REFUSED);
+    expect(await send({ type: 'inari:approvals:list' }, contentScript)).toEqual(APPROVALS_REFUSED);
+    expect(await send({ type: 'inari:approvals:decide', id: 'a', approved: true }, contentScript)).toEqual(APPROVALS_REFUSED);
     expect(await send({ target: 'background', action: 'noSuchAction' }, contentScript)).toEqual(COMMAND_REFUSED);
     // The dispatcher never ran: it would have looked for the target tab.
     expect(tabQueries()).toBe(0);
@@ -761,22 +609,24 @@ describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
 
   it('an extension page in a tab may list approvals but not decide one', async () => {
     const { send } = listenersBrowser();
-    expect(await send({ type: 'kitsune:approvals:list' }, popupInTab)).toEqual({ success: true, approvals: [] });
-    expect(await send({ type: 'kitsune:approvals:decide', id: 'a', approved: true }, popupInTab)).toEqual(APPROVALS_REFUSED);
+    expect(await send({ type: 'inari:approvals:list' }, popupInTab)).toEqual({ success: true, approvals: [] });
+    expect(await send({ type: 'inari:approvals:decide', id: 'a', approved: true }, popupInTab)).toEqual(APPROVALS_REFUSED);
   });
 
   it('the toolbar popup decides approvals and drives the dispatcher', async () => {
     const { send, tabQueries } = listenersBrowser();
-    expect(await send({ type: 'kitsune:approvals:decide', id: 'a', approved: true }, popup))
+    expect(await send({ type: 'inari:approvals:decide', id: 'a', approved: true }, popup))
       .toEqual({ success: false, error: 'This request is no longer pending' });
+    // An unknown action gets the strictest row: the approval check (here
+    // without any tab) refuses it before its handler would.
     expect(await send({ target: 'background', action: 'noSuchAction' }, popup))
-      .toEqual({ success: false, error: 'Unknown action: noSuchAction' });
+      .toEqual({ success: false, error: 'Could not resolve the target tab for the approval check' });
     expect(tabQueries()).toBe(1);
   });
 
   it('a page with another extension id is not an extension page of ours', async () => {
     const { send } = listenersBrowser();
-    expect(await send({ type: 'kitsune:approvals:list' }, { ...popup, id: 'other@test' })).toEqual(APPROVALS_REFUSED);
+    expect(await send({ type: 'inari:approvals:list' }, { ...popup, id: 'other@test' })).toEqual(APPROVALS_REFUSED);
   });
 
   it('every external message is refused', async () => {
@@ -803,7 +653,8 @@ describe('dispatcher refusals without a handler', () => {
         remove: async (id: number) => { removed.push(id); },
       },
     });
-    expect(await handleCommand({ action: 'close_tab' }, 'host')).toEqual({ success: false, error: 'tabId is required' });
+    expect(await handleCommand({ action: 'close_tab', approvedHost: 'ok.test' }, 'host'))
+      .toEqual({ success: false, error: 'tabId is required' });
     expect(removed).toEqual([]);
   });
 });
@@ -835,7 +686,7 @@ describe('5.7 screenshot all_tabs', () => {
       },
     });
     const all = await screenshotAllTabs({ saveToFile: false });
-    expect(all).toMatchObject({ success: true, count: 0, failed: 0, excludedProtected: 0 });
+    expect(all).toMatchObject({ success: true, count: 0, failed: 0, excludedReadSites: 0 });
     expect(all.screenshots).toEqual([
       { tabId: 1, url: 'https://a.test/', title: '', imageSaved: false },
       { tabId: 2, url: 'https://b.test/', title: '', imageSaved: false },
@@ -863,71 +714,12 @@ describe('5.7 screenshot all_tabs', () => {
   });
 });
 
-describe('WP5 reload_all / reload_by_url arguments', () => {
-  /** A fake browser.tabs; the returned array records every reload call. */
-  function reloadBrowser(tabs: browser.tabs.Tab[]): { id: number; bypassCache: boolean }[] {
-    const calls: { id: number; bypassCache: boolean }[] = [];
-    useFakeBrowser({
-      tabs: {
-        query: async () => tabs,
-        reload: async (id: number, o: { bypassCache: boolean }) => { calls.push({ id, bypassCache: o.bypassCache }); },
-      },
-    });
-    return calls;
-  }
-
-  const tabs = [
-    fakeTab({ id: 1, url: 'https://a.test/app/x' }),
-    fakeTab({ id: 2, url: 'https://a.test/other' }),
-    fakeTab({ id: 3, url: 'https://A.test/app/y' }),
-  ];
-
-  it('`url` is a prefix of the whole URL, urlPattern a case-sensitive regex', async () => {
-    let calls = reloadBrowser(tabs);
-    expect(await reloadTabsByUrl({ url: 'https://a.test/app' })).toMatchObject({ success: true, reloadedCount: 1 });
-    expect(calls.map((c) => c.id)).toEqual([1]);
-
-    calls = reloadBrowser(tabs);
-    expect(await reloadTabsByUrl({ urlPattern: '^https://a\\.test/' })).toMatchObject({ reloadedCount: 2 });
-    expect(calls.map((c) => c.id)).toEqual([1, 2]);
-
-    // `url` wins: the urlPattern is not even compiled.
-    calls = reloadBrowser(tabs);
-    expect(await reloadTabsByUrl({ url: 'https://a.test/other', urlPattern: '(' })).toMatchObject({ reloadedCount: 1 });
-    expect(calls.map((c) => c.id)).toEqual([2]);
-
-    expect(await reloadTabsByUrl({ urlPattern: '(' }))
-      .toMatchObject({ success: false, error: expect.stringMatching(/^Invalid urlPattern/) });
-    expect(await reloadTabsByUrl({}))
-      .toMatchObject({ success: false, error: 'Must provide url or urlPattern' });
-  });
-
-  it('bypassCache defaults: reload_all false, reload_by_url true', async () => {
-    const one = [fakeTab({ id: 1, url: 'https://a.test/' })];
-    let calls = reloadBrowser(one);
-    expect(await reloadAllTabs({})).toMatchObject({ bypassCache: false });
-    expect(calls).toEqual([{ id: 1, bypassCache: false }]);
-
-    calls = reloadBrowser(one);
-    expect(await reloadAllTabs({ bypassCache: true })).toMatchObject({ bypassCache: true });
-    expect(calls).toEqual([{ id: 1, bypassCache: true }]);
-
-    calls = reloadBrowser(one);
-    expect(await reloadTabsByUrl({ url: 'https://a.test/' })).toMatchObject({ bypassCache: true });
-    expect(calls).toEqual([{ id: 1, bypassCache: true }]);
-
-    calls = reloadBrowser(one);
-    expect(await reloadTabsByUrl({ url: 'https://a.test/', bypassCache: false })).toMatchObject({ bypassCache: false });
-    expect(calls).toEqual([{ id: 1, bypassCache: false }]);
-  });
-});
-
 describe('3.security native message logging', () => {
   it('logs action / requestId / key names, never values', async () => {
     const describe_ = describeNativeMessage;
-    const line = describe_({ action: 'execute_script', requestId: '9', data: { script: 'secret()' } });
-    expect(line).toContain('action=execute_script');
-    expect(line).toContain('data=[script]');
+    const line = describe_({ action: 'type', requestId: '9', data: { text: 'secret' } });
+    expect(line).toContain('action=type');
+    expect(line).toContain('data=[text]');
     expect(line).not.toContain('secret');
   });
 
@@ -935,5 +727,25 @@ describe('3.security native message logging', () => {
     const manifest = JSON.parse(readExtensionSource('../manifest.json')) as Record<string, unknown>;
     expect(manifest['permissions']).not.toContain('activeTab');
     expect(manifest).not.toHaveProperty('web_accessible_resources');
+  });
+
+  it('manifest: the content script runs in the top frame only and puts no stylesheet into pages', () => {
+    const manifest = JSON.parse(readExtensionSource('../manifest.json')) as {
+      content_scripts: Record<string, unknown>[];
+    };
+    expect(manifest.content_scripts).toHaveLength(1);
+    expect(manifest.content_scripts[0]).toMatchObject({ all_frames: false });
+    expect(manifest.content_scripts[0]).not.toHaveProperty('css');
+    // The highlight overlay is styled on the element itself (no class to probe for).
+    expect(readExtensionTree('content')).not.toMatch(/\.className\s*=(?!=)|classList\.add\(/);
+  });
+
+  it('manifest: declares websiteContent, browsingActivity and websiteActivity', () => {
+    const manifest = JSON.parse(readExtensionSource('../manifest.json')) as {
+      browser_specific_settings: { gecko: { data_collection_permissions: { required: string[] } } };
+    };
+    // Page text and form values, the URLs and tab list, and the clicks and typing it performs.
+    expect([...manifest.browser_specific_settings.gecko.data_collection_permissions.required].sort())
+      .toEqual(['browsingActivity', 'websiteActivity', 'websiteContent']);
   });
 });

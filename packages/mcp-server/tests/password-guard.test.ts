@@ -16,7 +16,7 @@ describe('isPasswordElement', () => {
     ['password input', fakeElement('input', 'password'), true],
     ['current-password', fakeElement('input', 'text', 'current-password'), true],
     ['new-password', fakeElement('input', 'text', 'new-password'), true],
-    // B-KM-05: autocomplete is a space-separated, case-insensitive token list
+    // The autocomplete attribute is a space-separated, case-insensitive token list
     ['current-password with webauthn', fakeElement('input', 'text', 'current-password webauthn'), true],
     ['section- and new-password', fakeElement('input', 'text', 'section-login  new-password'), true],
     ['Current-Password', fakeElement('input', 'text', 'Current-Password'), true],
@@ -61,7 +61,7 @@ describe('applyPasswordPolicy', () => {
     expect(data2['allowPassword']).toBe(true);
   });
 
-  it('sets it on fox_press_key too: headless key presses are real input (H-1)', () => {
+  it('sets it on fox_press_key too: headless key presses are real input', () => {
     const data: Record<string, unknown> = { allowPassword: true };
     applyPasswordPolicy('fox_press_key', data, false);
     expect(data['allowPassword']).toBe(false);
@@ -82,6 +82,11 @@ describe('invalidRegexArgument (5.10)', () => {
   it('reports a urlPattern that does not compile', () => {
     expect(invalidRegexArgument({ urlPattern: '(' })).toMatch(/^Invalid urlPattern '\('/);
     expect(invalidRegexArgument({ urlPattern: '*.example' })).toMatch(/^Invalid urlPattern/);
+  });
+
+  it('refuses a urlPattern over the limits of shared url-pattern-limit.ts (no regex that backtracks for minutes)', () => {
+    expect(invalidRegexArgument({ urlPattern: '(a+)+$' })).toMatch(/^Invalid urlPattern: a repeated group contains a quantifier or \|/);
+    expect(invalidRegexArgument({ urlPattern: 'a'.repeat(257) })).toMatch(/^Invalid urlPattern: longer than 256/);
   });
 
   it('accepts valid or absent patterns', () => {

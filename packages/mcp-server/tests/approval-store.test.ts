@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS } from '@inari-mcp/shared';
 import { answerFromElicitation } from '../src/tools/approval-flow.js';
 import { DAEMON_SETTING_KEYS } from '../src/utils/endpoint.js';
 import {
@@ -11,7 +11,6 @@ import {
   approvalTargetFor,
   canonicalJson,
   hashArgs,
-  hostOf,
   summarizeArgs,
   approvalDisplayUrl,
   SUMMARY_HIDDEN_CHARS_WARNING,
@@ -27,8 +26,8 @@ function clock(start = 1_000_000): { now: () => number; advance: (ms: number) =>
 }
 
 const ARGS = { selector: '#pay', tabId: 3 };
-const TARGET: ApprovalTarget = { toolName: 'fox_click', host: 'pay.example.test', argsHash: hashArgs(ARGS) };
-const INFO = { protectedUrl: 'https://pay.example.test/checkout', matchedPattern: 'example\\.test', summary: 's' };
+const TARGET: ApprovalTarget = { toolName: 'fox_click', site: 'pay.example.test', argsHash: hashArgs(ARGS) };
+const INFO = { url: 'https://pay.example.test/checkout', matchedPattern: null, summary: 's' };
 
 function issued(store: ApprovalStore, target = TARGET): string {
   const request = store.createRequest(target, INFO);
@@ -37,15 +36,8 @@ function issued(store: ApprovalStore, target = TARGET): string {
   return token!.token;
 }
 
+// approvalSiteOf itself: packages/shared/tests/approval-site.test.ts.
 describe('approval target helpers', () => {
-  it('hostOf: lower-case hostname, null for non-URLs', () => {
-    expect(hostOf('https://Pay.Example.TEST:8443/x?y')).toBe('pay.example.test');
-    expect(hostOf('about:blank')).toBeNull();
-    expect(hostOf('(target tab)')).toBeNull();
-    expect(hostOf('')).toBeNull();
-    expect(hostOf(null)).toBeNull();
-  });
-
   it('hashArgs does not depend on key order, but on every value', () => {
     expect(hashArgs({ a: 1, b: { c: 2, d: [1, 2] } })).toBe(hashArgs({ b: { d: [1, 2], c: 2 }, a: 1 }));
     expect(hashArgs({ a: 1 })).not.toBe(hashArgs({ a: 2 }));
@@ -53,9 +45,10 @@ describe('approval target helpers', () => {
     expect(canonicalJson({ b: 1, a: undefined, c: 'x' })).toBe('{"b":1,"c":"x"}');
   });
 
-  it('approvalTargetFor binds tool, host and argument hash', () => {
+  it('approvalTargetFor binds tool, site and argument hash', () => {
     expect(approvalTargetFor('fox_click', ARGS, 'https://pay.example.test/a')).toEqual(TARGET);
     expect(approvalTargetFor('fox_click', ARGS, '(target tab)')).toBeNull();
+    expect(approvalTargetFor('fox_click', ARGS, null)).toBeNull();
   });
 
   it('summarizeArgs shows values in full and masks password', () => {
@@ -69,7 +62,7 @@ describe('approval target helpers', () => {
     expect(summarizeArgs({})).toBe('(no arguments)');
   });
 
-  // A-KM-01: a cut summary let the human approve what they were not shown.
+  // A cut summary would let the human approve what they were not shown.
   it('summarizeArgs gives null instead of cutting a value or the whole summary', () => {
     expect(summarizeArgs({ script: 'x'.repeat(SUMMARY_VALUE_MAX - 1) })).toBeNull();
     // counted in UTF-16 units, as the popup clips: 80 emoji are 82 code points but 162 units
@@ -86,7 +79,7 @@ describe('approval target helpers', () => {
     expect(summary).not.toContain('…');
   });
 
-  // B-KM-01: bidi overrides, zero-width and tag characters, U+2028 / U+2029.
+  // Characters that hide or reorder text: bidi overrides, zero-width and tag characters, U+2028 / U+2029.
   it('summarizeArgs shows invisible and reordering characters as escapes, with a warning', () => {
     const summary = summarizeArgs({
       script: 'safe()\u202E;)(yenom_dnes',
@@ -104,7 +97,7 @@ describe('approval target helpers', () => {
     expect(summarizeArgs({ text: 'hello' })).toBe('text: "hello"');
   });
 
-  it('approvalDisplayUrl escapes invisible characters of the protected URL', () => {
+  it('approvalDisplayUrl escapes invisible characters of the URL', () => {
     expect(approvalDisplayUrl('https://pay.example.test/\u202Efdp.exe'))
       .toBe(String.raw`https://pay.example.test/\u202Efdp.exe`);
     expect(approvalDisplayUrl('https://pay.example.test/a')).toBe('https://pay.example.test/a');
@@ -125,7 +118,7 @@ describe('ApprovalStore: tokens', () => {
   it('a token is accepted once for its target, then never again (single use)', () => {
     const store = new ApprovalStore();
     const token = issued(store);
-    expect(token).toMatch(/^kat_[A-Za-z0-9_-]{43}$/);
+    expect(token).toMatch(/^iat_[A-Za-z0-9_-]{43}$/);
     const grant = store.consume(token, 'fox_click', TARGET.argsHash);
     expect(grant).toMatchObject({ target: TARGET, via: 'browser' });
     expect(store.consume(token, 'fox_click', TARGET.argsHash)).toBeNull();
@@ -154,7 +147,7 @@ describe('ApprovalStore: tokens', () => {
   it('unknown or malformed tokens are refused', () => {
     const store = new ApprovalStore();
     issued(store);
-    expect(store.consume('kat_' + 'A'.repeat(43), 'fox_click', TARGET.argsHash)).toBeNull();
+    expect(store.consume('iat_' + 'A'.repeat(43), 'fox_click', TARGET.argsHash)).toBeNull();
     expect(store.consume('', 'fox_click', TARGET.argsHash)).toBeNull();
     expect(store.consume('not-a-token', 'fox_click', TARGET.argsHash)).toBeNull();
   });
@@ -199,10 +192,10 @@ describe('ApprovalStore: requests', () => {
 
 describe('FOX_APPROVAL_ELICITATION', () => {
   // answerFromElicitation audits through the guard singleton: keep it off
-  // the real ~/.kitsune-mcp (no audit log, temp safety.json).
+  // the real ~/.inari-mcp (no audit log, temp safety.json).
   let dir: string;
   beforeAll(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-elicit-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-elicit-'));
     const file = path.join(dir, 'safety.json');
     fs.writeFileSync(file, JSON.stringify({ audit_log: false }));
     process.env['FOX_SAFETY_CONFIG'] = file;

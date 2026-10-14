@@ -4,11 +4,13 @@
  * Starts `packages/mcp-server/dist/index.js` (build first) the way Claude
  * Code does, with FOX_HEADLESS=1, and drives it over MCP against a local
  * HTTP page. Needs Playwright's Firefox (`npx playwright install firefox`).
+ * Acting tools ask the human first: the client declares MCP elicitation and
+ * approves every request (the human of this test, `approvalsAsked`).
  *
  * Isolation: HOME / USERPROFILE point at a temporary directory
  * (tests/setup/isolate-home.ts; token, safety.json, audit log and
  * screenshots go there) and the daemon gets free ports, so a daemon in real
- * use on 8765/8766 is neither reused nor disturbed.
+ * use on 8785/8786 is neither reused nor disturbed.
  *
  * Cleanup: the relay spawns the daemon detached, and the daemon only exits
  * after RELAY_TTL (90 s) + idle timeout. The test therefore stops it over
@@ -30,11 +32,12 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { AUTH_HEADER, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
+import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { AUTH_HEADER, signRequest, verifyResponse } from '@inari-mcp/shared/node';
 
 const ENTRY = fileURLToPath(new URL('../../packages/mcp-server/dist/index.js', import.meta.url));
-const MARKER = 'kitsune-e2e-marker-7f3a';
-const PAGE = `<!doctype html><html><head><title>Kitsune E2E</title></head>
+const MARKER = 'inari-e2e-marker-7f3a';
+const PAGE = `<!doctype html><html><head><title>Inari E2E</title></head>
 <body><h1>${MARKER}</h1><p>Plain page for the relay/headless smoke test.</p>
 <button id="go">Go</button></body></html>`;
 
@@ -82,13 +85,15 @@ function text(result: unknown): string {
 
 let page: http.Server;
 let pageUrl: string;
+/** The elicitation messages the client was asked to approve. */
+const approvalsAsked: string[] = [];
 let httpPort: number;
 let client: Client;
 let daemonPid: number | undefined;
 
 function readToken(): string | undefined {
   try {
-    return fs.readFileSync(path.join(os.homedir(), '.kitsune-mcp', 'api_token'), 'utf-8').trim() || undefined;
+    return fs.readFileSync(path.join(os.homedir(), '.inari-mcp', 'api_token'), 'utf-8').trim() || undefined;
   } catch {
     return undefined;
   }
@@ -181,7 +186,12 @@ beforeAll(async () => {
   httpPort = await freePort();
   const wsPort = await freePort();
 
-  client = new Client({ name: 'kitsune-e2e', version: '0.0.0' });
+  client = new Client({ name: 'inari-e2e', version: '0.0.0' }, { capabilities: { elicitation: {} } });
+  // The human approves every acting call (fox_navigate).
+  client.setRequestHandler(ElicitRequestSchema, async (request) => {
+    approvalsAsked.push(request.params.message);
+    return { action: 'accept', content: { approve: true } };
+  });
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [ENTRY],
@@ -220,9 +230,11 @@ describe('relay → daemon → headless Firefox', () => {
 
     const nav = await client.callTool({ name: 'fox_navigate', arguments: { url: pageUrl } }, undefined, { timeout: 90_000 });
     expect(nav.isError, text(nav)).not.toBe(true);
+    // An acting tool: the human was asked once, for the page's site.
+    expect(approvalsAsked).toEqual([expect.stringMatching(/^Inari MCP: allow this operation\?[\s\S]*Tool: fox_navigate[\s\S]*Site: 127\.0\.0\.1/)]);
 
     // The daemon is up now: learn its PID for the cleanup.
-    const token = fs.readFileSync(path.join(os.homedir(), '.kitsune-mcp', 'api_token'), 'utf-8').trim();
+    const token = fs.readFileSync(path.join(os.homedir(), '.inari-mcp', 'api_token'), 'utf-8').trim();
     const info = await fetch(`http://127.0.0.1:${httpPort}/daemon/info`, { headers: { 'X-API-Key': token } })
       .then((r) => r.json() as Promise<{ pid?: number; headless?: boolean }>);
     daemonPid = info.pid;
@@ -248,17 +260,17 @@ describe('relay → daemon → headless Firefox', () => {
   it('saves the screenshot under the isolated screenshots directory', () => {
     // tests/setup/isolate-home.ts points HOME / USERPROFILE at a temporary
     // directory and clears FOX_SCREENSHOTS_DIR, so the daemon's
-    // defaultScreenshotsDir() is ~/.kitsune-mcp/screenshots inside it.
+    // defaultScreenshotsDir() is ~/.inari-mcp/screenshots inside it.
     const home = os.homedir();
     expect(home.startsWith(os.tmpdir())).toBe(true);
-    const dir = path.join(home, '.kitsune-mcp', 'screenshots');
+    const dir = path.join(home, '.inari-mcp', 'screenshots');
     const shots = fs.readdirSync(dir).filter((f) => f.endsWith('.png'));
     expect(shots.length).toBeGreaterThan(0);
     expect(fs.statSync(path.join(dir, shots[0] as string)).size).toBeGreaterThan(0);
   });
 
   it('writes the audit log in the temporary home', () => {
-    const logPath = path.join(os.homedir(), '.kitsune-mcp', 'logs', 'audit.jsonl');
+    const logPath = path.join(os.homedir(), '.inari-mcp', 'logs', 'audit.jsonl');
     const lines = fs.readFileSync(logPath, 'utf-8').split('\n').filter((l) => l.trim() !== '');
     expect(lines.length).toBeGreaterThan(0);
     const entries = lines.map((l) => JSON.parse(l) as { tool: string; decision: string; url: string | null });
@@ -266,10 +278,10 @@ describe('relay → daemon → headless Firefox', () => {
       expect(typeof e.tool).toBe('string');
       expect(typeof e.decision).toBe('string');
     }
-    const nav = entries.find((e) => e.tool === 'fox_navigate');
-    expect(nav, JSON.stringify(entries.map((e) => e.tool))).toBeDefined();
-    expect(nav?.decision).toBe('allowed');
-    expect(nav?.url).toBe(pageUrl);
+    const navs = entries.filter((e) => e.tool === 'fox_navigate');
+    expect(navs.map((e) => e.decision).slice(0, 3), JSON.stringify(entries.map((e) => e.tool)))
+      .toEqual(['confirmation_required', 'approval_granted', 'allowed_by_human']);
+    expect(navs[2]?.url).toBe(pageUrl);
   });
 
   it('restarts a killed daemon on the next tool call', async () => {
@@ -285,7 +297,7 @@ describe('relay → daemon → headless Firefox', () => {
     const nav = await client.callTool({ name: 'fox_navigate', arguments: { url: pageUrl } }, undefined, { timeout: 120_000 });
     expect(nav.isError, text(nav)).not.toBe(true);
 
-    const token = fs.readFileSync(path.join(os.homedir(), '.kitsune-mcp', 'api_token'), 'utf-8').trim();
+    const token = fs.readFileSync(path.join(os.homedir(), '.inari-mcp', 'api_token'), 'utf-8').trim();
     const info = await fetch(`http://127.0.0.1:${httpPort}/daemon/info`, { headers: { 'X-API-Key': token } })
       .then((r) => r.json() as Promise<{ pid?: number; headless?: boolean }>);
     daemonPid = info.pid;

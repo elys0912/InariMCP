@@ -4,7 +4,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "composite": true,
-    // For src/node only (@kitsune-mcp/shared/node). The package root must stay
+    // For src/node only (@inari-mcp/shared/node). The package root must stay
     // free of Node APIs: packages/shared/tests/browser-safe.test.ts checks it.
     "types": ["node"]
   },

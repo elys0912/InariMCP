@@ -1,5 +1,5 @@
 /**
- * `@kitsune-mcp/shared/node` — helpers for the Node.js processes (daemon,
+ * `@inari-mcp/shared/node` — helpers for the Node.js processes (daemon,
  * relay, Native Host). Kept out of the package root, which stays free of
  * Node and browser APIs.
  */
@@ -12,3 +12,4 @@ export * from './paths.js';
 export * from './spawn.js';
 export * from './token.js';
 export * from './version.js';
+export * from './ws-frame.js';

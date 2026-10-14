@@ -1,19 +1,12 @@
-// Runtime / tab / navigation / notification listeners (L5). Registered once
-// by background.ts (registerListeners).
+// Runtime / notification listeners (L5). Registered once by background.ts
+// (registerListeners). Also opens the consent page on the first install.
 
 import { errorMessage } from "../error-message";
 import { APPROVAL_MESSAGE } from "../approval";
+import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, type ControlView } from "../user-control";
 import { listApprovals, decideApproval, APPROVAL_NOTIFICATION_PREFIX } from "./approvals";
-import { LOG_RECORD_MESSAGE, TOP_FRAME_ID, LOGGING_STATE_QUERY } from "./constants";
+import { controlView, setConsent, setPaused } from "./control-state";
 import { handleCommand } from "./dispatch";
-import {
-  isLoggingTab,
-  acceptLogRecords,
-  loggingStateFor,
-  wantsEarlyInjection,
-  forgetTab,
-  type LogRecordRefusal,
-} from "./logging";
 import { parseNativeMessage } from "./native-connection";
 
 type MessageSender = browser.runtime.MessageSender;
@@ -22,35 +15,14 @@ type SendResponse = (response: unknown) => void;
 export function registerListeners(): void {
   browser.runtime.onMessage.addListener(onRuntimeMessage);
 
-  // Logging tabs: inject the content script at document_start as soon as a new
-  // document commits, so the page hooks catch the page's first scripts (the
-  // manifest content script only runs at document_end). Best effort: the
-  // injection is asynchronous and may still land after some early scripts.
-  // The injected copy confirms the state with the background before keeping
-  // anything (resumeLoggingFromBackground); the later manifest copy is a no-op
-  // thanks to the __fox_injected guard (same sandbox).
-  browser.webNavigation.onCommitted.addListener((details) => {
-    if (details.frameId !== TOP_FRAME_ID) return;
-    if (!wantsEarlyInjection(details.tabId, details.url)) return;
-    console.log(`[KitsuneMCP] Early logging injection requested (tab ${details.tabId})`);
-    // dist/content.js is self-contained (url-rule.ts is bundled into it).
-    browser.tabs
-      .executeScript(details.tabId, { file: "/dist/content.js", runAt: "document_start", frameId: TOP_FRAME_ID })
-      .then(() => {
-        console.log(`[KitsuneMCP] Early logging injection done (tab ${details.tabId})`);
-      })
-      .catch((error: unknown) => {
-        // Page where extensions cannot inject (e.g. addons.mozilla.org, or
-        // a non-web URL). Nothing to resume there.
-        console.warn(
-          `[KitsuneMCP] Early logging injection failed (tab ${details.tabId}):`,
-          errorMessage(error),
-        );
-      });
-  });
-
-  browser.tabs.onRemoved.addListener((tabId) => {
-    forgetTab(tabId);
+  // First install only (not updates): ask for consent before anything
+  // connects (user-control.ts; control-state.ts holds the answer, and
+  // native-connection.ts setConnectionAllowed opens no port without it).
+  browser.runtime.onInstalled.addListener((details) => {
+    if (details.reason !== "install") return;
+    openConsentPage().catch((error: unknown) => {
+      console.error("[InariMCP] Could not open the consent page:", errorMessage(error));
+    });
   });
 
   // Clicking an approval notification opens the toolbar popup where it is
@@ -64,12 +36,14 @@ export function registerListeners(): void {
   // command injection through runtime.sendMessage from another extension)
   browser.runtime.onMessageExternal.addListener(
     (_message: unknown, sender: MessageSender, sendResponse: SendResponse): boolean => {
-      console.error("[KitsuneMCP] Refused external message from", sender?.id);
+      console.error("[InariMCP] Refused external message from", sender?.id);
       sendResponse({ success: false, error: "External messages are not accepted" });
       return false;
     },
   );
 }
+
+const CONTROL_MESSAGE_TYPES: readonly unknown[] = Object.values(CONTROL_MESSAGE);
 
 /**
  * runtime.onMessage: messages of the popup and the content scripts, by type.
@@ -83,27 +57,19 @@ function onRuntimeMessage(message: unknown, sender: MessageSender, sendResponse:
     answerApprovalMessage(msg, sender, sendResponse);
     return;
   }
-  if (msg.type === LOG_RECORD_MESSAGE) {
-    sendResponse(answerLogRecords(msg, sender));
-    return;
-  }
-  if (msg.type === LOGGING_STATE_QUERY) {
-    // Answered from the sender the browser reports (logging.ts).
-    sendResponse(loggingStateFor(sender));
-    return;
-  }
+  if (CONTROL_MESSAGE_TYPES.includes(msg.type)) return answerControlMessage(msg, sender, sendResponse);
   if (msg.target === "background") return runPageCommand(msg, sender, sendResponse);
 }
 
 /**
  * Approval LIST / DECIDE. Only the toolbar popup may see or answer approval
- * requests: never a content script (page JS, fox_execute_script), and for a
- * decision not even an extension page loaded in a tab.
+ * requests: never a content script (or page JS), and for a decision not even
+ * an extension page loaded in a tab.
  */
 function answerApprovalMessage(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): void {
-  if (!isExtensionPage(sender) || (msg.type === APPROVAL_MESSAGE.DECIDE && sender.tab)) {
-    console.error("[KitsuneMCP] Refused approval message from", sender.url);
-    sendResponse({ success: false, error: "Approval requests are answered in the KitsuneMCP toolbar popup" });
+  if (!isExtensionPage(sender) || (msg.type === APPROVAL_MESSAGE.DECIDE && !isToolbarPopup(sender))) {
+    console.error("[InariMCP] Refused approval message from", sender.url);
+    sendResponse({ success: false, error: "Approval requests are answered in the Inari MCP toolbar popup" });
     return;
   }
   sendResponse(
@@ -114,36 +80,54 @@ function answerApprovalMessage(msg: Record<string, unknown>, sender: MessageSend
 }
 
 /**
- * A batch of log entries from the top frame of a tab whose logging is on.
- * The page URL checked is the browser's (sender), never one from the
- * message. `accepted` says whether the entries were kept; when not, `reason`
- * says why (a protected page: the content script drops what it still holds,
- * see log-store.ts sendLogBatch).
+ * The answer to a control message (user-control.ts), or null when this
+ * sender may not send it or it is malformed. Content scripts get nothing.
+ * The consent is changed only from the consent page, the pause switch only
+ * from the toolbar popup (not the popup page opened in a tab), like an
+ * approval decision.
  */
-function answerLogRecords(
-  msg: Record<string, unknown>,
-  sender: MessageSender,
-): { accepted: true } | { accepted: false; reason: LogRecordRefusal } {
-  const senderTabId = sender.tab?.id;
-  const refusal: LogRecordRefusal | null =
-    sender.frameId !== TOP_FRAME_ID
-      ? "not_top_frame"
-      : senderTabId === undefined || !isLoggingTab(senderTabId)
-        ? "not_logging"
-        : acceptLogRecords(senderTabId, [sender.tab?.url, sender.url], msg);
-  return refusal === null ? { accepted: true } : { accepted: false, reason: refusal };
+function controlReply(msg: Record<string, unknown>, sender: MessageSender): Promise<ControlView> | null {
+  switch (msg.type) {
+    case CONTROL_MESSAGE.GET:
+      return isExtensionPage(sender) ? Promise.resolve(controlView()) : null;
+    case CONTROL_MESSAGE.SET_CONSENT:
+      return isConsentPage(sender) && typeof msg.granted === "boolean" ? setConsent(msg.granted) : null;
+    case CONTROL_MESSAGE.SET_PAUSED:
+      return isToolbarPopup(sender) && typeof msg.paused === "boolean" ? setPaused(msg.paused) : null;
+    default:
+      return null;
+  }
+}
+
+/** The consent and the pause switch. True when the answer is sent later. */
+function answerControlMessage(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): boolean {
+  const reply = controlReply(msg, sender);
+  if (reply === null) {
+    console.error("[InariMCP] Refused control message from", sender.url);
+    sendResponse({ success: false, error: "Refused: not allowed from this page, or a malformed message" });
+    return false;
+  }
+
+  reply.then(sendResponse, (error: unknown) => {
+    sendResponse({ success: false, error: errorMessage(error) });
+  });
+  return true;
+}
+
+/** A tab with the consent page. */
+function openConsentPage(): Promise<browser.tabs.Tab> {
+  return browser.tabs.create({ url: browser.runtime.getURL(CONSENT_PAGE_PATH) });
 }
 
 /**
  * A command for the dispatcher (`target: "background"`). Only the
  * Extension's own pages (the popup) may drive it directly. Content scripts
- * -- including code run by fox_execute_script -- could otherwise call every
- * handler without the containerScope / protectedUrlPatterns the MCP Server
- * attaches (Layer 0 bypass).
+ * could otherwise call every handler without the containerScope and URL
+ * rules the MCP Server attaches (Layer 0 bypass).
  */
 function runPageCommand(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): boolean {
   if (!isExtensionPage(sender)) {
-    console.error("[KitsuneMCP] Refused background command from", sender.url);
+    console.error("[InariMCP] Refused background command from", sender.url);
     sendResponse({ success: false, error: "Background commands are only accepted from extension pages" });
     return false;
   }
@@ -170,4 +154,14 @@ function isExtensionPage(sender: MessageSender): boolean {
     typeof sender.url === "string" &&
     sender.url.startsWith(browser.runtime.getURL("/"))
   );
+}
+
+/** The toolbar popup itself, not the popup page opened in a tab. */
+function isToolbarPopup(sender: MessageSender): boolean {
+  return isExtensionPage(sender) && sender.tab === undefined;
+}
+
+/** The consent page (an extension page, never the web page of a tab). */
+function isConsentPage(sender: MessageSender): boolean {
+  return isExtensionPage(sender) && sender.url === browser.runtime.getURL(CONSENT_PAGE_PATH);
 }

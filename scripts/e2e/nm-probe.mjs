@@ -155,7 +155,7 @@ function send(action) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-let ok = true;
+let ok;
 try {
   const pong = await send('ping');
   console.log('ping   ->', JSON.stringify(pong));

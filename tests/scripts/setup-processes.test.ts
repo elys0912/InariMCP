@@ -1,10 +1,9 @@
 /**
- * Finding and stopping the Kitsune processes (scripts/lib/core.mjs /
+ * Finding and stopping the Inari processes (scripts/lib/core.mjs /
  * scripts/lib/system.mjs). Processes are stubbed or started by the test itself.
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import * as fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   classifyProcesses, parsePsOutput, parseTabOutput,

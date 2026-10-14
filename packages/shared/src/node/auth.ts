@@ -2,13 +2,13 @@
  * Challenge-response authentication between the daemon and its clients
  * (Native Host over WebSocket, relays and the Native Host over HTTP).
  *
- * Both sides hold the shared API token (~/.kitsune-mcp/api_token), but the
+ * Both sides hold the shared API token (~/.inari-mcp/api_token), but the
  * token itself never travels: each side proves it knows the token with
  * HMAC-SHA256 over fresh nonces. A program that grabbed the daemon's port
  * without the token (threat model 7.High "fake daemon") learns nothing it
  * could replay, and its answers fail the client's check.
  *
- * MAC input: `kitsune-hmac-v1 \n <label> \n <part> \n <part> …`. Labels keep
+ * MAC input: `inari-hmac-v1 \n <label> \n <part> \n <part> …`. Labels keep
  * the uses apart (a health proof can never pass as a WS server proof).
  * Parts must not contain '\n'; nonces are validated hex, methods and paths
  * come from the HTTP parser.
@@ -20,21 +20,21 @@
  *      (the host accepts commands only after checking this MAC)
  *
  *  HTTP (http-bridge.ts ⇔ relay/daemon-client.ts, native-host server-launcher.ts)
- *   request headers   x-kitsune-timestamp: T, x-kitsune-nonce: N,
- *                     x-kitsune-signature: MAC('http-request', METHOD, PATH, T, N, sha256(body))
- *   response header   x-kitsune-signature: MAC('http-response', N, STATUS, sha256(body))
+ *   request headers   x-inari-timestamp: T, x-inari-nonce: N,
+ *                     x-inari-signature: MAC('http-request', METHOD, PATH, T, N, sha256(body))
+ *   response header   x-inari-signature: MAC('http-response', N, STATUS, sha256(body))
  *   The daemon rejects timestamps outside ±HTTP_SIGNATURE_WINDOW_MS and
  *   nonces it has already seen.
  *
- *  GET /health with x-kitsune-nonce: N adds `proof: MAC('health', N)`.
+ *  GET /health with x-inari-nonce: N adds `proof: MAC('health', N)`.
  *
- * Used by both sides through `@kitsune-mcp/shared/node`.
+ * Used by both sides through `@inari-mcp/shared/node`.
  */
 
 import * as crypto from 'node:crypto';
 
 /** Name of the scheme, sent in the WS handshake frames. */
-export const AUTH_PROTOCOL = 'kitsune-hmac-v1';
+export const AUTH_PROTOCOL = 'inari-hmac-v1';
 
 /**
  * Daemon ⇔ client protocol version, reported by GET /health as `protocol`.
@@ -54,9 +54,9 @@ export const MAC_LABEL = {
 export type MacLabel = (typeof MAC_LABEL)[keyof typeof MAC_LABEL];
 
 export const AUTH_HEADER = {
-  timestamp: 'x-kitsune-timestamp',
-  nonce: 'x-kitsune-nonce',
-  signature: 'x-kitsune-signature',
+  timestamp: 'x-inari-timestamp',
+  nonce: 'x-inari-nonce',
+  signature: 'x-inari-signature',
 } as const;
 
 /** Accepted clock difference for signed HTTP requests (same machine). */

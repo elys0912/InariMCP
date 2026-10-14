@@ -1,15 +1,20 @@
+import { isRecord } from '@inari-mcp/shared';
+
 /**
  * Keys compare after normalizeKey(): lower case, '-' and '_' removed, so
- * `action_script`, `actionScript` and `Action-Script` are the same key.
+ * `prompt_text`, `promptText` and `Prompt-Text` are the same key.
  */
 function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[-_]/g, '');
 }
 
-/** Tool arguments masked in the audit log. */
+/**
+ * Tool arguments masked in the audit log, at any depth: fox_set_value with
+ * kind "select" carries the chosen option as `option: { value | text }`.
+ * `key` is what fox_press_key types, one key at a time.
+ */
 const SENSITIVE_ARGS: ReadonlySet<string> = new Set([
-  'text', 'script', 'value', 'password', 'steps', 'actionscript', 'condition',
-  'prompttext',
+  'text', 'value', 'password', 'prompttext', 'key',
 ]);
 
 /** Result keys (headers, JSON fields) whose value is always masked. */
@@ -50,19 +55,40 @@ const JSON_SECRET_RE = new RegExp(`("${SECRET_NAME}"\\s*:\\s*")(?:[^"\\\\]|\\\\.
  * supplementary variation selectors (U+E0100-E01EF). ZWNJ / ZWJ
  * (U+200C-200D) and U+FE00-FE0F stay: scripts and emoji need them.
  */
+// eslint-disable-next-line no-control-regex -- matching the C0 / C1 controls is what this pattern is for
 const INVISIBLE_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]|\uDB40[\uDC00-\uDC7F\uDD00-\uDDEF]/g;
 
+/** An argument value that is not under a sensitive key, masked inside. */
+function maskArgValue(val: unknown): unknown {
+  // e.g. a url argument carrying ?token=...
+  if (typeof val === 'string') return sanitizeString(val);
+  if (Array.isArray(val)) return val.map(maskArgValue);
+  if (isRecord(val)) return maskSensitiveArgs(val);
+  return val;
+}
+
+/**
+ * Tool arguments as the audit log records them: the value of a sensitive
+ * key (SENSITIVE_ARGS, in a nested object or array as well) is `***`, and
+ * secrets inside the other strings are masked (sanitizeString).
+ */
 export function maskSensitiveArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
   const masked: Record<string, unknown> = {};
   for (const [key, val] of Object.entries(args)) {
-    masked[key] = SENSITIVE_ARGS.has(normalizeKey(key)) ? '***'
-      // e.g. a url argument carrying ?token=...
-      : typeof val === 'string' ? sanitizeString(val)
-        : val;
+    masked[key] = SENSITIVE_ARGS.has(normalizeKey(key)) ? '***' : maskArgValue(val);
   }
   return masked;
+}
+
+/**
+ * A URL recorded next to a call, outside its arguments (audit.jsonl `url`,
+ * `details.approval.url` of a result), masked as a url argument is:
+ * secret query parameters and fragments become [MASKED]. null stays null.
+ */
+export function sanitizeUrl(url: string | null): string | null {
+  return url === null ? null : sanitizeString(url);
 }
 
 /** Remove the characters matched by INVISIBLE_RE. */
@@ -76,7 +102,8 @@ export function stripInvisible(s: string): string {
  * separators (U+2028-2029), which `JSON.stringify` leaves as they are and
  * which break or join lines in the popup and the MCP client.
  */
-const HUMAN_HIDDEN_RE = new RegExp(`${INVISIBLE_RE.source}|[\\u200C\\u200D\\u2028\\u2029]`, 'g');
+// ZWJ stands apart from the class: inside one, it reads as joining its neighbours.
+const HUMAN_HIDDEN_RE = new RegExp(`${INVISIBLE_RE.source}|[\\u200C\\u2028\\u2029]|\\u200D`, 'g');
 
 /** Digits of a `\uXXXX` escape (BMP code points). */
 const BMP_ESCAPE_DIGITS = 4;

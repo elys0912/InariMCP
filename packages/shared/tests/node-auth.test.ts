@@ -8,7 +8,7 @@ import {
   responseMac,
   signRequest,
   verifyResponse,
-} from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
 
 const TOKEN = 'a'.repeat(64);
 

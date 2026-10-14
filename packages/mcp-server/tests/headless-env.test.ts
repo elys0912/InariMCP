@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS } from '@inari-mcp/shared';
 import {
   headlessStartupTimeoutMs,
   isHeadlessEnabled,
@@ -24,10 +24,9 @@ describe('isTruthyEnv', () => {
 });
 
 describe('isHeadlessEnabled', () => {
-  it('reads FOX_HEADLESS and the legacy CLAUDE_BROWSER_HEADLESS', () => {
+  it('reads FOX_HEADLESS', () => {
     expect(isHeadlessEnabled({})).toBe(false);
     expect(isHeadlessEnabled({ FOX_HEADLESS: '1' })).toBe(true);
-    expect(isHeadlessEnabled({ CLAUDE_BROWSER_HEADLESS: 'true' })).toBe(true);
   });
 
   it('FOX_HEADLESS=0 / false is off (it used to count as on)', () => {
@@ -35,9 +34,9 @@ describe('isHeadlessEnabled', () => {
     expect(isHeadlessEnabled({ FOX_HEADLESS: 'false' })).toBe(false);
   });
 
-  it('the FOX_ name wins over the legacy one, an empty FOX_ value falls through', () => {
-    expect(isHeadlessEnabled({ FOX_HEADLESS: '0', CLAUDE_BROWSER_HEADLESS: '1' })).toBe(false);
-    expect(isHeadlessEnabled({ FOX_HEADLESS: '', CLAUDE_BROWSER_HEADLESS: '1' })).toBe(true);
+  it('an empty or blank FOX_HEADLESS is off', () => {
+    expect(isHeadlessEnabled({ FOX_HEADLESS: '' })).toBe(false);
+    expect(isHeadlessEnabled({ FOX_HEADLESS: ' ' })).toBe(false);
   });
 });
 
@@ -56,19 +55,16 @@ describe('unrecognizedHeadlessValue', () => {
 });
 
 describe('resolveFoxEnv', () => {
-  it('returns the value without surrounding white space, the FOX_ name first (H-16)', () => {
-    expect(resolveFoxEnv({ FOX_EXECUTABLE: '  /opt/ff/firefox \n' }, 'FOX_EXECUTABLE', 'CLAUDE_BROWSER_EXECUTABLE'))
-      .toBe('/opt/ff/firefox');
-    expect(resolveFoxEnv({ FOX_EXECUTABLE: ' ', CLAUDE_BROWSER_EXECUTABLE: ' /legacy ' }, 'FOX_EXECUTABLE', 'CLAUDE_BROWSER_EXECUTABLE'))
-      .toBe('/legacy');
-    expect(resolveFoxEnv({}, 'FOX_EXECUTABLE', 'CLAUDE_BROWSER_EXECUTABLE')).toBeUndefined();
+  it('returns the value without surrounding white space; blank is unset', () => {
+    expect(resolveFoxEnv({ FOX_EXECUTABLE: '  /opt/ff/firefox \n' }, 'FOX_EXECUTABLE')).toBe('/opt/ff/firefox');
+    expect(resolveFoxEnv({ FOX_EXECUTABLE: ' ' }, 'FOX_EXECUTABLE')).toBeUndefined();
+    expect(resolveFoxEnv({}, 'FOX_EXECUTABLE')).toBeUndefined();
   });
 });
 
 describe('headlessStartupTimeoutMs', () => {
-  it('uses the setting, the legacy name, and falls back to the default', () => {
+  it('uses the setting, else the default', () => {
     expect(headlessStartupTimeoutMs({ FOX_HEADLESS_STARTUP_TIMEOUT: '1234' })).toBe(1234);
-    expect(headlessStartupTimeoutMs({ CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT: '99' })).toBe(99);
     const def = ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT;
     expect(headlessStartupTimeoutMs({})).toBe(def);
     expect(headlessStartupTimeoutMs({ FOX_HEADLESS_STARTUP_TIMEOUT: 'abc' })).toBe(def);
@@ -105,14 +101,15 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
     for (const tool of ['fox_navigate', 'fox_click']) {
       expect(g.check(tool, { url: 'https://example.test/' })?.safetyDecision).toBe('out_of_scope');
     }
-    // the same calls pass once the backend has containers again
+    // the same calls pass Layer 0 once the backend has containers again (an
+    // acting tool then asks the human, as on every site)
     vi.stubEnv('FOX_HEADLESS', '0');
     expect(g.check('fox_get_text', {})).toBeNull();
-    expect(g.check('fox_click', {})).toBeNull();
+    expect(g.check('fox_click', {})?.safetyDecision).toBe('confirmation_required');
   });
 
   it('fox_safety_status still works, so the refusal can be diagnosed', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-scope-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-scope-'));
     try {
       const file = path.join(dir, 'safety.json');
       fs.writeFileSync(file, JSON.stringify({ container_scope: { enabled: true, container_name: 'agent' } }));
@@ -128,7 +125,7 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
       expect(body.success).toBe(true);
 
       // same process, same policy: an ordinary tool is refused
-      const denied = await createToolHandler('fox_get_text')({});
+      const denied = await createToolHandler('fox_read')({ mode: 'text' });
       expect(denied.isError).toBe(true);
       const text = (denied.content as Array<{ text: string }>).map((c) => c.text).join('\n');
       expect(text).toContain('headless backend');
@@ -138,33 +135,22 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
     }
   });
 
-  it('the legacy CLAUDE_BROWSER_HEADLESS is judged the same way', () => {
-    vi.stubEnv('CLAUDE_BROWSER_HEADLESS', 'yes');
-    expect(checkHeadlessContainerScope(config)?.safetyDecision).toBe('out_of_scope');
-    expect(headlessContainerScopeWarning(config)).toContain('headless');
-    expect(scopedGuard().check('fox_get_text', {})?.safetyDecision).toBe('out_of_scope');
-
-    vi.stubEnv('CLAUDE_BROWSER_HEADLESS', 'false');
-    expect(checkHeadlessContainerScope(config)).toBeNull();
-
-    // the FOX_ name wins, an empty FOX_ value falls through to the old one
-    vi.stubEnv('FOX_HEADLESS', '0');
-    vi.stubEnv('CLAUDE_BROWSER_HEADLESS', '1');
-    expect(checkHeadlessContainerScope(config)).toBeNull();
+  it('a blank FOX_HEADLESS selects no headless backend', () => {
     vi.stubEnv('FOX_HEADLESS', '');
-    expect(checkHeadlessContainerScope(config)?.safetyDecision).toBe('out_of_scope');
+    expect(checkHeadlessContainerScope(config)).toBeNull();
+    expect(scopedGuard().check('fox_get_text', {})).toBeNull();
   });
 
   it('records the refusal in the audit log', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-scope-audit-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-scope-audit-'));
     try {
       vi.stubEnv('HOME', dir);
       vi.stubEnv('USERPROFILE', dir);
       vi.stubEnv('FOX_HEADLESS', '1');
-      expect(scopedGuard({ auditLog: true }).check('fox_get_text', { selector: '#a' }, 'stdio'))
+      expect(scopedGuard({ auditLog: true }).check('fox_get_text', { selector: '#a' }, { transport: 'stdio' }))
         .not.toBeNull();
 
-      const logFile = path.join(dir, '.kitsune-mcp', 'logs', 'audit.jsonl');
+      const logFile = path.join(dir, '.inari-mcp', 'logs', 'audit.jsonl');
       const entries = fs.readFileSync(logFile, 'utf-8').trim().split('\n').map((l) => JSON.parse(l));
       expect(entries).toHaveLength(1);
       expect(entries[0]).toMatchObject({

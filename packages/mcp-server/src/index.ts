@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * KitsuneMCP — MCP server entry point.
+ * InariMCP — MCP server entry point.
  *
  * Two roles, one executable:
  *
@@ -49,7 +49,7 @@ async function main(): Promise<void> {
       process.stdout.write(`${PACKAGE_VERSION}\n`);
       return;
     case 'error':
-      process.stderr.write(`kitsune-mcp: ${command.message}\n\n${helpText()}`);
+      process.stderr.write(`inari-mcp: ${command.message}\n\n${helpText()}`);
       process.exitCode = 2;
       return;
     case 'doctor': {
@@ -87,6 +87,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  process.stderr.write(`[KitsuneMCP:${command.kind}] Failed to start: ${errorMessage(err)}\n`);
+  process.stderr.write(`[InariMCP:${command.kind}] Failed to start: ${errorMessage(err)}\n`);
   process.exit(1);
 });

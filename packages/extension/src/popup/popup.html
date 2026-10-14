@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>KitsuneMCP</title>
+  <title>Inari MCP</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -14,7 +14,7 @@
           <circle cx="12" cy="12" r="10" stroke="#7c3aed" stroke-width="2"/>
           <path d="M8 12h8M12 8v8" stroke="#7c3aed" stroke-width="2" stroke-linecap="round"/>
         </svg>
-        <h1>KitsuneMCP</h1>
+        <h1>Inari MCP</h1>
       </div>
       <div id="status" class="status starting">
         <span class="status-dot"></span>
@@ -23,6 +23,24 @@
     </header>
 
     <main>
+      <!-- Not allowed yet: nothing connects until the consent page is answered. -->
+      <section id="consent" class="setup" hidden>
+        <h2 data-i18n="popupConsentTitle">Not allowed yet</h2>
+        <p class="setup-text" data-i18n="popupConsentText">Inari MCP for Firefox does not connect to the native host until you allow it on the permission page.</p>
+        <button id="btn-open-consent" class="btn-small" data-i18n="popupConsentOpen">Open the permission page</button>
+      </section>
+
+      <!-- Pause switch: while on, the background refuses every command from the native host.
+           The link below it reopens the consent page, where the permission can be withdrawn. -->
+      <section id="control" class="control" hidden>
+        <label class="switch-row">
+          <span data-i18n="popupPauseLabel">Pause agent actions</span>
+          <input id="pause-switch" class="switch" type="checkbox">
+        </label>
+        <p id="pause-note" class="control-note" data-i18n="popupPauseNote" hidden>Paused: every command from the MCP client is refused, and the one that is running is stopped.</p>
+        <button id="btn-change-consent" class="link-button" data-i18n="popupConsentChange">Withdraw the permission (opens the permission page)</button>
+      </section>
+
       <!-- Approval requests are answered here, outside any web page. -->
       <section id="approvals" class="approvals" hidden>
         <h2 data-i18n="popupApprovalsTitle">Approval requests</h2>
@@ -37,7 +55,7 @@
           <button id="btn-copy-command" class="btn-small" data-i18n="popupCopy">Copy</button>
         </div>
         <p id="setup-note" class="setup-note" hidden></p>
-        <a id="setup-link" class="setup-link" href="https://github.com/elys0912/KitsuneMCP#install" target="_blank" rel="noopener noreferrer" data-i18n="popupInstallGuide" hidden>Installation guide</a>
+        <a id="setup-link" class="setup-link" href="https://github.com/elys0912/InariMCP#install-the-native-host" target="_blank" rel="noopener noreferrer" data-i18n="popupInstallGuide" hidden>Installation guide</a>
       </section>
 
       <section class="quick-actions">
@@ -72,14 +90,14 @@
       <section class="connection-info">
         <h2 data-i18n="popupMcpServer">MCP Server</h2>
         <div class="server-status">
-          <span id="server-url">127.0.0.1:8765</span>
+          <span id="server-url">127.0.0.1:8785</span>
           <button id="btn-test-connection" class="btn-small" data-i18n="popupRecheck">Recheck</button>
         </div>
       </section>
     </main>
 
     <footer>
-      <p data-i18n="popupFooter">KitsuneMCP — Firefox MCP Addon</p>
+      <p data-i18n="popupFooter">Inari MCP for Firefox — page content goes through the native host on this computer to your MCP client</p>
     </footer>
   </div>
 

@@ -1,6 +1,6 @@
 /**
  * Log helpers shared by the daemon, the relays and the Native Host:
- * size-based rotation, line timestamps, and the `[KitsuneMCP:<role>]`
+ * size-based rotation, line timestamps, and the `[InariMCP:<role>]`
  * stderr logger.
  */
 
@@ -78,9 +78,9 @@ export function stampLines(
   return { text: out, atLineStart: start };
 }
 
-/** A logger writing `[KitsuneMCP:<role>] <msg>` (or `[KitsuneMCP] <msg>`) lines to stderr. Never throws. */
+/** A logger writing `[InariMCP:<role>] <msg>` (or `[InariMCP] <msg>`) lines to stderr. Never throws. */
 export function stderrLogger(role?: string): (msg: string) => void {
-  const prefix = role === undefined ? '[KitsuneMCP]' : `[KitsuneMCP:${role}]`;
+  const prefix = role === undefined ? '[InariMCP]' : `[InariMCP:${role}]`;
   return (msg) => {
     try {
       process.stderr.write(`${prefix} ${msg}\n`);

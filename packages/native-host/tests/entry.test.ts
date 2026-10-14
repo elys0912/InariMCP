@@ -8,9 +8,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const m = vi.hoisted(() => {
+  const stdinLoop: (isRunning: () => boolean) => Promise<void> = () => new Promise<void>(() => {});
   const state = {
     ensureRunning: (): Promise<void> => Promise.resolve(),
-    stdinLoop: (_isRunning: () => boolean): Promise<void> => new Promise<void>(() => {}),
+    stdinLoop,
     launcherThrows: false,
     pruned: 0,
     connections: [] as { handler: (cmd: Record<string, unknown>) => void; start: ReturnType<typeof vi.fn>; stop: ReturnType<typeof vi.fn> }[],
@@ -69,7 +70,7 @@ vi.mock('../src/process-handlers.js', () => ({ installProcessHandlers: m.install
 vi.mock('../src/version.js', () => ({ HOST_VERSION: '0.0.0-test' }));
 
 let exit: ReturnType<typeof vi.spyOn>;
-let signalsBefore: Record<'SIGINT' | 'SIGTERM', Function[]>;
+let signalsBefore: Record<'SIGINT' | 'SIGTERM', ReturnType<typeof process.listeners>>;
 
 beforeEach(() => {
   vi.resetModules();

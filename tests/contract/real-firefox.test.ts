@@ -1,6 +1,6 @@
 /**
- * A-KM-07: the real-browser tests were skipped whenever Firefox could not be
- * launched, on CI as well, so `npm test` passed without running them.
+ * The real-browser tests must not be skipped on CI when Firefox cannot be
+ * launched: `npm test` would pass without running them.
  */
 
 import * as fs from 'node:fs';
@@ -23,20 +23,20 @@ describe('real-browser tests without Firefox', () => {
     expect(() => skipOrFailWithoutFirefox(launchError, {})).not.toThrow();
   });
 
-  // D-KM-04: without a CI that sets `CI`, nothing made the tests run.
-  it('KITSUNE_REQUIRE_FIREFOX makes them required without CI, by the same rule as CI', () => {
-    expect(REQUIRE_FIREFOX_ENV).toBe('KITSUNE_REQUIRE_FIREFOX');
-    expect(requiresFirefox({ KITSUNE_REQUIRE_FIREFOX: '1' })).toBe(true);
+  // Without a CI that sets `CI`, nothing else would make the tests run.
+  it('INARI_REQUIRE_FIREFOX makes them required without CI, by the same rule as CI', () => {
+    expect(REQUIRE_FIREFOX_ENV).toBe('INARI_REQUIRE_FIREFOX');
+    expect(requiresFirefox({ INARI_REQUIRE_FIREFOX: '1' })).toBe(true);
     expect(requiresFirefox({ CI: 'true' })).toBe(true);
     for (const value of [undefined, '', '0', 'false']) {
-      expect(requiresFirefox({ KITSUNE_REQUIRE_FIREFOX: value }), String(value)).toBe(false);
+      expect(requiresFirefox({ INARI_REQUIRE_FIREFOX: value }), String(value)).toBe(false);
     }
     const launchError = new Error('Executable does not exist');
-    expect(() => skipOrFailWithoutFirefox(launchError, { KITSUNE_REQUIRE_FIREFOX: '1' }))
-      .toThrow(/KITSUNE_REQUIRE_FIREFOX is set.*Executable does not exist/);
+    expect(() => skipOrFailWithoutFirefox(launchError, { INARI_REQUIRE_FIREFOX: '1' }))
+      .toThrow(/INARI_REQUIRE_FIREFOX is set.*Executable does not exist/);
   });
 
-  it('npm run test:firefox sets KITSUNE_REQUIRE_FIREFOX for the real-browser projects', () => {
+  it('npm run test:firefox sets INARI_REQUIRE_FIREFOX for the real-browser projects', () => {
     const scripts = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf-8')).scripts;
     expect(scripts['test:firefox']).toBe('node scripts/test-firefox.mjs');
     const config = fs.readFileSync(new URL('../../vitest.config.mts', import.meta.url), 'utf-8');

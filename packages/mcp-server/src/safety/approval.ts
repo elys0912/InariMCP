@@ -1,23 +1,25 @@
 /**
- * Human approval for protected-site actions (guard Layer 7).
+ * Human approval of tool calls: every acting tool on every site (guard
+ * Layer 7), and reading tools on a site of confirm_read_sites (Layer 4).
  *
  * When the guard (or the Extension) answers `confirmation_required`, the
  * daemon opens an approval *request* bound to a target:
  *
- *   target = tool name + hostname of the protected URL + hash of the
- *            tool arguments (canonical JSON, SHA-256)
+ *   target = tool name + site of the URL the call acts on (approvalSiteOf)
+ *            + hash of the tool arguments (canonical JSON, SHA-256)
  *
  * A human decision obtained outside the page — MCP elicitation answered in
- * the MCP client, or the KitsuneMCP toolbar popup in Firefox — turns that
+ * the MCP client, or the Inari MCP toolbar popup in Firefox — turns that
  * request into a one-time *token*. The retried tool call presents the token
  * (out of band: `approvalToken` in the POST /mcp/call body, never a tool
  * argument), the handler consumes it, and the guard lets exactly that call
  * through (`allowed_by_human`).
  *
  *   request: expires REQUEST_TTL_MS after creation; one token at most.
- *   token:   `kat_` + 32 random bytes (base64url); stored only as its
- *            SHA-256; expires TOKEN_TTL_MS after issue; consumed by the
- *            first presentation, whether or not the target matches.
+ *   token:   `iat_` (Inari approval token) + 32 random bytes (base64url);
+ *            stored only as its SHA-256; expires TOKEN_TTL_MS after issue;
+ *            consumed by the first presentation, whether or not the target
+ *            matches.
  *
  * Nothing in the page or in the LLM's own tool calls can create a token:
  * tokens are issued only by the daemon's approval endpoints
@@ -26,7 +28,7 @@
  */
 
 import * as crypto from 'node:crypto';
-import { ENV, ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV, ENV_DEFAULTS, approvalSiteOf } from '@inari-mcp/shared';
 import { isFalsyEnv } from '../utils/headless-env.js';
 import type { SafetyDenial } from './guard.js';
 import { revealInvisible } from './sanitizer.js';
@@ -55,7 +57,7 @@ export const TOKEN_TTL_MS = 60_000;
 /** Upper bound of open requests; the oldest is dropped beyond it. */
 export const MAX_PENDING_REQUESTS = 32;
 
-const TOKEN_PREFIX = 'kat_';
+const TOKEN_PREFIX = 'iat_';
 /** Random bytes in a token (before base64url). */
 const TOKEN_BYTES = 32;
 
@@ -64,8 +66,8 @@ export type ApprovalChannel = 'elicitation' | 'browser';
 /** What an approval applies to. */
 export interface ApprovalTarget {
   toolName: string;
-  /** Lower-case hostname of the protected URL. */
-  host: string;
+  /** approvalSiteOf() of the URL the call acts on: a hostname, or a scheme such as `file:`. */
+  site: string;
   /** SHA-256 (hex) of the canonical JSON of the tool arguments. */
   argsHash: string;
 }
@@ -73,8 +75,10 @@ export interface ApprovalTarget {
 export interface ApprovalRequest {
   id: string;
   target: ApprovalTarget;
-  protectedUrl: string;
-  matchedPattern: string;
+  /** The URL the call acts on, as shown to the human. */
+  url: string;
+  /** The confirm_read_sites entry that asked for approval of a read; null for an acting tool. */
+  matchedPattern: string | null;
   /** Human-readable argument summary (what the human is asked to approve). */
   summary: string;
   createdAt: number;
@@ -96,16 +100,8 @@ interface StoredToken extends ApprovalGrant {
 // Target helpers
 // ---------------------------------------------------------------------------
 
-/** Lower-case hostname of an absolute URL, or null. */
-export function hostOf(url: string | null | undefined): string | null {
-  if (typeof url !== 'string' || url === '') return null;
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    return host === '' ? null : host;
-  } catch {
-    return null;
-  }
-}
+/** The page a new tab opened without a URL shows (shared/src/approval-site.ts). */
+export { NEW_TAB_URL } from '@inari-mcp/shared';
 
 /** JSON with object keys sorted at every level (stable across key order). */
 export function canonicalJson(value: unknown): string {
@@ -166,25 +162,25 @@ export function summarizeArgs(args: Record<string, unknown>): string | null {
   return summary.length > SUMMARY_MAX ? null : summary;
 }
 
-/** The protected URL as shown to the human (invisible characters escaped). */
+/** The URL as shown to the human (invisible characters escaped). */
 export function approvalDisplayUrl(url: string): string {
   return revealInvisible(url).text;
 }
 
-/** Target of a confirmation_required answer, or null when its URL has no host. */
+/** Target of a confirmation_required answer, or null when its URL is not known. */
 export function approvalTargetFor(
   toolName: string,
   args: Record<string, unknown>,
-  protectedUrl: string,
+  url: string | null,
 ): ApprovalTarget | null {
-  const host = hostOf(protectedUrl);
-  if (host === null) return null;
-  return { toolName, host, argsHash: hashArgs(args) };
+  const site = approvalSiteOf(url);
+  if (site === null) return null;
+  return { toolName, site, argsHash: hashArgs(args) };
 }
 
 /**
  * Whether a consumed grant lifts this guard denial: only a
- * `confirmation_required` denial, and only for the host the human approved.
+ * `confirmation_required` denial, and only for the site the human approved.
  * Every other denial (read-only, blocklist, rate limit, …) stands.
  */
 export function grantCoversDenial(
@@ -193,7 +189,8 @@ export function grantCoversDenial(
 ): boolean {
   if (!grant || denial === null) return false;
   if (denial.safetyDecision !== 'confirmation_required') return false;
-  return hostOf(denial.elicitation?.protectedUrl) === grant.target.host;
+  const site = approvalSiteOf(denial.elicitation?.url);
+  return site !== null && site === grant.target.site;
 }
 
 // ---------------------------------------------------------------------------
@@ -230,7 +227,7 @@ export class ApprovalStore {
   /** Open a request for a human decision on `target`. */
   createRequest(
     target: ApprovalTarget,
-    info: { protectedUrl: string; matchedPattern: string; summary: string },
+    info: { url: string; matchedPattern: string | null; summary: string },
   ): ApprovalRequest {
     this.prune();
     while (this.requests.size >= this.maxPending) {
@@ -242,7 +239,7 @@ export class ApprovalStore {
     const request: ApprovalRequest = {
       id: crypto.randomUUID(),
       target: { ...target },
-      protectedUrl: info.protectedUrl,
+      url: info.url,
       matchedPattern: info.matchedPattern,
       summary: info.summary,
       createdAt,
@@ -280,7 +277,7 @@ export class ApprovalStore {
   /**
    * Consume a presented token. The token is removed on every presentation
    * (single use); the grant is returned only when it is unexpired and was
-   * issued for this tool and these exact arguments. The host is checked by
+   * issued for this tool and these exact arguments. The site is checked by
    * the guard (grantCoversDenial) and by the Extension (approvedHost).
    */
   consume(token: string, toolName: string, argsHash: string): ApprovalGrant | null {

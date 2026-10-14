@@ -39,28 +39,9 @@ export interface GetAllTabsOptions {
   limit?: number;
 }
 
-export interface FindTabsOptions {
-  url?: string;
-  urlPattern?: string;
-  title?: string;
-  active?: boolean;
-  audible?: boolean;
-}
-
 export interface RefreshOptions {
   bypassCache?: boolean;
   waitForLoad?: boolean;
-}
-
-export interface ReloadAllOptions {
-  urlPattern?: string;
-  bypassCache?: boolean;
-}
-
-export interface ReloadByUrlOptions {
-  url?: string;
-  urlPattern?: string;
-  bypassCache?: boolean;
 }
 
 /** Layer 0 container scope as sent by the MCP Server. */

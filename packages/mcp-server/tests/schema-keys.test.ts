@@ -38,8 +38,7 @@ describe('tool schema keys', () => {
       objectKeys(tool.callSchema as ZodTypeAny, `${name}(call)`, keys);
       objectKeys(tool.listSchema, `${name}(list)`, keys);
     }
-    // Nested objects are reached (steps of fox_eval_chain, option of fox_set_value, ...).
-    expect(keys).toContain('fox_eval_chain.steps[].captureConsole');
+    // Nested objects are reached (option of fox_set_value, container of fox_tab).
     expect(keys).toContain('fox_set_value(call).option.index');
     expect(keys).toContain('fox_tab(list).container.cookieStoreId');
     expect(keys.filter((k) => (k.split('.').at(-1) ?? '').includes('_'))).toEqual([]);

@@ -28,7 +28,7 @@ using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
-public static class KitsuneBreakaway {
+public static class InariBreakaway {
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
   struct STARTUPINFO {
     public int cb; public string lpReserved; public string lpDesktop; public string lpTitle;
@@ -107,7 +107,7 @@ public static class KitsuneBreakaway {
   }
 }
 '@
-[Console]::Out.Write([KitsuneBreakaway]::Start($env:KITSUNE_DAEMON_NODE, $env:KITSUNE_DAEMON_ENTRY, $env:KITSUNE_DAEMON_LOG))
+[Console]::Out.Write([InariBreakaway]::Start($env:INARI_DAEMON_NODE, $env:INARI_DAEMON_ENTRY, $env:INARI_DAEMON_LOG))
 `;
 
 /** PowerShell compiles the C# first, which takes a second or two. */
@@ -136,9 +136,9 @@ export function spawnDaemonBreakaway(entry: string, logPath: string, cwd?: strin
         ...(cwd !== undefined ? { cwd } : {}),
         env: {
           ...process.env,
-          KITSUNE_DAEMON_NODE: process.execPath,
-          KITSUNE_DAEMON_ENTRY: entry,
-          KITSUNE_DAEMON_LOG: logPath,
+          INARI_DAEMON_NODE: process.execPath,
+          INARI_DAEMON_ENTRY: entry,
+          INARI_DAEMON_LOG: logPath,
         },
       },
     );

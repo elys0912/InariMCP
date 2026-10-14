@@ -20,7 +20,7 @@ const CLEANUP_RETRY_DELAY_MS = 100;
  * afterEach can delete it at once.
  */
 let dir: string;
-beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-tramp-')); });
+beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-tramp-')); });
 afterEach(() => { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
 
 /**
@@ -28,11 +28,11 @@ afterEach(() => { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10,
  * directory of their own, outside `dir`: Windows refuses to delete the cwd
  * of a running process and files a new process just wrote may still be open
  * (AV scan), so `dir` must not depend on when they exit. Deleted once in
- * afterAll, after they have exited (R3 §4 trampoline flakiness).
+ * afterAll, after they have exited (the trampoline tests were flaky otherwise).
  */
 let daemonRoot: string;
 const daemonPids: number[] = [];
-beforeAll(() => { daemonRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-tramp-daemon-')); });
+beforeAll(() => { daemonRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-tramp-daemon-')); });
 afterAll(async () => {
   for (const pid of daemonPids) await waitForExit(pid, DAEMON_EXIT_WAIT_MS);
   try {

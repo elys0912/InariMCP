@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # The AMO review environment is Ubuntu 24.04 on ARM64.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+
+      # With CI set, the tests that drive a real headless Firefox fail
+      # instead of being skipped (docs/development.md, "Tests").
+      - run: npx playwright install --with-deps firefox
+      - run: npm test
+
+      # Rebuilds the add-on, lints it and writes the file hashes. Nothing is
+      # uploaded as an artifact: the zip files are made by hand at release time.
+      - run: npm run pack:ext
+      - run: npm run pack:source

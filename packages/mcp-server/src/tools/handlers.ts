@@ -14,8 +14,9 @@
  *   4. Post-processing      — URL tracking, screenshot resource_link, sanitize
  *   5. Return ToolResult    — unified envelope back to Claude Code
  *
- * Protected sites (Layer 4/7): a `confirmation_required` answer — from the
- * guard or from the Extension — opens a human-approval request
+ * Human approval (Layer 4/7): every acting tool, and reads of a
+ * confirm_read_sites site, are answered `confirmation_required` — by the
+ * guard or by the Extension — which opens a human-approval request
  * (safety/approval.ts) and returns it in the result details
  * (`details.approval`). The caller (normally the stdio relay,
  * relay/approval.ts) obtains the human decision and retries with the
@@ -33,9 +34,10 @@ import type {
   BrowserResponse,
   BrowserSafetyDecision,
   ToolResult,
-} from '@kitsune-mcp/shared';
-import { BROWSER_ACTIONS, BROWSER_SAFETY_DECISIONS, ErrorCode, isRecord } from '@kitsune-mcp/shared';
-import { LAYER_OF, OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS, getSafetyGuard, targetUrlOf } from '../safety/guard.js';
+  WireUrlRule,
+} from '@inari-mcp/shared';
+import { BROWSER_ACTIONS, BROWSER_SAFETY_DECISIONS, ErrorCode, isRecord, urlPatternProblem } from '@inari-mcp/shared';
+import { LAYER_OF, PAGE_READ_TOOLS, TAB_INDEPENDENT_TOOLS, getSafetyGuard, targetUrlOf } from '../safety/guard.js';
 import type { CallLabel, SafetyDenial, SafetyGuard } from '../safety/guard.js';
 import {
   REQUEST_TTL_MS,
@@ -52,9 +54,10 @@ import type { SafetyConfig } from '../safety/config.js';
 import { getContainerConfig } from '../safety/container.js';
 import { sanitizeResult, sanitizeString } from '../safety/sanitizer.js';
 import { compileUrlPatterns } from '../safety/url-pattern.js';
+import type { PatternListName } from '../safety/url-pattern.js';
 import { applyPasswordPolicy, passwordSelectorRefusal } from '../safety/password-guard.js';
 import { getConnectionManager } from '../connection/manager.js';
-import { deprecationNote, resolveOperation } from './operations.js';
+import { resolveOperation } from './operations.js';
 import { NAVIGATE_ACTIONS, SAFETY_STATUS_TOOL, SCREENSHOT_SCOPES } from './schemas.js';
 import type { NavigateAction, OperationName, ScreenshotScope } from './schemas.js';
 import { isOneOf } from './one-of.js';
@@ -183,17 +186,21 @@ function buildCommandData(
 /**
  * Arguments the backends compile with `new RegExp()`, always without flags
  * (case-sensitive) on both backends: fox_get_tabs, fox_screenshot all_tabs,
- * fox_wait_for_url, fox_wait_for_navigation, fox_get_network_logs (and the
- * Extension's reload_by_url / find_tabs). A case-insensitive part needs a
- * character class such as `[Ee]xample`.
+ * fox_wait_for_url, fox_wait_for_navigation. A case-insensitive part needs
+ * a character class such as `[Ee]xample`. Each must also pass the limits of
+ * shared/src/url-pattern-limit.ts (length, a repeated group that holds a
+ * quantifier or `|`, the number and weight of the quantifiers and `|`, m of
+ * `{n,m}`), which the Extension checks again.
  */
 const REGEX_ARGUMENTS = ['urlPattern'] as const;
 
-/** Error message for the first regex argument that does not compile, or null. */
+/** Error message for the first regex argument that is refused or does not compile, or null. */
 export function invalidRegexArgument(args: Record<string, unknown>): string | null {
   for (const key of REGEX_ARGUMENTS) {
     const value = args[key];
     if (typeof value !== 'string') continue;
+    const problem = urlPatternProblem(value);
+    if (problem !== null) return `Invalid ${key}: ${problem}`;
     try {
       new RegExp(value);
     } catch (e) {
@@ -207,30 +214,21 @@ export function invalidRegexArgument(args: Record<string, unknown>): string | nu
 // Safety metadata forwarded to the Extension
 // ---------------------------------------------------------------------------
 
+/** safety.json patterns as the URL rules the Extension matches (extension/src/url-rule.ts). */
+function wireRules(sources: string[], list: PatternListName): WireUrlRule[] {
+  return compileUrlPatterns(sources, list).patterns.map((p) => p.wire);
+}
+
 /**
  * Attach safety metadata that only the Extension can enforce:
  *   - containerScope: Layer 0, on EVERY command (the Extension checks the
  *     target tab's cookieStoreId; the server cannot see tabs).
- *   - protectedUrlPatterns: on screenshot, scroll_and_capture and
- *     screenshot_all_tabs, only when the guard is enabled and
- *     confirmProtectedActions is true.
- *     all_tabs: the Extension excludes protected tabs from the capture.
- *     screenshot / scroll_and_capture: the Extension refuses with
- *     safetyDecision "confirmation_required" when the actual target tab is
- *     protected — the server-side Layer 4 check only knows the last URL it
- *     saw.
- *     Also on start_logging / get_console_logs / get_network_logs, same
- *     condition: the Extension refuses start_logging on a protected tab
- *     (confirmation_required), keeps the patterns with the tab and pauses
- *     recording while the tab is on a protected page.
- *     Also on every acting tool (not in OBSERVE_TOOLS) without a `url`
- *     argument: the guard's Layer 7 can only check the last URL it saw for
- *     the tab, which may be stale or unknown, so the Extension refuses
- *     the command when the actual target tab is protected. Tools with a
- *     `url` are checked by the guard against that URL instead.
- *     Sent twice: `protectedUrlRules` (URL rules, matched like the guard)
- *     and `protectedUrlPatterns` (legacy anchored regexes, for Extension
- *     builds that do not know the rules).
+ *   - confirmReadUrlRules: confirm_read_sites as URL rules, on every reading
+ *     tool (PAGE_READ_TOOLS: fox_screenshot of every scope, fox_get_text,
+ *     ...) when the guard is enabled and the list is not empty. The guard's
+ *     Layer 4 only knows the last URL it saw for the tab, so the Extension
+ *     refuses with safetyDecision "confirmation_required" when the actual
+ *     target tab matches; screenshot all_tabs skips such tabs.
  *   - blockedUrlRules / allowedUrlRules: when the guard is enabled and the
  *     list is not empty, on every tool the guard checks against the target
  *     tab's last-known URL (not tab-independent, no target URL: see
@@ -238,16 +236,10 @@ export function invalidRegexArgument(args: Record<string, unknown>): string | nu
  *     fox_navigate back / forward / refresh is not one). The Extension refuses the
  *     command when the actual target tab violates the lists, and multi-tab
  *     actions skip such tabs: the guard may not know the tab's URL.
+ * Acting tools need no metadata: the Extension and the headless backend
+ * refuse every acting command that does not carry `approvedHost` for the
+ * site it acts on (buildCommand).
  */
-const PROTECTED_CAPTURE_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAction>([
-  'screenshot',
-  'scroll_and_capture',
-  'screenshot_all_tabs',
-  'start_logging',
-  'get_console_logs',
-  'get_network_logs',
-]);
-
 export function attachSafetyMetadata(
   command: BrowserCommand,
   config: SafetyConfig,
@@ -259,31 +251,19 @@ export function attachSafetyMetadata(
     command.containerScope = { containerName: containerCfg.containerName };
   }
 
+  if (config.enabled && config.confirmReadSites.length > 0 && PAGE_READ_TOOLS.has(toolName)) {
+    command.confirmReadUrlRules = wireRules(config.confirmReadSites, 'confirmRead');
+  }
+
   // The same rule as the guard's pre-check: a call with a target URL is
   // checked against that URL by the guard, any other call against the tab.
   const targetUrl = targetUrlOf(toolName, args);
-  const actsOnCurrentTab = !OBSERVE_TOOLS.has(toolName) && targetUrl === null;
-  if (
-    (PROTECTED_CAPTURE_ACTIONS.has(command.action) || actsOnCurrentTab) &&
-    config.enabled &&
-    config.confirmProtectedActions &&
-    config.protectedUrlPatterns.length > 0
-  ) {
-    const compiled = compileUrlPatterns(config.protectedUrlPatterns, 'protected').patterns;
-    command.protectedUrlRules = compiled.map((p) => p.wire);
-    // Older Extension builds test each entry as a case-insensitive regex
-    // against the raw tab URL: the anchored equivalent of each pattern.
-    command.protectedUrlPatterns = compiled.map((p) => p.wireSource);
-  }
-
   if (config.enabled && targetUrl === null && !TAB_INDEPENDENT_TOOLS.has(toolName)) {
     if (config.blockedUrlPatterns.length > 0) {
-      command.blockedUrlRules = compileUrlPatterns(config.blockedUrlPatterns, 'blocked')
-        .patterns.map((p) => p.wire);
+      command.blockedUrlRules = wireRules(config.blockedUrlPatterns, 'blocked');
     }
     if (config.allowedUrlPatterns.length > 0) {
-      command.allowedUrlRules = compileUrlPatterns(config.allowedUrlPatterns, 'allowed')
-        .patterns.map((p) => p.wire);
+      command.allowedUrlRules = wireRules(config.allowedUrlPatterns, 'allowed');
     }
   }
 }
@@ -310,38 +290,50 @@ const FAILURE_DETAIL_KEYS = ['availableOptions', 'dialogs', 'warnings'] as const
 
 /**
  * Starts the text of a failed browser result. The error text comes from the
- * page or the browser (a script's exception message, say); with this prefix
+ * page or the browser (an error message that quotes the page, say); with this prefix
  * it is never a JSON document, so it cannot pose as the approval request
  * relay/approval.ts looks for in the JSON blocks of a result.
  */
 export const BROWSER_ERROR_PREFIX = 'Browser error: ';
 
-export function toolResultToCallResult(result: ToolResult): CallToolResult {
-  if (result.success) {
-    if (isAriaSnapshot(result.data)) {
-      const { snapshot, ...meta } = result.data;
-      const truncated = meta['truncated'] === true
-        ? `\n[truncated: ${snapshot.length} of ${String(meta['totalLength'])} chars]`
-        : '';
-      return {
-        content: [
-          { type: 'text' as const, text: JSON.stringify(meta) },
-          { type: 'text' as const, text: `${snapshot}${truncated}` },
-        ],
-      };
-    }
-
-    const textContent = typeof result.data === 'string'
-      ? result.data
-      // Compact: indentation costs tokens and no reader needs it.
-      : JSON.stringify(result.data ?? { success: true });
-
+/** A successful result: an ARIA snapshot as its meta and its text, anything else as one text block. */
+function successToCallResult(data: unknown): CallToolResult {
+  if (isAriaSnapshot(data)) {
+    const { snapshot, ...meta } = data;
+    const truncated = meta['truncated'] === true
+      ? `\n[truncated: ${snapshot.length} of ${String(meta['totalLength'])} chars]`
+      : '';
     return {
-      content: [{ type: 'text' as const, text: textContent }],
+      content: [
+        { type: 'text' as const, text: JSON.stringify(meta) },
+        { type: 'text' as const, text: `${snapshot}${truncated}` },
+      ],
     };
   }
 
-  // Error case
+  const textContent = typeof data === 'string'
+    ? data
+    // Compact: indentation costs tokens and no reader needs it.
+    : JSON.stringify(data ?? { success: true });
+
+  return {
+    content: [{ type: 'text' as const, text: textContent }],
+  };
+}
+
+/** The FAILURE_DETAIL_KEYS of a failed result's data, under `browser`; null when it has none. */
+function failureDetailsBlock(data: unknown): string | null {
+  if (!isRecord(data)) return null;
+  const kept: Record<string, unknown> = {};
+  for (const key of FAILURE_DETAIL_KEYS) {
+    if (key in data) kept[key] = data[key];
+  }
+  return Object.keys(kept).length > 0 ? JSON.stringify({ browser: kept }) : null;
+}
+
+export function toolResultToCallResult(result: ToolResult): CallToolResult {
+  if (result.success) return successToCallResult(result.data);
+
   const errorText = result.error ?? 'Unknown error';
   const details = result.details ? `\n\nDetails: ${JSON.stringify(result.details)}` : '';
   const code = result.code ? ` [${result.code}]` : '';
@@ -349,16 +341,8 @@ export function toolResultToCallResult(result: ToolResult): CallToolResult {
   const content: CallToolResult['content'] = [
     { type: 'text' as const, text: `${BROWSER_ERROR_PREFIX}${errorText}${code}${details}` },
   ];
-  const data = result.data;
-  if (isRecord(data)) {
-    const kept: Record<string, unknown> = {};
-    for (const key of FAILURE_DETAIL_KEYS) {
-      if (key in data) kept[key] = data[key];
-    }
-    if (Object.keys(kept).length > 0) {
-      content.push({ type: 'text' as const, text: JSON.stringify({ browser: kept }) });
-    }
-  }
+  const detailsBlock = failureDetailsBlock(result.data);
+  if (detailsBlock !== null) content.push({ type: 'text' as const, text: detailsBlock });
 
   return { content, isError: true };
 }
@@ -381,7 +365,7 @@ function safetyDenialToCallResult(
 ): CallToolResult {
   const details: Record<string, unknown> = {
     code: 'SAFETY_BLOCKED',
-    // A config error is in no layer (null): left out as before.
+    // A config error is in no layer (null): no `layer` then.
     layer: denial.layer ?? undefined,
     decision: denial.safetyDecision,
     url: denial.url,
@@ -390,16 +374,17 @@ function safetyDenialToCallResult(
   const parts = [denial.error];
 
   if (denial.confirmationRequired && denial.elicitation) {
-    parts.push(
-      `\nConfirmation required: protected URL '${denial.elicitation.protectedUrl}' ` +
-      `(pattern: '${denial.elicitation.matchedPattern}').`,
-    );
+    const { url, matchedPattern } = denial.elicitation;
+    const page = url !== null ? `'${url}'` : 'page not known';
+    const readSite = matchedPattern !== null ? ` (confirm_read_sites: '${matchedPattern}')` : '';
+    parts.push(`\nConfirmation required: ${page}${readSite}.`);
     details['confirmationRequired'] = true;
     details['elicitation'] = denial.elicitation;
   }
 
   // URLs and browser error text in a denial come from the page; the extra
-  // details are the server's own and are not sanitized.
+  // details are the server's own and are not sanitized (the page URL in
+  // details.approval is sanitized where it is built: openApprovalRequest).
   const sanitized = sanitizeResult(details);
   return {
     content: [
@@ -417,11 +402,89 @@ function safetyDenialToCallResult(
 export interface ApprovalRequestDetails {
   requestId: string;
   toolName: string;
+  /**
+   * The site the approval is bound to (approvalSiteOf of @inari-mcp/shared).
+   * The field keeps its name `host` (relay/approval.ts reads it).
+   */
   host: string;
-  protectedUrl: string;
-  matchedPattern: string;
+  url: string;
+  /** The confirm_read_sites entry of a read; null for an acting tool. */
+  matchedPattern: string | null;
   summary: string;
   expiresAt: number;
+}
+
+/** Note of a confirmation_required result after an approval token that was not accepted. */
+const TOKEN_REJECTED_NOTE =
+  'The approval token sent with this call was not accepted (expired, already used, ' +
+  'or issued for a different tool, arguments or site); a new approval is needed: ' +
+  'the human is asked again on retry.';
+
+/** Note of a call that cannot be approved yet: the page of the target tab is not known. */
+const UNKNOWN_PAGE_NOTE =
+  'This call cannot be approved yet: Inari MCP does not know which page the target tab is on, ' +
+  'so it cannot tell the human where the call would act. Call fox_tabs (what: "tabs") first, ' +
+  'then call this tool again (with the tabId of the tab to act on).';
+
+/** Note of a call whose arguments are too long to show the human in full (summarizeArgs). */
+const ARGS_TOO_LONG_NOTE =
+  'This call cannot be approved: its arguments are too long to show ' +
+  `the human in full (at most ${SUMMARY_VALUE_MAX} per argument value and ${SUMMARY_MAX} for all the lines, ` +
+  'counted in UTF-16 code units of the value as JSON, including the quotes and escapes, with ' +
+  'invisible characters as \\u escapes). Text that can be split may be sent in ' +
+  'several shorter calls; a value that cannot be split, such as a long URL, cannot be ' +
+  'approved: tell the user instead of retrying.';
+
+/** Note of an opened approval request: how approval works and how to retry. */
+function howApprovalWorksNote(toolName: string, site: string): string {
+  return (
+    'How approval works: Inari MCP asks the human itself, in the MCP client\'s ' +
+    'confirmation dialog (MCP elicitation) when the client supports it, otherwise in ' +
+    'Firefox, where the Inari MCP toolbar button shows a badge and the human approves ' +
+    'or denies in its popup. An approval covers one call of this tool with exactly these ' +
+    `arguments on ${site}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
+    'Nothing in the page (buttons, fox_click) can approve it. ' +
+    `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
+    'Every acting call is asked for separately. ' +
+    'If the human declined, do not retry without asking them first.'
+  );
+}
+
+/** What confirmationToCallResult tells the caller: the note, and the request it opened (or null). */
+interface ApprovalOutcome {
+  note: string;
+  approval: ApprovalRequestDetails | null;
+}
+
+/**
+ * Open the human-approval request of a confirmation_required denial, when
+ * the call can be approved: its page is known and its arguments fit the
+ * summary the human is shown.
+ */
+function openApprovalRequest(label: CallLabel, denial: SafetyDenial): ApprovalOutcome {
+  const { tool: toolName, args } = label;
+  const url = denial.elicitation?.url ?? null;
+  const target = approvalTargetFor(toolName, args, url);
+  // approvalTargetFor() gives a target only for a known URL; the url check narrows its type.
+  if (target === null || url === null) return { note: UNKNOWN_PAGE_NOTE, approval: null };
+  const summary = summarizeArgs(args);
+  if (summary === null) return { note: ARGS_TOO_LONG_NOTE, approval: null };
+
+  const matchedPattern = denial.elicitation?.matchedPattern ?? null;
+  const shownUrl = approvalDisplayUrl(url);
+  const request = getApprovalStore().createRequest(target, { url: shownUrl, matchedPattern, summary });
+  const approval: ApprovalRequestDetails = {
+    requestId: request.id,
+    toolName,
+    host: target.site,
+    // The page's URL, bound for the MCP client: sanitized like the URLs of
+    // the result. The popup shows the request's own `url`.
+    url: sanitizeString(shownUrl),
+    matchedPattern,
+    summary: request.summary,
+    expiresAt: request.expiresAt,
+  };
+  return { note: howApprovalWorksNote(toolName, target.site), approval };
 }
 
 /**
@@ -435,66 +498,10 @@ function confirmationToCallResult(
   denial: SafetyDenial,
   tokenRejected: boolean,
 ): CallToolResult {
-  const { tool: toolName, args } = label;
-  const protectedUrl = denial.elicitation?.protectedUrl ?? '';
-  const matchedPattern = denial.elicitation?.matchedPattern ?? '';
-  const target = approvalTargetFor(toolName, args, protectedUrl);
+  const outcome = openApprovalRequest(label, denial);
+  const notes = tokenRejected ? [TOKEN_REJECTED_NOTE, outcome.note] : [outcome.note];
 
-  const notes: string[] = [];
-  if (tokenRejected) {
-    notes.push(
-      'The approval token sent with this call was not accepted (expired, already used, ' +
-      'or issued for a different tool, arguments or site); a new approval is needed: ' +
-      'the human is asked again on retry.',
-    );
-  }
-
-  let extraDetails: Record<string, unknown> = {};
-  const summary = target === null ? null : summarizeArgs(args);
-  if (target === null) {
-    notes.push(
-      'This call cannot be approved: the protected page has no usable URL. ' +
-      'Pass the tab explicitly (tabId) and try again.',
-    );
-  } else if (summary === null) {
-    notes.push(
-      'This call cannot be approved on a protected site: its arguments are too long to show ' +
-      `the human in full (at most ${SUMMARY_VALUE_MAX} per argument value and ${SUMMARY_MAX} for all the lines, ` +
-      'counted in UTF-16 code units of the value as JSON, including the quotes and escapes, with ' +
-      'invisible characters as \\u escapes). Text or a script that can be split may be sent in ' +
-      'several shorter calls; a value that cannot be split, such as a long URL, cannot be ' +
-      'approved on this site: tell the user instead of retrying.',
-    );
-  } else {
-    const shownUrl = approvalDisplayUrl(protectedUrl);
-    const request = getApprovalStore().createRequest(target, {
-      protectedUrl: shownUrl,
-      matchedPattern,
-      summary,
-    });
-    const approval: ApprovalRequestDetails = {
-      requestId: request.id,
-      toolName,
-      host: target.host,
-      protectedUrl: shownUrl,
-      matchedPattern,
-      summary: request.summary,
-      expiresAt: request.expiresAt,
-    };
-    notes.push(
-      'How approval works: KitsuneMCP asks the human itself, in the MCP client\'s ' +
-      'confirmation dialog (MCP elicitation) when the client supports it, otherwise in ' +
-      'Firefox, where the KitsuneMCP toolbar button shows a badge and the human approves ' +
-      'or denies in its popup. An approval covers one call of this tool with exactly these ' +
-      `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
-      'Nothing in the page (buttons, fox_click, fox_evaluate) can approve it. ' +
-      `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
-      'If the human declined, do not retry without asking them first.',
-    );
-    extraDetails = { approval };
-  }
-
-  const result = safetyDenialToCallResult(denial, extraDetails);
+  const result = safetyDenialToCallResult(denial, outcome.approval !== null ? { approval: outcome.approval } : {});
   const first = result.content[0];
   if (first && first.type === 'text') first.text += `\n\n${notes.join('\n')}`;
   return result;
@@ -543,13 +550,22 @@ function screenshotResourceLinks(paths: string[]): CallToolResult['content'] {
     uri: pathToFileURL(p).href,
     name: path.basename(p),
     mimeType: mimeTypeFor(p),
-    description: 'Screenshot saved by KitsuneMCP',
+    description: 'Screenshot saved by Inari MCP',
   }));
 }
 
 // ---------------------------------------------------------------------------
 // createToolHandler — factory for MCP tool callbacks
 // ---------------------------------------------------------------------------
+
+export interface ToolCallOptions {
+  /**
+   * One-time human-approval token for this exact call (safety/approval.ts),
+   * sent out of band (POST /mcp/call body) after the human approved.
+   * Consumed on use.
+   */
+  approvalToken?: string;
+}
 
 /**
  * Create an MCP tool callback function for the given tool name.
@@ -561,39 +577,11 @@ function screenshotResourceLinks(paths: string[]): CallToolResult['content'] {
  *                  'http' for POST /mcp/call). Every entry point goes through
  *                  the same SafetyGuard pipeline.
  */
-export interface ToolCallOptions {
-  /**
-   * One-time human-approval token for this exact call (safety/approval.ts),
-   * sent out of band (POST /mcp/call body) after the human approved.
-   * Consumed on use.
-   */
-  approvalToken?: string;
-}
-
 export function createToolHandler(
   calledName: string,
   transport: string = 'stdio',
 ): (args: Record<string, unknown>, options?: ToolCallOptions) => Promise<CallToolResult> {
-  const run = toolCall(calledName, transport);
-  return async (args, options) => withDeprecationNote(calledName, await run(args, options));
-}
-
-/** Deprecated names already reported in this process. */
-const reportedDeprecations = new Set<string>();
-
-/**
- * A call by a deprecated name: once per name and process, a note at the end
- * of the result and a line on stderr (daemon.log). Not on every call, to
- * keep results short.
- */
-function withDeprecationNote(calledName: string, result: CallToolResult): CallToolResult {
-  if (reportedDeprecations.has(calledName)) return result;
-  const note = deprecationNote(calledName);
-  if (note === null) return result;
-  reportedDeprecations.add(calledName);
-  process.stderr.write(`[KitsuneMCP] ${note}\n`);
-  result.content.push({ type: 'text' as const, text: `Note: ${note}` });
-  return result;
+  return toolCall(calledName, transport);
 }
 
 /** One operation call on its way through the pipeline. */
@@ -653,7 +641,7 @@ function toolCall(
     // -----------------------------------------------------------------------
     // A confirmation_required answer after a presented token means the token
     // did not lift it (not valid, or approved for another host): say so.
-    const denial = guard.check(toolName, args, transport, grant, label);
+    const denial = guard.check(toolName, args, { transport, grant, label });
     if (denial !== null) {
       return denial.safetyDecision === 'confirmation_required'
         ? confirmationToCallResult(label, denial, presented)
@@ -726,10 +714,15 @@ function buildCommand({ guard, toolName, args }: CallContext, grant: ApprovalGra
     requestId: '', // Will be assigned by connectionManager.sendCommand()
   };
   attachSafetyMetadata(command, guard.config, toolName, args);
-  // The human approved this call for one host: the Extension may run it on
-  // a protected tab only while that tab is on this host.
-  if (grant !== null && command.protectedUrlPatterns) {
-    command.approvedHost = grant.target.host;
+  // The human approved this call for one site: the Extension and the
+  // headless backend run an acting command (or a read of a
+  // confirm_read_sites site) only on that site. approvedHost names the site,
+  // not who approved: with FOX_APPROVAL_ELICITATION on (the default) the
+  // answer reaches the daemon over local HTTP, where a local process holding
+  // the API token can answer as well (README, Human approval).
+  if (grant !== null) {
+    // The wire field keeps its name `approvedHost`; its value is a site (approvalSiteOf).
+    command.approvedHost = grant.target.site;
   }
   return command;
 }
@@ -745,7 +738,17 @@ const BROWSER_REFUSAL_NOTES_URL: Readonly<Record<Exclude<BrowserSafetyDecision, 
   blocked_url: true,
   not_allowlisted: true,
   config_error: false,
+  paused: false,
 };
+
+/**
+ * The tool result text of a refusal while the user has paused the agent. It
+ * replaces the Extension's own text (dispatch.ts PAUSED_REFUSAL), which only
+ * says that the user paused: this one also tells the model that every call
+ * is refused until the switch is off, so that it stops retrying.
+ */
+const PAUSED_MESSAGE =
+  'paused: The user paused the agent in the toolbar popup. Every call is refused until the user turns the pause switch off.';
 
 /** The URL a browser result reports (`data.url`), or null. */
 function reportedUrlOf(response: BrowserResponse): string | null {
@@ -753,12 +756,40 @@ function reportedUrlOf(response: BrowserResponse): string | null {
   return typeof url === 'string' && url ? url : null;
 }
 
+/** The confirm_read_sites entry a browser refusal reports (`data.matchedPattern`), or null. */
+function reportedPatternOf(response: BrowserResponse): string | null {
+  const pattern = response.data?.['matchedPattern'];
+  return typeof pattern === 'string' && pattern ? pattern : null;
+}
+
+/** The browser's own text of a refusal, else one that names the decision. */
+function browserRefusalText(response: BrowserResponse, decision: string): string {
+  return response.error ?? `Refused by browser safety check (${decision})`;
+}
+
+/** A browser refusal with a safetyDecision this server does not know: refused as `denied`. */
+function unknownRefusalToResult(
+  { guard, toolName, args, transport, label }: CallContext,
+  decision: string,
+  response: BrowserResponse,
+  refusedUrl: string | null,
+): CallToolResult {
+  process.stderr.write(
+    `[InariMCP] The browser refused ${label.tool} with an unknown safetyDecision ` +
+    `${JSON.stringify(decision)}; treated as denied.\n`,
+  );
+  guard.recordAudit(toolName, args, 'denied', transport, label, refusedUrl ?? undefined);
+  return safetyDenialToCallResult({ safetyDecision: 'denied', layer: null, error: browserRefusalText(response, decision) });
+}
+
 /**
  * The result of a refusal the browser made itself (`safetyDecision`):
- * confirmation_required (the actual target tab is protected: the same
- * elicitation result as guard Layer 7), Layer 0 out_of_scope, Layer 3
- * blocked_url / not_allowlisted on the actual target tab, or config_error
- * (the browser could not use the attached rules): SAFETY_BLOCKED, distinct
+ * confirmation_required (the actual target tab is on a site the call was not
+ * approved for, or a read's tab matches confirm_read_sites: the same
+ * elicitation result as guard Layer 4/7), Layer 0 out_of_scope, Layer 3
+ * blocked_url / not_allowlisted on the actual target tab, config_error
+ * (the browser could not use the attached rules), or paused (the user's
+ * pause switch in the toolbar popup): SAFETY_BLOCKED, distinct
  * from ordinary browser errors. A decision this server does not know is
  * refused as `denied` and reported on stderr.
  */
@@ -770,30 +801,15 @@ function browserRefusalToResult(
 ): CallToolResult {
   const { guard, toolName, args, transport, label } = call;
   const refusedUrl = reportedUrlOf(response);
-
-  if (!isOneOf(BROWSER_SAFETY_DECISIONS, decision)) {
-    process.stderr.write(
-      `[KitsuneMCP] The browser refused ${label.tool} with an unknown safetyDecision ` +
-      `${JSON.stringify(decision)}; treated as denied.\n`,
-    );
-    guard.recordAudit(toolName, args, 'denied', transport, label, refusedUrl ?? undefined);
-    return safetyDenialToCallResult({
-      safetyDecision: 'denied',
-      layer: null,
-      error: response.error ?? `Refused by browser safety check (${decision})`,
-    });
-  }
+  if (!isOneOf(BROWSER_SAFETY_DECISIONS, decision)) return unknownRefusalToResult(call, decision, response, refusedUrl);
 
   if (decision === 'confirmation_required') {
-    const reportedPattern = response.data?.['matchedPattern'];
-    const confirmation = guard.confirmationFromBrowser(
-      toolName,
-      args,
-      refusedUrl,
+    const confirmation = guard.confirmationFromBrowser(toolName, args, {
+      url: refusedUrl,
+      matchedPattern: reportedPatternOf(response),
       transport,
-      typeof reportedPattern === 'string' && reportedPattern ? reportedPattern : null,
       label,
-    );
+    });
     return confirmationToCallResult(label, confirmation, presented);
   }
 
@@ -804,10 +820,11 @@ function browserRefusalToResult(
   // The command was sent (the guard's `allowed` line stands); this line
   // records what the browser decided.
   guard.recordAudit(toolName, args, decision, transport, label, refusedUrl ?? undefined);
+  const error = decision === 'paused' ? PAUSED_MESSAGE : browserRefusalText(response, decision);
   return safetyDenialToCallResult({
     safetyDecision: decision,
     layer: LAYER_OF[decision],
-    error: response.error ?? `Refused by browser safety check (${decision})`,
+    error,
     ...(notesUrl ? { url: refusedUrl } : {}),
   });
 }
@@ -849,7 +866,7 @@ function finishResult(
     ? { success: true, data: sanitizedData }
     : {
       success: false,
-      // Error text can carry page-derived content (script exceptions, URLs).
+      // Error text can carry page-derived content (messages that quote the page, URLs).
       error: sanitizeString(response.error ?? 'Browser command failed'),
       data: sanitizedData,
     };

@@ -1,17 +1,17 @@
 {
-  "name": "@kitsune-mcp/native-host",
-  "version": "0.2.0",
+  "name": "@inari-mcp/native-host",
+  "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "author": "elys0912",
-  "homepage": "https://github.com/elys0912/KitsuneMCP",
+  "homepage": "https://github.com/elys0912/InariMCP",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/elys0912/KitsuneMCP.git",
+    "url": "git+https://github.com/elys0912/InariMCP.git",
     "directory": "packages/native-host"
   },
   "bugs": {
-    "url": "https://github.com/elys0912/KitsuneMCP/issues"
+    "url": "https://github.com/elys0912/InariMCP/issues"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -20,7 +20,7 @@
     "clean": "rimraf --glob dist \"*.tsbuildinfo\""
   },
   "dependencies": {
-    "@kitsune-mcp/shared": "*",
+    "@inari-mcp/shared": "*",
     "ws": "^8.18.0"
   },
   "devDependencies": {

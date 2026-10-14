@@ -1,5 +1,5 @@
 /**
- * R-1: an answer that cannot be written (JSON.stringify throws on a BigInt)
+ * an answer that cannot be written (JSON.stringify throws on a BigInt)
  * is answered 500 with the reason and logged, instead of leaving the request
  * open as an unhandled rejection.
  */
@@ -45,7 +45,7 @@ function post(port: number, urlPath: string, body: string): Promise<{ status: nu
   });
 }
 
-describe('runTrackedCall when the answer throws (R-1)', () => {
+describe('runTrackedCall when the answer throws', () => {
   it('answers 500 with the reason and logs it', async () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     server = await startHttpBridge({ host: '127.0.0.1', port: 0, apiToken: TOKEN, connectionManager: getConnectionManager() });

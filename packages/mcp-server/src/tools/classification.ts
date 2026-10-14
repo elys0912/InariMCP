@@ -8,17 +8,10 @@ import { OPERATION_NAMES, TOOL_SCHEMAS, isOperationName } from './schemas.js';
 import type { OperationName, ToolClassification, ToolDefinition } from './schemas.js';
 
 /**
- * Classes the guard lets through without the read-only (Layer 5), script
- * (Layer 6) and protected-domain (Layer 7) checks. None of them changes
- * page data.
+ * The class that changes page or browser state (input, navigation, tabs):
+ * the guard asks the human for every call of it, on every site.
  */
-const GUARD_PASS_THROUGH: ReadonlySet<ToolClassification> = new Set<ToolClassification>([
-  'observe',
-  'interact',
-  'wait',
-  'logging',
-  'human',
-]);
+const ACTING_CLASS: ToolClassification = 'act';
 
 function namesWhere(pred: (def: ToolDefinition) => boolean): ReadonlySet<OperationName> {
   return new Set(OPERATION_NAMES.filter((name) => pred(TOOL_SCHEMAS[name])));
@@ -32,14 +25,21 @@ export function isOperationIn(set: ReadonlySet<OperationName>, name: string): bo
   return isOperationName(name) && set.has(name);
 }
 
-/** Tools the guard treats as observation (see GUARD_PASS_THROUGH). */
-export const OBSERVE_TOOLS: ReadonlySet<OperationName> = namesWhere((def) =>
-  GUARD_PASS_THROUGH.has(def.classification),
+/**
+ * Tools that change page or browser state (ACTING_CLASS): human approval
+ * for every call, and refused in read-only mode. Every other class (observe,
+ * interact, wait, human) changes no page data and runs without approval.
+ */
+export const ACTING_TOOLS: ReadonlySet<OperationName> = namesWhere((def) =>
+  def.classification === ACTING_CLASS,
 );
 
-/** Tools refused when allowScriptExecution is false. */
-export const SCRIPT_TOOLS: ReadonlySet<OperationName> = namesWhere(
-  (def) => def.classification === 'script',
+/**
+ * Tools that read the content of a tab (class observe, not tab-independent):
+ * on a site of confirm_read_sites they ask the human first.
+ */
+export const PAGE_READ_TOOLS: ReadonlySet<OperationName> = namesWhere((def) =>
+  def.classification === 'observe' && def.tabIndependent !== true,
 );
 
 /**
@@ -62,11 +62,8 @@ const ANNOTATIONS_BY_CLASS: Record<ToolClassification, ToolAnnotations> = {
   observe: { readOnlyHint: true, destructiveHint: false },
   wait: { readOnlyHint: true, destructiveHint: false },
   interact: { readOnlyHint: false, destructiveHint: false },
-  logging: { readOnlyHint: false, destructiveHint: false },
   human: { readOnlyHint: false, destructiveHint: false },
   act: { readOnlyHint: false, destructiveHint: true },
-  script: { readOnlyHint: false, destructiveHint: true },
-  workflow: { readOnlyHint: false, destructiveHint: true },
 };
 
 /** MCP annotations: the class defaults plus the tool's own exceptions. */

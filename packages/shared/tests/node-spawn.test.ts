@@ -34,7 +34,7 @@ const { spawnDetachedDaemon } = await import('../src/node/spawn.js');
 let dir: string;
 let child: FakeChild;
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-spawn-'));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-spawn-'));
   child = Object.assign(new EventEmitter(), { pid: 4321 as number | undefined, unref: vi.fn() });
   spawned.calls = [];
   spawned.next = child;

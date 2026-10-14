@@ -12,8 +12,14 @@ import {
   cancelApprovalByRequestId,
   decideApproval,
   listApprovals,
+  MAX_PENDING_QUESTIONS,
   requestApproval,
 } from '../../packages/extension/src/background/approvals.ts';
+
+// The badge counts approvals only once the user allowed the connection.
+vi.mock('../../packages/extension/src/background/control-state', () => ({
+  controlView: () => ({ consent: 'granted', paused: false }),
+}));
 
 interface Calls {
   badgeText: string[];
@@ -52,8 +58,8 @@ afterEach(() => {
   delete (globalThis as { browser?: unknown }).browser;
 });
 
-const PROTECTED = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  kind: 'protected_action',
+const TOOL_CALL = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  kind: 'tool_call',
   approvalId: 'ap-1',
   toolName: 'fox_click',
   host: 'bank.example.test',
@@ -63,7 +69,7 @@ const PROTECTED = (overrides: Record<string, unknown> = {}): Record<string, unkn
 
 describe('background/approvals.ts', () => {
   it('keeps a request pending until the popup approves it, then answers and clears it', async () => {
-    const answer = requestApproval('r-1', PROTECTED());
+    const answer = requestApproval('r-1', TOOL_CALL());
     expect(listApprovals().map((v) => v.id)).toEqual(['ap-1']);
     expect(calls.created).toEqual([`${APPROVAL_NOTIFICATION_PREFIX}ap-1`]);
     expect(calls.badgeText.at(-1)).toBe('1');
@@ -115,18 +121,18 @@ describe('background/approvals.ts', () => {
   });
 
   it('a repeated id (server retry) cancels the older entry and keeps one', async () => {
-    const older = requestApproval('r-4', PROTECTED());
-    const newer = requestApproval('r-5', PROTECTED());
+    const older = requestApproval('r-4', TOOL_CALL());
+    const newer = requestApproval('r-5', TOOL_CALL());
     await expect(older).resolves.toMatchObject({ cancelled: true });
     expect(listApprovals()).toHaveLength(1);
     expect(decideApproval('ap-1', true)).toEqual({ success: true });
     await expect(newer).resolves.toMatchObject({ approved: true });
   });
 
-  it('refuses a malformed protected_action request without showing it', async () => {
-    await expect(requestApproval('r-6', PROTECTED({ host: '' }))).resolves
+  it('refuses a malformed tool_call request without showing it', async () => {
+    await expect(requestApproval('r-6', TOOL_CALL({ host: '' }))).resolves
       .toEqual({ success: false, error: 'Malformed approval request' });
-    await expect(requestApproval('r-7', PROTECTED({ expiresAt: Date.now() - 1 }))).resolves
+    await expect(requestApproval('r-7', TOOL_CALL({ expiresAt: Date.now() - 1 }))).resolves
       .toMatchObject({ success: false });
     expect(listApprovals()).toEqual([]);
     expect(calls.created).toEqual([]);
@@ -139,5 +145,33 @@ describe('background/approvals.ts', () => {
     expect(calls.badgeText.at(-1)).toBe('1');
     expect(decideApproval('msg-r-8', true)).toEqual({ success: true });
     await expect(answer).resolves.toMatchObject({ approved: true });
+  });
+
+  it(`refuses a question at once while ${MAX_PENDING_QUESTIONS} wait, and still takes a tool_call request`, async () => {
+    for (let i = 0; i < MAX_PENDING_QUESTIONS; i++) void requestApproval(`q-${i}`, { message: `Question ${i}` });
+    await expect(requestApproval('q-extra', { message: 'One more' })).resolves
+      .toMatchObject({ success: false, error: expect.stringMatching(/^Refused: /) });
+    expect(listApprovals()).toHaveLength(MAX_PENDING_QUESTIONS);
+
+    void requestApproval('r-tool', TOOL_CALL());
+    expect(listApprovals()).toHaveLength(MAX_PENDING_QUESTIONS + 1);
+  });
+
+  it('a question is taken again once one is answered, and a retry of a waiting one is no extra', async () => {
+    for (let i = 0; i < MAX_PENDING_QUESTIONS; i++) void requestApproval(`q-${i}`, { message: `Question ${i}` });
+    void requestApproval('q-0', { message: 'Question 0, retried' });
+    expect(listApprovals()).toHaveLength(MAX_PENDING_QUESTIONS);
+
+    decideApproval('msg-q-1', false);
+    void requestApproval('q-next', { message: 'Next' });
+    expect(listApprovals().map((v) => v.id)).toContain('msg-q-next');
+  });
+
+  it('lists the tool_call requests first, each kind oldest first', () => {
+    void requestApproval('q-1', { message: 'First question' });
+    void requestApproval('r-1', TOOL_CALL({ approvalId: 'ap-1' }));
+    void requestApproval('q-2', { message: 'Second question' });
+    void requestApproval('r-2', TOOL_CALL({ approvalId: 'ap-2' }));
+    expect(listApprovals().map((v) => v.id)).toEqual(['ap-1', 'ap-2', 'msg-q-1', 'msg-q-2']);
   });
 });

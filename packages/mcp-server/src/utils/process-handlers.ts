@@ -48,7 +48,7 @@ export interface ProcessHandlers {
 
 /** The handlers, with exit/log injectable for tests. */
 export function createProcessHandlers(role: ProcessRole, deps: ProcessHandlerDeps): ProcessHandlers {
-  const prefix = `[KitsuneMCP:${role}]`;
+  const prefix = `[InariMCP:${role}]`;
   return {
     uncaughtException: (err) => {
       deps.log(`${prefix} FATAL uncaughtException: ${describe(err)}`);

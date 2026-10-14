@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 describe('scripts/e2e/nm-probe.mjs arguments (no host is started)', () => {
   const probe = path.resolve(__dirname, '..', '..', 'scripts', 'e2e', 'nm-probe.mjs');
   const run = (args: string[]) => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-probe-'));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-probe-'));
     try {
       const env = { ...process.env, HOME: home, USERPROFILE: home };
       return spawnSync(process.execPath, [probe, ...args], { env, encoding: 'utf-8', timeout: 10_000 });

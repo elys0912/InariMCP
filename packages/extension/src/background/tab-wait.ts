@@ -1,5 +1,6 @@
 // Tab URL filters and waits for loads / navigations / URLs (L1).
 
+import { urlPatternProblem } from "@inari-mcp/shared/url-pattern-limit";
 import { errorMessage } from "../error-message";
 import { TIMEOUTS, TOP_FRAME_ID } from "./constants";
 import { resolveTab, noTargetTab } from "./tab-target";
@@ -17,10 +18,15 @@ type UrlPatternArg = { ok: true; pattern: RegExp | null } | { ok: false; result:
 /**
  * Compile a `urlPattern` argument: a regex without flags (case-sensitive),
  * as on every urlPattern tool of both backends. null pattern when absent;
- * a failure result when it does not compile.
+ * a failure result when it does not compile, or is refused by the limits
+ * the MCP Server applies as well (shared/src/url-pattern-limit.ts): this
+ * background page is persistent, and a regex that backtracks for minutes
+ * would stall every tool and approval.
  */
 export function urlPatternArg(source: unknown): UrlPatternArg {
   if (typeof source !== "string" || source === "") return { ok: true, pattern: null };
+  const problem = urlPatternProblem(source);
+  if (problem !== null) return { ok: false, result: { success: false, error: `Invalid urlPattern: ${problem}` } };
   try {
     return { ok: true, pattern: new RegExp(source) };
   } catch (error) {
@@ -47,6 +53,16 @@ interface TabLoadApi {
   get(tabId: number): Promise<browser.tabs.Tab>;
 }
 
+/** What waitForTabLoad runs and waits for. */
+export interface TabLoadWait {
+  /** tabs.update / tabs.reload, or nothing for a tab that was just created. */
+  trigger: () => Promise<unknown>;
+  isLoaded: (tab: browser.tabs.Tab) => boolean;
+  timeoutMs: number;
+  settleMs: number;
+  requireLoading: boolean;
+}
+
 /**
  * Run `trigger` (tabs.update / tabs.reload, or nothing for a tab that was
  * just created) and wait until the tab has loaded. The listeners go in
@@ -63,23 +79,17 @@ interface TabLoadApi {
  * Outcomes: "complete", "timeout" after `timeoutMs`, or "removed" when the
  * tab is closed meanwhile. A trigger that throws rejects (listeners removed).
  */
-export function waitForTabLoad(
-  tabs: TabLoadApi,
-  tabId: number,
-  trigger: () => Promise<unknown>,
-  isLoaded: (tab: browser.tabs.Tab) => boolean,
-  options: { timeoutMs: number; settleMs: number; requireLoading: boolean },
-): Promise<TabLoadOutcome> {
+export function waitForTabLoad(tabs: TabLoadApi, tabId: number, options: TabLoadWait): Promise<TabLoadOutcome> {
+  const { trigger, isLoaded } = options;
   return new Promise<TabLoadOutcome>((resolve, reject) => {
     let done = false;
     let sawLoading = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     let settleTimer: ReturnType<typeof setTimeout> | undefined;
     const cleanup = (): void => {
       done = true;
       tabs.onUpdated.removeListener(onUpdated);
       tabs.onRemoved.removeListener(onRemoved);
-      if (timer !== undefined) clearTimeout(timer);
+      clearTimeout(timer);
       if (settleTimer !== undefined) clearTimeout(settleTimer);
     };
     const finish = (outcome: TabLoadOutcome): void => {
@@ -108,7 +118,7 @@ export function waitForTabLoad(
     };
     tabs.onUpdated.addListener(onUpdated);
     tabs.onRemoved.addListener(onRemoved);
-    timer = setTimeout(() => finish("timeout"), options.timeoutMs);
+    const timer = setTimeout(() => finish("timeout"), options.timeoutMs);
 
     trigger().then(
       () => {
@@ -124,7 +134,7 @@ export function waitForTabLoad(
       (error: unknown) => {
         if (done) return;
         cleanup();
-        reject(error);
+        reject(error instanceof Error ? error : new Error(errorMessage(error)));
       },
     );
   });
@@ -196,30 +206,41 @@ export async function waitForNavigation(
   return { success: true, url, title: now?.title };
 }
 
-/**
- * fox_wait_for_url: wait until the tab's URL equals `url` (exact) or matches
- * `urlPattern` (regex) and the page has finished loading. Returns at once if
- * that is already the case. URL changes through the History API count too.
- */
-export async function waitForUrl(
-  tabId: number | undefined,
-  data: Record<string, unknown> = {},
-): Promise<CommandResult> {
-  const exact = typeof data.url === "string" && data.url ? data.url : null;
-  const patternSrc = typeof data.urlPattern === "string" && data.urlPattern ? data.urlPattern : null;
-  if (!exact && !patternSrc) return { success: false, error: "Must provide url or urlPattern" };
-  const patternArg = urlPatternArg(exact ? null : patternSrc);
-  if (!patternArg.ok) return patternArg.result;
+/** A non-empty string from the command data, else null. */
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+/** What fox_wait_for_url waits for: a URL test, and its words for the timeout message. */
+interface UrlTarget {
+  matches: (url: string | undefined) => boolean;
+  /** "become <url>" or "match /<pattern>/". */
+  wanted: string;
+}
+
+/** The url (exact) or urlPattern (regex) of fox_wait_for_url, or the failure result. */
+function urlTargetOf(data: Record<string, unknown>): UrlTarget | { result: CommandResult } {
+  const exact = nonEmptyString(data.url);
+  const patternSrc = nonEmptyString(data.urlPattern);
+  if (exact !== null) return { matches: (u) => !!u && u === exact, wanted: `become ${exact}` };
+  if (patternSrc === null) return { result: { success: false, error: "Must provide url or urlPattern" } };
+
+  const patternArg = urlPatternArg(patternSrc);
+  if (!patternArg.ok) return { result: patternArg.result };
   const pattern = patternArg.pattern;
-  const matches = (u: string | undefined): boolean =>
-    !!u && (exact !== null ? u === exact : pattern?.test(u) === true);
+  return { matches: (u) => !!u && pattern?.test(u) === true, wanted: `match /${patternSrc}/` };
+}
 
-  const tab = await resolveTab(tabId);
-  if (!tab) return noTargetTab();
-  const targetId = tab.id;
-  const timeoutMs = positiveOr(data.timeout, TIMEOUTS.WAIT_FOR_URL);
-
-  const reached = await new Promise<browser.tabs.Tab | null>((resolve) => {
+/**
+ * The tab once its URL matches and it has finished loading (at once if it
+ * already has), else null after `timeoutMs` or when the tab is gone.
+ */
+function tabReachingUrl(
+  targetId: number,
+  matches: UrlTarget["matches"],
+  timeoutMs: number,
+): Promise<browser.tabs.Tab | null> {
+  return new Promise<browser.tabs.Tab | null>((resolve) => {
     let done = false;
     const finish = (value: browser.tabs.Tab | null): void => {
       if (done) return;
@@ -243,17 +264,31 @@ export async function waitForUrl(
     const timer = setTimeout(() => finish(null), timeoutMs);
     browser.tabs.get(targetId).then(check, () => finish(null));
   });
+}
 
-  if (!reached) {
-    const current = await browser.tabs.get(targetId).catch(() => undefined);
-    return {
-      success: false,
-      error:
-        `URL did not ${exact ? `become ${exact}` : `match /${patternSrc}/`} within ` +
-        `${timeoutMs}ms (current: ${current?.url ?? "unknown"})`,
-    };
-  }
-  return { success: true, url: reached.url };
+/**
+ * fox_wait_for_url: wait until the tab's URL equals `url` (exact) or matches
+ * `urlPattern` (regex) and the page has finished loading. Returns at once if
+ * that is already the case. URL changes through the History API count too.
+ */
+export async function waitForUrl(
+  tabId: number | undefined,
+  data: Record<string, unknown> = {},
+): Promise<CommandResult> {
+  const target = urlTargetOf(data);
+  if ("result" in target) return target.result;
+
+  const tab = await resolveTab(tabId);
+  if (!tab) return noTargetTab();
+  const timeoutMs = positiveOr(data.timeout, TIMEOUTS.WAIT_FOR_URL);
+  const reached = await tabReachingUrl(tab.id, target.matches, timeoutMs);
+  if (reached) return { success: true, url: reached.url };
+
+  const current = await browser.tabs.get(tab.id).catch(() => undefined);
+  return {
+    success: false,
+    error: `URL did not ${target.wanted} within ${timeoutMs}ms (current: ${current?.url ?? "unknown"})`,
+  };
 }
 
 export const TAB_LOAD_OPTIONS = {

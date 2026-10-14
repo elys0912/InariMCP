@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isRecord } from '@kitsune-mcp/shared';
+import { isRecord } from '@inari-mcp/shared';
 import { externalizeScreenshots, getScreenshotsDir } from '../src/screenshot-store.js';
 
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
@@ -45,7 +45,7 @@ function shotAt(response: Record<string, unknown>, i: number): Record<string, un
 }
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-shots-'));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-shots-'));
   vi.stubEnv('FOX_SCREENSHOTS_DIR', dir);
 });
 
@@ -55,23 +55,16 @@ afterEach(() => {
 });
 
 describe('getScreenshotsDir', () => {
-  const LEGACY_DIR = path.join(os.tmpdir(), 'kitsune-shots-legacy');
-
   it('uses FOX_SCREENSHOTS_DIR when set', () => {
     expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: dir })).toBe(path.resolve(dir));
   });
 
-  it('falls through a blank FOX_SCREENSHOTS_DIR to the legacy name', () => {
+  it('uses the default when FOX_SCREENSHOTS_DIR is blank', () => {
     for (const blank of ['', '   ']) {
-      expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: blank, CLAUDE_BROWSER_SCREENSHOTS_DIR: LEGACY_DIR }))
-        .toBe(path.resolve(LEGACY_DIR));
+      const fromBlank = getScreenshotsDir({ FOX_SCREENSHOTS_DIR: blank });
+      expect(fromBlank).toBe(getScreenshotsDir({}));
+      expect(fromBlank).not.toBe(path.resolve(blank));
     }
-  });
-
-  it('uses the default when both names are blank', () => {
-    const fromBlank = getScreenshotsDir({ FOX_SCREENSHOTS_DIR: ' ', CLAUDE_BROWSER_SCREENSHOTS_DIR: '' });
-    expect(fromBlank).toBe(getScreenshotsDir({}));
-    expect(fromBlank).not.toBe(path.resolve(' '));
   });
 });
 
@@ -164,7 +157,7 @@ describe('externalizeScreenshots', () => {
     expect(shots[4]).toBe('not-an-object');
     for (const shot of shots.slice(0, 3)) expect(shot).not.toHaveProperty('imageData');
     expect(response['success']).toBe(true);
-    expect(fs.readdirSync(dir).sort()).toEqual(['all_1.png', 'all_tab12.png']);
+    expect(fs.readdirSync(dir).sort()).toEqual(['.named-screenshots', 'all_1.png', 'all_tab12.png']);
   });
 
   it('warns when a caller-chosen filename replaces an existing file (5.7)', () => {
@@ -200,7 +193,7 @@ describe('externalizeScreenshots', () => {
     expect(shotAt(second, 1)).not.toHaveProperty('imageOverwritten');
     expect(dataOf(second)['warnings']).toEqual([expect.stringContaining('same_tab12.png already existed')]);
     expect(second['success']).toBe(true);
-    expect(fs.readdirSync(dir).sort()).toEqual(['same_tab12.png', 'same_tab13.png']);
+    expect(fs.readdirSync(dir).sort()).toEqual(['.named-screenshots', 'same_tab12.png', 'same_tab13.png']);
   });
 
   it('never warns about generated names: they are unique (5.7)', () => {

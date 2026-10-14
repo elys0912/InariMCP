@@ -32,6 +32,9 @@ import { configDefaults, defineConfig } from 'vitest/config';
 const sharedSrc = fileURLToPath(new URL('./packages/shared/src/index.ts', import.meta.url));
 const sharedNodeSrc = fileURLToPath(new URL('./packages/shared/src/node/index.ts', import.meta.url));
 const sharedActionNamesSrc = fileURLToPath(new URL('./packages/shared/src/action-names.ts', import.meta.url));
+const sharedFieldMaskSrc = fileURLToPath(new URL('./packages/shared/src/field-mask.ts', import.meta.url));
+const sharedApprovalSiteSrc = fileURLToPath(new URL('./packages/shared/src/approval-site.ts', import.meta.url));
+const sharedUrlPatternLimitSrc = fileURLToPath(new URL('./packages/shared/src/url-pattern-limit.ts', import.meta.url));
 
 /**
  * Test files that drive a real headless Firefox (Playwright). They run in
@@ -45,9 +48,12 @@ const FIREFOX_CONTRACT = ['tests/contract/extension-content.test.ts'];
 export default defineConfig({
   resolve: {
     alias: [
-      { find: /^@kitsune-mcp\/shared\/node$/, replacement: sharedNodeSrc },
-      { find: /^@kitsune-mcp\/shared\/action-names$/, replacement: sharedActionNamesSrc },
-      { find: /^@kitsune-mcp\/shared$/, replacement: sharedSrc },
+      { find: /^@inari-mcp\/shared\/node$/, replacement: sharedNodeSrc },
+      { find: /^@inari-mcp\/shared\/action-names$/, replacement: sharedActionNamesSrc },
+      { find: /^@inari-mcp\/shared\/field-mask$/, replacement: sharedFieldMaskSrc },
+      { find: /^@inari-mcp\/shared\/approval-site$/, replacement: sharedApprovalSiteSrc },
+      { find: /^@inari-mcp\/shared\/url-pattern-limit$/, replacement: sharedUrlPatternLimitSrc },
+      { find: /^@inari-mcp\/shared$/, replacement: sharedSrc },
     ],
   },
   test: {
@@ -62,7 +68,7 @@ export default defineConfig({
     setupFiles: ['./tests/setup/isolate-home.ts'],
     globalSetup: ['./tests/setup/real-home-watch.ts'],
     env: {
-      // Keep the Native Host logger away from ~/.kitsune-mcp/logs.
+      // Keep the Native Host logger away from ~/.inari-mcp/logs.
       FOX_NATIVE_HOST_LOG: 'off',
     },
     projects: [

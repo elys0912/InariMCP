@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * KitsuneMCP installer (Windows / macOS / Linux). See --help.
+ * Inari MCP installer (Windows / macOS / Linux). See --help.
  *
  *   node scripts/install.mjs [--dry-run] [--yes] [--register-claude] ...
  *
@@ -77,7 +77,7 @@ async function install(argv, deps, r) {
   }
 
   const dry = opts.dryRun;
-  r.title(`KitsuneMCP installer (${platform})${dry ? ' — dry run, nothing is changed' : ''}`);
+  r.title(`Inari MCP installer (${platform})${dry ? ' — dry run, nothing is changed' : ''}`);
   r.title(`Repository: ${repo.repoRoot}`);
 
   // -------------------------------------------------------------------------
@@ -313,7 +313,7 @@ async function registerWindows(deps, r, opts, key, manifestPath) {
 }
 
 /**
- * Read the Claude Code configuration and report the kitsune-mcp entries
+ * Read the Claude Code configuration and report the inari-mcp entries
  * found. Display only: install does not rewrite these files, so an
  * unreadable one is a warning.
  * @returns {{scope: string, entry: object}[]}

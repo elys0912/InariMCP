@@ -1,7 +1,0 @@
-{
-  "name": "kitsune_mcp",
-  "description": "KitsuneMCP Native Messaging Host (reference template for a manual setup: scripts/install.mjs generates the real manifest outside the repository)",
-  "path": "<absolute path of ~/.kitsune-mcp/native-host/run-host.cmd (Windows) or run-host.sh>",
-  "type": "stdio",
-  "allowed_extensions": ["kitsune-mcp@elys0912.github.io"]
-}

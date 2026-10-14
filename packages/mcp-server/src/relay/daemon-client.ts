@@ -3,13 +3,13 @@
  *
  *  - ensureDaemon(): GET /health; when nothing answers, spawn
  *    `node dist/index.js --daemon` detached (stdio cut off from the relay,
- *    stderr appended to ~/.kitsune-mcp/logs/daemon.log) and wait until it is
+ *    stderr appended to ~/.inari-mcp/logs/daemon.log) and wait until it is
  *    healthy. Several relays (and the Native Host) may do this at the same
  *    time: the daemon that cannot bind the HTTP port exits by itself.
  *  - callTool(): POST /mcp/call, signed with the API token (read from
- *    ~/.kitsune-mcp/api_token *after* the daemon is healthy — only the daemon
+ *    ~/.inari-mcp/api_token *after* the daemon is healthy — only the daemon
  *    creates the token; the token itself is never sent, see
- *    @kitsune-mcp/shared/node auth.ts) and X-Kitsune-Relay (audit transport `relay:<id>`).
+ *    @inari-mcp/shared/node auth.ts) and X-Inari-Relay (audit transport `relay:<id>`).
  *    Before each call, GET /health with a fresh nonce must come back with
  *    the daemon's proof (evaluateHealth, as the Native Host and the daemon's
  *    singleton check judge it): the body (tool name, arguments, approval
@@ -22,7 +22,7 @@
  *  - A daemon whose /health reports another `protocol` (an older build
  *    still running) is not used: every call fails with a message telling
  *    the user to stop it. There is no fallback to sending the token.
- *  - heartbeat: GET /health with X-Kitsune-Relay every RELAY_HEARTBEAT_MS, so the daemon
+ *  - heartbeat: GET /health with X-Inari-Relay every RELAY_HEARTBEAT_MS, so the daemon
  *    knows this session is alive (idle shutdown, daemon/activity.ts).
  *  - approvals (relay/approval.ts): POST /approval/elicitation and
  *    /approval/browser; a retried call sends `approvalToken` in the
@@ -46,22 +46,23 @@ import {
   DAEMON_PROTOCOL_VERSION,
   evaluateHealth,
   newNonce,
+  protocolText,
   signRequest,
   verifyResponse,
   type HealthVerdict,
-} from '@kitsune-mcp/shared/node';
-import { apiTokenPath, daemonLogPath, spawnDetachedDaemon, stderrLogger } from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
+import { apiTokenPath, daemonLogPath, spawnDetachedDaemon, stderrLogger } from '@inari-mcp/shared/node';
 import {
   MAX_REQUEST_BODY_BYTES,
   RELAY_ID_HEADER,
   compareDaemonSettings,
   readApiTokenFile,
-  resolveHost,
+  resolveDaemonHost,
   resolveHttpPort,
 } from '../utils/endpoint.js';
 import { headlessStartupTimeoutMs } from '../utils/headless-env.js';
 import { errorMessage } from '../utils/errors.js';
-import { isRecord } from '@kitsune-mcp/shared';
+import { isRecord } from '@inari-mcp/shared';
 
 /** How long a relay waits for a daemon it started to answer /health. */
 const DAEMON_STARTUP_WAIT_MS = 15_000;
@@ -160,7 +161,7 @@ function finished(result: CallToolResult): CallAttempt {
  * may come from any program on the port.
  */
 function signatureRefused(baseUrl: string): string {
-  return `The KitsuneMCP daemon at ${baseUrl} refused this session's signature ` +
+  return `The Inari MCP daemon at ${baseUrl} refused this session's signature ` +
     '(api_token replaced since the daemon started?). Stop the daemon (node dist/index.js --stop-daemon, ' +
     'or end its process) and call the tool again.';
 }
@@ -176,7 +177,7 @@ function proofRefused(baseUrl: string): string {
 
 /** Why nothing signed is sent to the program on the port (stopDaemon(), approvals, tool calls). */
 function unprovenDaemon(baseUrl: string): string {
-  return `The program at ${baseUrl} answers as the KitsuneMCP daemon but cannot prove it holds this ` +
+  return `The program at ${baseUrl} answers as the Inari MCP daemon but cannot prove it holds this ` +
     "session's API token (another program may be using its port, or api_token was replaced since the " +
     'daemon started).';
 }
@@ -194,11 +195,11 @@ export interface DaemonClientOptions {
   /** Defaults: FOX_HOST / FOX_HTTP_PORT (utils/endpoint.ts). */
   host?: string;
   port?: number;
-  /** Defaults to reading ~/.kitsune-mcp/api_token. */
+  /** Defaults to reading ~/.inari-mcp/api_token. */
   readToken?: () => string | undefined;
 }
 
-/** Something that answers /health as a KitsuneMCP daemon holds the port (proven or not). */
+/** Something that answers /health as a Inari MCP daemon holds the port (proven or not). */
 function isDaemonOnPort(verdict: HealthVerdict): boolean {
   return verdict.kind !== 'down' && verdict.kind !== 'foreign';
 }
@@ -211,14 +212,18 @@ export class DaemonClient {
   private ensuring: Promise<boolean> | null = null;
   private readyPromise: Promise<boolean> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  /** A KitsuneMCP daemon answered the last /health. */
+  /** A Inari MCP daemon answered the last /health. */
   private daemonSeen = false;
   /** `protocol` of the last healthy /health answer (undefined from an old daemon). */
   private daemonProtocol: unknown = undefined;
 
+  /**
+   * A FOX_HOST that is not a loopback address throws (resolveDaemonHost):
+   * tool arguments are never sent to another machine in plain text.
+   */
   constructor(relayId: string, options: DaemonClientOptions = {}) {
     this.relayId = relayId;
-    this.host = options.host ?? resolveHost();
+    this.host = options.host ?? resolveDaemonHost();
     this.port = options.port ?? resolveHttpPort();
     this.readToken = options.readToken ?? (() => readApiTokenFile());
   }
@@ -304,7 +309,7 @@ export class DaemonClient {
 
   /**
    * GET /health (also serves as this relay's heartbeat). True when a
-   * KitsuneMCP daemon answers — even an incompatible one, or one whose proof
+   * Inari MCP daemon answers — even an incompatible one, or one whose proof
    * is not checked here: it holds the port, so starting another would not
    * help (see protocolMismatch(); callTool() checks the proof).
    */
@@ -372,8 +377,8 @@ export class DaemonClient {
   protocolMismatch(): string | undefined {
     if (!this.daemonSeen || this.daemonProtocol === DAEMON_PROTOCOL_VERSION) return undefined;
     return (
-      `The KitsuneMCP daemon running at ${this.baseUrl} is from another version ` +
-      `(protocol ${this.daemonProtocol === undefined ? '1 or older' : String(this.daemonProtocol)}, ` +
+      `The Inari MCP daemon running at ${this.baseUrl} is from another version ` +
+      `(protocol ${protocolText(this.daemonProtocol)}, ` +
       `this session needs ${DAEMON_PROTOCOL_VERSION}). Stop that daemon process (end it by PID: ` +
       'it predates --stop-daemon; then restart Firefox if it was started by the Native Host); ' +
       'the next tool call starts a matching one.'
@@ -418,7 +423,7 @@ export class DaemonClient {
     if (diffs.length === 0) return [];
     const pid = typeof reply.body['pid'] === 'number' ? reply.body['pid'] : 'unknown';
     return [
-      `The shared KitsuneMCP daemon (PID ${pid}) was started with different settings ` +
+      `The shared Inari MCP daemon (PID ${pid}) was started with different settings ` +
       'than this session. The running daemon\'s settings apply to every session: ' +
       diffs.join('; ') +
       '. To change them, stop the daemon (node dist/index.js --stop-daemon; it also exits on its own ' +
@@ -470,11 +475,11 @@ export class DaemonClient {
         log('daemon not reachable — starting it');
         if (await this.ensureDaemon()) return RETRY;
       }
-      return finished(errorResult(`KitsuneMCP daemon is not reachable at ${this.baseUrl} (see ${daemonLogPath()}).`));
+      return finished(errorResult(`Inari MCP daemon is not reachable at ${this.baseUrl} (see ${daemonLogPath()}).`));
     }
     if (verdict.kind === 'foreign') {
       return finished(errorResult(
-        `The program at ${this.baseUrl} is not the KitsuneMCP daemon (its /health answer is not ` +
+        `The program at ${this.baseUrl} is not the Inari MCP daemon (its /health answer is not ` +
         "the daemon's). The call was not sent. Check which process owns the port.",
       ));
     }
@@ -485,7 +490,7 @@ export class DaemonClient {
         return RETRY;
       }
       return finished(errorResult(
-        `KitsuneMCP daemon is not available: no API token at ${apiTokenPath()} ` +
+        `Inari MCP daemon is not available: no API token at ${apiTokenPath()} ` +
         `(the daemon creates it on start; see ${daemonLogPath()}).`,
       ));
     }
@@ -507,7 +512,7 @@ export class DaemonClient {
         log('daemon not reachable — starting it');
         if (await this.ensureDaemon()) return RETRY;
       }
-      return finished(errorResult(`KitsuneMCP daemon request failed (${this.baseUrl}): ${errorMessage(err)}`));
+      return finished(errorResult(`Inari MCP daemon request failed (${this.baseUrl}): ${errorMessage(err)}`));
     }
 
     return this.answerOf(call, reply);
@@ -549,7 +554,7 @@ export class DaemonClient {
 
     if (!reply.verified) {
       return finished(errorResult(
-        `The answer from ${this.baseUrl} is not signed by the KitsuneMCP daemon: another ` +
+        `The answer from ${this.baseUrl} is not signed by the Inari MCP daemon: another ` +
         'program may be using its port, or the daemon uses a different API token. ' +
         'The result was discarded.',
       ));
@@ -584,7 +589,7 @@ export class DaemonClient {
   async stopDaemon(force = false, waitMs: number = DAEMON_STOP_WAIT_MS): Promise<StopDaemonResult> {
     const { token, verdict } = await this.verifyDaemon();
     if (!isDaemonOnPort(verdict)) {
-      return { ok: true, stopped: false, message: `no KitsuneMCP daemon answers at ${this.baseUrl}` };
+      return { ok: true, stopped: false, message: `no Inari MCP daemon answers at ${this.baseUrl}` };
     }
     const mismatch = this.protocolMismatch();
     if (mismatch !== undefined) return { ok: false, stopped: false, message: mismatch };
@@ -616,7 +621,7 @@ export class DaemonClient {
         stopped: false,
         message: reply.status === 403
           ? signatureRefused(this.baseUrl)
-          : `the answer from ${this.baseUrl} is not signed by the KitsuneMCP daemon — not trusting it`,
+          : `the answer from ${this.baseUrl} is not signed by the Inari MCP daemon — not trusting it`,
       };
     }
     if (reply.status !== 200) {
@@ -684,12 +689,12 @@ export class DaemonClient {
     for (;;) {
       const { token, verdict } = await this.verifyDaemon();
       if (!isDaemonOnPort(verdict)) {
-        return { success: false, approved: false, error: `no KitsuneMCP daemon answers at ${this.baseUrl}` };
+        return { success: false, approved: false, error: `no Inari MCP daemon answers at ${this.baseUrl}` };
       }
       const mismatch = this.protocolMismatch();
       if (mismatch !== undefined) return { success: false, approved: false, error: mismatch };
       if (token === undefined) {
-        return { success: false, approved: false, error: 'KitsuneMCP daemon is not available (no API token)' };
+        return { success: false, approved: false, error: 'Inari MCP daemon is not available (no API token)' };
       }
       if (verdict.kind !== 'ok') {
         return { success: false, approved: false, error: `${unprovenDaemon(this.baseUrl)} The answer was not sent.` };
@@ -709,7 +714,7 @@ export class DaemonClient {
         return {
           success: false,
           approved: false,
-          error: `The answer from ${this.baseUrl} is not signed by the KitsuneMCP daemon — ignored.`,
+          error: `The answer from ${this.baseUrl} is not signed by the Inari MCP daemon — ignored.`,
         };
       }
       const b = isRecord(reply.body) ? reply.body : {};
@@ -734,7 +739,7 @@ export class DaemonClient {
     if (reply.status === 200) {
       const parsed = CallToolResultSchema.safeParse(body['result']);
       if (parsed.success) return parsed.data;
-      return errorResult(`KitsuneMCP daemon returned a malformed result for ${name}`);
+      return errorResult(`Inari MCP daemon returned a malformed result for ${name}`);
     }
 
     const error = typeof body['error'] === 'string' ? body['error'] : `HTTP ${reply.status}`;

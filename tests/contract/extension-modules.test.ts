@@ -1,5 +1,5 @@
 /**
- * Extension module structure (WP11): background.ts / content.ts are the
+ * Extension module structure: background.ts / content.ts are the
  * entries, background/*.ts and content/*.ts the modules they bundle.
  *
  *   - no import cycle between the Extension's own modules (src/**), so the
@@ -101,7 +101,7 @@ const count = (source: string, re: RegExp): number => [...source.matchAll(re)].l
 const LISTENER_FILES = ['background/context-menu.ts', 'background/listeners.ts', 'content.ts'];
 
 /** Registration functions the background entry calls at load time. */
-const REGISTRARS = ['registerListeners', 'registerContextMenus'] as const;
+const REGISTRARS = ['registerListeners', 'registerContextMenuListener'] as const;
 
 describe('extension modules', () => {
   const graph = importGraph();

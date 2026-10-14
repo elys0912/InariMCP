@@ -1,5 +1,5 @@
 /**
- * Routing table of the headless backend: what HeadlessBrowser.execute() does
+ * Routing table of the headless backend: what HeadlessBrowser (runCommand, execute) does
  * with each BrowserCommand action, and the handlers of the actions it runs.
  *
  * Each handler reads its arguments through a schema of its own (parseArgs):
@@ -9,14 +9,30 @@
  * Only playwright types are imported here (see headless-lifecycle.test.ts).
  */
 
-import type { BrowserContext, ConsoleMessage, ElementHandle, Page } from 'playwright';
+import type { BrowserContext, ElementHandle, Page } from 'playwright';
 import { z } from 'zod';
-import { BrowserActionSchema, isRecord, type BrowserAction } from '@kitsune-mcp/shared';
-import { screenshotStem } from '@kitsune-mcp/shared/node';
-import { countOccurrences, filterAriaSnapshot, parseArgs } from './helpers.js';
+import {
+  BrowserActionSchema,
+  isMaskedField,
+  MASKED_VALUE,
+  maskedText,
+  type BrowserAction,
+  type MaskFieldInfo,
+} from '@inari-mcp/shared';
+import { screenshotStem } from '@inari-mcp/shared/node';
+import {
+  assertHeadlessReadSelector,
+  countOccurrences,
+  filterAriaSnapshot,
+  maskAriaSnapshot,
+  parseArgs,
+  type MaskedSnapshotTexts,
+} from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
+import { NEW_TAB_URL } from '../safety/approval.js';
 import { focusedIsPassword } from './focus.js';
 import { getScreenshotsDir } from '../utils/screenshot.js';
+import { errorMessage } from '../utils/errors.js';
 import { SCROLL_DIRECTIONS } from '../tools/schemas.js';
 import {
   AVAILABLE_OPTIONS_MAX,
@@ -26,12 +42,8 @@ import {
   HIGHLIGHT_OUTLINE,
   HISTORY_TIMEOUT_MS,
   NAVIGATE_TIMEOUT_MS,
-  SCRIPT_TIMEOUT_MS,
   SELECT_OPTION_TIMEOUT_MS,
   SNAPSHOT_MAX_CHARS,
-  WAIT_AND_ACT_DEFAULT_MS,
-  WAIT_AND_ACT_POLL_MIN_MS,
-  WAIT_AND_ACT_POLL_MS,
   WAIT_GIVE_UP_SLACK_MS,
 } from './limits.js';
 import * as fs from 'node:fs';
@@ -140,7 +152,7 @@ type UnlockedHandler = (c: UnlockedContext) => Promise<Result>;
  * - unsupported: answered with "Unsupported headless action" (after the
  *   target tab was resolved, like a dispatch action)
  */
-type HeadlessRoute =
+export type HeadlessRoute =
   | { kind: 'dispatch'; needsPage: true; run: ActionHandler }
   | { kind: 'dispatch'; needsPage: false; run: TablessHandler }
   | { kind: 'unlocked'; run: UnlockedHandler }
@@ -151,7 +163,7 @@ export const NO_TAB_ERROR =
   "No headless tab is open: open one with fox_tab action 'create' or fox_navigate with newTab: true";
 
 // ---------------------------------------------------------------------------
-// Bounded page scripts
+// Bounded waits
 // ---------------------------------------------------------------------------
 
 /** What bounds a wait: a deadline (Date.now() value) and an optional abort. */
@@ -161,9 +173,8 @@ interface Bound {
 }
 
 /**
- * `work` (a page.evaluate(), which has no timeout of its own), given up
- * after `ms`, at `bound.deadline` or when `bound.signal` aborts, whichever
- * comes first. Giving up does not stop the script in the page; it frees
+ * `work` given up after `ms`, at `bound.deadline` or when `bound.signal`
+ * aborts, whichever comes first. Giving up does not stop the work; it frees
  * execute()'s lock for the next command.
  */
 function bounded<T>(work: Promise<T>, bound: Bound, ms: number, what: string): Promise<T> {
@@ -187,13 +198,11 @@ function bounded<T>(work: Promise<T>, bound: Bound, ms: number, what: string): P
       return;
     }
     bound.signal?.addEventListener('abort', onAbort, { once: true });
-    work.then((v) => { done(); resolve(v); }, (e: unknown) => { done(); reject(e); });
+    work.then(
+      (v) => { done(); resolve(v); },
+      (e: unknown) => { done(); reject(e instanceof Error ? e : new Error(errorMessage(e))); },
+    );
   });
-}
-
-/** page.evaluate(script), bounded by SCRIPT_TIMEOUT_MS and `bound`. */
-function evaluateScript(page: Page, script: string, bound: Bound, what = 'The script'): Promise<unknown> {
-  return bounded(page.evaluate(script), bound, SCRIPT_TIMEOUT_MS, what);
 }
 
 /**
@@ -213,8 +222,55 @@ function boundedWait<T>(bound: Bound, timeout: number, what: string, wait: (ms: 
 // Password guard
 // ---------------------------------------------------------------------------
 
-/** get_value's answer for a password field, as on the Extension (content/inspect.ts getValue). */
-const PASSWORD_VALUE_MASK = '[MASKED]';
+/** What the masked-value rule (shared/src/field-mask.ts) and the tools read of a found element. */
+interface ElementFacts {
+  tag: string;
+  text: string;
+  box: { x: number; y: number; width: number; height: number } | null;
+  mask: MaskFieldInfo;
+}
+
+/** The facts of every match of a selector: their count, and the facts of the first `max`. */
+interface FoundElements {
+  count: number;
+  elements: ElementFacts[];
+}
+
+/**
+ * The count of `els`, and tag, text (first `maxText` characters), box and
+ * the masked-value rule's input of the first `max` (an <option>: with its
+ * <select>, as the Extension's content/dom.ts isMaskedField reads it). One
+ * page function, run by $$eval: the only reader of the rule's input here.
+ */
+function elementFacts(els: Element[], { max, maxText }: { max: number; maxText: number }): FoundElements {
+  const maskInfo = (e: Element): MaskFieldInfo => ({
+    localName: e.localName,
+    type: e.localName === 'input' ? (e as HTMLInputElement).type : '',
+    autocomplete: e.getAttribute('autocomplete'),
+  });
+  const optionMaskInfo = (e: Element): MaskFieldInfo => {
+    const select = e.closest('select');
+    return { ...maskInfo(e), select: select === null ? null : maskInfo(select) };
+  };
+  const facts = (e: Element): ElementFacts => {
+    const r = e.getBoundingClientRect();
+    return {
+      tag: e.tagName.toLowerCase(),
+      text: (e instanceof HTMLElement ? e.innerText : e.textContent ?? '').slice(0, maxText),
+      // null for an element without a box (display: none), as boundingBox() answered.
+      box: e.getClientRects().length === 0 ? null : { x: r.x, y: r.y, width: r.width, height: r.height },
+      mask: e.localName === 'option' ? optionMaskInfo(e) : maskInfo(e),
+    };
+  };
+  return { count: els.length, elements: els.slice(0, max).map(facts) };
+}
+
+/** Whether the first match of `selector` is a masked field (false when nothing matches). */
+async function firstIsMasked(page: Page, selector: string): Promise<boolean> {
+  const found = await page.$$eval(selector, elementFacts, { max: 1, maxText: 0 });
+  const first = found.elements[0];
+  return first !== undefined && isMaskedField(first.mask);
+}
 
 /**
  * Password guard: refuse a password field unless the command carries
@@ -321,14 +377,69 @@ const snapshotArgs = z.object({
   roles: z.array(z.string()).optional(),
 });
 
+/** A form field whose value an aria snapshot can show, as snapshotFields() reads it. */
+interface SnapshotField {
+  info: MaskFieldInfo;
+  /**
+   * The value of an input or textarea; the label and the text of a select's
+   * selected option (an option's name in the snapshot holds either or both).
+   */
+  texts: string[];
+  isSelect: boolean;
+}
+
+/**
+ * The form fields under `root` (itself and open shadow roots included) whose
+ * value an aria snapshot shows: inputs other than checkbox, radio, file and
+ * hidden (never rendered), textareas, selects. Self-contained (runs in the page).
+ */
+function snapshotFields(root: Element): SnapshotField[] {
+  const fieldOf = (el: Element): SnapshotField | null => {
+    const info = { localName: el.localName, type: '', autocomplete: el.getAttribute('autocomplete') };
+    if (el instanceof HTMLInputElement) {
+      const shown = !['checkbox', 'radio', 'file', 'hidden'].includes(el.type);
+      return shown ? { info: { ...info, type: el.type }, texts: [el.value], isSelect: false } : null;
+    }
+    if (el instanceof HTMLTextAreaElement) return { info, texts: [el.value], isSelect: false };
+    if (el instanceof HTMLSelectElement) {
+      const option = el.selectedOptions[0];
+      return { info, texts: option === undefined ? [] : [option.label, option.text], isSelect: true };
+    }
+    return null;
+  };
+  const fields: SnapshotField[] = [];
+  const visit = (el: Element): void => {
+    const field = fieldOf(el);
+    if (field !== null) fields.push(field);
+    for (const child of Array.from(el.children)) visit(child);
+    for (const child of Array.from(el.shadowRoot?.children ?? [])) visit(child);
+  };
+  visit(root);
+  return fields;
+}
+
+/** What the masked fields among `fields` show in a snapshot (helpers.ts maskAriaSnapshot). */
+function maskedSnapshotTexts(fields: SnapshotField[]): MaskedSnapshotTexts {
+  const masked = fields.filter((f) => isMaskedField(f.info));
+  return {
+    values: masked.filter((f) => !f.isSelect).flatMap((f) => f.texts),
+    selectedOptions: masked.filter((f) => f.isSelect).flatMap((f) => f.texts),
+  };
+}
+
 const snapshot: ActionHandler = async ({ page, args }) => {
   const { selector, maxDepth, includeText, roles } = parseArgs(snapshotArgs, args, 'snapshot');
   const sel = selector || 'body';
   const loc = page.locator(sel);
   const matches = await loc.count();
   if (matches === 0) return { success: false, error: `No element matches selector: ${sel}` };
-  const raw = await loc.first().ariaSnapshot({ timeout: ELEMENT_TIMEOUT_MS });
-  const text = filterAriaSnapshot(raw, { maxDepth, includeText, roles });
+  const root = loc.first();
+  // Read before and after the snapshot: a value the page changes meanwhile is masked as well.
+  const before = await root.evaluate(snapshotFields);
+  const raw = await root.ariaSnapshot({ timeout: ELEMENT_TIMEOUT_MS });
+  const after = await root.evaluate(snapshotFields);
+  const masked = maskAriaSnapshot(raw, maskedSnapshotTexts([...before, ...after]));
+  const text = filterAriaSnapshot(masked, { maxDepth, includeText, roles });
   return {
     success: true,
     url: page.url(),
@@ -387,7 +498,7 @@ const type: ActionHandler = async ({ page, args }) => {
 // scrolls the window; without toElement and direction nothing moves.
 type ScrollDirection = (typeof SCROLL_DIRECTIONS)[number];
 
-/** An unknown direction fails the parse (it used to be ignored: nothing moved). */
+/** An unknown direction fails the parse. */
 const scrollArgs = z.object({
   toElement: z.string().optional(),
   direction: z.enum(SCROLL_DIRECTIONS).optional(),
@@ -397,14 +508,18 @@ const scrollArgs = z.object({
 
 interface ScrollPosition { x: number; y: number }
 
+/**
+ * Where the element is, not its content: a scroll is no read (no
+ * confirm_read_sites check), as on the Extension.
+ */
 interface ScrolledTo {
-  element: { tag: string; text: string; box: { x: number; y: number; width: number; height: number } };
+  element: { tag: string; box: { x: number; y: number; width: number; height: number } };
   position: ScrollPosition;
 }
 
 /** Bring the element `toElement` into view; null when nothing matches. */
 function scrollToElement(page: Page, toElement: string): Promise<ScrolledTo | null> {
-  return page.evaluate(({ sel, maxText }) => {
+  return page.evaluate((sel) => {
     const el = document.querySelector(sel);
     if (!el) return null;
     el.scrollIntoView({ block: 'center', behavior: 'instant' });
@@ -412,12 +527,11 @@ function scrollToElement(page: Page, toElement: string): Promise<ScrolledTo | nu
     return {
       element: {
         tag: el.tagName.toLowerCase(),
-        text: (el.textContent ?? '').trim().slice(0, maxText),
         box: { x: r.x, y: r.y, width: r.width, height: r.height },
       },
       position: { x: window.scrollX, y: window.scrollY },
     };
-  }, { sel: toElement, maxText: ELEMENT_TEXT_MAX_CHARS });
+  }, toElement);
 }
 
 interface ScrolledBy {
@@ -529,30 +643,11 @@ const getElements: ActionHandler = async ({ page, args }) => {
   // One round trip; `count` is every match, as on the Extension (content/inspect.ts getElements).
   const found = await page.$$eval(
     selector,
-    (els, { max, maxText }) => ({
-      count: els.length,
-      elements: els.slice(0, max).map((e) => {
-        const r = e.getBoundingClientRect();
-        return {
-          tag: e.tagName.toLowerCase(),
-          text: (e instanceof HTMLElement ? e.innerText : e.textContent ?? '').slice(0, maxText),
-          // null for an element without a box (display: none), as boundingBox() answered.
-          box: e.getClientRects().length === 0 ? null : { x: r.x, y: r.y, width: r.width, height: r.height },
-        };
-      }),
-    }),
+    elementFacts,
     { max: Math.max(0, Math.min(limit, GET_ELEMENTS_MAX)), maxText: ELEMENT_TEXT_MAX_CHARS },
   );
-  return { success: true, elements: found.elements, count: found.count };
-};
-
-// --- execute_script ---
-const scriptArgs = z.object({ script: z.string() });
-
-const executeScript: ActionHandler = async (c) => {
-  const { script } = parseArgs(scriptArgs, c.args, 'execute_script');
-  const result = await evaluateScript(c.page, script, c);
-  return { success: true, result };
+  const elements = found.elements.map(({ mask, text, ...shown }) => ({ ...shown, text: maskedText(text, isMaskedField(mask)) }));
+  return { success: true, elements, count: found.count };
 };
 
 // --- wait_for_element ---
@@ -593,13 +688,12 @@ const getTabs: TablessHandler = async ({ host }) => {
 };
 
 // --- create_tab ---
-const BLANK_URL = 'about:blank';
 const createTabArgs = z.object({ url: z.string() });
 
 const createTab: TablessHandler = async ({ args, host }) => {
   const { url } = parseArgs(createTabArgs, args, 'create_tab');
   const newPage = await host.context().newPage();
-  if (url !== BLANK_URL) {
+  if (url !== NEW_TAB_URL) {
     try {
       await newPage.goto(url, { timeout: NAVIGATE_TIMEOUT_MS });
     } catch (e) {
@@ -631,23 +725,6 @@ const focusTab: ActionHandler = async ({ page, tabId, host }) => {
   return { success: true };
 };
 
-// --- get_value ---
-const getValue: ActionHandler = async ({ page, args }) => {
-  const { selector } = parseArgs(selectorArgs, args, 'get_value');
-  const el = await page.$(selector);
-  if (el === null) return { success: false, error: `No element matches selector: ${selector}` };
-  // As on the Extension (content/inspect.ts getValue): a <label> is read as
-  // itself (its text), not as its control.
-  const label = await el.evaluate((e) => e instanceof HTMLLabelElement);
-  if (!label && await el.evaluate(isPasswordElement)) return { success: true, value: PASSWORD_VALUE_MASK };
-  const value = await el.evaluate((e): string | null => {
-    if (e instanceof HTMLInputElement || e instanceof HTMLTextAreaElement) return e.value;
-    if (e instanceof HTMLSelectElement) return e.options[e.selectedIndex]?.value ?? null;
-    return e.textContent;
-  });
-  return { success: true, value };
-};
-
 // --- set_value ---
 const setValueArgs = z.object({ selector: z.string(), value: z.string() });
 
@@ -675,6 +752,16 @@ const selectOptionArgs = z.object({
   text: z.string().optional(),
 });
 
+/**
+ * The options of a select as select_option answers with them: masked for a
+ * masked select (a card expiry), as a read of it would be
+ * (shared/src/field-mask.ts).
+ */
+function shownOptions(mask: MaskFieldInfo, options: { value: string; text: string }[]): { value: string; text: string }[] {
+  if (!isMaskedField(mask)) return options;
+  return options.map(() => ({ value: MASKED_VALUE, text: MASKED_VALUE }));
+}
+
 const selectOption: ActionHandler = async ({ page, args }) => {
   const { selector, ...want } = parseArgs(selectOptionArgs, args, 'select_option');
   if (want.value === undefined && want.index === undefined && want.text === undefined) {
@@ -688,6 +775,7 @@ const selectOption: ActionHandler = async ({ page, args }) => {
   const info = await target.evaluate(
     (el, w) => {
       if (!(el instanceof HTMLSelectElement)) return { kind: 'not-select' as const };
+      const mask = { localName: el.localName, type: '', autocomplete: el.getAttribute('autocomplete') };
       const options = Array.from(el.options).map((o) => ({ value: o.value, text: o.text }));
       let idx = -1;
       if (w.value !== undefined) idx = options.findIndex((o) => o.value === w.value);
@@ -697,7 +785,7 @@ const selectOption: ActionHandler = async ({ page, args }) => {
         idx = options.findIndex((o) => o.text === text);
         if (idx < 0) idx = options.findIndex((o) => o.text.trim() === text.trim());
       }
-      return { kind: 'ok' as const, idx, options };
+      return { kind: 'ok' as const, idx, options, mask };
     },
     want,
     { timeout: SELECT_OPTION_TIMEOUT_MS },
@@ -705,14 +793,15 @@ const selectOption: ActionHandler = async ({ page, args }) => {
   if (info.kind === 'not-select') {
     return { success: false, error: `Element is not a <select>: ${selector}` };
   }
-  const picked = info.idx < 0 ? undefined : info.options[info.idx];
+  const shown = shownOptions(info.mask, info.options);
+  const picked = info.idx < 0 ? undefined : shown[info.idx];
   if (picked === undefined) {
     const what = want.value !== undefined ? `value "${want.value}"`
       : want.index !== undefined ? `index ${want.index}` : `text "${want.text}"`;
     return {
       success: false,
       error: `No option matches ${what}`,
-      availableOptions: info.options.slice(0, AVAILABLE_OPTIONS_MAX),
+      availableOptions: shown.slice(0, AVAILABLE_OPTIONS_MAX),
     };
   }
   const chosen = await target.selectOption({ index: info.idx }, { timeout: SELECT_OPTION_TIMEOUT_MS });
@@ -786,7 +875,10 @@ const getTextArgs = z.object({ selector: z.string().optional(), maxLength: z.num
 
 const getText: ActionHandler = async ({ page, args }) => {
   const { selector, maxLength } = parseArgs(getTextArgs, args, 'get_text');
-  const text = await page.innerText(selector || 'body', { timeout: ELEMENT_TIMEOUT_MS });
+  const target = selector || 'body';
+  const rawText = await page.innerText(target, { timeout: ELEMENT_TIMEOUT_MS });
+  // A masked field read as itself (an option of a masked select), as on the Extension.
+  const text = maskedText(rawText, await firstIsMasked(page, target));
   const truncated = text.length > maxLength;
   return {
     success: true,
@@ -811,164 +903,14 @@ const findText: ActionHandler = async ({ page, args }) => {
   return { success: true, query, count: countOccurrences(text, query, caseSensitive, entireWord) };
 };
 
-// --- eval_chain ---
-const evalChainArgs = z.object({
-  steps: z.array(z.object({
-    script: z.string(),
-    label: z.string().optional(),
-    captureConsole: z.boolean(),
-    stopOnError: z.boolean(),
-  })),
-});
-
-const evalChain: ActionHandler = async (c) => {
-  const { page } = c;
-  const { steps } = parseArgs(evalChainArgs, c.args, 'eval_chain');
-  const results: Record<string, unknown>[] = [];
-  let prev: unknown = null;
-  for (const [i, step] of steps.entries()) {
-    const label = step.label ?? `step_${i}`;
-    const consoleMsgs: Array<{ type: string; text: string }> = [];
-    const listener = (msg: ConsoleMessage): void => {
-      consoleMsgs.push({ type: msg.type(), text: msg.text() });
-    };
-    if (step.captureConsole) page.on('console', listener);
-
-    try {
-      const wrapped = `(function($prev) { return (${step.script}); })(${JSON.stringify(prev)})`;
-      const result = await evaluateScript(page, wrapped, c, `Step ${label}`);
-      prev = result;
-      results.push({ label, result, console: consoleMsgs, error: null });
-    } catch (e) {
-      results.push({
-        label,
-        result: null,
-        console: consoleMsgs,
-        error: e instanceof Error ? e.message : String(e),
-      });
-      if (step.stopOnError) break;
-    } finally {
-      if (step.captureConsole) page.removeListener('console', listener);
-    }
-  }
-  return { success: true, steps: results, final: prev };
-};
-
-// --- wait_and_act ---
-const waitAndActArgs = z.object({
-  condition: z.string(),
-  actionScript: z.string(),
-  pollIntervalMs: z.number(),
-  timeoutMs: z.number(),
-});
-
-/** pollIntervalMs as a usable interval: positive, at least WAIT_AND_ACT_POLL_MIN_MS. */
-function pollInterval(v: number): number {
-  return v > 0 ? Math.max(WAIT_AND_ACT_POLL_MIN_MS, v) : WAIT_AND_ACT_POLL_MS;
-}
-
-const waitAndAct: ActionHandler = async (c) => {
-  const { page } = c;
-  const a = parseArgs(waitAndActArgs, c.args, 'wait_and_act');
-  const pollMs = pollInterval(a.pollIntervalMs);
-  const timeoutMs = a.timeoutMs > 0 ? a.timeoutMs : WAIT_AND_ACT_DEFAULT_MS;
-  const startedAt = Date.now();
-  // Measured time, not the sum of the poll intervals: a slow condition
-  // counts, and the loop ends whatever the interval is.
-  const polling: Bound = { deadline: Math.min(startedAt + timeoutMs, c.deadline), signal: c.signal };
-  // The last error of the condition, reported when it is never met (a
-  // condition that cannot run fails the same way as one that stays false).
-  let lastError: string | null = null;
-  for (;;) {
-    let ready = false;
-    try {
-      ready = Boolean(await evaluateScript(page, a.condition, polling, 'The condition'));
-      lastError = null;
-    } catch (e) {
-      // The condition threw or hung: keep polling. An attempt cut short by
-      // the end of the wait keeps the earlier, more telling error.
-      if (lastError === null || Date.now() < polling.deadline) {
-        lastError = e instanceof Error ? e.message : String(e);
-      }
-    }
-    if (ready) {
-      // Run once: a failing action is reported, not retried.
-      const result = await evaluateScript(page, a.actionScript, c, 'The action');
-      return { success: true, result, elapsed_ms: Date.now() - startedAt };
-    }
-    if (c.signal?.aborted === true) {
-      return { success: false, error: 'wait_and_act was cancelled: the caller gave up' };
-    }
-    const left = polling.deadline - Date.now();
-    if (left <= 0) break;
-    await new Promise((r) => setTimeout(r, Math.min(pollMs, left)));
-  }
-  // The caller's deadline may have ended the wait before timeoutMs.
-  const waited = polling.deadline - startedAt;
-  const why = waited < timeoutMs ? ` (the caller's deadline, before timeoutMs ${timeoutMs}ms)` : '';
-  const last = lastError !== null ? `; last condition error: ${lastError}` : '';
-  return { success: false, error: `Condition not met within ${waited}ms${why}${last}` };
-};
-
-// --- inject_observer ---
-const injectObserverArgs = z.object({
-  selector: z.string(),
-  observeAttributes: z.boolean(),
-  observeChildList: z.boolean(),
-  observeSubtree: z.boolean(),
-});
-
-const injectObserver: ActionHandler = async ({ page, args }) => {
-  const a = parseArgs(injectObserverArgs, args, 'inject_observer');
-  const script = `(function() {
-    if (window.__fox_observer) window.__fox_observer.disconnect();
-    window.__fox_mutations = window.__fox_mutations || [];
-    const target = document.querySelector(${JSON.stringify(a.selector)}) || document.body;
-    window.__fox_observer = new MutationObserver(mutations => {
-      mutations.forEach(m => window.__fox_mutations.push({
-        type: m.type,
-        target: m.target.tagName + (m.target.id ? '#' + m.target.id : ''),
-        addedNodes: m.addedNodes.length,
-        removedNodes: m.removedNodes.length,
-        attributeName: m.attributeName,
-        ts: Date.now()
-      }));
-    });
-    window.__fox_observer.observe(target, {
-      attributes: ${a.observeAttributes},
-      childList: ${a.observeChildList},
-      subtree: ${a.observeSubtree}
-    });
-    return 'observer installed on ' + target.tagName;
-  })()`;
-  const result = await page.evaluate(script);
-  return { success: true, message: result };
-};
-
-// --- remove_observer ---
-const removeObserver: ActionHandler = async ({ page }) => {
-  const result = await page.evaluate(`(function() {
-    if (window.__fox_observer) {
-      window.__fox_observer.disconnect();
-      window.__fox_observer = null;
-    }
-    const count = (window.__fox_mutations || []).length;
-    window.__fox_mutations = [];
-    return { disconnected: true, mutationsFlushed: count };
-  })()`);
-  return { success: true, ...(isRecord(result) ? result : {}) };
-};
-
 // --- request_approval ---
-const requestApproval: TablessHandler = async () => {
-  return {
-    success: false,
-    approved: false,
-    error:
-      'No human is present in headless mode. Protected-site actions are approved ' +
-      "through the MCP client's confirmation dialog (MCP elicitation) when it supports one.",
-  };
-};
+const requestApproval: TablessHandler = () => Promise.resolve({
+  success: false,
+  approved: false,
+  error:
+    'No human is present in headless mode. Tool calls that need approval are approved ' +
+    "through the MCP client's confirmation dialog (MCP elicitation) when it supports one.",
+});
 
 // --- solve_captcha ---
 /** detectOnly is set by handlers.ts for fox_detect_captcha (always true there). */
@@ -1042,18 +984,30 @@ const waitForUrl: ActionHandler = async (c) => {
 };
 
 // --- container actions (unsupported) ---
-const containersUnsupported: TablessHandler = async () => {
-  return {
-    success: false,
-    error: 'Container actions are not supported in headless mode. Use the Firefox extension.',
-  };
-};
+const containersUnsupported: TablessHandler = () => Promise.resolve({
+  success: false,
+  error: 'Container actions are not supported in headless mode. Use the Firefox extension.',
+});
 
 // ---------------------------------------------------------------------------
 // Table
 // ---------------------------------------------------------------------------
 
 const dispatch = (run: ActionHandler): HeadlessRoute => ({ kind: 'dispatch', needsPage: true, run });
+
+/**
+ * A reading action, which runs without a human approval: its selector
+ * `fields` are checked here once (assertHeadlessReadSelector: what the
+ * Extension refuses, and anything but plain CSS) before the handler runs.
+ * A new such action gets its fields here.
+ */
+const reading = (fields: readonly string[], run: ActionHandler): HeadlessRoute => dispatch((c) => {
+  for (const field of fields) {
+    const selector = c.args[field];
+    if (typeof selector === 'string') assertHeadlessReadSelector(selector);
+  }
+  return run(c);
+});
 const tabless = (run: TablessHandler): HeadlessRoute => ({ kind: 'dispatch', needsPage: false, run });
 const UNSUPPORTED: HeadlessRoute = { kind: 'unsupported' };
 
@@ -1063,25 +1017,21 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   screenshot: dispatch(screenshot),
   click: dispatch(click),
   type: dispatch(type),
-  scroll: dispatch(scroll),
+  scroll: reading(['selector', 'toElement'], scroll),
   navigate: tabless(navigate),
   get_page_info: dispatch(getPageInfo),
-  get_elements: dispatch(getElements),
-  wait_for_element: dispatch(waitForElement),
-  highlight: dispatch(highlight),
-  execute_script: dispatch(executeScript),
+  get_elements: reading(['selector'], getElements),
+  wait_for_element: reading(['selector'], waitForElement),
+  highlight: reading(['selector'], highlight),
 
   // --- tab management ---
   get_tabs: tabless(getTabs),
-  get_tab_info: UNSUPPORTED,
-  find_tabs: UNSUPPORTED,
   screenshot_all_tabs: UNSUPPORTED,
   create_tab: tabless(createTab),
   close_tab: dispatch(closeTab),
   focus_tab: dispatch(focusTab),
 
   // --- form / input ---
-  get_value: dispatch(getValue),
   set_value: dispatch(setValue),
   select_option: dispatch(selectOption),
   hover: dispatch(hover),
@@ -1089,49 +1039,30 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   // --- reload / navigation ---
   refresh: dispatch(refresh),
   hard_refresh: UNSUPPORTED,
-  reload_all: UNSUPPORTED,
-  reload_by_url: UNSUPPORTED,
   go_back: dispatch(goBack),
   go_forward: dispatch(goForward),
 
-  // --- wait / observe ---
-  wait_for_change: UNSUPPORTED,
+  // --- wait ---
   wait_for_network_idle: dispatch(waitForNetworkIdle),
-  observe_element: UNSUPPORTED,
-  stop_observing: UNSUPPORTED,
   scroll_and_capture: UNSUPPORTED,
-  click_and_wait: UNSUPPORTED,
 
-  // --- console / network logging (not supported in headless mode) ---
-  start_logging: UNSUPPORTED,
-  stop_logging: UNSUPPORTED,
-  get_console_logs: UNSUPPORTED,
-  get_network_logs: UNSUPPORTED,
-  clear_logs: UNSUPPORTED,
-
-  // --- advanced scripting ---
-  eval_chain: dispatch(evalChain),
-  wait_and_act: dispatch(waitAndAct),
+  // --- keyboard / text ---
   press_key: dispatch(pressKey),
-  get_text: dispatch(getText),
+  get_text: reading(['selector'], getText),
 
-  // --- approval / workflow ---
+  // --- approval ---
   request_approval: tabless(requestApproval),
-  run_workflow: UNSUPPORTED,
   solve_captcha: dispatch(solveCaptcha),
   cancel_human_wait: UNSUPPORTED,
-  audit_page: UNSUPPORTED,
-  inject_observer: dispatch(injectObserver),
 
-  // --- P3-3 ---
-  snapshot: dispatch(snapshot),
+  // --- Snapshot, find, dialogs, containers, navigation and URL waits ---
+  snapshot: reading(['selector'], snapshot),
   find_text: dispatch(findText),
   handle_dialog: { kind: 'unlocked', run: (c) => c.dialogs.handleDialog(c.tabId, c.args, c.signal) },
   list_containers: tabless(containersUnsupported),
   open_in_container: tabless(containersUnsupported),
   wait_for_navigation: dispatch(waitForNavigation),
   wait_for_url: dispatch(waitForUrl),
-  remove_observer: dispatch(removeObserver),
 };
 
 /** The route of `action`; actions that are no BrowserAction are unsupported. */

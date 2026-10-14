@@ -6,16 +6,17 @@ import {
   evaluateHealth,
   isUsable,
   newNonce,
-} from '@kitsune-mcp/shared/node';
+  protocolText,
+} from '@inari-mcp/shared/node';
 
 const TOKEN = 'c'.repeat(64);
 
-describe('evaluateHealth (4.A4)', () => {
+describe('evaluateHealth', () => {
   const nonce = newNonce();
   const good = (extra: Record<string, unknown> = {}): string =>
     JSON.stringify({
       status: 'ok',
-      service: 'kitsune-mcp',
+      service: 'inari-mcp',
       version: '0.1.0',
       protocol: DAEMON_PROTOCOL_VERSION,
       proof: computeMac(TOKEN, MAC_LABEL.health, nonce),
@@ -38,7 +39,7 @@ describe('evaluateHealth (4.A4)', () => {
   });
 
   it('incompatible: an older daemon without (or with another) protocol', () => {
-    const old = JSON.stringify({ status: 'ok', service: 'kitsune-mcp', version: '0.0.9' });
+    const old = JSON.stringify({ status: 'ok', service: 'inari-mcp', version: '0.0.9' });
     expect(evaluateHealth(200, old, TOKEN, nonce)).toEqual({ kind: 'incompatible', protocol: undefined, version: '0.0.9' });
     expect(evaluateHealth(200, good({ protocol: 99 }), TOKEN, nonce).kind).toBe('incompatible');
   });
@@ -54,5 +55,17 @@ describe('evaluateHealth (4.A4)', () => {
     expect(isUsable({ kind: 'unverified' })).toBe(true);
     for (const kind of ['down', 'foreign', 'impostor'] as const) expect(isUsable({ kind })).toBe(false);
     expect(isUsable({ kind: 'incompatible', protocol: 1 })).toBe(false);
+  });
+});
+
+describe('protocolText', () => {
+  it('shows a number or string protocol as is', () => {
+    expect(protocolText(2)).toBe('2');
+    expect(protocolText('3')).toBe('3');
+  });
+
+  it('shows a missing or non-primitive protocol as "1 or older"', () => {
+    expect(protocolText(undefined)).toBe('1 or older');
+    expect(protocolText({ major: 9 })).toBe('1 or older');
   });
 });

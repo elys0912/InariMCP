@@ -16,7 +16,7 @@
  * reason? }`. The relay then retries the tool call with the token.
  */
 
-import type { ApprovalPrompt, BrowserResponse } from '@kitsune-mcp/shared';
+import type { ApprovalPrompt, BrowserResponse } from '@inari-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
 import { getApprovalStore, isElicitationApprovalEnabled } from '../safety/approval.js';
 import type { ApprovalChannel, ApprovalRequest, ApprovalStore } from '../safety/approval.js';
@@ -56,8 +56,9 @@ function auditDecision(
   if (!getSafetyGuard().config.auditLog) return;
   audit(
     request.target.toolName,
-    { approvalId: request.id, host: request.target.host, via },
-    request.protectedUrl,
+    // The audit log field keeps its name `host`; its value is a site (approvalSiteOf).
+    { approvalId: request.id, host: request.target.site, via },
+    request.url,
     decision,
     transport,
   );
@@ -117,11 +118,12 @@ export function answerFromElicitation(
 /** `request_approval` data for the Extension's popup. */
 export function buildApprovalPrompt(request: ApprovalRequest, now = Date.now()): ApprovalPrompt {
   return {
-    kind: 'protected_action',
+    kind: 'tool_call',
     approvalId: request.id,
     toolName: request.target.toolName,
-    host: request.target.host,
-    url: request.protectedUrl,
+    // The wire field keeps its name `host`; its value is a site (approvalSiteOf).
+    host: request.target.site,
+    url: request.url,
     matchedPattern: request.matchedPattern,
     summary: request.summary,
     expiresAt: request.expiresAt,
@@ -154,7 +156,7 @@ export async function askBrowser(
       approved: false,
       reason: 'no_browser',
       error:
-        'No Firefox with the KitsuneMCP extension is connected, so nobody can be asked ' +
+        'No Firefox with the Inari MCP extension is connected, so nobody can be asked ' +
         'in the browser (headless mode has no human).',
     };
   }

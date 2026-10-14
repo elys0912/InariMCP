@@ -1,26 +1,21 @@
 /**
- * Extension background: asynchronous edges and small input checks of R2-C
- * WP-B (review E-02, E-04, E-07, E-10, E-11, E-14, E-17, E-23, E-24, A-04,
- * A-05). The modules are imported directly with a fake `browser` global;
- * modules with state (native-connection.ts, setup-badge.ts) are loaded
- * afresh per test (vi.resetModules).
+ * Extension background: asynchronous edges and small input checks. The
+ * modules are imported directly with a fake `browser` global; modules with
+ * state (native-connection.ts, setup-badge.ts) are loaded afresh per test
+ * (vi.resetModules).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { reloadMatchingTabs } from '../../packages/extension/src/background/reload.ts';
 import { waitForNavigation } from '../../packages/extension/src/background/tab-wait.ts';
 import { getAllTabs, findText } from '../../packages/extension/src/background/tabs.ts';
 import { registerListeners } from '../../packages/extension/src/background/listeners.ts';
-import { sanitizeLogRecord } from '../../packages/extension/src/background/log-records.ts';
-import { clipApprovalText, isApprovedHost } from '../../packages/extension/src/approval.ts';
+import { clipApprovalText, isApprovedSite } from '../../packages/extension/src/approval.ts';
 import { clipText } from '../../packages/extension/src/text-clip.ts';
 import { LIMITS, TIMEOUTS } from '../../packages/extension/src/background/constants.ts';
 import {
   setupStateOfReply,
   setupStateOfFailure,
 } from '../../packages/extension/src/popup/setup-status.ts';
-
-const NO_LISTS = { blocked: [], allowed: [], allowlistActive: false };
 
 const useFakeBrowser = (fake: unknown): void => {
   (globalThis as { browser?: unknown }).browser = fake;
@@ -48,7 +43,7 @@ function fakeEvent() {
 }
 
 // ---------------------------------------------------------------------------
-// native-connection.ts (E-02, E-24)
+// native-connection.ts
 // ---------------------------------------------------------------------------
 
 function fakePort() {
@@ -84,6 +79,8 @@ async function loadNativeConnection() {
   const mod = await import('../../packages/extension/src/background/native-connection.ts');
   const hooks = { onCommand: vi.fn(), onConfirmed: vi.fn(), onDisconnected: vi.fn() };
   mod.setConnectionHooks(hooks);
+  // The user's consent (background.ts sets it from control-state.ts).
+  mod.setConnectionAllowed(true);
   return { mod, ports, hooks };
 }
 
@@ -93,7 +90,7 @@ const answerLast = (port: FakePort, reply: Record<string, unknown> = {}): void =
   port.onMessage.fire({ requestId: last.requestId, success: true, ...reply });
 };
 
-describe('native connection: a replaced port (E-02, E-24)', () => {
+describe('native connection: a replaced port', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -147,7 +144,7 @@ describe('native connection: a replaced port (E-02, E-24)', () => {
     // No third port: no second reconnect was started.
     await vi.advanceTimersByTimeAsync(60_000);
     expect(ports).toHaveLength(2);
-    // E-24: the caller's object is not given a requestId.
+    // The caller's object is not given a requestId.
     expect(message).toEqual({ action: 'status' });
   });
 
@@ -165,7 +162,7 @@ describe('native connection: a replaced port (E-02, E-24)', () => {
     expect(ports.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('a post failing on every retry still drops the last port and reconnects (R3 #7)', async () => {
+  it('a post failing on every retry still drops the last port and reconnects', async () => {
     const { mod, ports, hooks } = await loadNativeConnection();
     mod.connectNativeHost();
     answerLast(ports[0]!);
@@ -191,7 +188,7 @@ describe('native connection: a replaced port (E-02, E-24)', () => {
     expect(ports.length).toBeGreaterThan(RETRIES + 1);
   });
 
-  it('a failed post reports the loss like a disconnect: lastError and the reconnect counter (E-7)', async () => {
+  it('a failed post reports the loss like a disconnect: lastError and the reconnect counter', async () => {
     const { mod, ports } = await loadNativeConnection();
     // Two hosts that exit without answering: the backoff counter reaches 2.
     mod.connectNativeHost();
@@ -224,7 +221,7 @@ describe('native connection: a replaced port (E-02, E-24)', () => {
     expect(ports).toHaveLength(5);
   });
 
-  it('a malformed frame is dropped, not taken as an answer or a command (E-9)', async () => {
+  it('a malformed frame is dropped, not taken as an answer or a command', async () => {
     const { mod, ports, hooks } = await loadNativeConnection();
     mod.connectNativeHost();
     const pending = mod.sendToNativeHost({ action: 'status' }, { timeoutMs: 5_000 })
@@ -256,15 +253,18 @@ describe('native connection: a replaced port (E-02, E-24)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// setup-badge.ts (A-04)
+// setup-badge.ts
 // ---------------------------------------------------------------------------
 
-describe('setup state: overlapping refreshes (A-04)', () => {
+describe('setup state: overlapping refreshes (the newest answer wins)', () => {
   type Deferred = { resolve(v: unknown): void; reject(e: Error): void };
 
   async function loadSetupBadge() {
     vi.resetModules();
     const requests: { options: unknown; deferred: Deferred }[] = [];
+    vi.doMock('../../packages/extension/src/background/control-state.ts', () => ({
+      controlView: () => ({ consent: 'granted', paused: false }),
+    }));
     vi.doMock('../../packages/extension/src/background/native-connection.ts', () => ({
       hostStatus: () => ({ confirmed: true, portOpen: true, lastError: null }),
       sendToNativeHost: (_m: unknown, options: unknown) =>
@@ -284,6 +284,7 @@ describe('setup state: overlapping refreshes (A-04)', () => {
   }
 
   afterEach(() => {
+    vi.doUnmock('../../packages/extension/src/background/control-state.ts');
     vi.doUnmock('../../packages/extension/src/background/native-connection.ts');
   });
 
@@ -324,66 +325,10 @@ describe('setup state: overlapping refreshes (A-04)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// reload.ts (E-04)
+// tab-wait.ts
 // ---------------------------------------------------------------------------
 
-describe('reloadMatchingTabs: one failing tab (E-04)', () => {
-  const tabs = [
-    { id: 1, url: 'https://a.test/' },
-    { id: 2, url: 'https://b.test/' },
-    { id: 3, url: 'https://c.test/' },
-  ];
-
-  it('reloads the other tabs and reports the failure per tab', async () => {
-    const calls: number[] = [];
-    useFakeBrowser({
-      tabs: {
-        query: async () => tabs,
-        reload: async (id: number) => {
-          calls.push(id);
-          if (id === 2) throw new Error('Invalid tab ID: 2');
-        },
-      },
-    });
-    const result = await reloadMatchingTabs(() => true, false, null, [], NO_LISTS);
-    expect(calls).toEqual([1, 2, 3]);
-    expect(result).toMatchObject({
-      success: true,
-      reloadedCount: 2,
-      failedCount: 1,
-      tabs: [
-        { id: 1, reloaded: true },
-        { id: 2, reloaded: false, error: 'Invalid tab ID: 2' },
-        { id: 3, reloaded: true },
-      ],
-    });
-  });
-
-  it('fails when every reload failed', async () => {
-    useFakeBrowser({
-      tabs: {
-        query: async () => tabs.slice(0, 2),
-        reload: () => { throw new Error('nope'); },
-      },
-    });
-    const result = await reloadMatchingTabs(() => true, false, null, [], NO_LISTS);
-    expect(result).toMatchObject({ success: false, reloadedCount: 0, failedCount: 2 });
-    expect(result.error).toMatch(/No tab could be reloaded/);
-  });
-
-  it('no failure: no failedCount', async () => {
-    useFakeBrowser({ tabs: { query: async () => tabs, reload: async () => {} } });
-    const result = await reloadMatchingTabs(() => true, false, null, [], NO_LISTS);
-    expect(result).toMatchObject({ success: true, reloadedCount: 3 });
-    expect(result).not.toHaveProperty('failedCount');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// tab-wait.ts (E-07)
-// ---------------------------------------------------------------------------
-
-describe('waitForNavigation: tab closed right after the navigation (E-07)', () => {
+describe('waitForNavigation: tab closed right after the navigation', () => {
   it('still succeeds, without a title', async () => {
     const onCompleted = fakeEvent();
     let gets = 0;
@@ -407,15 +352,15 @@ describe('waitForNavigation: tab closed right after the navigation (E-07)', () =
 });
 
 // ---------------------------------------------------------------------------
-// tabs.ts (E-10, E-11)
+// tabs.ts
 // ---------------------------------------------------------------------------
 
-describe('getAllTabs limit and findText query (E-10, E-11)', () => {
+describe('getAllTabs limit and findText query', () => {
   const tabs = [1, 2, 3].map((id) => ({ id, url: `https://t${id}.test/`, windowId: 1 }));
 
   beforeEach(() => {
     useFakeBrowser({
-      tabs: { query: async () => tabs },
+      tabs: { query: async () => tabs, sendMessage: async () => ({ success: true, hasMaskedFields: false }) },
       windows: { getAll: async () => [{ id: 1, focused: true }] },
       find: { find: vi.fn(async () => ({ count: 2, rangeData: [] })) },
     });
@@ -448,16 +393,20 @@ describe('getAllTabs limit and findText query (E-10, E-11)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// listeners.ts (E-23)
+// listeners.ts
 // ---------------------------------------------------------------------------
 
-describe('runtime.onMessage: messages that are not objects (E-23)', () => {
+describe('runtime.onMessage: messages that are not objects', () => {
   it.each([null, undefined, 'text', 42])('%j is ignored without throwing', (message) => {
     const onMessage = fakeEvent();
     useFakeBrowser({
-      runtime: { onMessage, onMessageExternal: fakeEvent(), id: 'ext', getURL: (p: string) => `moz-extension://x${p}` },
-      webNavigation: { onCommitted: fakeEvent() },
-      tabs: { onRemoved: fakeEvent() },
+      runtime: {
+        onMessage,
+        onMessageExternal: fakeEvent(),
+        onInstalled: fakeEvent(),
+        id: 'ext',
+        getURL: (p: string) => `moz-extension://x${p}`,
+      },
     });
     registerListeners();
     const sendResponse = vi.fn();
@@ -467,10 +416,10 @@ describe('runtime.onMessage: messages that are not objects (E-23)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// popup/setup-status.ts (E-14)
+// popup/setup-status.ts
 // ---------------------------------------------------------------------------
 
-describe('popup status reply (E-14)', () => {
+describe('popup status reply', () => {
   it('a reply with a setup state is that state', () => {
     expect(setupStateOfReply({ success: true, setup: { kind: 'ready', relays: 2 } }))
       .toEqual({ kind: 'ready', relays: 2 });
@@ -490,22 +439,22 @@ describe('popup status reply (E-14)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// approval.ts (A-05) and text clipping (E-17)
+// approval.ts and text clipping
 // ---------------------------------------------------------------------------
 
-describe('isApprovedHost: trailing dot (A-05)', () => {
+describe('isApprovedSite: trailing dot (the same host with or without it)', () => {
   it('a hostname with a trailing dot is the approved host', () => {
-    expect(isApprovedHost('https://bank.example.test./x', 'bank.example.test')).toBe(true);
-    expect(isApprovedHost('https://bank.example.test/x', 'bank.example.test.')).toBe(true);
+    expect(isApprovedSite('https://bank.example.test./x', 'bank.example.test')).toBe(true);
+    expect(isApprovedSite('https://bank.example.test/x', 'bank.example.test.')).toBe(true);
   });
 
   it('still exact otherwise', () => {
-    expect(isApprovedHost('https://evil.bank.example.test./', 'bank.example.test')).toBe(false);
-    expect(isApprovedHost('https://bank.example.test/', '.')).toBe(false);
+    expect(isApprovedSite('https://evil.bank.example.test./', 'bank.example.test')).toBe(false);
+    expect(isApprovedSite('https://bank.example.test/', '.')).toBe(false);
   });
 });
 
-describe('clipping never splits a surrogate pair (E-17)', () => {
+describe('clipping never splits a surrogate pair', () => {
   const FOX = '\u{1F98A}'; // 2 code units
 
   it('clipText', () => {
@@ -516,13 +465,7 @@ describe('clipping never splits a surrogate pair (E-17)', () => {
     expect(clipText('abc', 0)).toBe('');
   });
 
-  it('approval text, log records', () => {
+  it('approval text', () => {
     expect(clipApprovalText(`${'a'.repeat(499)}${FOX}x`, 500)).toBe(`${'a'.repeat(499)}…`);
-    const record = sanitizeLogRecord({
-      message: `${'m'.repeat(4999)}${FOX}`,
-      headers: { [`${'k'.repeat(199)}${FOX}`]: `${'v'.repeat(999)}${FOX}` },
-    })!;
-    expect(record.message).toBe('m'.repeat(4999));
-    expect(record.headers).toEqual({ ['k'.repeat(199)]: 'v'.repeat(999) });
   });
 });

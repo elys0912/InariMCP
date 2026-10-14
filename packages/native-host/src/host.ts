@@ -4,7 +4,7 @@
  * starting the daemon or the WebSocket connection).
  */
 
-import { MS_PER_SECOND, isRecord, parseHostMessage, type HostLocalAction, type HostLocalMessage } from '@kitsune-mcp/shared';
+import { MS_PER_SECOND, isRecord, parseHostMessage, type HostLocalAction, type HostLocalMessage } from '@inari-mcp/shared';
 import { readMessage, sendMessage } from './protocol.js';
 import { serverEntryPath, type DaemonInfo, type ServerLauncher } from './server-launcher.js';
 import type { ServerCommand, ServerConnection } from './ws-client.js';
@@ -88,7 +88,7 @@ function claudeRegisterCommand(): string {
   const quoted = process.platform === 'win32'
     ? `"${entry}"`
     : `'${entry.replace(/'/g, `'\\''`)}'`;
-  return `claude mcp add --scope user kitsune-mcp -- node ${quoted}`;
+  return `claude mcp add --scope user inari-mcp -- node ${quoted}`;
 }
 
 function replyToExtension(
@@ -101,6 +101,11 @@ function replyToExtension(
   });
 }
 
+/** A response's requestId as text: the ids the server sends are strings; anything else shows as JSON. */
+function requestIdText(requestId: unknown): string {
+  return typeof requestId === 'string' ? requestId : JSON.stringify(requestId);
+}
+
 export function processMessage(
   message: Record<string, unknown>,
   launcher: ServerLauncher,
@@ -110,7 +115,7 @@ export function processMessage(
 
   // Response to a server command (has requestId, no action) → WS to server
   if (message['requestId'] !== undefined && action === undefined) {
-    const requestId = String(message['requestId']);
+    const requestId = requestIdText(message['requestId']);
     const entry = inFlight.get(requestId);
     inFlight.delete(requestId);
 

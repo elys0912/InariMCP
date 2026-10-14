@@ -1,16 +1,18 @@
 {
   "manifest_version": 2,
-  "name": "KitsuneMCP",
-  "version": "0.2.0",
+  "name": "Inari MCP for Firefox",
+  "version": "0.1.0",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "author": "elys0912",
-  "homepage_url": "https://github.com/elys0912/KitsuneMCP",
+  "homepage_url": "https://github.com/elys0912/InariMCP",
+  "incognito": "not_allowed",
 
   "permissions": [
     "tabs",
     "nativeMessaging",
     "notifications",
+    "storage",
     "<all_urls>",
     "contextMenus",
     "contextualIdentities",
@@ -28,9 +30,8 @@
     {
       "matches": ["<all_urls>"],
       "js": ["dist/content.js"],
-      "css": ["dist/content.css"],
       "run_at": "document_end",
-      "all_frames": true
+      "all_frames": false
     }
   ],
 
@@ -40,7 +41,7 @@
       "32": "icons/icon.svg",
       "48": "icons/icon.svg"
     },
-    "default_title": "KitsuneMCP",
+    "default_title": "Inari MCP",
     "default_popup": "dist/popup/popup.html",
     "default_area": "navbar"
   },
@@ -54,10 +55,10 @@
 
   "browser_specific_settings": {
     "gecko": {
-      "id": "kitsune-mcp@elys0912.github.io",
+      "id": "inari-mcp@elys0912.github.io",
       "strict_min_version": "142.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": ["websiteContent", "browsingActivity", "websiteActivity"]
       }
     }
   }

@@ -5,7 +5,7 @@
  * can see. Every line is therefore written to stderr (as before) and also
  * appended to a log file:
  *
- *   FOX_NATIVE_HOST_LOG unset / blank → ~/.kitsune-mcp/logs/native-host.log
+ *   FOX_NATIVE_HOST_LOG unset / blank → ~/.inari-mcp/logs/native-host.log
  *   FOX_NATIVE_HOST_LOG=0 | off | false | no | none → file logging disabled
  *   FOX_NATIVE_HOST_LOG=<path>        → that file
  *
@@ -25,7 +25,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ENV } from '@kitsune-mcp/shared';
+import { ENV } from '@inari-mcp/shared';
 import {
   MAX_LOG_BYTES,
   PRIVATE_DIR_MODE,
@@ -33,9 +33,9 @@ import {
   logStamp,
   nativeHostLogPath,
   rotateIfLarge as rotateFile,
-} from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
 
-const PREFIX = '[KitsuneMCP:NativeHost]';
+const PREFIX = '[InariMCP:NativeHost]';
 export { MAX_LOG_BYTES };
 /** After a failed rotation, try again no sooner than this (not on every line). */
 export const ROTATE_RETRY_MS = 60_000;

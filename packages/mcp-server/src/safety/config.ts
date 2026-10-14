@@ -1,9 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
-import { ENV, isRecord, LEGACY_ENV } from '@kitsune-mcp/shared';
-import { isFalsyEnv, isTruthyEnv, resolveFoxEnv } from '../utils/headless-env.js';
-import { auditLogPath, defaultSafetyConfigPath } from '@kitsune-mcp/shared/node';
+import { ENV, isRecord } from '@inari-mcp/shared';
+import { isTruthyEnv, resolveFoxEnv } from '../utils/headless-env.js';
+import { auditLogPath, defaultSafetyConfigPath } from '@inari-mcp/shared/node';
 
 // `.strict()` on both objects: an unknown key (a typo such as `readonly` for
 // `read_only`) is a config error, not silently dropped, since the setting
@@ -18,14 +18,12 @@ const ContainerScopeSchema = z.object({
 export const SafetyConfigSchema = z.object({
   enabled: z.boolean(),
   readOnly: z.boolean(),
-  allowScriptExecution: z.boolean(),
-  confirmProtectedActions: z.boolean(),
   allowPasswordTyping: z.boolean(),
   maxActionsPerMinute: z.number().int().min(0),
   auditLog: z.boolean(),
   blockedUrlPatterns: z.array(z.string()),
   allowedUrlPatterns: z.array(z.string()),
-  protectedUrlPatterns: z.array(z.string()),
+  confirmReadSites: z.array(z.string()),
   containerScope: ContainerScopeSchema,
 }).strict();
 
@@ -34,38 +32,18 @@ export type SafetyConfig = z.infer<typeof SafetyConfigSchema>;
 export const DEFAULT_CONFIG: SafetyConfig = {
   enabled: true,
   readOnly: false,
-  allowScriptExecution: true,
-  confirmProtectedActions: true,
   allowPasswordTyping: false,
   maxActionsPerMinute: 120,
   auditLog: true,
   blockedUrlPatterns: [],
   allowedUrlPatterns: [],
-  // Host patterns (safety/url-pattern.ts): a host matches itself and its
-  // subdomains; `re:` marks a regex that must match the whole normalised URL.
-  protectedUrlPatterns: [
-    'paypal.com',
-    'venmo.com',
-    'coinbase.com',
-    'binance.com',
-    'kraken.com',
-    'chase.com',
-    'bankofamerica.com',
-    'wellsfargo.com',
-    'schwab.com',
-    'fidelity.com',
-    'vanguard.com',
-    'robinhood.com',
-    'stripe.com/dashboard',
-    '*.gov',
-    'healthcare.gov',
-    // Any host with a `mychart` label (patient portals: mychart.<org>.org,
-    // www.mychart.<org>.com ...).
-    're:https?://(?:[^/?#@]+\\.)?mychart\\..*',
-  ],
+  // Sites where reading tools (and screenshots) also ask the human first.
+  // Acting tools always ask, on every site. Host patterns as in the other
+  // lists (safety/url-pattern.ts).
+  confirmReadSites: [],
   containerScope: {
     enabled: false,
-    containerName: 'KitsuneMCP Agent',
+    containerName: 'Inari MCP Agent',
   },
 } as const;
 
@@ -73,14 +51,12 @@ export const DEFAULT_CONFIG: SafetyConfig = {
 const FILE_KEYS: { readonly [K in keyof SafetyConfig]: string } = {
   enabled: 'enabled',
   readOnly: 'read_only',
-  allowScriptExecution: 'allow_script_execution',
-  confirmProtectedActions: 'confirm_protected_actions',
   allowPasswordTyping: 'allow_password_typing',
   maxActionsPerMinute: 'max_actions_per_minute',
   auditLog: 'audit_log',
   blockedUrlPatterns: 'blocked_url_patterns',
   allowedUrlPatterns: 'allowed_url_patterns',
-  protectedUrlPatterns: 'protected_url_patterns',
+  confirmReadSites: 'confirm_read_sites',
   containerScope: 'container_scope',
 };
 
@@ -167,9 +143,9 @@ export function parseSafetyConfigText(text: string): SafetyConfigResult {
   return parseSafetyConfig(raw);
 }
 
-/** FOX_SAFETY_CONFIG (or the legacy name) when set and not blank, else ~/.kitsune-mcp/safety.json. */
+/** FOX_SAFETY_CONFIG when set and not blank, else ~/.inari-mcp/safety.json. */
 export function safetyConfigPath(env: NodeJS.ProcessEnv = process.env): string {
-  return resolveFoxEnv(env, ENV.FOX_SAFETY_CONFIG, LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG) ?? defaultSafetyConfigPath();
+  return resolveFoxEnv(env, ENV.FOX_SAFETY_CONFIG) ?? defaultSafetyConfigPath();
 }
 
 /** Mode of a config directory the daemon creates: the owner only. */
@@ -200,7 +176,7 @@ export function loadConfig(): LoadedSafetyConfig {
     }
     if (!result.ok) {
       process.stderr.write(
-        `[KitsuneMCP] WARNING: cannot use ${configPath} (${result.error}). ` +
+        `[InariMCP] WARNING: cannot use ${configPath} (${result.error}). ` +
         'The safety guard refuses every tool until the file is fixed and the daemon restarted.\n',
       );
       return { ...DEFAULT_CONFIG, configError: `${configPath}: ${result.error}` };
@@ -212,21 +188,18 @@ export function loadConfig(): LoadedSafetyConfig {
     try {
       fs.mkdirSync(path.dirname(configPath), { recursive: true, mode: PRIVATE_DIR_MODE });
       fs.writeFileSync(configPath, JSON.stringify(toFileKeys(DEFAULT_CONFIG), null, 2) + '\n');
-      process.stderr.write(`[KitsuneMCP] Wrote default safety config to ${configPath}\n`);
+      process.stderr.write(`[InariMCP] Wrote default safety config to ${configPath}\n`);
     } catch (e) {
       process.stderr.write(
-        `[KitsuneMCP] Failed to write default ${configPath}, using defaults: ` +
+        `[InariMCP] Failed to write default ${configPath}, using defaults: ` +
         `${e instanceof Error ? e.message : String(e)}\n`,
       );
     }
   }
 
-  // Both only tighten the policy, so the values beyond 1 / 0 (true, yes, off, …) are safe to accept.
-  if (isTruthyEnv(resolveFoxEnv(process.env, ENV.FOX_READ_ONLY, LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY))) {
+  // It only tightens the policy, so the values beyond 1 (true, yes) are safe to accept.
+  if (isTruthyEnv(resolveFoxEnv(process.env, ENV.FOX_READ_ONLY))) {
     config = { ...config, readOnly: true };
-  }
-  if (isFalsyEnv(resolveFoxEnv(process.env, ENV.FOX_ALLOW_SCRIPTS, LEGACY_ENV.CLAUDE_BROWSER_ALLOW_SCRIPTS))) {
-    config = { ...config, allowScriptExecution: false };
   }
 
   return config;

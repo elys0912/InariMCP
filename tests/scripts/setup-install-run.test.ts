@@ -11,7 +11,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   CLAUDE_NAME, WIN_REG_KEY, buildManifest, buildWrapper, dataPaths, nmManifestTargets, serializeJson,
 } from '../../scripts/lib/core.mjs';
-import { httpGet } from '../../scripts/lib/system.mjs';
 import { runInstall } from '../../scripts/install.mjs';
 import { runUninstall } from '../../scripts/uninstall.mjs';
 import { isWin, useTempDir } from './helpers/test-env.js';
@@ -56,7 +55,7 @@ describe('dry run', () => {
     const { out, calls, deps } = stubDeps(home);
     expect(await runInstall(['--dry-run'], deps)).toBe(0);
     const text = out.join('');
-    const nativeHostDir = path.join(home, '.kitsune-mcp', 'native-host');
+    const nativeHostDir = path.join(home, '.inari-mcp', 'native-host');
     expect(text).toContain(`[dry-run] would create ${path.join(nativeHostDir, process.platform === 'win32' ? 'run-host.cmd' : 'run-host.sh')}`);
     if (process.platform === 'win32') expect(text).toContain(`[dry-run] would set ${WIN_REG_KEY}`);
     expect(fs.readdirSync(home)).toEqual([]);
@@ -65,7 +64,7 @@ describe('dry run', () => {
 
   it('uninstall plans the removal and keeps the files', async () => {
     const home = path.join(tmp(), 'home');
-    const nativeHostDir = path.join(home, '.kitsune-mcp', 'native-host');
+    const nativeHostDir = path.join(home, '.inari-mcp', 'native-host');
     fs.mkdirSync(nativeHostDir, { recursive: true });
     fs.writeFileSync(path.join(nativeHostDir, 'run-host.cmd'), '');
     const { out, deps } = stubDeps(home);
@@ -78,7 +77,7 @@ describe('dry run', () => {
   });
 });
 
-const GECKO_ID = 'kitsune-test@example.invalid';
+const GECKO_ID = 'inari-test@example.invalid';
 
 /** The real fs with some functions replaced (deps.fs). */
 function fsWith(overrides: Record<string, unknown>) {
@@ -392,7 +391,7 @@ describe('install (real run in a temp home)', () => {
     const ctx = realRunDeps(home, repoRoot, { env: { PATH: '', FOX_HTTP_PORT: '9999' } });
     expect(await runInstall([], ctx.deps)).toBe(0);
     expect(ctx.text()).toContain('-s http://127.0.0.1:9999/health');
-    expect(ctx.text()).not.toContain(':8765');
+    expect(ctx.text()).not.toContain(':8785');
   });
 
   it('reports a usage error with exit code 2 and writes nothing', async () => {
@@ -420,7 +419,7 @@ describe('uninstall (real run in a temp home)', () => {
     fs.writeFileSync(path.join(data.logsDir, 'daemon.log'), 'log\n');
   });
 
-  it('removes the registration before stopping anything, and keeps ~/.kitsune-mcp without --purge', async () => {
+  it('removes the registration before stopping anything, and keeps ~/.inari-mcp without --purge', async () => {
     const ctx = realRunDeps(home, repoRoot);
     if (isWin) ctx.registry.set(WIN_REG_KEY, data.winManifestPath);
     expect(await runUninstall([], ctx.deps)).toBe(0);
@@ -453,7 +452,7 @@ describe('uninstall (real run in a temp home)', () => {
     expect(ctx.text()).toContain('Uninstall complete.');
   });
 
-  it('removes an empty ~/.kitsune-mcp even without --purge', async () => {
+  it('removes an empty ~/.inari-mcp even without --purge', async () => {
     fs.rmSync(data.tokenPath, { force: true });
     fs.rmSync(data.logsDir, { recursive: true, force: true });
     const ctx = realRunDeps(home, repoRoot);
@@ -499,11 +498,11 @@ describe('uninstall (real run in a temp home)', () => {
     expect(ctx.text()).toContain('daemon PID 222: stopped');
   });
 
-  it('never touches a KitsuneMCP process of another checkout', async () => {
+  it('never touches an Inari MCP process of another checkout', async () => {
     const ctx = realRunDeps(home, repoRoot);
     ctx.processList.push({ pid: 333, cmd: `"${process.execPath}" "/other/clone/packages/native-host/dist/index.js"` });
     expect(await runUninstall(['--yes'], ctx.deps)).toBe(0);
-    expect(ctx.text()).toContain('not touched (another KitsuneMCP checkout?): PID 333');
+    expect(ctx.text()).toContain('not touched (another Inari MCP checkout?): PID 333');
   });
 
   it('--keep-claude leaves the Claude Code registration alone', async () => {
@@ -573,7 +572,7 @@ describe('uninstall (real run in a temp home)', () => {
   });
 
   it('--no-stop does not count an unverified daemon without a PID as a problem', async () => {
-    const health = { status: 200, headers: {}, body: Buffer.from(JSON.stringify({ status: 'ok', service: 'kitsune-mcp', version: '1' })) };
+    const health = { status: 200, headers: {}, body: Buffer.from(JSON.stringify({ status: 'ok', service: 'inari-mcp', version: '1' })) };
     const ctx = realRunDeps(home, repoRoot, { httpGet: async () => health });
     expect(await runUninstall(['--no-stop'], ctx.deps)).toBe(0);
     expect(ctx.text()).not.toContain('PID is unknown');
@@ -586,7 +585,7 @@ describe('uninstall (real run in a temp home)', () => {
   it('warns, but still removes, a registration of another installation', async () => {
     const ctx = realRunDeps(home, repoRoot);
     const target = nmManifestTargets({ platform: process.platform, home, env: {}, exists: () => false })[0];
-    const other = isWin ? 'D:\\other\\kitsune_mcp.json' : '/other/run-host.sh';
+    const other = isWin ? 'D:\\other\\inari_mcp.json' : '/other/run-host.sh';
     if (isWin) ctx.registry.set(WIN_REG_KEY, other);
     else fs.writeFileSync(target.file, serializeJson(buildManifest({ wrapperPath: other, geckoId: GECKO_ID })));
     expect(await runUninstall([], ctx.deps)).toBe(0);

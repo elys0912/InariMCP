@@ -43,7 +43,7 @@ const entry = path.resolve(__dirname, '..', 'dist', 'index.js');
 
 describe.skipIf(!fs.existsSync(entry))('dist/index.js without side effects (needs npm run build)', () => {
   it('--version / --help / unknown argument create nothing under the home directory', () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-cli-'));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-cli-'));
     try {
       const env = { ...process.env, HOME: home, USERPROFILE: home };
       const version = spawnSync(process.execPath, [entry, '--version'], { env, encoding: 'utf-8', timeout: 10_000 });

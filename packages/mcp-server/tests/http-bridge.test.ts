@@ -6,6 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { getScreenshotsDir } from '../src/utils/screenshot.js';
+import { PUBLIC_TOOLS } from '../src/tools/public-tools.js';
 import { SignedRequestVerifier, isAllowedHostHeader, startHttpBridge, type HttpBridgeOptions } from '../src/transport/http-bridge.js';
 import {
   AUTH_HEADER,
@@ -15,7 +16,7 @@ import {
   newNonce,
   signRequest,
   verifyResponse,
-} from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
 import { TOKEN, waitFor } from './helpers/ws.js';
 
 // HOME / USERPROFILE point at a temporary directory: tests/setup/isolate-home.ts
@@ -137,7 +138,7 @@ describe('signed requests', () => {
     expect(verifyResponse(TOKEN, s.nonce, 200, r.raw, r.headers[AUTH_HEADER.signature])).toBe(true);
   });
 
-  describe('nonce memory follows a monotonic clock (X-5, L-2)', () => {
+  describe('nonce memory follows a monotonic clock', () => {
     const WINDOW = 1_000;
     const T = 1_700_000_000_000;
 
@@ -187,7 +188,7 @@ describe('signed requests', () => {
 });
 
 describe('startup log', () => {
-  it('WP38 names the port actually bound, not the configured 0', async () => {
+  it('names the port actually bound, not the configured 0', async () => {
     const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     let lines: string[];
     try {
@@ -196,7 +197,7 @@ describe('startup log', () => {
     } finally {
       write.mockRestore();
     }
-    expect(lines).toContain(`[KitsuneMCP] HTTP bridge listening on http://127.0.0.1:${port}
+    expect(lines).toContain(`[InariMCP] HTTP bridge listening on http://127.0.0.1:${port}
 `);
     expect(port).not.toBe(0);
   });
@@ -207,7 +208,7 @@ describe('/health', () => {
     await start();
     const nonce = newNonce();
     const r = await request('GET', '/health', { [AUTH_HEADER.nonce]: nonce });
-    expect(r.json).toMatchObject({ status: 'ok', service: 'kitsune-mcp', protocol: DAEMON_PROTOCOL_VERSION });
+    expect(r.json).toMatchObject({ status: 'ok', service: 'inari-mcp', protocol: DAEMON_PROTOCOL_VERSION });
     expect(r.json['proof']).toBe(computeMac(TOKEN, MAC_LABEL.health, nonce));
   });
 
@@ -292,28 +293,30 @@ describe('request hygiene', () => {
   });
 });
 
-describe('POST /browser/command (alias of /mcp/call)', () => {
+describe('POST /mcp/call takes tool calls only', () => {
   const headers = { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' };
 
-  it('runs a tool call like /mcp/call', async () => {
+  it('POST /browser/command is no endpoint (404)', async () => {
     await start();
     const r = await request('POST', '/browser/command', headers, JSON.stringify({ name: 'fox_safety_status', arguments: {} }));
-    expect(r.status).toBe(200);
-    expect(r.json['success']).toBe(true);
+    expect(r.status).toBe(404);
   });
 
-  it('refuses a raw browser action (400) and points to the tool call form', async () => {
-    await start();
-    const r = await request('POST', '/browser/command', headers, JSON.stringify({ action: 'navigate', data: {} }));
-    expect(r.status).toBe(400);
-    expect(r.json['error']).toContain('Raw browser actions are no longer accepted');
-  });
-
-  it('on /mcp/call a raw action is only a missing tool name', async () => {
+  it('a raw browser action is only a missing tool name', async () => {
     await start();
     const r = await request('POST', '/mcp/call', headers, JSON.stringify({ action: 'navigate' }));
     expect(r.status).toBe(400);
     expect(r.json['error']).toBe('Missing tool name');
+  });
+
+  it('an earlier tool name is an unknown tool (404), and GET /mcp/tools lists the public tools only', async () => {
+    await start();
+    const r = await request('POST', '/mcp/call', headers, JSON.stringify({ name: 'fox_get_tabs', arguments: {} }));
+    expect(r.status).toBe(404);
+    expect(r.json['error']).toBe('Unknown tool: fox_get_tabs');
+    const listed = await signedGet('/mcp/tools');
+    const names = (listed.json['tools'] as Array<{ name: string }>).map((t) => t.name).sort();
+    expect(names).toEqual(Object.keys(PUBLIC_TOOLS).sort());
   });
 });
 
@@ -436,7 +439,7 @@ describe('POST /daemon/shutdown', () => {
     expect((await request('POST', '/daemon/shutdown', { ...s.headers, 'Content-Type': 'application/json' }, '{}')).status).toBe(501);
   });
 
-  it('X-2: a failing prepare is answered 500 and the daemon still exits (no lasting 503)', async () => {
+  it('a failing prepare is answered 500 and the daemon still exits (no lasting 503)', async () => {
     let exits = 0;
     server = await startHttpBridge({
       host: '127.0.0.1',
@@ -477,7 +480,7 @@ describe('daemon state seen by tool calls', () => {
   const approvalBody = JSON.stringify({ requestId: 'r1' });
   const headers = { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' };
 
-  it('Q-5: refuses tool calls and approvals (503) once the daemon stops on its own (signal, idle)', async () => {
+  it('refuses tool calls and approvals (503) once the daemon stops on its own (signal, idle)', async () => {
     let stopping = false;
     await start({ isShuttingDown: () => stopping });
     expect((await request('POST', '/mcp/call', headers, callBody)).status).toBe(200);
@@ -486,7 +489,7 @@ describe('daemon state seen by tool calls', () => {
     expect((await request('POST', '/approval/browser', headers, approvalBody)).status).toBe(503);
   });
 
-  it('Q-4: a daemon that cannot start answers waiting calls with the reason (500)', async () => {
+  it('a daemon that cannot start answers waiting calls with the reason (500)', async () => {
     let fail: (err: Error) => void = () => undefined;
     const ready = new Promise<void>((_resolve, reject) => { fail = reject; });
     await start({ ready });
@@ -496,7 +499,7 @@ describe('daemon state seen by tool calls', () => {
     fail(new Error('Firefox did not launch'));
     for (const r of [await call, await approval]) {
       expect(r.status).toBe(500);
-      expect(r.json['error']).toBe('KitsuneMCP daemon could not start: Firefox did not launch');
+      expect(r.json['error']).toBe('Inari MCP daemon could not start: Firefox did not launch');
     }
     // Later calls too, and /health keeps saying not ready.
     expect((await request('POST', '/mcp/call', headers, callBody)).json['error']).toContain('could not start');
@@ -506,12 +509,12 @@ describe('daemon state seen by tool calls', () => {
 
 describe('isAllowedHostHeader', () => {
   it.each([
-    ['127.0.0.1:8765', true],
+    ['127.0.0.1:8785', true],
     ['localhost', true],
     ['LOCALHOST:1', true],
-    ['[::1]:8765', true],
-    ['10.0.0.5:8765', true],
-    ['myhost.local:8765', false],
+    ['[::1]:8785', true],
+    ['10.0.0.5:8785', true],
+    ['myhost.local:8785', false],
     ['127.0.0.1.nip.io', false],
     ['[::1', false],
   ])('%s → %s', (hostHeader, allowed) => {
@@ -519,7 +522,7 @@ describe('isAllowedHostHeader', () => {
   });
 
   it('accepts the configured host name and a missing header', () => {
-    expect(isAllowedHostHeader('myhost.local:8765', 'myhost.local')).toBe(true);
+    expect(isAllowedHostHeader('myhost.local:8785', 'myhost.local')).toBe(true);
     expect(isAllowedHostHeader(undefined, '127.0.0.1')).toBe(true);
   });
 });
@@ -536,7 +539,7 @@ describe('body / header timeouts', () => {
       const t0 = Date.now();
       const r = await request(
         'POST', '/mcp/call', { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' },
-        JSON.stringify({ name: 'fox_get_tabs', arguments: {} }),
+        JSON.stringify({ name: 'fox_tabs', arguments: { what: 'tabs' } }),
       );
       expect(Date.now() - t0).toBeGreaterThanOrEqual(500);
       expect(r.status).toBe(200);

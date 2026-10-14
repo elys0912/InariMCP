@@ -111,8 +111,9 @@ export async function solveCaptcha(
         resolve("token");
       }
     }, DELAYS.CAPTCHA_POLL);
-    // Clean up poll when banner resolves first
-    bannerPromise.then(() => clearInterval(poll));
+    // Clean up poll when banner settles first
+    const stopPolling = (): void => clearInterval(poll);
+    bannerPromise.then(stopPolling, stopPolling);
   });
 
   const result = await Promise.race([bannerPromise, pollPromise]);

@@ -18,13 +18,13 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 const { getScreenshotsDir, listScreenshots } = await import('../src/utils/screenshot.js');
-const { defaultScreenshotsDir } = await import('@kitsune-mcp/shared/node');
+const { defaultScreenshotsDir } = await import('@inari-mcp/shared/node');
 
 let dir: string;
 const saved = process.env['FOX_SCREENSHOTS_DIR'];
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-shots-'));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-shots-'));
   process.env['FOX_SCREENSHOTS_DIR'] = dir;
   vanished.clear();
 });
@@ -41,7 +41,7 @@ function touch(name: string, mtimeSec: number): void {
   fs.utimesSync(p, mtimeSec, mtimeSec);
 }
 
-describe('listScreenshots (2.A3)', () => {
+describe('listScreenshots', () => {
   it('lists .png files newest first', () => {
     touch('old.png', 1_000);
     touch('new.png', 3_000);
@@ -66,12 +66,12 @@ describe('listScreenshots (2.A3)', () => {
   });
 });
 
-// R2-B C-3: a blank value was taken as a directory named ' ', and a relative
+// A blank value was taken as a directory named ' ', and a relative
 // one was left relative (unlike the Native Host's screenshot-store.ts).
 describe('getScreenshotsDir', () => {
-  it('a blank FOX_SCREENSHOTS_DIR is unset: the legacy name, then the default', () => {
+  it('a blank FOX_SCREENSHOTS_DIR is unset: the default', () => {
     expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: '  ' })).toBe(defaultScreenshotsDir());
-    expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: '', CLAUDE_BROWSER_SCREENSHOTS_DIR: dir })).toBe(dir);
+    expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: '' })).toBe(defaultScreenshotsDir());
     expect(getScreenshotsDir({})).toBe(defaultScreenshotsDir());
   });
 

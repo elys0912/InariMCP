@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS } from '@inari-mcp/shared';
 import { ServerLauncher, daemonEnvNote } from '../src/server-launcher.js';
 import {
   AUTH_HEADER,
@@ -12,7 +12,7 @@ import {
   MAC_LABEL,
   computeMac,
   responseMac,
-} from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
 
 function listen(): Promise<net.Server> {
   return new Promise((resolve) => {
@@ -46,9 +46,25 @@ describe('ServerLauncher.isPortInUse', () => {
   });
 });
 
+describe('ServerLauncher and FOX_HOST', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each(['0.0.0.0', '127.999.0.1', '192.168.1.10'])('refuses to reach a daemon on %s (not a loopback address)', (host) => {
+    vi.stubEnv('FOX_HOST', host);
+    expect(() => new ServerLauncher()).toThrow(`FOX_HOST=${host} is not a loopback address`);
+  });
+
+  it('uses a loopback FOX_HOST', () => {
+    vi.stubEnv('FOX_HOST', '::1');
+    expect(new ServerLauncher().host).toBe('::1');
+  });
+});
+
 describe('daemonEnvNote', () => {
   it('names the inherited policy settings but never their values', () => {
-    const note = daemonEnvNote({ FOX_READ_ONLY: '1', FOX_SAFETY_CONFIG: 'C:\secret\path.json' });
+    const note = daemonEnvNote({ FOX_READ_ONLY: '1', FOX_SAFETY_CONFIG: 'C:\\secret\\path.json' });
     expect(note).toContain('FOX_READ_ONLY');
     expect(note).toContain('FOX_SAFETY_CONFIG');
     expect(note).not.toContain('secret');
@@ -93,7 +109,7 @@ function daemonLike(serverToken: string): http.RequestListener {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
-        service: 'kitsune-mcp',
+        service: 'inari-mcp',
         protocol: DAEMON_PROTOCOL_VERSION,
         ...(typeof nonce === 'string' ? { proof: computeMac(serverToken, MAC_LABEL.health, nonce) } : {}),
       }));
@@ -194,7 +210,7 @@ describe('ServerLauncher start counter (H-B1)', () => {
   it('gives up at once when the server entry point is missing', async () => {
     const launcher = new ServerLauncher({
       host: '127.0.0.1', httpPort: 1, wsPort: 1, readToken: () => TOKEN,
-      serverEntry: path.join(os.tmpdir(), 'kitsune-no-such-entry', 'index.js'),
+      serverEntry: path.join(os.tmpdir(), 'inari-no-such-entry', 'index.js'),
     });
     expect(await launcher.start()).toBe(false);
     expect(launcher.getRestartAttempts()).toBe(ENV_DEFAULTS.MAX_RESTART_ATTEMPTS);

@@ -1,17 +1,22 @@
 #!/usr/bin/env node
 // Builds packages/extension/dist with esbuild.
 //
-// Three bundles, one per execution context, each self-contained (IIFE):
-//   src/background.ts     -> dist/background.js     (manifest background)
-//   src/content.ts        -> dist/content.js        (manifest content script,
-//                                                    and the early injection)
-//   src/popup/popup.ts    -> dist/popup/popup.js    (popup.html)
-// plus the static files popup.html / popup.css / content.css.
+// Four bundles, one per execution context, each self-contained (IIFE):
+//   src/background.ts       -> dist/background.js       (manifest background)
+//   src/content.ts          -> dist/content.js          (manifest content script)
+//   src/popup/popup.ts      -> dist/popup/popup.js      (popup.html)
+//   src/consent/consent.ts  -> dist/consent/consent.js  (consent.html, opened
+//                                                        by the background)
+// plus the static files popup.html / popup.css / consent.html / consent.css,
+// and dist/LICENSE: a copy of the repository's LICENSE (the MIT notice of
+// this project and of the project it is based on), which the license asks to
+// ship with every copy, the xpi included. Pages get no stylesheet: the
+// content script styles its own elements.
 //
-// esbuild does not type-check: `npm run typecheck -w @kitsune-mcp/extension`
+// esbuild does not type-check: `npm run typecheck -w @inari-mcp/extension`
 // (tsc --noEmit) does, and `npm run build` of the extension runs it first.
 //
-// @kitsune-mcp/shared is bundled from its sources (packages/shared/src), not
+// @inari-mcp/shared is bundled from its sources (packages/shared/src), not
 // from its CommonJS dist/. Only the browser-safe entry points are allowed
 // (SHARED_ENTRIES); the bundles must not contain zod (about +110 KB, see
 // shared/src/action-names.ts) nor shared/src/node (Node APIs). The build
@@ -35,17 +40,20 @@ const dist = path.join(ext, 'dist');
 const dev = process.argv.includes('--dev');
 const sharedSrc = path.join(root, 'packages', 'shared', 'src');
 
-/** Import specifiers of @kitsune-mcp/shared the Extension may use. */
+/** Import specifiers of @inari-mcp/shared the Extension may use. */
 const SHARED_ENTRIES = new Map([
-  ['@kitsune-mcp/shared', path.join(sharedSrc, 'index.ts')],
-  ['@kitsune-mcp/shared/action-names', path.join(sharedSrc, 'action-names.ts')],
+  ['@inari-mcp/shared', path.join(sharedSrc, 'index.ts')],
+  ['@inari-mcp/shared/action-names', path.join(sharedSrc, 'action-names.ts')],
+  ['@inari-mcp/shared/field-mask', path.join(sharedSrc, 'field-mask.ts')],
+  ['@inari-mcp/shared/approval-site', path.join(sharedSrc, 'approval-site.ts')],
+  ['@inari-mcp/shared/url-pattern-limit', path.join(sharedSrc, 'url-pattern-limit.ts')],
 ]);
 
-/** Resolve @kitsune-mcp/shared[/...] to SHARED_ENTRIES, refuse the rest. */
+/** Resolve @inari-mcp/shared[/...] to SHARED_ENTRIES, refuse the rest. */
 const sharedPlugin = {
-  name: 'kitsune-shared',
+  name: 'inari-shared',
   setup(b) {
-    b.onResolve({ filter: /^@kitsune-mcp\/shared(\/|$)/ }, (args) => {
+    b.onResolve({ filter: /^@inari-mcp\/shared(\/|$)/ }, (args) => {
       const file = SHARED_ENTRIES.get(args.path);
       if (file !== undefined) return { path: file };
       return { errors: [{ text: `${args.path} is not available to the Extension (allowed: ${[...SHARED_ENTRIES.keys()].join(', ')})` }] };
@@ -89,6 +97,7 @@ const result = await build({
     { in: path.join(src, 'background.ts'), out: 'background' },
     { in: path.join(src, 'content.ts'), out: 'content' },
     { in: path.join(src, 'popup', 'popup.ts'), out: 'popup/popup' },
+    { in: path.join(src, 'consent', 'consent.ts'), out: 'consent/consent' },
   ],
   outdir: dist,
   bundle: true,
@@ -118,16 +127,18 @@ for (const [out, info] of Object.entries(result.metafile.outputs)) {
 for (const [from, to] of [
   ['popup/popup.html', 'popup/popup.html'],
   ['popup/popup.css', 'popup/popup.css'],
-  ['content.css', 'content.css'],
+  ['consent/consent.html', 'consent/consent.html'],
+  ['consent/consent.css', 'consent/consent.css'],
 ]) {
   mkdirSync(path.dirname(path.join(dist, to)), { recursive: true });
   copyFileSync(path.join(src, from), path.join(dist, to));
 }
+copyFileSync(path.join(root, 'LICENSE'), path.join(dist, 'LICENSE'));
 
 // ESM sources are strict, but an IIFE bundle is a classic script: esbuild
 // keeps strict mode by emitting "use strict" (from the tsconfig's strict /
 // alwaysStrict). Fail if that ever stops.
-for (const out of ['background.js', 'content.js', 'popup/popup.js']) {
+for (const out of ['background.js', 'content.js', 'popup/popup.js', 'consent/consent.js']) {
   if (!readFileSync(path.join(dist, out), 'utf-8').startsWith('"use strict";')) {
     console.error(`build-extension: dist/${out} does not start with "use strict"`);
     process.exit(1);

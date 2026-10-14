@@ -2,8 +2,8 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ENV } from '@kitsune-mcp/shared';
-import { DAEMON_PROTOCOL_VERSION, loadOrCreateApiToken } from '@kitsune-mcp/shared/node';
+import { ENV } from '@inari-mcp/shared';
+import { DAEMON_PROTOCOL_VERSION, loadOrCreateApiToken } from '@inari-mcp/shared/node';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { probeExistingDaemon } from '../src/daemon/probe.js';
 import { occupiedPortExit, runDaemon } from '../src/daemon/main.js';
@@ -55,7 +55,7 @@ describe('probeExistingDaemon (singleton check, Q1)', () => {
   it('a port that only claims to be the daemon is not taken for one', async () => {
     const s = http.createServer((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', service: 'kitsune-mcp', protocol: DAEMON_PROTOCOL_VERSION }));
+      res.end(JSON.stringify({ status: 'ok', service: 'inari-mcp', protocol: DAEMON_PROTOCOL_VERSION }));
     });
     servers.push(s);
     await new Promise<void>((resolve) => s.listen(0, '127.0.0.1', () => resolve()));
@@ -67,7 +67,7 @@ describe('probeExistingDaemon (singleton check, Q1)', () => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
-        service: 'kitsune-mcp',
+        service: 'inari-mcp',
         protocol: DAEMON_PROTOCOL_VERSION + 1,
         version: '0.0.1',
       }));
@@ -90,7 +90,7 @@ describe('probeExistingDaemon (singleton check, Q1)', () => {
   it('a non-200 answer is foreign', async () => {
     const s = await listen((_req, res) => {
       res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', service: 'kitsune-mcp', protocol: DAEMON_PROTOCOL_VERSION }));
+      res.end(JSON.stringify({ status: 'ok', service: 'inari-mcp', protocol: DAEMON_PROTOCOL_VERSION }));
     });
     expect((await probeExistingDaemon('127.0.0.1', portOf(s), TOKEN)).kind).toBe('foreign');
   });
@@ -117,7 +117,7 @@ async function exitCodeFor(port: number): Promise<number | undefined> {
   return codes[0];
 }
 
-describe('occupiedPortExit (R-11: the decision, without exiting)', () => {
+describe('occupiedPortExit (the decision, without exiting)', () => {
   it('0 only for a daemon that proved our token', () => {
     expect(occupiedPortExit({ kind: 'ok' }, 'h', 1).code).toBe(0);
     for (const occupant of [
@@ -154,7 +154,7 @@ describe('runDaemon when the HTTP port is already taken (singleton lock)', () =>
     loadOrCreateApiToken();
     const s = await listen((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', service: 'kitsune-mcp', protocol: DAEMON_PROTOCOL_VERSION }));
+      res.end(JSON.stringify({ status: 'ok', service: 'inari-mcp', protocol: DAEMON_PROTOCOL_VERSION }));
     });
     expect(await exitCodeFor(portOf(s))).toBe(1);
   });
@@ -162,7 +162,7 @@ describe('runDaemon when the HTTP port is already taken (singleton lock)', () =>
   it('exits 1 when the occupant is a daemon of another protocol', async () => {
     const s = await listen((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', service: 'kitsune-mcp', protocol: DAEMON_PROTOCOL_VERSION + 1 }));
+      res.end(JSON.stringify({ status: 'ok', service: 'inari-mcp', protocol: DAEMON_PROTOCOL_VERSION + 1 }));
     });
     expect(await exitCodeFor(portOf(s))).toBe(1);
   });
@@ -173,5 +173,21 @@ describe('runDaemon when the HTTP port is already taken (singleton lock)', () =>
       res.end('not a daemon');
     });
     expect(await exitCodeFor(portOf(s))).toBe(1);
+  });
+});
+
+describe('runDaemon with a FOX_HOST that is not a loopback address (plain HTTP stays on this machine)', () => {
+  it('exits 1 before listening, with the reason in the log', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const free = await closedPort();
+    process.env[ENV.FOX_HOST] = '0.0.0.0';
+    process.env[ENV.FOX_HTTP_PORT] = String(free);
+    process.env[ENV.FOX_WS_PORT] = String(free);
+    const codes: number[] = [];
+    await runDaemon({ exit: (code) => { codes.push(code); } });
+    expect(codes).toEqual([1]);
+    expect(stderr.mock.calls.map((c) => String(c[0])).join('')).toMatch(/FOX_HOST=0\.0\.0\.0 is not a loopback address/);
+    // Nothing took the port.
+    expect((await probeExistingDaemon('127.0.0.1', free, TOKEN)).kind).toBe('down');
   });
 });

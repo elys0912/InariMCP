@@ -15,8 +15,8 @@ const INFO: ApprovalInfo = {
   requestId: 'req-1',
   toolName: 'fox_click',
   host: 'bank.example.test',
-  protectedUrl: 'https://bank.example.test/transfer',
-  matchedPattern: 'bank\\.example\\.test',
+  url: 'https://bank.example.test/transfer',
+  matchedPattern: null,
   summary: 'selector: "#go"',
   expiresAt: Date.now() + 120_000,
 };
@@ -25,7 +25,7 @@ function confirmation(info: ApprovalInfo = INFO): CallToolResult {
   return {
     isError: true,
     content: [
-      { type: 'text', text: 'fox_click targets a protected site' },
+      { type: 'text', text: 'fox_click needs human approval' },
       {
         type: 'text',
         text: JSON.stringify({ code: 'SAFETY_BLOCKED', decision: 'confirmation_required', confirmationRequired: true, approval: info }),
@@ -46,9 +46,9 @@ function deps(overrides: Partial<ApprovalDeps> = {}): ApprovalDeps & {
     elicit: vi.fn(async () => ({ action: 'accept', content: { approve: true } })),
     reportElicitation: vi.fn(async (_id: string, approved: boolean) =>
       approved
-        ? { success: true, approved: true, reason: 'approved', approvalToken: 'kat_e' }
+        ? { success: true, approved: true, reason: 'approved', approvalToken: 'iat_e' }
         : { success: true, approved: false, reason: 'declined' }),
-    askBrowser: vi.fn(async () => ({ success: true, approved: true, reason: 'approved', approvalToken: 'kat_b' })),
+    askBrowser: vi.fn(async () => ({ success: true, approved: true, reason: 'approved', approvalToken: 'iat_b' })),
     ...overrides,
   } as never;
 }
@@ -85,8 +85,15 @@ describe('elicitation helpers', () => {
     expect(params.message).toContain('fox_click');
     expect(params.message).toContain('bank.example.test');
     expect(params.message).toContain('selector: "#go"');
+    expect(params.message).toMatch(/^Inari MCP: allow this operation\?/);
+    expect(params.message).not.toMatch(/protected|confirm_read_sites/);
     expect(params.requestedSchema.required).toEqual(['approve']);
     expect(params.requestedSchema.properties['approve']).toMatchObject({ type: 'boolean', default: false });
+  });
+
+  it('names the confirm_read_sites entry of a read', () => {
+    const params = elicitationParams({ ...INFO, toolName: 'fox_read', matchedPattern: 'bank.example.test' });
+    expect(params.message).toContain("Site: bank.example.test (confirm_read_sites: 'bank.example.test')");
   });
 
   it('only accept + approve=true approves', () => {
@@ -101,7 +108,7 @@ describe('elicitation helpers', () => {
 describe('obtainApproval: elicitation first, popup as fallback', () => {
   it('elicitation approved → token from the daemon, popup not asked', async () => {
     const d = deps();
-    await expect(obtainApproval(INFO, d)).resolves.toEqual({ kind: 'approved', via: 'elicitation', token: 'kat_e' });
+    await expect(obtainApproval(INFO, d)).resolves.toEqual({ kind: 'approved', via: 'elicitation', token: 'iat_e' });
     expect(d.reportElicitation).toHaveBeenCalledWith('req-1', true);
     expect(d.askBrowser).not.toHaveBeenCalled();
   });
@@ -121,7 +128,7 @@ describe('obtainApproval: elicitation first, popup as fallback', () => {
 
   it('elicitation fails otherwise → popup', async () => {
     const d = deps({ elicit: vi.fn(async () => { throw new McpError(ErrorCode.MethodNotFound, 'nope'); }) });
-    await expect(obtainApproval(INFO, d)).resolves.toEqual({ kind: 'approved', via: 'browser', token: 'kat_b' });
+    await expect(obtainApproval(INFO, d)).resolves.toEqual({ kind: 'approved', via: 'browser', token: 'iat_b' });
     expect(d.askBrowser).toHaveBeenCalledWith('req-1');
   });
 
@@ -153,7 +160,7 @@ describe('callWithApproval', () => {
   it('approved → repeats the call once with the token', async () => {
     const call = vi.fn(async (token?: string) => (token ? OK : confirmation()));
     await expect(callWithApproval(call, deps())).resolves.toBe(OK);
-    expect(call.mock.calls).toEqual([[], ['kat_e']]);
+    expect(call.mock.calls).toEqual([[], ['iat_e']]);
   });
 
   it('declined → original result plus a note, no retry', async () => {
@@ -175,7 +182,7 @@ describe('callWithApproval', () => {
   });
 });
 
-describe('obtainApproval: daemon refuses elicitation answers (X-1)', () => {
+describe('obtainApproval: daemon refuses elicitation answers', () => {
   const disabled = {
     success: false,
     approved: false,
@@ -186,7 +193,7 @@ describe('obtainApproval: daemon refuses elicitation answers (X-1)', () => {
   it('asks in the browser when the human approved but the daemon does not take elicitation answers', async () => {
     const d = deps({ reportElicitation: vi.fn(async () => disabled) as never });
     const outcome = await obtainApproval(INFO, d);
-    expect(outcome).toEqual({ kind: 'approved', via: 'browser', token: 'kat_b' });
+    expect(outcome).toEqual({ kind: 'approved', via: 'browser', token: 'iat_b' });
     expect(d.askBrowser).toHaveBeenCalledTimes(1);
   });
 

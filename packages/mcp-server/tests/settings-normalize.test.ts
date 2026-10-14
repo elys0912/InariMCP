@@ -2,8 +2,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS } from '@inari-mcp/shared';
 import {
+  DAEMON_SETTING_KEYS,
   daemonSettingsFromInfo,
   diffDaemonSettings,
   effectiveDaemonSettings,
@@ -13,34 +14,30 @@ import { loadConfig } from '../src/safety/config.js';
 // Unsigned /daemon/info (daemon-client checkSettings → null / []): daemon-client.test.ts
 
 describe('effective daemon settings', () => {
-  it('FOX_HEADLESS true / 1 and the old name compare equal', () => {
-    const variants = [
-      { FOX_HEADLESS: 'true' },
-      { CLAUDE_BROWSER_HEADLESS: '1' },
-      { FOX_HEADLESS: '', CLAUDE_BROWSER_HEADLESS: 'yes' },
-    ];
+  it('FOX_HEADLESS true / 1 / yes compare equal', () => {
+    const variants = [{ FOX_HEADLESS: 'true' }, { FOX_HEADLESS: '1' }, { FOX_HEADLESS: ' yes ' }];
     for (const env of variants) {
       expect(effectiveDaemonSettings(env).FOX_HEADLESS).toBe('on');
     }
     expect(diffDaemonSettings(effectiveDaemonSettings(variants[1]!), effectiveDaemonSettings(variants[2]!))).toEqual([]);
   });
 
-  it('an old daemon started with the old names only still matches (raw settings hold "" for unset keys)', () => {
-    const theirs = daemonSettingsFromInfo({
-      settings: { FOX_READ_ONLY: '', CLAUDE_BROWSER_READ_ONLY: '1', FOX_SAFETY_CONFIG: '', CLAUDE_BROWSER_SAFETY_CONFIG: 'strict.json' },
-    })!;
-    expect(theirs.FOX_READ_ONLY).toBe('on');
-    expect(diffDaemonSettings(effectiveDaemonSettings({ CLAUDE_BROWSER_READ_ONLY: '1', CLAUDE_BROWSER_SAFETY_CONFIG: 'strict.json' }), theirs)).toEqual([]);
-    // a different config file is still noticed
-    expect(diffDaemonSettings(effectiveDaemonSettings({ CLAUDE_BROWSER_READ_ONLY: '1' }), theirs))
-      .toEqual(["FOX_SAFETY_CONFIG: this session '(default)', daemon 'strict.json'"]);
+  it('only the FOX_* names are settings (the CLAUDE_BROWSER_* names of the fork are not read)', () => {
+    const otherNames = {
+      CLAUDE_BROWSER_HEADLESS: '1',
+      CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT: '99',
+      CLAUDE_BROWSER_EXECUTABLE: '/opt/old/firefox',
+      CLAUDE_BROWSER_SCREENSHOTS_DIR: '/tmp/old-shots',
+      CLAUDE_BROWSER_SAFETY_CONFIG: 'strict.json',
+      CLAUDE_BROWSER_READ_ONLY: '1',
+    };
+    expect(effectiveDaemonSettings(otherNames)).toEqual(effectiveDaemonSettings({}));
+    expect(DAEMON_SETTING_KEYS.filter((k) => !k.startsWith('FOX_'))).toEqual([]);
   });
 
-  it('an old daemon (raw settings only) is compared by how it read them', () => {
-    // it read FOX_READ_ONLY=true as "not 1" = off; this session means it as on
-    const theirs = daemonSettingsFromInfo({ settings: { FOX_READ_ONLY: 'true' } });
-    const diffs = diffDaemonSettings(effectiveDaemonSettings({ FOX_READ_ONLY: 'true' }), theirs!);
-    expect(diffs).toEqual(["FOX_READ_ONLY: this session 'on', daemon 'off'"]);
+  it('a /daemon/info without effectiveSettings is unknown (null), not compared', () => {
+    expect(daemonSettingsFromInfo({ settings: { FOX_READ_ONLY: 'true' } })).toBeNull();
+    expect(daemonSettingsFromInfo({ settings: { FOX_READ_ONLY: '1' }, effectiveSettings: 'yes' })).toBeNull();
   });
 
   it('a daemon that sends effectiveSettings is believed, its raw settings are not re-read', () => {
@@ -60,45 +57,32 @@ describe('effective daemon settings', () => {
     expect(diffDaemonSettings(effectiveDaemonSettings({}), theirs)).toEqual([]);
   });
 
-  it('falls back to the legacy reading for keys effectiveSettings leaves out or sends unparsed', () => {
+  it('a setting this version does not have (FOX_ALLOW_SCRIPTS of an older daemon) is no difference', () => {
     const theirs = daemonSettingsFromInfo({
-      settings: { FOX_READ_ONLY: '1', FOX_ALLOW_SCRIPTS: '0', FOX_SAFETY_CONFIG: 'strict.json' },
+      settings: { FOX_ALLOW_SCRIPTS: '0' },
+      effectiveSettings: { ...effectiveDaemonSettings({}), FOX_ALLOW_SCRIPTS: 'off' },
+    })!;
+    expect(theirs).not.toHaveProperty('FOX_ALLOW_SCRIPTS');
+    expect(diffDaemonSettings(effectiveDaemonSettings({ FOX_ALLOW_SCRIPTS: '0' }), theirs)).toEqual([]);
+  });
+
+  it('a setting effectiveSettings leaves out or sends unparsed reads as unset; the raw settings are not read', () => {
+    const theirs = daemonSettingsFromInfo({
+      settings: { FOX_READ_ONLY: '1', FOX_HEADLESS: '1', FOX_SAFETY_CONFIG: 'strict.json' },
       effectiveSettings: {
-        // non-string: ignored, the raw settings decide
+        // non-string: the default
         FOX_READ_ONLY: 1,
-        // FOX_ALLOW_SCRIPTS missing entirely: likewise
+        // FOX_HEADLESS and FOX_SAFETY_CONFIG left out: likewise
         FOX_EXECUTABLE: '/opt/firefox',
       },
     })!;
-    expect(theirs.FOX_READ_ONLY).toBe('on');
-    expect(theirs.FOX_ALLOW_SCRIPTS).toBe('off');
-    expect(theirs.FOX_SAFETY_CONFIG).toBe('strict.json');
-    expect(theirs.FOX_EXECUTABLE).toBe('/opt/firefox');
-
-    // an effectiveSettings that is not an object at all is ignored wholesale
-    const bad = daemonSettingsFromInfo({
-      settings: { FOX_READ_ONLY: '1' },
-      effectiveSettings: 'yes',
-    })!;
-    expect(bad.FOX_READ_ONLY).toBe('on');
+    expect(theirs).toEqual({ ...effectiveDaemonSettings({}), FOX_EXECUTABLE: '/opt/firefox' });
   });
 
-  it('the FOX_ name decides, an empty FOX_ value falls through to the old name', () => {
-    const off = effectiveDaemonSettings({ FOX_READ_ONLY: '0', CLAUDE_BROWSER_READ_ONLY: '1' });
-    expect(off.FOX_READ_ONLY).toBe('off');
-    expect(effectiveDaemonSettings({ FOX_READ_ONLY: '', CLAUDE_BROWSER_READ_ONLY: '1' }).FOX_READ_ONLY)
-      .toBe('on');
-
-    expect(effectiveDaemonSettings({ FOX_ALLOW_SCRIPTS: '0', CLAUDE_BROWSER_ALLOW_SCRIPTS: '1' }).FOX_ALLOW_SCRIPTS)
-      .toBe('off');
-    expect(effectiveDaemonSettings({ FOX_ALLOW_SCRIPTS: '', CLAUDE_BROWSER_ALLOW_SCRIPTS: '0' }).FOX_ALLOW_SCRIPTS)
-      .toBe('off');
-
-    // string settings follow the same rule
-    expect(effectiveDaemonSettings({ FOX_EXECUTABLE: '/a/firefox', CLAUDE_BROWSER_EXECUTABLE: '/b/firefox' }).FOX_EXECUTABLE)
-      .toBe('/a/firefox');
-    expect(effectiveDaemonSettings({ FOX_EXECUTABLE: '', CLAUDE_BROWSER_EXECUTABLE: '/b/firefox' }).FOX_EXECUTABLE)
-      .toBe('/b/firefox');
+  it('a blank FOX_ value is unset; a string setting is trimmed', () => {
+    expect(effectiveDaemonSettings({ FOX_READ_ONLY: ' ' }).FOX_READ_ONLY).toBe('off');
+    expect(effectiveDaemonSettings({ FOX_EXECUTABLE: ' /a/firefox ' }).FOX_EXECUTABLE).toBe('/a/firefox');
+    expect(effectiveDaemonSettings({ FOX_EXECUTABLE: ' ' }).FOX_EXECUTABLE).toBe('');
   });
 
   it('every accepted spelling of on / off compares equal', () => {
@@ -106,24 +90,12 @@ describe('effective daemon settings', () => {
       expect(effectiveDaemonSettings({ FOX_READ_ONLY: v }).FOX_READ_ONLY).toBe('on');
       expect(diffDaemonSettings(
         effectiveDaemonSettings({ FOX_READ_ONLY: v }),
-        effectiveDaemonSettings({ CLAUDE_BROWSER_READ_ONLY: '1' }),
+        effectiveDaemonSettings({ FOX_READ_ONLY: '1' }),
       )).toEqual([]);
     }
     // anything else leaves read-only off
     for (const v of ['0', 'false', 'no', 'off', '', 'on']) {
       expect(effectiveDaemonSettings({ FOX_READ_ONLY: v }).FOX_READ_ONLY).toBe('off');
-    }
-
-    for (const v of ['0', 'false', 'no', 'off', 'OFF', ' No ']) {
-      expect(effectiveDaemonSettings({ FOX_ALLOW_SCRIPTS: v }).FOX_ALLOW_SCRIPTS).toBe('off');
-      expect(diffDaemonSettings(
-        effectiveDaemonSettings({ FOX_ALLOW_SCRIPTS: v }),
-        effectiveDaemonSettings({ CLAUDE_BROWSER_ALLOW_SCRIPTS: '0' }),
-      )).toEqual([]);
-    }
-    // scripts stay on unless explicitly turned off
-    for (const v of ['1', 'true', 'yes', '', 'maybe']) {
-      expect(effectiveDaemonSettings({ FOX_ALLOW_SCRIPTS: v }).FOX_ALLOW_SCRIPTS).toBe('on');
     }
   });
 
@@ -172,18 +144,15 @@ describe('loadConfig reads the same accepted values', () => {
   });
 
   function load(env: Record<string, string>) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-settings-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-settings-'));
     dirs.push(dir);
     const file = path.join(dir, 'safety.json');
-    fs.writeFileSync(file, '{ "read_only": false, "allow_script_execution": true }');
-    // Keep ~/.kitsune-mcp of the real home out of reach.
+    fs.writeFileSync(file, '{ "read_only": false }');
+    // Keep ~/.inari-mcp of the real home out of reach.
     vi.stubEnv('HOME', dir);
     vi.stubEnv('USERPROFILE', dir);
     vi.stubEnv('FOX_SAFETY_CONFIG', file);
     vi.stubEnv('FOX_READ_ONLY', '');
-    vi.stubEnv('FOX_ALLOW_SCRIPTS', '');
-    vi.stubEnv('CLAUDE_BROWSER_READ_ONLY', '');
-    vi.stubEnv('CLAUDE_BROWSER_ALLOW_SCRIPTS', '');
     for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v);
     return loadConfig();
   }
@@ -196,26 +165,10 @@ describe('loadConfig reads the same accepted values', () => {
     expect(load({ FOX_READ_ONLY: v }).readOnly).toBe(false);
   });
 
-  it.each(['0', 'false', 'no', 'off', 'OFF', ' No '])('FOX_ALLOW_SCRIPTS=%j turns scripts off', (v) => {
-    expect(load({ FOX_ALLOW_SCRIPTS: v }).allowScriptExecution).toBe(false);
-  });
-
-  it.each(['1', 'true', 'yes', '', 'maybe'])('FOX_ALLOW_SCRIPTS=%j leaves the file value', (v) => {
-    expect(load({ FOX_ALLOW_SCRIPTS: v }).allowScriptExecution).toBe(true);
-  });
-
-  it('the legacy names are read, and the FOX_ name wins', () => {
-    expect(load({ CLAUDE_BROWSER_READ_ONLY: 'yes' }).readOnly).toBe(true);
-    expect(load({ CLAUDE_BROWSER_ALLOW_SCRIPTS: 'off' }).allowScriptExecution).toBe(false);
-    expect(load({ FOX_READ_ONLY: '0', CLAUDE_BROWSER_READ_ONLY: '1' }).readOnly).toBe(false);
-    expect(load({ FOX_ALLOW_SCRIPTS: '1', CLAUDE_BROWSER_ALLOW_SCRIPTS: '0' }).allowScriptExecution).toBe(true);
-  });
-
   it('matches what a relay would report for the same environment', () => {
-    const env = { FOX_READ_ONLY: 'TRUE', FOX_ALLOW_SCRIPTS: 'no' };
+    const env = { FOX_READ_ONLY: 'TRUE' };
     const cfg = load(env);
     const eff = effectiveDaemonSettings(env);
     expect(eff.FOX_READ_ONLY).toBe(cfg.readOnly ? 'on' : 'off');
-    expect(eff.FOX_ALLOW_SCRIPTS).toBe(cfg.allowScriptExecution ? 'on' : 'off');
   });
 });

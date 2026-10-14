@@ -4,7 +4,7 @@
  *
  *   - listSchema (tools/list) says, per argument, which variants use it,
  *     which require it and their defaults, as callSchema enforces them
- *   - tool annotations are those of the WP13 specification (2.2)
+ *   - tool annotations are the readOnlyHint / destructiveHint given per tool
  *   - no argument is lost between a public tool and its operation: every
  *     variant argument reaches an operation argument and back
  */
@@ -67,7 +67,7 @@ describe('tools that are an operation as is', () => {
     }
   });
 
-  // G-7: the call schema is the operation's callSchema where it has one,
+  // the call schema is the operation's callSchema where it has one,
   // else its inputSchema.
   it('parse with the operation callSchema when there is one, else with its inputSchema', () => {
     const navigate = TOOL_SCHEMAS['fox_navigate']!;
@@ -133,7 +133,7 @@ describe('listSchema of the grouped tools', () => {
   });
 });
 
-describe('tool annotations (WP13 specification 2.2)', () => {
+describe('tool annotations', () => {
   const EXPECTED: Record<PublicToolName, [readOnlyHint: boolean, destructiveHint: boolean]> = {
     fox_screenshot: [true, false],
     fox_snapshot: [true, false],
@@ -150,10 +150,6 @@ describe('tool annotations (WP13 specification 2.2)', () => {
     fox_handle_dialog: [false, true],
     fox_interact: [false, false],
     fox_wait: [true, false],
-    fox_logging: [false, false],
-    fox_get_logs: [true, false],
-    fox_evaluate: [false, true],
-    fox_observer: [false, true],
     fox_request_approval: [false, false],
     fox_detect_captcha: [true, false],
   };

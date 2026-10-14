@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient } from '../src/relay/daemon-client.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { startHttpBridge } from '../src/transport/http-bridge.js';
-import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION } from '@kitsune-mcp/shared/node';
+import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION } from '@inari-mcp/shared/node';
 import { effectiveDaemonSettings, snapshotDaemonSettings } from '../src/utils/endpoint.js';
 import { TOKEN, waitFor } from './helpers/ws.js';
 
@@ -42,7 +42,7 @@ async function impostor(protocol: number | 'omit' = DAEMON_PROTOCOL_VERSION): Pr
     req.on('end', () => {
       const body =
         req.url === '/health'
-          ? JSON.stringify({ status: 'ok', service: 'kitsune-mcp', ...(protocol === 'omit' ? {} : { protocol }) })
+          ? JSON.stringify({ status: 'ok', service: 'inari-mcp', ...(protocol === 'omit' ? {} : { protocol }) })
           : JSON.stringify({ success: true, result: { content: [{ type: 'text', text: 'forged' }] } });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(body);
@@ -76,12 +76,12 @@ describe('DaemonClient against the real daemon', () => {
 });
 
 describe('DaemonClient against an impostor', () => {
-  // A-KM-03: the call body (arguments, approval token) went out before the answer was checked.
+  // The call body (arguments, approval token) must not go out before the answer is checked.
   it('sends no call to a /health without a valid proof: only nonce-carrying /health requests', async () => {
     const { port, seen } = await impostor();
     const c = client(port);
     expect(await c.checkHealth()).toBe(true);
-    const result = await c.callTool('fox_type', { text: 'secret input' }, undefined, 'kat_' + 'x'.repeat(43));
+    const result = await c.callTool('fox_type', { text: 'secret input' }, undefined, 'iat_' + 'x'.repeat(43));
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toMatch(/cannot prove it holds this session's API token/);
     expect(JSON.stringify(result.content)).toMatch(/The call was not sent/);
@@ -110,7 +110,7 @@ describe('DaemonClient against an impostor', () => {
     servers.push(s);
     const result = await client(portOf(s)).callTool('fox_safety_status', {});
     expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toMatch(/is not the KitsuneMCP daemon/);
+    expect(JSON.stringify(result.content)).toMatch(/is not the Inari MCP daemon/);
     expect(seen.every((line) => line === 'GET /health')).toBe(true);
   });
 
@@ -191,7 +191,7 @@ describe('DaemonClient and oversized calls', () => {
   });
 });
 
-describe('DaemonClient: refused signature (X-3 / L-4)', () => {
+describe('DaemonClient: refused signature', () => {
   const other = 'e'.repeat(64);
 
   it('tool call: the proof of /health fails for another token, so nothing is sent', async () => {
@@ -239,7 +239,7 @@ describe('DaemonClient: refused signature (X-3 / L-4)', () => {
   });
 });
 
-describe('DaemonClient: approvals to an impostor (D-KM-02)', () => {
+describe('DaemonClient: approvals to an impostor (nothing is sent before the daemon proves the token)', () => {
   it('sends neither the elicitation answer nor the browser request to a /health without a valid proof', async () => {
     const { port, seen } = await impostor();
     const c = client(port);
@@ -256,7 +256,7 @@ describe('DaemonClient: approvals to an impostor (D-KM-02)', () => {
   });
 });
 
-describe('DaemonClient: elicitation answer refused by the daemon (X-1)', () => {
+describe('DaemonClient: elicitation answer refused by the daemon', () => {
   it('keeps reason elicitation_disabled from the signed 403', async () => {
     vi.stubEnv('FOX_APPROVAL_ELICITATION', '0');
     try {
@@ -266,6 +266,22 @@ describe('DaemonClient: elicitation answer refused by the daemon (X-1)', () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe('DaemonClient and FOX_HOST', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each(['0.0.0.0', '127.999.0.1', '192.168.1.10'])('refuses to reach a daemon on %s (not a loopback address)', (host) => {
+    vi.stubEnv('FOX_HOST', host);
+    expect(() => new DaemonClient('test')).toThrow(`FOX_HOST=${host} is not a loopback address`);
+  });
+
+  it('uses a loopback FOX_HOST', () => {
+    vi.stubEnv('FOX_HOST', 'localhost');
+    expect(new DaemonClient('test').baseUrl).toMatch(/^http:\/\/localhost:\d+$/);
   });
 });
 
@@ -284,7 +300,7 @@ describe('DaemonClient.stopDaemon: failures', () => {
     expect(r.message).toMatch(/no API token at .*api_token/);
   });
 
-  // D-KM-02: the signed stop request went out before the proof was checked.
+  // The signed stop request must not go out before the proof is checked.
   it('sends no stop request to a /health without a valid proof', async () => {
     const { port, seen } = await impostor();
     const r = await client(port).stopDaemon();
@@ -350,7 +366,7 @@ async function slowFirstHealth(target: number, delayMs: number): Promise<{ port:
   return { port: portOf(s), seen };
 }
 
-describe('DaemonClient: slow /health (D-KM-03)', () => {
+describe('DaemonClient: slow /health (a busy daemon is not taken for a missing one)', () => {
   // Longer than the first wait for /health (HEALTH_PROBE_TIMEOUT_MS, 2 s), shorter than the second.
   const BUSY_DELAY_MS = 2_500;
 
@@ -368,7 +384,7 @@ describe('DaemonClient: slow /health (D-KM-03)', () => {
   }, 15_000);
 });
 
-describe('DaemonClient: daemon shutting down (Q-6)', () => {
+describe('DaemonClient: daemon shutting down', () => {
   it('waits for the stopping daemon to go away and sends the call once more', async () => {
     let releaseShutdown: ((v: Record<string, unknown>) => void) | undefined;
     const stopping = await startHttpBridge({

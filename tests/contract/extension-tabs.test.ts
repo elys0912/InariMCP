@@ -8,11 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   closeTab,
   createNewTab,
-  findTabs,
   findText,
   focusTab,
   getAllTabs,
-  getTabInfo,
 } from '../../packages/extension/src/background/tabs.ts';
 
 type Tab = browser.tabs.Tab;
@@ -33,11 +31,14 @@ function installFakeBrowser(overrides: Record<string, unknown> = {}) {
   const spies = {
     query: vi.fn(async (q: { currentWindow?: boolean }) => (q.currentWindow ? TABS.filter((t) => t.windowId === 1) : TABS)),
     create: vi.fn(async (props: { url: string }) => tab({ id: 9, url: props.url })),
-    remove: vi.fn(async (_id: number) => {}),
+    remove: vi.fn<(id: number) => Promise<void>>(async () => {}),
     update: vi.fn(async (id: number) => tab({ id, windowId: 2 })),
     windowsUpdate: vi.fn(async () => ({})),
     createContainer: vi.fn(async () => ({ cookieStoreId: 'c-new' })),
     find: vi.fn(async () => ({ count: 2, rangeData: [{}, {}], rectData: [{ r: 1 }] })),
+    sendMessage: vi.fn<(id: number, message: unknown, options: unknown) => Promise<unknown>>(
+      async () => ({ success: true, hasMaskedFields: false }),
+    ),
   };
   (globalThis as { browser?: unknown }).browser = {
     tabs: {
@@ -45,12 +46,10 @@ function installFakeBrowser(overrides: Record<string, unknown> = {}) {
       create: spies.create,
       remove: spies.remove,
       update: spies.update,
-      get: async (id: number) => TABS.find((t) => t.id === id) ?? Promise.reject(new Error(`Invalid tab ID: ${id}`)),
-      sendMessage: async () => { throw new Error('Could not establish connection. Receiving end does not exist.'); },
+      sendMessage: spies.sendMessage,
     },
     windows: {
       getAll: async () => [{ id: 1, focused: true }, { id: 2, focused: false }, { id: 3, focused: false }],
-      get: async (id: number) => ({ id, focused: true, state: 'normal', type: 'normal' }),
       update: spies.windowsUpdate,
     },
     contextualIdentities: { query: async () => [], create: spies.createContainer },
@@ -89,22 +88,12 @@ describe('background/tabs.ts', () => {
     expect(none).toMatchObject({ success: true, totalTabs: 0, windowCount: 0 });
   });
 
-  it('getAllTabs / findTabs filter by a case-sensitive urlPattern and refuse an invalid one', async () => {
+  it('getAllTabs filters by a case-sensitive urlPattern and refuses an invalid one', async () => {
     installFakeBrowser();
     const r = await getAllTabs({ currentWindowOnly: false, urlPattern: '/b$' });
     expect((r['tabs'] as { id: number }[]).map((t) => t.id)).toEqual([2]);
     expect((await getAllTabs({ currentWindowOnly: false, urlPattern: 'APP' }))['totalTabs']).toBe(0);
     expect(await getAllTabs({ urlPattern: '(' })).toMatchObject({ success: false, error: expect.stringMatching(/^Invalid urlPattern/) });
-    expect(await findTabs({ urlPattern: '[' })).toMatchObject({ success: false });
-  });
-
-  it('findTabs combines url prefix, title (any case), active and the scope', async () => {
-    installFakeBrowser();
-    expect((await findTabs({ url: 'https://app.' }))['count']).toBe(2);
-    expect((await findTabs({ title: 'MAIL' }))['count']).toBe(1);
-    expect((await findTabs({ title: 'mail' }, SCOPE))['count']).toBe(0);
-    const active = await findTabs({ active: true }, SCOPE);
-    expect((active['tabs'] as { id: number }[]).map((t) => t.id)).toEqual([1]);
   });
 
   it('createNewTab puts the tab into the scope container, creating it when missing', async () => {
@@ -129,16 +118,11 @@ describe('background/tabs.ts', () => {
     expect(await closeTab(99)).toEqual({ success: false, error: 'Invalid tab ID: 99' });
   });
 
-  it('focusTab activates the tab and focuses its window; getTabInfo survives a missing content script', async () => {
+  it('focusTab activates the tab and focuses its window', async () => {
     const spies = installFakeBrowser();
     expect(await focusTab(2)).toEqual({ success: true });
     expect(spies.update).toHaveBeenCalledWith(2, { active: true });
     expect(spies.windowsUpdate).toHaveBeenCalledWith(2, { focused: true });
-
-    const info = await getTabInfo(1);
-    expect(info).toMatchObject({ success: true, tab: { id: 1, url: 'https://app.example.test/a' }, window: { id: 1 } });
-    expect(info['pageInfo']).toEqual({ error: 'Content script not available' });
-    expect(await getTabInfo(99)).toMatchObject({ success: false, error: 'Invalid tab ID: 99' });
   });
 
   it('findText searches the pinned tab, and fails without one', async () => {
@@ -151,5 +135,25 @@ describe('background/tabs.ts', () => {
     expect(r).toMatchObject({ success: true, count: 2, rectData: undefined });
     const withRects = await findText(TABS[0], { query: 'Buy', includeRectData: true });
     expect(withRects['rectData']).toEqual([{ r: 1 }]);
+  });
+
+  it('findText asks the top frame for masked fields first', async () => {
+    const spies = installFakeBrowser();
+    await findText(TABS[0], { query: 'Buy' });
+    expect(spies.sendMessage).toHaveBeenCalledWith(1, { action: 'hasMaskedFields' }, { frameId: 0 });
+  });
+
+  it.each([
+    ['the page shows a masked field', async () => ({ success: true, hasMaskedFields: true }), /masked|password/],
+    ['the answer has no flag', async () => ({ success: true }), /password/],
+    ['the page has no content script', async () => { throw new Error('Could not establish connection. Receiving end does not exist.'); },
+      /could not be checked.*cannot reach this page/],
+  ])('findText refuses the tab, without searching it, when %s', async (_when, answer, error) => {
+    const spies = installFakeBrowser();
+    spies.sendMessage.mockImplementation(answer);
+    const r = await findText(TABS[0], { query: '4' });
+    expect(r).toMatchObject({ success: false, error: expect.stringMatching(error) });
+    expect(r['error']).toMatch(/^find_text refused: /);
+    expect(spies.find).not.toHaveBeenCalled();
   });
 });

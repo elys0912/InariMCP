@@ -1,7 +1,7 @@
-import { logStamp, stampLines } from '@kitsune-mcp/shared/node';
+import { logStamp, stampLines } from '@inari-mcp/shared/node';
 
 // Rotation and line stamps are shared with the Native Host.
-export { MAX_LOG_BYTES, logStamp, rotateIfLarge, stampLines } from '@kitsune-mcp/shared/node';
+export { MAX_LOG_BYTES, logStamp, rotateIfLarge, stampLines } from '@inari-mcp/shared/node';
 
 /** Encodings whose string spells out bytes (decoded to text before stamping). */
 const BYTE_STRING_ENCODINGS: ReadonlySet<BufferEncoding> = new Set<BufferEncoding>(['hex', 'base64', 'base64url']);
@@ -20,7 +20,7 @@ type StreamWrite = (
 
 /**
  * Prefix every line the process writes to stderr with a timestamp and the
- * PID. Used by the daemon, whose stderr is ~/.kitsune-mcp/logs/daemon.log:
+ * PID. Used by the daemon, whose stderr is ~/.inari-mcp/logs/daemon.log:
  * every module logs with process.stderr.write, so the stream is wrapped once
  * instead of changing each logger.
  */

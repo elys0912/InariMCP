@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket, { type WebSocketServer } from 'ws';
 import { BrowserConnectionManager } from '../src/connection/manager.js';
 import { startWebSocketServer, type WsBridgeOptions } from '../src/transport/ws-bridge.js';
-import { AUTH_PROTOCOL, MAC_LABEL, computeMac, newNonce } from '@kitsune-mcp/shared/node';
+import { AUTH_PROTOCOL, MAC_LABEL, computeMac, frameText, newNonce } from '@inari-mcp/shared/node';
 import { TOKEN, authenticate, closed, connect, nextFrame, sleep, waitFor } from './helpers/ws.js';
 
 let servers: WebSocketServer[] = [];
@@ -112,7 +112,7 @@ describe('ws-bridge handshake (challenge-response)', () => {
     const { manager, port } = await startBridge();
     const ws = new WebSocket(`ws://127.0.0.1:${port}`, { origin: 'https://evil.example' });
     const frames: string[] = [];
-    ws.on('message', (raw) => frames.push(raw.toString()));
+    ws.on('message', (raw) => frames.push(frameText(raw)));
     ws.on('error', () => { /* surfaced through close */ });
     expect(await closed(ws)).toBe(1008);
     expect(frames).toEqual([]);
@@ -269,7 +269,7 @@ describe('ws-bridge robustness', () => {
     const { ws } = await authenticate(port);
     await waitFor(() => manager.nativeHostCount === 1);
     ws.on('message', (raw) => {
-      const cmd = JSON.parse(raw.toString()) as { requestId: string };
+      const cmd = JSON.parse(frameText(raw)) as { requestId: string };
       ws.send(JSON.stringify({ requestId: cmd.requestId, success: true, data: { ok: 1 } }));
     });
     const res = await manager.sendCommand({ action: 'get_tabs', requestId: 'x' }, 2_000);

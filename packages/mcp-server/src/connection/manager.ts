@@ -13,7 +13,7 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { shortId, type BrowserAction, type BrowserCommand, type BrowserResponse } from '@kitsune-mcp/shared';
+import { shortId, type BrowserAction, type BrowserCommand, type BrowserResponse } from '@inari-mcp/shared';
 import { errorMessage } from '../utils/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -149,17 +149,16 @@ function cancelHumanWait(conn: BrowserConnection, requestId: string): void {
 }
 
 /**
- * Headroom added on top of a tool's own `timeout` / `timeoutMs` argument, so
+ * Headroom added on top of a tool's own `timeout` argument, so
  * the browser-side wait expires (and reports a meaningful error) before the
  * transport-level timeout fires.
  */
 const ARG_TIMEOUT_MARGIN_MS = 5_000;
 
-/** The tool's own `timeoutMs` / `timeout` argument (schemas.ts), when it is a positive number. */
+/** The tool's own `timeout` argument (schemas.ts), when it is a positive number. */
 function argTimeoutOf(data: Record<string, unknown>): number | undefined {
-  return [data['timeoutMs'], data['timeout']].find(
-    (v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0,
-  );
+  const v = data['timeout'];
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined;
 }
 
 /**
@@ -167,7 +166,7 @@ function argTimeoutOf(data: Record<string, unknown>): number | undefined {
  *
  * base = per-action value (request_approval 90 s, solve_captcha 200 s) or
  *        the per-transport default (30 s / headless 35 s).
- * If the tool arguments carry `timeout` or `timeoutMs` (schemas.ts), the
+ * If the tool arguments carry `timeout` (schemas.ts), the
  * result is max(base, arg + margin): an explicit long wait is honoured,
  * and the transport never gives up before the browser-side wait does.
  */
@@ -228,7 +227,7 @@ export class BrowserConnectionManager {
   /** Register a new browser connection. */
   registerBrowser(id: string, sendFn: SendFn, kind: BrowserKind): void {
     this.connections.set(id, { id, kind, send: sendFn, registeredAt: Date.now() });
-    process.stderr.write(`[KitsuneMCP] Browser registered: ${id} (${kind})\n`);
+    process.stderr.write(`[InariMCP] Browser registered: ${id} (${kind})\n`);
   }
 
   /**
@@ -237,7 +236,7 @@ export class BrowserConnectionManager {
    */
   unregisterBrowser(id: string): void {
     if (!this.connections.delete(id)) return;
-    process.stderr.write(`[KitsuneMCP] Browser unregistered: ${id}\n`);
+    process.stderr.write(`[InariMCP] Browser unregistered: ${id}\n`);
 
     for (const [requestId, entry] of this.pending) {
       if (entry.connectionId === id) this.failPending(requestId, entry, 'Browser disconnected before responding');
@@ -323,7 +322,7 @@ export class BrowserConnectionManager {
         requestId: command.requestId,
         success: false,
         error:
-          'No browser connected. Start Firefox with the KitsuneMCP extension ' +
+          'No browser connected. Start Firefox with the Inari MCP extension ' +
           '(its Native Host connects to this server over WebSocket), or set FOX_HEADLESS=1.',
       };
     }

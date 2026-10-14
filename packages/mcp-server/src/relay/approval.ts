@@ -1,5 +1,6 @@
 /**
- * The relay's part of the human-approval flow for protected-site actions.
+ * The relay's part of the human-approval flow: every acting tool, and reads
+ * of a confirm_read_sites site, ask the human first.
  *
  * A tool call answered with confirmation_required carries
  * `details.approval` (tools/handlers.ts). The relay then asks the human
@@ -26,7 +27,7 @@ import type {
   ElicitRequestFormParams,
   ElicitResult,
 } from '@modelcontextprotocol/sdk/types.js';
-import { isRecord } from '@kitsune-mcp/shared';
+import { isRecord } from '@inari-mcp/shared';
 import { errorMessage } from '../utils/errors.js';
 import type { ApprovalReason } from '../tools/approval-flow.js';
 
@@ -34,9 +35,11 @@ import type { ApprovalReason } from '../tools/approval-flow.js';
 export interface ApprovalInfo {
   requestId: string;
   toolName: string;
+  /** The site the approval covers. */
   host: string;
-  protectedUrl: string;
-  matchedPattern: string;
+  url: string;
+  /** The confirm_read_sites entry of a read; null for an acting tool. */
+  matchedPattern: string | null;
   summary: string;
   expiresAt: number;
 }
@@ -87,37 +90,48 @@ export interface ApprovalDeps {
   log?: (msg: string) => void;
 }
 
+/** The approval request in the `approval` object of a JSON block, or null when it is not a complete one. */
+function approvalInfoOf(a: Record<string, unknown>): ApprovalInfo | null {
+  const str = (k: string): string | null => {
+    const v = a[k];
+    return typeof v === 'string' ? v : null;
+  };
+  const requestId = str('requestId');
+  const toolName = str('toolName');
+  const host = str('host');
+  const expiresAt = a['expiresAt'];
+  if (!requestId || !toolName || !host || typeof expiresAt !== 'number') return null;
+  return {
+    requestId,
+    toolName,
+    host,
+    url: str('url') ?? '',
+    matchedPattern: str('matchedPattern'),
+    summary: str('summary') ?? '',
+    expiresAt,
+  };
+}
+
+/** The approval request of one text block: JSON with `confirmationRequired: true` and an `approval` object. */
+function approvalInfoOfText(text: string): ApprovalInfo | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed) || parsed['confirmationRequired'] !== true) return null;
+  const a = parsed['approval'];
+  return isRecord(a) ? approvalInfoOf(a) : null;
+}
+
 /** The approval request of a confirmation_required result, if any. */
 export function findApprovalRequest(result: CallToolResult): ApprovalInfo | null {
   if (result.isError !== true) return null;
   for (const block of result.content) {
     if (block.type !== 'text') continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(block.text);
-    } catch {
-      continue;
-    }
-    if (!isRecord(parsed) || parsed['confirmationRequired'] !== true) continue;
-    const a = parsed['approval'];
-    if (!isRecord(a)) continue;
-    const str = (k: string): string | null => {
-      const v = a[k];
-      return typeof v === 'string' ? v : null;
-    };
-    const requestId = str('requestId');
-    const toolName = str('toolName');
-    const host = str('host');
-    if (!requestId || !toolName || !host || typeof a['expiresAt'] !== 'number') continue;
-    return {
-      requestId,
-      toolName,
-      host,
-      protectedUrl: str('protectedUrl') ?? '',
-      matchedPattern: str('matchedPattern') ?? '',
-      summary: str('summary') ?? '',
-      expiresAt: a['expiresAt'],
-    };
+    const info = approvalInfoOfText(block.text);
+    if (info !== null) return info;
   }
   return null;
 }
@@ -131,12 +145,12 @@ export function canElicit(caps: ClientCapabilities | undefined): boolean {
 
 export function elicitationParams(info: ApprovalInfo): ElicitRequestFormParams {
   const lines = [
-    'KitsuneMCP: approve an action on a protected site?',
+    'Inari MCP: allow this operation?',
     '',
     `Tool: ${info.toolName}`,
-    `Site: ${info.host}` + (info.matchedPattern ? ` (safety.json pattern '${info.matchedPattern}')` : ''),
+    `Site: ${info.host}` + (info.matchedPattern ? ` (confirm_read_sites: '${info.matchedPattern}')` : ''),
   ];
-  if (info.protectedUrl) lines.push(`Page: ${info.protectedUrl}`);
+  if (info.url) lines.push(`Page: ${info.url}`);
   lines.push('Arguments:', info.summary || '(none)', '', 'The approval applies once, to exactly this call.');
   return {
     message: lines.join('\n'),
@@ -145,7 +159,7 @@ export function elicitationParams(info: ApprovalInfo): ElicitRequestFormParams {
       properties: {
         approve: {
           type: 'boolean',
-          title: 'Approve this action',
+          title: 'Allow this operation',
           description: `Allow ${info.toolName} on ${info.host} once`,
           default: false,
         },
@@ -163,6 +177,9 @@ export function elicitationApproved(result: ElicitResult): boolean {
 const MIN_WAIT_MS = 10_000;
 const EXPIRY_MARGIN_MS = 5_000;
 
+/** ErrorCode.RequestTimeout as McpError#code holds it (a plain number). */
+const REQUEST_TIMEOUT_CODE: number = ErrorCode.RequestTimeout;
+
 function fromReply(via: 'elicitation' | 'browser', reply: ApprovalReply): ApprovalOutcome {
   if (reply.approved && typeof reply.approvalToken === 'string') {
     return { kind: 'approved', via, token: reply.approvalToken };
@@ -173,42 +190,56 @@ function fromReply(via: 'elicitation' | 'browser', reply: ApprovalReply): Approv
   return { kind: 'not_approved', via, reason: reply.reason ?? 'declined' };
 }
 
-/** Ask the human: elicitation first, the Extension's popup as fallback. */
-export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Promise<ApprovalOutcome> {
-  const now = deps.now ?? Date.now;
-  let elicitationProblem: string | null = null;
+/** What the elicitation step ends with: the outcome, or why the browser is asked instead. */
+type ElicitationStep = { outcome: ApprovalOutcome } | { fallback: string };
 
-  if (deps.canElicit) {
-    const waitMs = Math.max(MIN_WAIT_MS, info.expiresAt - now() - EXPIRY_MARGIN_MS);
-    let answer: ElicitResult | null = null;
-    try {
-      answer = await deps.elicit(elicitationParams(info), waitMs);
-    } catch (err: unknown) {
-      if (err instanceof McpError && err.code === ErrorCode.RequestTimeout) {
-        return { kind: 'not_approved', via: 'elicitation', reason: 'timeout' };
-      }
-      elicitationProblem = errorMessage(err);
-      deps.log?.(`elicitation failed (${elicitationProblem}) — asking in the browser instead`);
-    }
-    if (answer !== null) {
-      const approved = elicitationApproved(answer);
-      let reply: ApprovalReply;
-      try {
-        reply = await deps.reportElicitation(info.requestId, approved);
-      } catch (err: unknown) {
-        return { kind: 'unavailable', detail: errorMessage(err) };
-      }
-      if (reply.reason !== 'elicitation_disabled') return fromReply('elicitation', reply);
-      // The running daemon does not take elicitation answers (its
-      // FOX_APPROVAL_ELICITATION differs from this relay's). A "no" stays a
-      // no; a "yes" would be lost, so the human is asked in the browser
-      // (the request is still open in the daemon).
-      if (!approved) return { kind: 'not_approved', via: 'elicitation', reason: 'declined' };
-      elicitationProblem = reply.error ?? 'the daemon does not accept elicitation answers';
-      deps.log?.(`daemon refused the elicitation answer (${elicitationProblem}) — asking in the browser instead`);
-    }
+/** Hand the human's answer in the MCP client's dialog to the daemon. */
+async function reportElicitationAnswer(
+  info: ApprovalInfo,
+  deps: ApprovalDeps,
+  answer: ElicitResult,
+): Promise<ElicitationStep> {
+  const approved = elicitationApproved(answer);
+  let reply: ApprovalReply;
+  try {
+    reply = await deps.reportElicitation(info.requestId, approved);
+  } catch (err: unknown) {
+    return { outcome: { kind: 'unavailable', detail: errorMessage(err) } };
   }
+  if (reply.reason !== 'elicitation_disabled') return { outcome: fromReply('elicitation', reply) };
+  // The running daemon does not take elicitation answers (its
+  // FOX_APPROVAL_ELICITATION differs from this relay's). A "no" stays a
+  // no; a "yes" would be lost, so the human is asked in the browser
+  // (the request is still open in the daemon).
+  if (!approved) return { outcome: { kind: 'not_approved', via: 'elicitation', reason: 'declined' } };
+  const problem = reply.error ?? 'the daemon does not accept elicitation answers';
+  deps.log?.(`daemon refused the elicitation answer (${problem}) — asking in the browser instead`);
+  return { fallback: problem };
+}
 
+/** Ask the human in the MCP client's dialog (MCP elicitation). */
+async function askByElicitation(info: ApprovalInfo, deps: ApprovalDeps, now: () => number): Promise<ElicitationStep> {
+  const waitMs = Math.max(MIN_WAIT_MS, info.expiresAt - now() - EXPIRY_MARGIN_MS);
+  let answer: ElicitResult;
+  try {
+    answer = await deps.elicit(elicitationParams(info), waitMs);
+  } catch (err: unknown) {
+    if (err instanceof McpError && err.code === REQUEST_TIMEOUT_CODE) {
+      return { outcome: { kind: 'not_approved', via: 'elicitation', reason: 'timeout' } };
+    }
+    const problem = errorMessage(err);
+    deps.log?.(`elicitation failed (${problem}) — asking in the browser instead`);
+    return { fallback: problem };
+  }
+  return reportElicitationAnswer(info, deps, answer);
+}
+
+/** Ask the human in the Extension's popup; `elicitationProblem`: why the dialog did not answer, if it was tried. */
+async function askInBrowser(
+  info: ApprovalInfo,
+  deps: ApprovalDeps,
+  elicitationProblem: string | null,
+): Promise<ApprovalOutcome> {
   try {
     const outcome = fromReply('browser', await deps.askBrowser(info.requestId));
     if (outcome.kind === 'unavailable') {
@@ -223,15 +254,26 @@ export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Pr
   }
 }
 
+/** Ask the human: elicitation first, the Extension's popup as fallback. */
+export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Promise<ApprovalOutcome> {
+  let elicitationProblem: string | null = null;
+  if (deps.canElicit) {
+    const step = await askByElicitation(info, deps, deps.now ?? Date.now);
+    if ('outcome' in step) return step.outcome;
+    elicitationProblem = step.fallback;
+  }
+  return askInBrowser(info, deps, elicitationProblem);
+}
+
 export function describeOutcome(outcome: ApprovalOutcome): string {
   const where = (via: 'elicitation' | 'browser'): string =>
-    via === 'elicitation' ? "in the MCP client's confirmation dialog" : 'in the KitsuneMCP popup in Firefox';
+    via === 'elicitation' ? "in the MCP client's confirmation dialog" : 'in the Inari MCP popup in Firefox';
   switch (outcome.kind) {
     case 'approved':
       return `The human approved this call ${where(outcome.via)}.`;
     case 'not_approved':
       if (outcome.reason === 'timeout') {
-        return `KitsuneMCP asked the human ${where(outcome.via)}, but got no answer in time. ` +
+        return `Inari MCP asked the human ${where(outcome.via)}, but got no answer in time. ` +
           'Tell the user what you want to do and call the tool again when they are ready.';
       }
       if (outcome.reason === 'cancelled') {
@@ -239,7 +281,7 @@ export function describeOutcome(outcome: ApprovalOutcome): string {
       }
       return `The human declined this call ${where(outcome.via)}. Do not retry it unless the user asks you to.`;
     case 'unavailable':
-      return `KitsuneMCP could not ask the human: ${outcome.detail}.`;
+      return `Inari MCP could not ask the human: ${outcome.detail}.`;
     default: {
       const unhandled: never = outcome;
       return String(unhandled);
@@ -262,7 +304,7 @@ export function appendNote(result: CallToolResult, note: string): CallToolResult
 /**
  * Run a tool call; when it needs human approval, obtain it and repeat the
  * call once with the issued token. No loop: a second confirmation_required
- * (e.g. the tab moved to another protected site) is returned as is.
+ * (e.g. the tab is on another site than the approved one) is returned as is.
  */
 export async function callWithApproval(
   call: (approvalToken?: string) => Promise<CallToolResult>,
@@ -280,7 +322,7 @@ export async function callWithApproval(
     return appendNote(
       second,
       'The human approved the previous attempt, but this call now needs a new approval ' +
-      '(the target page or site changed). Call the tool again to ask the human again.',
+      '(the target tab is on another site than the one approved). Call the tool again to ask the human again.',
     );
   }
   return second;

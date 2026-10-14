@@ -10,21 +10,21 @@
  * every Claude Code session arrive here: each session's stdio relay
  * (relay/main.ts) forwards its MCP tools/call to POST /mcp/call.
  *
- * Tool execution over HTTP (POST /mcp/call, and its alias POST
- * /browser/command): zod validation against callSchemaFor(name) (tools/operations.ts) ->
+ * Tool execution over HTTP (POST /mcp/call): zod validation against
+ * callSchemaFor(name) (tools/operations.ts) ->
  * createToolHandler (SafetyGuard.check, containerScope /
- * protectedUrlPatterns attachment, post-processing). Every tool is
+ * confirmReadUrlRules attachment, post-processing). Every tool is
  * reachable: FOX_CAPS is a per-session tools/list setting applied by each
  * relay, not a daemon-side restriction. Policy
- * restrictions live in the SafetyGuard (safety.json / FOX_READ_ONLY /
- * FOX_ALLOW_SCRIPTS) and apply to every caller alike.
+ * restrictions live in the SafetyGuard (safety.json / FOX_READ_ONLY) and
+ * apply to every caller alike.
  *
- * A relay identifies itself with the `X-Kitsune-Relay: <id>` header; its
+ * A relay identifies itself with the `X-Inari-Relay: <id>` header; its
  * calls are audited with transport `relay:<id>` (other callers: `http`).
  * When the caller goes away before the answer (relay abort / timeout), the
  * browser commands of that call are cancelled (runWithCallSignal).
  *
- * Human approval of protected-site actions (tools/approval-flow.ts):
+ * Human approval of tool calls (tools/approval-flow.ts):
  *  - POST /mcp/call may carry `approvalToken` next to `arguments` (never a
  *    tool argument, so the LLM does not see or pass it).
  *  - POST /approval/elicitation { requestId, approved } — the relay reports
@@ -47,26 +47,26 @@
  *
  * Security:
  *  - Authenticated routes accept either
- *      a signed request (x-kitsune-timestamp / -nonce / -signature, see
+ *      a signed request (x-inari-timestamp / -nonce / -signature, see
  *      auth.ts) — what the relays and the Native Host send; the token never
  *      travels, and the response carries our own signature so the client
  *      can tell the daemon from a program squatting on the port; or
  *      X-API-Key: <token> — for manual debugging (curl). Compared with
  *      crypto.timingSafeEqual(); responses are not signed.
- *  - /health is unauthenticated (probe endpoint). With x-kitsune-nonce it
+ *  - /health is unauthenticated (probe endpoint). With x-inari-nonce it
  *    adds `proof`, a MAC over that nonce, so a client holding the token can
  *    check it is talking to the real daemon.
  *  - Host header must be `localhost`, an IP literal or the configured host
  *    (a DNS-rebinding page always uses some other name).
  *  - OPTIONS returns 403 (no CORS headers — all callers are local processes)
- *  - Listens on 127.0.0.1 unless FOX_HOST says otherwise (daemon/main.ts
- *    warns about non-loopback addresses)
+ *  - Listens on 127.0.0.1, or the loopback address FOX_HOST names (daemon/main.ts
+ *    refuses to start with any other)
  */
 
 import * as http from 'node:http';
 import * as crypto from 'node:crypto';
 import * as net from 'node:net';
-import { ENV_DEFAULTS, isRecord } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord } from '@inari-mcp/shared';
 import { runWithCallSignal, type BrowserConnectionManager } from '../connection/manager.js';
 import { listScreenshotEntries } from '../utils/screenshot.js';
 import { callSchemaFor, callableToolNames, describeTool } from '../tools/operations.js';
@@ -85,7 +85,7 @@ import {
   macMatches,
   responseMac,
   sha256Hex,
-} from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
 import { PACKAGE_VERSION } from '../version.js';
 
 // ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ const MAX_REMEMBERED_NONCES = 100_000;
 const BODY_TIMEOUT_MS = 30_000;
 /** How long a client has to send its request headers. */
 const HEADERS_TIMEOUT_MS = 10_000;
-/** x-kitsune-timestamp: milliseconds since the epoch, decimal (16 digits reach far past year 2100). */
+/** x-inari-timestamp: milliseconds since the epoch, decimal (16 digits reach far past year 2100). */
 const TIMESTAMP_PATTERN = /^\d{1,16}$/;
 
 // ---------------------------------------------------------------------------
@@ -374,7 +374,7 @@ export interface ShutdownHooks {
 }
 
 /** Answer to a tool call or an approval while the daemon stops (POST /daemon/shutdown, signal, idle). */
-const SHUTTING_DOWN_MESSAGE = 'KitsuneMCP daemon is shutting down';
+const SHUTTING_DOWN_MESSAGE = 'Inari MCP daemon is shutting down';
 
 /** State shared by the request handlers of one server. */
 interface BridgeContext {
@@ -391,7 +391,7 @@ interface BridgeContext {
   readonly startTime: number;
   /** Set by POST /daemon/shutdown: new tool calls are refused (503) from then on. */
   stopping: Promise<Record<string, unknown>> | undefined;
-  /** Every tool, deprecated names included (see header comment: FOX_CAPS is applied by each relay). */
+  /** Every public tool (see header comment: FOX_CAPS is applied by each relay). */
   readonly registeredTools: ReadonlySet<string>;
   /** HttpBridgeOptions.isShuttingDown (signal, idle). */
   readonly isShuttingDown: () => boolean;
@@ -430,7 +430,7 @@ function shuttingDown(ctx: BridgeContext): boolean {
 
 /** The tool did not run: the daemon could not start (ready rejected). */
 function notStarted(err: unknown): string {
-  return `KitsuneMCP daemon could not start: ${errorMessage(err)}`;
+  return `Inari MCP daemon could not start: ${errorMessage(err)}`;
 }
 
 interface Caller {
@@ -510,7 +510,7 @@ function healthAnswer(ctx: BridgeContext, req: http.IncomingMessage): Record<str
   const nonce = header(req, AUTH_HEADER.nonce);
   return {
     status: 'ok',
-    service: 'kitsune-mcp',
+    service: 'inari-mcp',
     version: PACKAGE_VERSION,
     protocol: DAEMON_PROTOCOL_VERSION,
     ready: ctx.isReady,
@@ -634,13 +634,8 @@ function routePost(
   res: http.ServerResponse,
   reply: Responder,
 ): void {
-  // /browser/command is kept as an alias of /mcp/call. It used to take
-  // a raw browser action and queue it unchecked; raw actions skipped
-  // SafetyGuard, containerScope and zod validation, and mapping an
-  // action back to a tool is ambiguous (screenshot ← viewport/full_page,
-  // navigate ← goto/back/forward/…). Both now take a tool call.
-  if (pathname === '/mcp/call' || pathname === '/browser/command') {
-    handleToolCall(ctx, pathname, data, req, res, reply);
+  if (pathname === '/mcp/call') {
+    handleToolCall(ctx, data, req, res, reply);
     return;
   }
 
@@ -666,7 +661,7 @@ function sendAnswer<T>(res: http.ServerResponse, reply: Responder, answer: (resu
   try {
     answer(result);
   } catch (err: unknown) {
-    process.stderr.write(`[KitsuneMCP] HTTP answer could not be written: ${errorMessage(err)}\n`);
+    process.stderr.write(`[InariMCP] HTTP answer could not be written: ${errorMessage(err)}\n`);
     if (res.headersSent) {
       res.destroy();
       return;
@@ -714,26 +709,12 @@ function runTrackedCall<T>(
 }
 
 // ---------------------------------------------------------------------------
-// Tool call (POST /mcp/call, POST /browser/command)
+// Tool call (POST /mcp/call)
 // Body: { name: "fox_*", arguments?: {...} }
 // ---------------------------------------------------------------------------
 
-/** The tool name, or the 400 message when it is missing. */
-function toolNameOf(pathname: string, data: Record<string, unknown>): { name: string } | { error: string } {
-  const toolName = data['name'];
-  if (typeof toolName === 'string' && toolName) return { name: toolName };
-  if (pathname === '/browser/command' && typeof data['action'] === 'string') {
-    return {
-      error: 'Raw browser actions are no longer accepted. Send a tool call instead: ' +
-        '{ "name": "fox_<tool>", "arguments": { ... } } (see GET /mcp/tools).',
-    };
-  }
-  return { error: 'Missing tool name' };
-}
-
 function handleToolCall(
   ctx: BridgeContext,
-  pathname: string,
   data: Record<string, unknown>,
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -746,12 +727,11 @@ function handleToolCall(
     return;
   }
 
-  const named = toolNameOf(pathname, data);
-  if ('error' in named) {
-    reply.error(400, named.error);
+  const toolName = data['name'];
+  if (typeof toolName !== 'string' || toolName === '') {
+    reply.error(400, 'Missing tool name');
     return;
   }
-  const toolName = named.name;
 
   const schema = callSchemaFor(toolName);
   if (!schema || !ctx.registeredTools.has(toolName)) {
@@ -926,7 +906,7 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
       route(ctx, req, res, reply);
     } catch (err: unknown) {
       // A bug in a route must cost one request, not the daemon.
-      process.stderr.write(`[KitsuneMCP] HTTP handler error: ${errorMessage(err)}\n`);
+      process.stderr.write(`[InariMCP] HTTP handler error: ${errorMessage(err)}\n`);
       reply.error(500, 'Internal error');
     }
   });
@@ -952,13 +932,13 @@ function listen(server: http.Server, port: number, host: string): Promise<http.S
     server.listen(port, host, () => {
       server.removeListener('error', onStartupError);
       server.on('error', (err) => {
-        process.stderr.write(`[KitsuneMCP] HTTP server error: ${err.message}\n`);
+        process.stderr.write(`[InariMCP] HTTP server error: ${err.message}\n`);
       });
       // The port actually bound (port 0 picks a free one).
       const address = server.address();
       const boundPort = typeof address === 'object' && address !== null ? address.port : port;
       process.stderr.write(
-        `[KitsuneMCP] HTTP bridge listening on http://${host}:${boundPort}\n`,
+        `[InariMCP] HTTP bridge listening on http://${host}:${boundPort}\n`,
       );
       resolve(server);
     });

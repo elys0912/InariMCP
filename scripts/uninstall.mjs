@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * KitsuneMCP uninstaller (Windows / macOS / Linux). See --help.
+ * Inari MCP uninstaller (Windows / macOS / Linux). See --help.
  *
  * Replaces scripts/uninstall.ps1 and scripts/uninstall.sh.
  *
@@ -9,13 +9,13 @@
  * api_token and the logs. So the Native Messaging registration goes first
  * (the extension can no longer start a host), then the Claude Code
  * registration, then the running Native Hosts, then the daemon, and only
- * then ~/.kitsune-mcp.
+ * then ~/.inari-mcp.
  */
 
 import {
   CLAUDE_NAME, MS_PER_SECOND, UsageError, claudeConfigPath, claudeRemoveArgs, classifyProcesses, dataPaths,
   findClaudeEntries, formatCommand, httpEndpoint, nmManifestTargets, parseRegDefaultValue,
-  lookup, parseUninstallArgs, pathApi, repoPaths, samePath,
+  lookup, parseUninstallArgs, repoPaths, samePath,
 } from './lib/core.mjs';
 import {
   PROGRAM_TIMEOUT_MS, confirm, defaultDeps, exists, exitOnBrokenPipe, findClaude, isMain, listNodeProcesses,
@@ -64,7 +64,6 @@ export async function runUninstall(argv, overrides = {}) {
 async function uninstall(argv, deps, r) {
   const opts = parseUninstallArgs(argv);
   const { platform, home, env } = deps;
-  const p = pathApi(platform);
   const data = dataPaths(platform, home);
   const repo = repoPaths(platform, deps.repoRoot);
   const fsx = (f) => exists(deps.fs, f);
@@ -81,7 +80,7 @@ async function uninstall(argv, deps, r) {
 
   const dry = opts.dryRun;
   let problems = 0;
-  r.title(`KitsuneMCP uninstaller (${platform})${dry ? ' — dry run, nothing is changed' : ''}`);
+  r.title(`Inari MCP uninstaller (${platform})${dry ? ' — dry run, nothing is changed' : ''}`);
 
   // -------------------------------------------------------------------------
   r.step('1. Removing the Firefox Native Messaging registration');
@@ -108,7 +107,7 @@ async function uninstall(argv, deps, r) {
           }
         }
       }
-      continue; // the manifest file goes with ~/.kitsune-mcp/native-host below
+      continue; // the manifest file goes with ~/.inari-mcp/native-host below
     }
     if (!fsx(t.file)) continue;
     let pointsTo = '';
@@ -180,14 +179,14 @@ async function stopProcessesStep(deps, r, opts, { data, repo, env, platform }) {
     r.warn('could not list processes (ps / WMI unavailable): running Native Hosts cannot be found.');
     r.warn('Quit Firefox or remove the extension, otherwise a running Native Host starts the daemon again.');
   } else {
-    for (const o of classes.others) r.info(`not touched (another KitsuneMCP checkout?): PID ${o.pid} ${o.cmd}`);
+    for (const o of classes.others) r.info(`not touched (another Inari MCP checkout?): PID ${o.pid} ${o.cmd}`);
   }
 
   // Daemon PIDs: the verified /daemon/info PID, plus daemons of this repository found in the process list.
   const daemonPids = new Set(classes ? classes.daemons.map((d) => d.pid) : []);
-  if (daemon.kind === 'kitsune' && daemon.pid) daemonPids.add(daemon.pid);
+  if (daemon.kind === 'inari' && daemon.pid) daemonPids.add(daemon.pid);
   // Only a problem when we were asked to stop it (--no-stop leaves it running anyway).
-  if (opts.stop && daemon.kind === 'kitsune' && !daemon.pid && daemonPids.size === 0) {
+  if (opts.stop && daemon.kind === 'inari' && !daemon.pid && daemonPids.size === 0) {
     r.warn('the daemon\'s PID is unknown (not verified and not found in the process list); stop it by hand (see --help).');
     problems++;
   }
@@ -198,7 +197,7 @@ async function stopProcessesStep(deps, r, opts, { data, repo, env, platform }) {
       r.info(`left running (--no-stop): Native Host ${hostPids.join(', ') || '-'}, daemon ${[...daemonPids].join(', ') || '-'}`);
     }
   } else if (hostPids.length + daemonPids.size === 0) {
-    if (classes) r.ok('no KitsuneMCP Native Host or daemon of this repository is running');
+    if (classes) r.ok('no Inari MCP Native Host or daemon of this repository is running');
   } else {
     // Native Hosts first: a live host restarts a stopped daemon.
     const order = [...hostPids.map((pid) => ['Native Host', pid]), ...[...daemonPids].map((pid) => ['daemon', pid])];
@@ -210,7 +209,7 @@ async function stopProcessesStep(deps, r, opts, { data, repo, env, platform }) {
     }
   }
   if (classes && classes.relays.length > 0) {
-    r.warn(`Claude Code sessions still run KitsuneMCP (relay PID ${classes.relays.map((x) => x.pid).join(', ')}).`);
+    r.warn(`Claude Code sessions still run Inari MCP (relay PID ${classes.relays.map((x) => x.pid).join(', ')}).`);
     r.warn('They start the daemon again (and recreate api_token) on their next browser tool call: restart them.');
   }
   return problems;
@@ -219,9 +218,9 @@ async function stopProcessesStep(deps, r, opts, { data, repo, env, platform }) {
 /** One line on what answers on the daemon port. */
 function reportDaemon(r, endpoint, daemon) {
   if (daemon.kind === 'none') r.ok(`no daemon answers on ${endpoint.host}:${endpoint.port}`);
-  else if (daemon.kind === 'foreign') r.warn(`${endpoint.host}:${endpoint.port} answers but is not a KitsuneMCP daemon — left alone`);
+  else if (daemon.kind === 'foreign') r.warn(`${endpoint.host}:${endpoint.port} answers but is not an Inari MCP daemon — left alone`);
   else {
-    r.info(`KitsuneMCP daemon on ${endpoint.host}:${endpoint.port} (version ${daemon.version ?? '?'}, browsers connected: ${daemon.browsers ?? '?'}, ` +
+    r.info(`Inari MCP daemon on ${endpoint.host}:${endpoint.port} (version ${daemon.version ?? '?'}, browsers connected: ${daemon.browsers ?? '?'}, ` +
       `${daemon.verified ? `verified with the API token${daemon.pid ? `, PID ${daemon.pid}` : ''}` : 'not verified: no matching API token'})`);
   }
 }
@@ -236,7 +235,7 @@ function reportDaemon(r, endpoint, daemon) {
 async function stopInOrder(deps, r, opts, order, { endpoint, token, daemon }) {
   const dry = opts.dryRun;
   const graceS = opts.graceMs / MS_PER_SECOND;
-  const graceful = daemon.kind === 'kitsune' && daemon.verified && token !== undefined;
+  const graceful = daemon.kind === 'inari' && daemon.verified && token !== undefined;
   let problems = 0;
   let daemonStopped = false;
   for (const [kind, pid] of order) {
@@ -270,10 +269,10 @@ async function stopInOrder(deps, r, opts, order, { endpoint, token, daemon }) {
       r.ok(`${kind} PID ${pid}: ${lookup(STOP_RESULT_TEXT, result, 'stop result')}`);
     }
   }
-  if (!dry && daemon.kind === 'kitsune') {
+  if (!dry && daemon.kind === 'inari') {
     const after = await probeDaemon(deps, endpoint, token);
-    if (after.kind === 'kitsune') {
-      r.warn(`a KitsuneMCP daemon still answers on ${endpoint.host}:${endpoint.port}`);
+    if (after.kind === 'inari') {
+      r.warn(`an Inari MCP daemon still answers on ${endpoint.host}:${endpoint.port}`);
       problems++;
     }
   }
@@ -281,7 +280,7 @@ async function stopInOrder(deps, r, opts, order, { endpoint, token, daemon }) {
 }
 
 /**
- * ~/.kitsune-mcp (step 5): deleted with --purge, removed when empty, else
+ * ~/.inari-mcp (step 5): deleted with --purge, removed when empty, else
  * listed and kept.
  * @returns {number} problems
  */

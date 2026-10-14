@@ -7,7 +7,7 @@ import {
   formatZodIssues,
   parseBrowserResponse,
   shortId,
-} from '@kitsune-mcp/shared';
+} from '@inari-mcp/shared';
 
 describe('BROWSER_ACTIONS', () => {
   it('has no duplicate entries', () => {
@@ -62,7 +62,7 @@ describe('parseBrowserResponse', () => {
   });
 });
 
-describe('util helpers (R2-A)', () => {
+describe('util helpers', () => {
   it('errnoCode returns a string code only', () => {
     expect(errnoCode(Object.assign(new Error('x'), { code: 'ENOENT' }))).toBe('ENOENT');
     expect(errnoCode({ code: 1 })).toBeUndefined();
@@ -79,7 +79,7 @@ describe('util helpers (R2-A)', () => {
     expect(formatZodIssues([])).toBe('');
   });
 
-  it('shortId gives exactly 6 base-36 characters (R3 N-9)', () => {
+  it('shortId gives exactly 6 base-36 characters', () => {
     expect(shortId()).toMatch(/^[a-z0-9]{6}$/);
   });
 });

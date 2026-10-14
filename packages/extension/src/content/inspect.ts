@@ -1,26 +1,25 @@
 // Observation and display: page info, element lists, highlight, scroll
-// snapshots, full-page dimensions, inspect element, values and text.
+// snapshots, full-page dimensions and text.
 
+import { maskedText } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
 import { DEFAULTS, HIGHLIGHT_STYLE, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
 import {
-  isPasswordField,
+  isInputElement,
+  isMaskedField,
   isVisible,
   generateSelector,
   getElementInfo,
+  getElementLocation,
   findElement,
   sleep,
-  generateXPath,
-  notFoundError,
-  isTextInput,
-  isSelectElement,
-  truncatedValue,
+  shownText,
+  shownValue,
 } from "./dom";
 import type {
   ElementInfo,
   HighlightOptions,
   ScrollCaptureOptions,
-  FindElementOptions,
   TextOptions,
 } from "./types";
 
@@ -43,9 +42,9 @@ export function getPageInfo(): Record<string, unknown> {
         type: htmlEl.type || null,
         id: el.id || null,
         name: htmlEl.name || null,
-        text: clipText(el.textContent?.trim() ?? "", LIMITS.PAGE_INFO_TEXT) || null,
+        text: shownText(el, LIMITS.PAGE_INFO_TEXT),
         href: (el as HTMLAnchorElement).href || null,
-        value: isPasswordField(el) ? "[MASKED]" : truncatedValue(htmlEl.value, LIMITS.PAGE_INFO_TEXT),
+        value: shownValue(el, htmlEl.value, LIMITS.PAGE_INFO_TEXT),
         placeholder: htmlEl.placeholder || null,
         ariaLabel: el.getAttribute("aria-label"),
         position: {
@@ -86,7 +85,7 @@ export function getPageInfo(): Record<string, unknown> {
             id: el.id,
             placeholder: inp.placeholder,
             required: inp.required,
-            value: isPasswordField(el) ? "[MASKED]" : truncatedValue(inp.value, LIMITS.FORM_FIELD_VALUE),
+            value: shownValue(el, inp.value, LIMITS.FORM_FIELD_VALUE),
           };
         }),
     })),
@@ -132,6 +131,20 @@ function removeHighlight(): void {
   }
 }
 
+/** The overlay's glow grows and shrinks until the overlay is removed. */
+function pulseGlow(overlay: HTMLElement): void {
+  const S = HIGHLIGHT_STYLE;
+  const glow = (blur: number, color: string) => ({ boxShadow: `0 0 ${blur}px ${color}` });
+  overlay.animate(
+    [glow(S.GLOW_BLUR, S.GLOW), glow(S.GLOW_PEAK_BLUR, S.GLOW_PEAK), glow(S.GLOW_BLUR, S.GLOW)],
+    { duration: S.PULSE_MS, easing: "ease-in-out", iterations: Infinity },
+  );
+}
+
+/**
+ * fox_interact highlight. UI only and no read (no confirm_read_sites
+ * check): it returns where the element is, not its content.
+ */
 export function highlightElement(
   options: HighlightOptions,
 ): Record<string, unknown> {
@@ -145,7 +158,6 @@ export function highlightElement(
   const rect = element.getBoundingClientRect();
 
   highlightOverlay = document.createElement("div");
-  highlightOverlay.className = "kitsune-highlight-overlay";
   highlightOverlay.style.cssText = `
       position: fixed;
       left: ${rect.left}px;
@@ -156,7 +168,7 @@ export function highlightElement(
       background: ${HIGHLIGHT_STYLE.FILL};
       pointer-events: none;
       z-index: ${HIGHLIGHT_STYLE.Z_INDEX};
-      box-shadow: 0 0 10px ${HIGHLIGHT_STYLE.GLOW};
+      box-shadow: 0 0 ${HIGHLIGHT_STYLE.GLOW_BLUR}px ${HIGHLIGHT_STYLE.GLOW};
       transition: all 0.3s ease;
     `;
 
@@ -177,12 +189,13 @@ export function highlightElement(
   highlightOverlay.appendChild(label);
 
   document.body.appendChild(highlightOverlay);
+  pulseGlow(highlightOverlay);
 
   if (options.duration !== 0) {
     highlightTimer = setTimeout(removeHighlight, options.duration || TIMEOUTS.HIGHLIGHT);
   }
 
-  return { highlighted: true, element: getElementInfo(element) };
+  return { highlighted: true, element: getElementLocation(element) };
 }
 
 function getVisibleInteractiveElements(): Record<string, unknown>[] {
@@ -203,7 +216,7 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
     ) {
       elements.push({
         tag: el.tagName.toLowerCase(),
-        text: clipText(el.textContent?.trim() ?? "", LIMITS.SNAPSHOT_TEXT) || null,
+        text: shownText(el, LIMITS.SNAPSHOT_TEXT),
         selector: generateSelector(el),
         position: {
           x: Math.round(rect.left + rect.width / 2),
@@ -216,47 +229,73 @@ function getVisibleInteractiveElements(): Record<string, unknown>[] {
   return elements;
 }
 
+/**
+ * The delay and the step count of scroll_and_capture: the requested ones
+ * (else the defaults), cut to LIMITS.SCROLL_CAPTURE_MAX_DELAY and
+ * LIMITS.SCROLL_CAPTURE_MAX_SCROLLS, and to the steps whose delays, with the
+ * first one before the first step, fit in TIMEOUTS.SCROLL_CAPTURE_BUDGET,
+ * whatever the command asks for. 500 ms (the default): 49 steps.
+ */
+export function scrollCaptureLimits(options: ScrollCaptureOptions): { delay: number; maxScrolls: number } {
+  const delay = Math.min(options.delay || TIMEOUTS.SCROLL_STEP, LIMITS.SCROLL_CAPTURE_MAX_DELAY);
+  const requestedScrolls = options.maxScrolls || DEFAULTS.SCROLL_CAPTURE_SCROLLS;
+  const maxScrolls = Math.min(
+    requestedScrolls,
+    LIMITS.SCROLL_CAPTURE_MAX_SCROLLS,
+    Math.floor(TIMEOUTS.SCROLL_CAPTURE_BUDGET / delay) - 1,
+  );
+
+  return { delay, maxScrolls };
+}
+
+/**
+ * Scroll the page step by step from the top and list the interactive
+ * elements visible at each position (no images). Each step waits in sleep(),
+ * so the pause switch stops it at the next step (abort.ts).
+ */
 export async function scrollAndCapture(
   options: ScrollCaptureOptions,
 ): Promise<Record<string, unknown>> {
   const scrollStep =
     options.scrollStep || window.innerHeight * DEFAULTS.SCROLL_CAPTURE_STEP_RATIO;
-  const delay = options.delay || TIMEOUTS.SCROLL_STEP;
-  const maxScrolls = options.maxScrolls || DEFAULTS.SCROLL_CAPTURE_MAX_SCROLLS;
+  const { delay, maxScrolls } = scrollCaptureLimits(options);
 
   const snapshots: Record<string, unknown>[] = [];
   const originalScroll = window.scrollY;
   let scrollCount = 0;
 
-  window.scrollTo({ top: 0, behavior: "instant" });
-  await sleep(delay);
-
-  while (scrollCount < maxScrolls) {
-    snapshots.push({
-      scrollY: window.scrollY,
-      viewportHeight: window.innerHeight,
-      documentHeight: document.documentElement.scrollHeight,
-      visibleElements: getVisibleInteractiveElements(),
-      timestamp: Date.now(),
-    });
-
-    if (
-      window.scrollY + window.innerHeight >=
-      document.documentElement.scrollHeight - LIMITS.SCROLL_END_SLACK
-    ) {
-      break;
-    }
-
-    window.scrollBy({ top: scrollStep, behavior: "smooth" });
+  try {
+    window.scrollTo({ top: 0, behavior: "instant" });
     await sleep(delay);
-    scrollCount++;
-  }
 
-  if (options.restore !== false) {
-    window.scrollTo({
-      top: originalScroll,
-      behavior: "instant",
-    });
+    while (scrollCount < maxScrolls) {
+      snapshots.push({
+        scrollY: window.scrollY,
+        viewportHeight: window.innerHeight,
+        documentHeight: document.documentElement.scrollHeight,
+        visibleElements: getVisibleInteractiveElements(),
+        timestamp: Date.now(),
+      });
+
+      if (
+        window.scrollY + window.innerHeight >=
+        document.documentElement.scrollHeight - LIMITS.SCROLL_END_SLACK
+      ) {
+        break;
+      }
+
+      window.scrollBy({ top: scrollStep, behavior: "smooth" });
+      await sleep(delay);
+      scrollCount++;
+    }
+  } finally {
+    // Also when the pause stops it (sleep throws): the page goes back.
+    if (options.restore !== false) {
+      window.scrollTo({
+        top: originalScroll,
+        behavior: "instant",
+      });
+    }
   }
 
   return {
@@ -279,65 +318,21 @@ export function captureFullPage(): Record<string, unknown> {
   };
 }
 
-/** Target of the last contextmenu event in this frame (see rememberContextTarget). */
-let lastContextTarget: Element | null = null;
-
 /**
- * contextmenu listener (registered by content.ts): remember the element the
- * menu was opened on. Firefox's contextMenus OnClickData has no pageX /
- * pageY, so the "inspect element" entry uses this element instead of a
- * point. event.target is retargeted to the shadow host, which a selector
- * can reach.
+ * Whether the page shows a field whose value is masked (dom.ts
+ * isMaskedField), asked by find_text before it searches the tab
+ * (background/tabs.ts findText): Firefox's find may match the text in a
+ * form field too, and its match count would then tell a masked value one
+ * guess at a time. A hidden input is left out: it is not shown, so find
+ * cannot match it.
  */
-export function rememberContextTarget(event: { target: EventTarget | null }): void {
-  // Checked by nodeType below (a page element is not `instanceof Element` in this sandbox).
-  const target = event.target as Element | null;
-  lastContextTarget = target && target.nodeType === 1 ? target : null;
-}
+export function hasMaskedFields(): Record<string, unknown> {
+  const fields = Array.from(document.querySelectorAll("input, textarea, select"));
+  const shownMasked = fields.some(
+    (field) => isMaskedField(field) && !(isInputElement(field) && field.type.toLowerCase() === "hidden"),
+  );
 
-/** The remembered element while it is still in the document. */
-export function contextTarget(): Element | null {
-  return lastContextTarget && lastContextTarget.isConnected ? lastContextTarget : null;
-}
-
-export function inspectElement(): Record<string, unknown> {
-  const element = contextTarget();
-  if (!element) {
-    return { found: false };
-  }
-
-  highlightElement({
-    selector: generateSelector(element),
-    duration: TIMEOUTS.INSPECT_HIGHLIGHT,
-  });
-
-  return {
-    found: true,
-    element: getElementInfo(element),
-    selector: generateSelector(element),
-    xpath: generateXPath(element),
-  };
-}
-
-export function getValue(
-  options: FindElementOptions,
-): Record<string, unknown> {
-  const element = findElement(options);
-  if (!element) throw notFoundError(options);
-
-  let value: string | null;
-
-  if (isPasswordField(element)) {
-    value = "[MASKED]";
-  } else if (isTextInput(element)) {
-    value = element.value;
-  } else if (isSelectElement(element)) {
-    value = element.options[element.selectedIndex]?.value ?? null;
-  } else {
-    value = element.textContent;
-  }
-
-  return { value, element: getElementInfo(element) };
+  return { hasMaskedFields: shownMasked };
 }
 
 export function getText(
@@ -351,8 +346,9 @@ export function getText(
   }
 
   const maxLength = options.maxLength || DEFAULTS.TEXT_MAX_LENGTH;
-  const text =
-    (element as HTMLElement).innerText || element.textContent || "";
+  const rawText = (element as HTMLElement).innerText || element.textContent || "";
+  // A masked field read as itself (an option of a masked select, a masked textarea).
+  const text = maskedText(rawText, isMaskedField(element));
 
   return {
     text: clipText(text, maxLength),

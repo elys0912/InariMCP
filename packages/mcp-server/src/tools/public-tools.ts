@@ -1,7 +1,7 @@
 /**
- * The public tools (WP13 tool consolidation: 41 tools → 21).
+ * The public tools: the 17 tools MCP clients list and call.
  *
- * Ten tools are the operations of schemas.ts as they are. The other eleven
+ * Ten tools are an operation of schemas.ts as it is. The other seven
  * group several operations behind a discriminator argument (fox_wait
  * `for`, fox_tab `action`, ...); each value of it is a variant that runs
  * one operation (tools/operations.ts). The wire actions, the Extension, the
@@ -21,12 +21,17 @@
 
 import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
-import { isRecord } from '@kitsune-mcp/shared';
-import { MAX_TIMEOUT_ARG_MS, TOOL_SCHEMAS, callSchemaOf } from './schemas.js';
-import type { OperationName } from './schemas.js';
+import { isRecord } from '@inari-mcp/shared';
+import {
+  ELEMENT_LOCATION_NOTE,
+  MASKED_FIELDS_NOTE,
+  READ_SELECTOR_NOTE,
+  TOOL_SCHEMAS,
+  callSchemaOf,
+} from './schemas.js';
+import type { ObjectSchema, OperationName } from './schemas.js';
 import { toolAnnotations } from './classification.js';
 import type { ToolAnnotations } from './classification.js';
-import { isOneOf } from './one-of.js';
 
 export interface PublicVariant {
   /** The operation it runs, from its parsed arguments. */
@@ -39,13 +44,6 @@ export interface PublicVariant {
    * schema drops the keys it does not know.
    */
   toOp?(args: Record<string, unknown>): Record<string, unknown>;
-  /**
-   * The inverse of toOp: the variant's arguments (discriminator excluded)
-   * from the operation's. A call by the deprecated operation name is
-   * audited in the public tool's form with it (tools/operations.ts).
-   * Default: the same keys.
-   */
-  fromOp?(opArgs: Record<string, unknown>): Record<string, unknown>;
 }
 
 export interface PublicTool {
@@ -54,7 +52,7 @@ export interface PublicTool {
   /** Parses a call (daemon, transport/http-bridge.ts). */
   callSchema: z.ZodType;
   /** Listed in tools/list (registry.ts): always a ZodObject. */
-  listSchema: z.AnyZodObject;
+  listSchema: ObjectSchema;
   annotations: ToolAnnotations;
   /** Absent for the tools that are an operation as is. */
   discriminator?: string;
@@ -80,19 +78,29 @@ function fieldsOf(op: OperationName, keys?: string[]): ZodRawShape {
   return picked;
 }
 
+// Type guards rather than a bare instanceof, which narrows to ZodDefault<any>
+// / ZodOptional<any> and makes the inner schema `any`.
+function isZodDefault(field: ZodTypeAny): field is z.ZodDefault<ZodTypeAny> {
+  return field instanceof z.ZodDefault;
+}
+
+function isZodOptional(field: ZodTypeAny): field is z.ZodOptional<ZodTypeAny> {
+  return field instanceof z.ZodOptional;
+}
+
 /** Strip ZodDefault / ZodOptional wrappers (also used by tests/contract/public-tools.test.ts). */
 export function unwrap(field: ZodTypeAny): { base: ZodTypeAny; required: boolean; defaultValue?: unknown } {
   let base = field;
   let required = true;
   let defaultValue: unknown;
   for (;;) {
-    if (base instanceof z.ZodDefault) {
+    if (isZodDefault(base)) {
       defaultValue = base._def.defaultValue();
       required = false;
-      base = base._def.innerType;
-    } else if (base instanceof z.ZodOptional) {
+      base = base.removeDefault();
+    } else if (isZodOptional(base)) {
       required = false;
-      base = base._def.innerType;
+      base = base.unwrap();
     } else {
       return { base, required, defaultValue };
     }
@@ -110,9 +118,9 @@ function formatDefault(value: unknown): string {
 function flatListSchema(
   discriminator: string,
   discriminatorDescription: string,
-  variants: Record<string, z.AnyZodObject>,
+  variants: Record<string, ObjectSchema>,
   discriminatorOptional = false,
-): z.AnyZodObject {
+): ObjectSchema {
   const names = Object.keys(variants);
   const occurrences = new Map<string, Array<{ variant: string; field: ZodTypeAny }>>();
   for (const [variant, schema] of Object.entries(variants)) {
@@ -131,7 +139,7 @@ function flatListSchema(
   const shape: ZodRawShape = { [discriminator]: discriminatorOptional ? disc.optional() : disc };
 
   for (const [key, list] of occurrences) {
-    const first = unwrap(list[0]!.field);
+    const first = unwrap(list[0].field);
     const used = list.map((o) => o.variant);
     const scope = used.length === names.length ? '' : `${discriminator}=${used.join('|')}`;
     const required = list.filter((o) => unwrap(o.field).required).map((o) => o.variant);
@@ -143,13 +151,13 @@ function flatListSchema(
       .map((o) => ({ variant: o.variant, value: unwrap(o.field).defaultValue }))
       .filter((d) => d.value !== undefined);
     const sameDefault = defaults.length > 0 &&
-      defaults.every((d) => JSON.stringify(d.value) === JSON.stringify(defaults[0]!.value));
+      defaults.every((d) => JSON.stringify(d.value) === JSON.stringify(defaults[0].value));
     const defaultNote =
       defaults.length === 0 ? ''
-        : sameDefault && defaults.length === used.length ? `default ${formatDefault(defaults[0]!.value)}`
+        : sameDefault && defaults.length === used.length ? `default ${formatDefault(defaults[0].value)}`
           : `default ${defaults.map((d) => `${formatDefault(d.value)} (${d.variant})`).join(', ')}`;
     const notes = [scope, requiredNote, defaultNote].filter(Boolean).join('; ');
-    const description = list[0]!.field.description ?? first.base.description ?? '';
+    const description = list[0].field.description ?? first.base.description ?? '';
     shape[key] = first.base.optional().describe(notes ? `(${notes}) ${description}` : description);
   }
   return z.object(shape);
@@ -164,16 +172,13 @@ function foldAnnotations(variants: Record<string, PublicVariant>): ToolAnnotatio
   };
 }
 
-/**
- * A tool that is one operation as is. `description` replaces the
- * operation's own (FOX_CAPS=legacy keeps that one).
- */
-function asIs(op: OperationName, description?: string): PublicTool {
+/** A tool that is one operation as is, under the operation's name. */
+function asIs(op: OperationName, description: string): PublicTool {
   const def = TOOL_SCHEMAS[op];
   const variants = { default: { op: () => op, ops: [op] } };
   return {
     name: op,
-    description: description ?? def.description,
+    description,
     callSchema: callSchemaOf(def),
     listSchema: def.inputSchema,
     annotations: toolAnnotations(def),
@@ -204,7 +209,7 @@ function grouped(options: {
   refine?: (args: Record<string, unknown>, ctx: z.RefinementCtx) => void;
 }): PublicTool {
   const { discriminator } = options;
-  const objects: Record<string, z.AnyZodObject> = {};
+  const objects: Record<string, ObjectSchema> = {};
   for (const [value, spec] of Object.entries(options.variants)) {
     objects[value] = z.object({ [discriminator]: z.literal(value), ...spec.fields });
   }
@@ -260,7 +265,8 @@ const tabId = z.number().int().optional().describe('Tab ID (defaults to active t
 const foxRead = grouped({
   name: 'fox_read',
   description:
-    "Read the page. mode 'info': URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, h1-h3 headings; password values masked; headless: URL and title only. mode 'text': visible text of the page or of the element `selector`, cheaper than a screenshot.",
+    "Read the page. mode 'info': URL, title, document/viewport size, scroll position, up to 100 visible interactive elements (tag, type, id, name, text, href, value, placeholder, ariaLabel, center position, generated selector), forms with their first 20 fields, h1-h3 headings; headless: URL and title only. mode 'text': visible text of the page or of the element `selector`, cheaper than a screenshot. " +
+    `Values and texts of ${MASKED_FIELDS_NOTE} read as [MASKED]. ${READ_SELECTOR_NOTE}`,
   discriminator: 'mode',
   discriminatorDescription: "What to read: 'info' (page overview) or 'text' (visible text)",
   variants: {
@@ -272,7 +278,9 @@ const foxRead = grouped({
 const foxFind = grouped({
   name: 'fox_find',
   description:
-    "Find in the page. by 'selector': elements matching a CSS selector (the first `limit`, plus the total count), each with tag, id, classes, name, type, text (200 chars), value (passwords masked), href, src, placeholder, ariaLabel, role, disabled, checked, visible, viewport position (incl. centerX/centerY) and a generated selector; headless: tag, text and box only, at most 50. by 'text': count matches of `text` with Firefox's browser.find (all frames, also outside the viewport), optionally with rects; `text` is the words to search for, not an element locator as in fox_click.",
+    "Find in the page. by 'selector': elements matching a CSS selector (the first `limit`, plus the total count), each with tag, id, classes, name, type, text (200 chars), value, href, src, placeholder, ariaLabel, role, disabled, checked, visible, viewport position (incl. centerX/centerY) and a generated selector; headless: tag, text and box only, at most 50. " +
+    `Values and texts of ${MASKED_FIELDS_NOTE} read as [MASKED]. ${READ_SELECTOR_NOTE} ` +
+    "by 'text': count matches of `text` with Firefox's browser.find (all frames, also outside the viewport), optionally with rects; `text` is the words to search for, not an element locator as in fox_click.",
   discriminator: 'by',
   discriminatorDescription: "'selector' (CSS selector) or 'text' (full-text search)",
   variants: {
@@ -282,7 +290,7 @@ const foxFind = grouped({
         text: z.string().describe('Text to search for in the page'),
         ...fieldsOf('fox_find_text', ['caseSensitive', 'entireWord', 'includeRectData', 'tabId']),
       },
-      run: { ...same('fox_find_text'), toOp: renamed({ text: 'query' }), fromOp: renamed({ query: 'text' }) },
+      run: { ...same('fox_find_text'), toOp: renamed({ text: 'query' }) },
     },
   },
 });
@@ -332,17 +340,6 @@ const foxTab = grouped({
             ...(cookieStoreId !== undefined ? { cookieStoreId } : {}),
           };
         },
-        fromOp: (opArgs) => {
-          const { containerName, cookieStoreId, ...rest } = opArgs;
-          if (containerName === undefined && cookieStoreId === undefined) return rest;
-          return {
-            ...rest,
-            container: {
-              ...(containerName !== undefined ? { name: containerName } : {}),
-              ...(cookieStoreId !== undefined ? { cookieStoreId } : {}),
-            },
-          };
-        },
       },
     },
     close: { fields: fieldsOf('fox_close_tab'), run: same('fox_close_tab') },
@@ -387,15 +384,6 @@ const foxSetValue = grouped({
           const { option, ...rest } = args;
           return isRecord(option) ? { ...rest, ...option } : rest;
         },
-        fromOp: (opArgs) => {
-          const option: Record<string, unknown> = {};
-          const rest: Record<string, unknown> = {};
-          for (const [key, value] of Object.entries(opArgs)) {
-            if (isOneOf(OPTION_KEYS, key)) option[key] = value;
-            else rest[key] = value;
-          }
-          return { ...rest, option };
-        },
       },
     },
   },
@@ -412,7 +400,9 @@ const foxSetValue = grouped({
 const foxInteract = grouped({
   name: 'fox_interact',
   description:
-    "Change UI state only, never page data (allowed in read-only mode). action 'hover': dispatch synthetic mouseenter / mouseover events on the element (isTrusted=false: JavaScript hover handlers run, CSS :hover styles do not apply). action 'scroll': scroll the page or the element `selector` by direction and amount, or scroll the element toElement into view. action 'highlight': show a colored overlay (and optional label) on the element for visual debugging.",
+    "Hover, scroll or highlight. action 'hover': dispatch synthetic mouseenter / mouseover events on the element (isTrusted=false: JavaScript hover handlers run, CSS :hover styles do not apply); since the page's own handlers run, it asks the human first like the acting tools, and read-only mode refuses it. action 'scroll': scroll the page or the element `selector` by direction and amount, or scroll the element toElement into view. action 'highlight': show a colored overlay (and optional label) on the element for visual debugging. Scroll and highlight change UI state only, never page data, and are allowed in read-only mode; " +
+    `for them: ${READ_SELECTOR_NOTE} ` +
+    ELEMENT_LOCATION_NOTE,
   discriminator: 'action',
   discriminatorDescription: "'hover', 'scroll' or 'highlight'",
   variants: {
@@ -425,7 +415,9 @@ const foxInteract = grouped({
 const foxWait = grouped({
   name: 'fox_wait',
   description:
-    "Wait for a page condition; fails after timeout (ms). for 'element': an element matching selector appears (and is visible, unless visible=false). for 'network_idle': the page's own top-frame fetch/XHR requests have been idle for idleTime ms; requests made by fox_evaluate, and those in flight before the first call on the page, are not seen; headless: Playwright networkidle, idleTime ignored. for 'navigation': the tab's next top-level navigation finishes (waitUntil load or domcontentloaded; optionally only one matching urlPattern); a navigation that finished before the call is missed, so prefer for 'url' when the destination is known; headless: urlPattern ignored. for 'url': the URL equals url or matches the urlPattern regex (one of them required); returns at once if it already does.",
+    "Wait for a page condition; fails after timeout (ms). for 'element': an element matching selector appears (and is visible, unless visible=false). " +
+    `${ELEMENT_LOCATION_NOTE} ${READ_SELECTOR_NOTE} ` +
+    "for 'network_idle': the page's own top-frame fetch/XHR requests have been idle for idleTime ms; requests already in flight when the call starts are not seen; headless: Playwright networkidle, idleTime ignored. for 'navigation': the tab's next top-level navigation finishes (waitUntil load or domcontentloaded; optionally only one matching urlPattern); a navigation that finished before the call is missed, so prefer for 'url' when the destination is known; headless: urlPattern ignored. for 'url': the URL equals url or matches the urlPattern regex (one of them required); returns at once if it already does.",
   discriminator: 'for',
   discriminatorDescription: "'element', 'network_idle', 'navigation' or 'url'",
   variants: {
@@ -443,89 +435,32 @@ const foxWait = grouped({
   },
 });
 
-const foxLogging = grouped({
-  name: 'fox_logging',
-  description:
-    "Control console and fetch/XHR capture of the tab (top frame); read the logs with fox_get_logs. action 'start': start capturing (before the actions to monitor); logs are kept per tab across reloads and navigations (the newest 500 console and 500 network entries) until cleared or the tab is closed; refused on a protected site unless approved, and recording pauses while the tab is on one. action 'stop': stop capturing; the logs are kept. action 'clear': clear the console and/or network logs. Not supported in headless mode.",
-  discriminator: 'action',
-  discriminatorDescription: "'start', 'stop' or 'clear'",
-  variants: {
-    start: { fields: fieldsOf('fox_start_logging'), run: same('fox_start_logging') },
-    stop: { fields: fieldsOf('fox_stop_logging'), run: same('fox_stop_logging') },
-    clear: { fields: fieldsOf('fox_clear_logs'), run: same('fox_clear_logs') },
-  },
-});
-
-const foxGetLogs = grouped({
-  name: 'fox_get_logs',
-  description:
-    "Return what fox_logging captured on this tab (the latest `limit`); paused while the tab is on a protected site; not supported in headless mode. kind 'console': top-frame calls to console.log/warn/error/info/debug, filtered by level and/or a case-insensitive search text; not uncaught exceptions, browser errors, iframes or console output of fox_evaluate; currentPageReached=false means the current page could not be asked for its latest entries. kind 'network': fetch/XHR requests filtered by URL regex, method, status or errorsOnly (network error or status >= 400); no images, scripts, CSS or WebSocket traffic; authorization, cookie, API-key and token headers and secret fields in URLs and bodies are masked, other headers and bodies (truncated) are returned as recorded.",
-  discriminator: 'kind',
-  discriminatorDescription: "'console' or 'network'",
-  variants: {
-    console: { fields: fieldsOf('fox_get_console_logs'), run: same('fox_get_console_logs') },
-    network: { fields: fieldsOf('fox_get_network_logs'), run: same('fox_get_network_logs') },
-  },
-});
-
-const foxEvaluate = grouped({
-  name: 'fox_evaluate',
-  description:
-    "Run JavaScript in the tab's top frame; refused when script execution is disabled (allow_script_execution in safety.json or FOX_ALLOW_SCRIPTS=0). mode 'script': return the value of the last expression (JSON-compatible; no top-level `return`, wrap code in an IIFE); Extension path: runs in the content script's isolated world, which sees the page DOM but not the variables of the page's own scripts, and its console.log and fetch/XHR are not captured by fox_logging; headless: runs in the page's own world. mode 'chain': evaluate steps in order, each receiving the prior result as `$prev`, console output captured per step. mode 'wait_and_act': poll until condition is truthy, then run actionScript and return its result. chain and wait_and_act are headless only (the Extension path returns an error).",
-  discriminator: 'mode',
-  discriminatorDescription: "'script', 'chain' or 'wait_and_act'",
-  variants: {
-    script: { fields: fieldsOf('fox_execute_script'), run: same('fox_execute_script') },
-    chain: { fields: fieldsOf('fox_eval_chain'), run: same('fox_eval_chain') },
-    wait_and_act: {
-      fields: {
-        ...fieldsOf('fox_wait_and_act', ['condition', 'actionScript', 'pollIntervalMs']),
-        timeout: z.number().int().positive().max(MAX_TIMEOUT_ARG_MS).optional().default(15000)
-          .describe(`Max wait time in ms before giving up (at most ${MAX_TIMEOUT_ARG_MS})`),
-        tabId,
-      },
-      run: {
-        ...same('fox_wait_and_act'),
-        toOp: renamed({ timeout: 'timeoutMs' }),
-        fromOp: renamed({ timeoutMs: 'timeout' }),
-      },
-    },
-  },
-});
-
-const foxObserver = grouped({
-  name: 'fox_observer',
-  description:
-    "Watch DOM changes. Requires script execution enabled. action 'inject': start a MutationObserver on an element (default body) that collects attribute, child list and subtree changes; it ends when the page reloads or navigates; headless: one observer per page (a new call replaces it, observerId is ignored), changes collect in window.__fox_mutations. action 'remove': remove the observer observerId and return the changes it collected (the last 100); fails when no such observer exists on the current page; headless: observerId is ignored and only the number of changes is returned.",
-  discriminator: 'action',
-  discriminatorDescription: "'inject' or 'remove'",
-  variants: {
-    inject: { fields: fieldsOf('fox_inject_observer'), run: same('fox_inject_observer') },
-    remove: { fields: fieldsOf('fox_remove_observer'), run: same('fox_remove_observer') },
-  },
-});
-
 // ---------------------------------------------------------------------------
 // Registry of the public tools
 // ---------------------------------------------------------------------------
 
-/**
- * Public descriptions of tools that are an operation as is: shorter than
- * the operation's, and naming the public tools.
- */
+/** Descriptions of the tools that are an operation as is. */
 const AS_IS_DESCRIPTIONS = {
   fox_screenshot:
-    "Take a screenshot. Images are saved to files and returned as resource_link, never as base64 (saveToFile=false captures nothing, includeData has no effect, the same filename overwrites the file). scope: viewport (visible area; a background tab given by tabId is captured without switching to it; a discarded tab fails), full_page (entire page; falls back to the visible area with fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on protected sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls and returns the interactive elements visible at each position). Headless: viewport and full_page only.",
+    "Take a screenshot. Images are saved to files and returned as resource_link, never as base64 (saveToFile=false captures nothing, includeData has no effect, the same filename overwrites the file). scope: viewport (visible area; a background tab given by tabId is captured without switching to it; a discarded tab fails), full_page (entire page; falls back to the visible area with fullPageCaptured=false), all_tabs (every tab, or those whose URL matches the urlPattern regex, within the timeout budget; tabs on sites listed in confirm_read_sites are skipped; fails when no tab could be captured), scroll_capture (takes NO images: scrolls and returns the interactive elements visible at each position). Headless: viewport and full_page only.",
   fox_snapshot:
     "Extension path: not implemented (returns an error); use fox_read or fox_find there. Headless: the accessibility tree of the page (or of the first element matching selector) as indented YAML text (Playwright ariaSnapshot), filtered by maxDepth, includeText and roles, cut at 50000 characters.",
+  fox_navigate:
+    "Navigate in the browser. Actions: 'goto' (open a URL), 'back' / 'forward' (history navigation), 'refresh' (reload page), 'hard_refresh' (bypass cache, like Ctrl+Shift+R). goto / refresh with waitForLoad, and back / forward always, fail when the page does not finish loading within 25 s or the tab is closed (the navigation itself may still complete).",
   fox_click:
     "Click an element found by selector (CSS), xpath, text or x+y viewport coordinates, in that order. Top document only (not inside iframes or shadow DOM); fails on a disabled element. The element is scrolled into view and receives synthetic mousedown/mouseup/click events (isTrusted=false: pages that require real user input may ignore them); doubleClick / rightClick send dblclick / contextmenu. Returns the clicked element's info. Headless: selector or x+y only.",
   fox_type:
     "Type text into an input, textarea or contenteditable element found by selector, id, name or placeholder (in that order), else into the focused field; `text` is never used to find the element. Fails on a disabled element; password fields are refused. Sends synthetic key events (isTrusted=false) `delay` ms apart (0 = none; shortened so that all delays stay within 10 s); fox_set_value is faster for long values. clear empties the field first; pressEnter also submits the form like a real Enter unless a keydown handler cancels it. Headless: selector, text and clear only (with selector the text is appended unless clear, else the focused element receives the keys).",
-  // The operation's own text says "Not in any FOX_CAPS profile", which holds
-  // for the legacy names only: the public tool is in the core profile.
+  fox_press_key:
+    'Press a keyboard key with optional modifiers (Ctrl, Shift, Alt, Meta) on the element located by selector (CSS), xpath, text or id (checked in that order; it is focused first), else on the focused element. The key events are synthetic (isTrusted=false): page handlers see them, but the browser performs no default action (no focus move on Tab, no scrolling, no browser shortcuts). Plain Enter in a form field submits the form like a real Enter. Headless: selector only; real key presses, so on a password field keys that could change its value are refused (Enter, Tab, Escape, arrows, Home/End, PageUp/PageDown and lone modifiers are allowed).',
   fox_handle_dialog:
     'Extension path: not implemented (returns an error; commands to a tab showing an alert/confirm/prompt time out there). Headless only: wait for the next dialog and accept or dismiss it (promptText for prompts). Call it before the action that opens the dialog: it does not block other commands, and when no dialog comes within timeout it arms itself for the next dialog on the tab (30 s). Dialogs nobody handles are dismissed automatically after 2 s and reported in the next result of that tab.',
+  fox_request_approval:
+    'Ask the human at the browser a yes/no question and wait for the answer. Shown in the Inari MCP toolbar popup in Firefox (badge + OS notification), never in the page. The answer is for you only: it approves no tool call — acting tools ask the human on their own when you call them. Unavailable in headless mode.',
+  fox_detect_captcha:
+    'Detect captchas on the page (reCAPTCHA, hCaptcha, Cloudflare Turnstile, generic image captchas). Reports what was found so the human can be asked to solve it. Does NOT auto-solve.',
+  fox_safety_status:
+    'Show the active safety guard policy: which calls ask the human for approval, read-only mode, blocked/allowed URL patterns and confirm_read_sites, rate-limit state, and audit log location.',
 } satisfies Partial<Record<OperationName, string>>;
 
 /**
@@ -539,21 +474,17 @@ const PUBLIC_TOOL_TABLE = {
   fox_find: foxFind,
   fox_tabs: foxTabs,
   fox_tab: foxTab,
-  fox_navigate: asIs('fox_navigate'),
+  fox_navigate: asIs('fox_navigate', AS_IS_DESCRIPTIONS.fox_navigate),
   fox_click: asIs('fox_click', AS_IS_DESCRIPTIONS.fox_click),
   fox_type: asIs('fox_type', AS_IS_DESCRIPTIONS.fox_type),
-  fox_press_key: asIs('fox_press_key'),
+  fox_press_key: asIs('fox_press_key', AS_IS_DESCRIPTIONS.fox_press_key),
   fox_set_value: foxSetValue,
   fox_interact: foxInteract,
   fox_wait: foxWait,
-  fox_logging: foxLogging,
-  fox_get_logs: foxGetLogs,
-  fox_evaluate: foxEvaluate,
-  fox_observer: foxObserver,
   fox_handle_dialog: asIs('fox_handle_dialog', AS_IS_DESCRIPTIONS.fox_handle_dialog),
-  fox_request_approval: asIs('fox_request_approval'),
-  fox_detect_captcha: asIs('fox_detect_captcha'),
-  fox_safety_status: asIs('fox_safety_status'),
+  fox_request_approval: asIs('fox_request_approval', AS_IS_DESCRIPTIONS.fox_request_approval),
+  fox_detect_captcha: asIs('fox_detect_captcha', AS_IS_DESCRIPTIONS.fox_detect_captcha),
+  fox_safety_status: asIs('fox_safety_status', AS_IS_DESCRIPTIONS.fox_safety_status),
 } satisfies Record<string, PublicTool>;
 
 export type PublicToolName = keyof typeof PUBLIC_TOOL_TABLE;
@@ -567,51 +498,3 @@ export function isPublicToolName(name: string): name is PublicToolName {
 
 /** Every public tool name, in tools/list order. */
 export const PUBLIC_TOOL_NAMES: readonly PublicToolName[] = Object.keys(PUBLIC_TOOLS).filter(isPublicToolName);
-
-/** The operations that are no public tool any more (the deprecated names). */
-export type LegacyOperationName = Exclude<OperationName, PublicToolName>;
-
-/** Whether `name` is a deprecated operation name. */
-export function isLegacyOperationName(name: string): name is LegacyOperationName {
-  return Object.hasOwn(LEGACY_REPLACEMENTS, name);
-}
-
-/**
- * Deprecated tool names (the operations that are no public tool any more)
- * and what replaces them: `[tool, discriminator value]`, or null when the
- * tool was removed (fox_run_workflow, fox_audit_page: not implemented on
- * any backend). The key set is checked by the type: every operation is a
- * public tool or listed here.
- */
-export const LEGACY_REPLACEMENTS: Readonly<Record<LegacyOperationName, readonly [PublicToolName, string] | null>> = {
-  fox_get_page_info: ['fox_read', 'info'],
-  fox_get_text: ['fox_read', 'text'],
-  fox_get_elements: ['fox_find', 'selector'],
-  fox_find_text: ['fox_find', 'text'],
-  fox_get_tabs: ['fox_tabs', 'tabs'],
-  fox_list_containers: ['fox_tabs', 'containers'],
-  fox_create_tab: ['fox_tab', 'create'],
-  fox_open_in_container: ['fox_tab', 'create'],
-  fox_close_tab: ['fox_tab', 'close'],
-  fox_switch_tab: ['fox_tab', 'switch'],
-  fox_select_option: ['fox_set_value', 'select'],
-  fox_hover: ['fox_interact', 'hover'],
-  fox_scroll: ['fox_interact', 'scroll'],
-  fox_highlight: ['fox_interact', 'highlight'],
-  fox_wait_for_element: ['fox_wait', 'element'],
-  fox_wait_for_network_idle: ['fox_wait', 'network_idle'],
-  fox_wait_for_navigation: ['fox_wait', 'navigation'],
-  fox_wait_for_url: ['fox_wait', 'url'],
-  fox_start_logging: ['fox_logging', 'start'],
-  fox_stop_logging: ['fox_logging', 'stop'],
-  fox_clear_logs: ['fox_logging', 'clear'],
-  fox_get_console_logs: ['fox_get_logs', 'console'],
-  fox_get_network_logs: ['fox_get_logs', 'network'],
-  fox_execute_script: ['fox_evaluate', 'script'],
-  fox_eval_chain: ['fox_evaluate', 'chain'],
-  fox_wait_and_act: ['fox_evaluate', 'wait_and_act'],
-  fox_inject_observer: ['fox_observer', 'inject'],
-  fox_remove_observer: ['fox_observer', 'remove'],
-  fox_run_workflow: null,
-  fox_audit_page: null,
-};

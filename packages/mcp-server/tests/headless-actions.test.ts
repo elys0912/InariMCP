@@ -1,13 +1,14 @@
 /**
  * Headless backend actions against a real headless Firefox (Playwright).
  * Skipped as a whole when Firefox cannot be launched, except on CI or with
- * KITSUNE_REQUIRE_FIREFOX (npm run test:firefox), where that fails the run
+ * INARI_REQUIRE_FIREFOX (npm run test:firefox), where that fails the run
  * (tests/contract/helpers/real-firefox.ts).
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Page } from 'playwright';
 import { HeadlessBrowser } from '../src/headless/backend.js';
 import { PASSWORD_REFUSAL } from '../src/safety/password-guard.js';
 import { skipOrFailWithoutFirefox } from '../../../tests/contract/helpers/real-firefox.js';
@@ -49,6 +50,19 @@ function real(name: string, fn: () => Promise<void>, timeout = 30_000): void {
   }, timeout);
 }
 
+/**
+ * Runs `js` in the page of the active tab, to set up or read page state in
+ * these tests. The backend itself runs no caller-supplied script (InariMCP
+ * has no execute_script), so this reaches into HeadlessBrowser's tab map.
+ */
+async function inPage(js: string): Promise<unknown> {
+  const internals = browser as unknown as { _tabs: Map<number, Page>; _activeTabId: number | null };
+  const id = internals._activeTabId;
+  const page = id === null ? undefined : internals._tabs.get(id);
+  if (page === undefined) throw new Error('no active headless tab');
+  return page.evaluate(js);
+}
+
 /** `v`, asserted to be defined (in place of the non-null assertion `!`). */
 function defined<T>(v: T | undefined): T {
   expect(v).toBeDefined();
@@ -77,6 +91,38 @@ describe('snapshot', () => {
     expect(missing['success']).toBe(false);
   });
 
+  real('masks the values of masked fields and the choice of a masked select', async () => {
+    await load(
+      '<label>Password <input type="password" value="hunter2"></label>' +
+      '<label>Code <input autocomplete="one-time-code" value="123456" placeholder="6 digits"></label>' +
+      '<label>Month <select autocomplete="cc-exp-month"><option>01</option><option selected>02</option></select></label>' +
+      '<label>Name <input value="Alice"></label>',
+    );
+    const r = await browser.execute('snapshot', undefined, { includeText: true });
+    const text = r['snapshot'] as string;
+    expect(text).not.toContain('hunter2');
+    expect(text).not.toContain('123456');
+    expect(text).not.toMatch(/option "02" \[selected\]/);
+    expect(text).toContain('[MASKED]');
+    expect(text).toContain('Alice');
+  });
+
+  // Values YAML quotes or escapes, and an option named by its label: they
+  // catch a change of Playwright's snapshot format.
+  real('masks values that the YAML quotes, and an option named by its label', async () => {
+    await load(
+      '<label>Card <input autocomplete="cc-number" value="  4111: 1111 "></label>' +
+      '<label>Code <input type="password" value="#x \'y\' &quot;z&quot;"></label>' +
+      '<label>Year <select autocomplete="cc-exp-year"><option>2030</option>' +
+      '<option label="Thirty-one" selected>2031</option></select></label>',
+    );
+    const r = await browser.execute('snapshot', undefined, { includeText: true });
+    const text = r['snapshot'] as string;
+    expect(text).not.toContain('4111');
+    expect(text).not.toContain("'y'");
+    expect(text).not.toMatch(/\[selected\]/);
+  });
+
   real('warns when the selector matches several elements', async () => {
     await load('<button>A</button><button>B</button>');
     const r = await browser.execute('snapshot', undefined, { selector: 'button', includeText: true });
@@ -88,7 +134,7 @@ describe('snapshot', () => {
 describe('scroll', () => {
   const TALL = '<div style="height:3000px">tall</div><div id="t" style="height:10px">target</div><div style="height:3000px"></div>';
 
-  real('moves the window by direction and amount; no direction moves nothing (H-26)', async () => {
+  real('moves the window by direction and amount; no direction moves nothing', async () => {
     await load(TALL);
     const down = await browser.execute('scroll', undefined, { direction: 'down', amount: 300 });
     expect(down).toMatchObject({ success: true, scrolled: true, target: 'window', position: { y: 300 } });
@@ -107,8 +153,7 @@ describe('scroll', () => {
     const r = await browser.execute('scroll', undefined, { direction: 'sideways', amount: 300 });
     expect(r['success']).toBe(false);
     expect(String(r['error'])).toContain('direction');
-    const windowY = await browser.execute('execute_script', undefined, { script: 'window.scrollY' });
-    expect(windowY['result']).toBe(0);
+    expect(await inPage('window.scrollY')).toBe(0);
   });
 
   real('bottom reaches the end and a further down reports scrolled:false', async () => {
@@ -125,8 +170,7 @@ describe('scroll', () => {
     expect(r).toMatchObject({ success: true, target: 'element', position: { y: 200 } });
     const win = await browser.execute('get_page_info', undefined, {});
     expect(win['success']).toBe(true);
-    const windowY = await browser.execute('execute_script', undefined, { script: 'window.scrollY' });
-    expect(windowY['result']).toBe(0);
+    expect(await inPage('window.scrollY')).toBe(0);
   });
 
   real('toElement brings the element into view and wins over direction', async () => {
@@ -173,6 +217,14 @@ describe('select_option', () => {
     expect(index['success']).toBe(false);
   });
 
+  real('a masked select answers with its options masked, chosen or listed', async () => {
+    await load('<select id="m" autocomplete="cc-exp-month"><option value="01">Jan</option><option value="02">Feb</option></select>');
+    expect(await browser.execute('select_option', undefined, { selector: '#m', index: 1 }))
+      .toMatchObject({ success: true, selected: true, value: '[MASKED]', text: '[MASKED]' });
+    const miss = await browser.execute('select_option', undefined, { selector: '#m', index: 9 });
+    expect(miss['availableOptions']).toEqual([{ value: '[MASKED]', text: '[MASKED]' }, { value: '[MASKED]', text: '[MASKED]' }]);
+  });
+
   real('text falls back to the trimmed option text, as on the Extension', async () => {
     await load('<select id="s"><option value="a"> Alpha </option><option value="b">Beta</option></select>');
     expect(await browser.execute('select_option', undefined, { selector: '#s', text: 'Alpha' }))
@@ -186,28 +238,10 @@ describe('select_option', () => {
   });
 });
 
-describe('get_value', () => {
-  real('masks a password field as the Extension does, and returns other values', async () => {
-    await load('<input id="p" type="password" value="secret"><input id="c" autocomplete="current-password" value="secret">' +
-      '<input id="w" autocomplete="Current-Password webauthn" value="secret"><input id="t" value="plain">');
-    for (const selector of ['#p', '#c', '#w']) {
-      expect(await browser.execute('get_value', undefined, { selector })).toMatchObject({ success: true, value: '[MASKED]' });
-    }
-    expect(await browser.execute('get_value', undefined, { selector: '#t' })).toMatchObject({ success: true, value: 'plain' });
-  });
-
-  real('reads a <label>, a <select> and other elements as the Extension does (H-20, H-21)', async () => {
-    await load('<label id="l" for="p">Password</label><input id="p" type="password" value="secret">' +
-      '<select id="s"><option value="a">A</option><option value="b" selected>B</option></select><div id="d">some <b>text</b></div>');
-    expect(await browser.execute('get_value', undefined, { selector: '#l' })).toMatchObject({ success: true, value: 'Password' });
-    expect(await browser.execute('get_value', undefined, { selector: '#s' })).toMatchObject({ success: true, value: 'b' });
-    expect(await browser.execute('get_value', undefined, { selector: '#d' })).toMatchObject({ success: true, value: 'some text' });
-  });
-});
-
-describe('type and set_value (H-2, H-6)', () => {
+describe('type and set_value', () => {
+  /** The value of an input, select or textarea, else the text of the element. */
   async function valueOf(selector: string): Promise<unknown> {
-    return (await browser.execute('get_value', undefined, { selector }))['value'];
+    return inPage(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); return 'value' in e ? e.value : e.textContent; })()`);
   }
 
   real('type with selector appends unless clear, and clear gives no warning', async () => {
@@ -225,7 +259,7 @@ describe('type and set_value (H-2, H-6)', () => {
 
   real('type without selector warns that clear is not applied', async () => {
     await load('<input id="t" value="ab">');
-    await browser.execute('execute_script', undefined, { script: 'document.getElementById("t").focus()' });
+    await inPage('document.getElementById("t").focus()');
     const r = await browser.execute('type', undefined, { text: 'c', clear: true });
     expect(r['success']).toBe(true);
     expect(String((r['warnings'] as string[])[0])).toContain('clear');
@@ -238,11 +272,11 @@ describe('type and set_value (H-2, H-6)', () => {
     expect(await valueOf('#t')).toBe('new');
     expect((await browser.execute('set_value', undefined, { selector: '#s', value: 'b' }))['success']).toBe(true);
     expect(await valueOf('#s')).toBe('b');
-    expect((await browser.execute('execute_script', undefined, { script: 'window.events' }))['result']).toEqual(['input', 'change']);
+    expect(await inPage('window.events')).toEqual(['input', 'change']);
   });
 });
 
-describe('reading the page (H-3, H-7, H-8, H-15)', () => {
+describe('reading the page', () => {
   real('get_text returns totalLength and title as the Extension does', async () => {
     await load('<title>T</title><p>hello world</p>');
     const r = await browser.execute('get_text', undefined, { maxLength: 5 });
@@ -277,19 +311,62 @@ describe('reading the page (H-3, H-7, H-8, H-15)', () => {
   real('highlight keeps the outline for duration', async () => {
     await load('<p id="p">x</p>');
     expect((await browser.execute('highlight', undefined, { selector: '#p', duration: 200 }))['success']).toBe(true);
-    const outline = async (): Promise<unknown> =>
-      (await browser.execute('execute_script', undefined, { script: 'document.getElementById("p").style.outline' }))['result'];
+    const outline = (): Promise<unknown> => inPage('document.getElementById("p").style.outline');
     expect(await outline()).not.toBe('');
     await new Promise((r) => setTimeout(r, 400));
     expect(await outline()).toBe('');
   });
 });
 
-describe('history and waits (H-13)', () => {
+describe('options of a masked select and selectors that test a value, as on the Extension', () => {
+  const CARD =
+    '<select id="m" autocomplete="cc-exp-month"><option value="01">01</option><option value="05" selected>05</option></select>' +
+    '<select id="c" autocomplete="country"><option value="jp">Japan</option></select>' +
+    '<input id="h" type="hidden" name="csrf" value="secret">';
+
+  real('get_elements and get_text mask the text of an option of a masked select only', async () => {
+    await load(CARD);
+    const found = await browser.execute('get_elements', undefined, { selector: 'option', limit: 50 });
+    expect((found['elements'] as Array<{ text: string }>).map((e) => e.text)).toEqual(['[MASKED]', '[MASKED]', 'Japan']);
+    expect(await browser.execute('get_text', undefined, { selector: '#m option', maxLength: 100 }))
+      .toMatchObject({ success: true, text: '[MASKED]' });
+    expect(await browser.execute('get_text', undefined, { selector: '#c option', maxLength: 100 }))
+      .toMatchObject({ success: true, text: 'Japan' });
+  });
+
+  real('the reading commands refuse a selector with [value…], [selected], :checked, :default or a Playwright dialect', async () => {
+    await load(CARD);
+    const refused = [
+      await browser.execute('get_elements', undefined, { selector: 'input[name=csrf][value^="s"]', limit: 50 }),
+      await browser.execute('get_elements', undefined, { selector: "xpath=//input[starts-with(@value,'s')]", limit: 50 }),
+      await browser.execute('get_elements', undefined, { selector: 'select >> internal:role=option[selected]', limit: 50 }),
+      await browser.execute('get_text', undefined, { selector: '#m option:checked', maxLength: 100 }),
+      await browser.execute('get_text', undefined, { selector: '#m option[selected]', maxLength: 100 }),
+      await browser.execute('wait_for_element', undefined, { selector: '[VALUE="secret"]', timeout: 300, visible: false }),
+      await browser.execute('wait_for_element', undefined, { selector: 'role=option[selected]', timeout: 300, visible: false }),
+      await browser.execute('highlight', undefined, { selector: 'option:default', duration: 200 }),
+      await browser.execute('scroll', undefined, { toElement: 'input[value]', amount: 100 }),
+      await browser.execute('snapshot', undefined, { selector: 'input[type=hidden][value^="s"]', includeText: true }),
+      await browser.execute('snapshot', undefined, { selector: '//input[@value]', includeText: true }),
+    ];
+    for (const r of refused) {
+      expect(r).toMatchObject({ success: false });
+      expect(String(r['error'])).toContain('Selector refused');
+    }
+  });
+
+  real('scroll toElement returns where the element is, not its text', async () => {
+    await load('<div style="height:3000px"></div><p id="t">page text</p>');
+    const r = await browser.execute('scroll', undefined, { toElement: '#t', amount: 100 });
+    expect(r).toMatchObject({ success: true, element: { tag: 'p' } });
+    expect(JSON.stringify(r)).not.toContain('page text');
+  });
+});
+
+describe('history and waits', () => {
   // A wait holds the lock, so the navigation it waits for is started by a
   // timer in the page before the wait is sent.
-  const later = (js: string): Promise<Result> =>
-    browser.execute('execute_script', undefined, { script: `setTimeout(() => { ${js} }, 300); 1` });
+  const later = (js: string): Promise<unknown> => inPage(`setTimeout(() => { ${js} }, 300); 1`);
 
   real('wait_for_navigation ends at the next navigation and names the new page', async () => {
     await load('<title>first</title><p>first</p>');
@@ -330,18 +407,6 @@ describe('other page actions', () => {
     expect((await browser.execute('get_page_info', undefined, {}))['title']).toBe('over');
   });
 
-  real('inject_observer records mutations and remove_observer flushes them', async () => {
-    await load('<div id="box"></div>');
-    const injected = await browser.execute('inject_observer', undefined,
-      { selector: '#box', observeAttributes: false, observeChildList: true, observeSubtree: false });
-    expect(injected).toMatchObject({ success: true });
-    expect(String(injected['message'])).toContain('DIV');
-    await browser.execute('execute_script', undefined, { script: 'document.getElementById("box").append("a", "b"); 1' });
-    const removed = await browser.execute('remove_observer', undefined, {});
-    expect(removed).toMatchObject({ success: true, disconnected: true });
-    expect(removed['mutationsFlushed']).toBeGreaterThan(0);
-  });
-
   real('solve_captcha detects a widget and reports that a human is needed', async () => {
     await load('<div class="g-recaptcha"></div><textarea name="g-recaptcha-response"></textarea>');
     const detected = await browser.execute('solve_captcha', undefined, { detectOnly: true });
@@ -352,7 +417,7 @@ describe('other page actions', () => {
     expect(await browser.execute('solve_captcha', undefined, { detectOnly: true })).toMatchObject({ present: false, widgets: [] });
   });
 
-  real('focus_tab makes the tab active and names it (H-23)', async () => {
+  real('focus_tab makes the tab active and names it', async () => {
     await load('<p>first</p>');
     const tabs = await browser.execute('get_tabs', undefined, {});
     const first = defined((tabs['tabs'] as Array<{ id: number; active: boolean }>).find((t) => t.active)).id;
@@ -370,7 +435,7 @@ describe('other page actions', () => {
 describe('screenshot', () => {
   let dir = '';
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-headless-shot-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-headless-shot-'));
     vi.stubEnv('FOX_SCREENSHOTS_DIR', dir);
   });
   afterEach(() => {
@@ -388,7 +453,7 @@ describe('screenshot', () => {
     expect(path.dirname(String(unnamed['imagePath']))).toBe(dir);
   });
 
-  // A-KM-06: Playwright took the format from the extension and refused a name without one.
+  // Playwright would take the format from the file name's extension and refuse a name without one.
   real('always saves a PNG named as the Extension path does, whatever the extension', async () => {
     await load('<p>x</p>');
     const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -405,7 +470,7 @@ describe('screenshot', () => {
   });
 });
 
-describe('direct execute() calls the tool schemas would refuse (H-24, H-25)', () => {
+describe('direct execute() calls the tool schemas would refuse', () => {
   real('close_tab without tabId closes nothing; navigate with an empty url fails', async () => {
     await load('<p>x</p>');
     const before = (await browser.execute('get_tabs', undefined, {}))['totalTabs'];
@@ -490,7 +555,7 @@ describe('dialogs', () => {
     expect(Date.now() - started).toBeLessThan(10_000);
   });
 
-  real('a second handle_dialog replaces the first, which does not arm (Q-3)', async () => {
+  real('a second handle_dialog replaces the first, which does not arm', async () => {
     await load(ALERT);
     const first = browser.execute('handle_dialog', undefined, { action: 'accept', timeout: 300 });
     const second = browser.execute('handle_dialog', undefined, { action: 'dismiss', timeout: 10_000 });
@@ -505,7 +570,7 @@ describe('dialogs', () => {
     expect((later['dialogs'] as Array<{ auto: boolean }>)[0]?.auto).toBe(true);
   }, 40_000);
 
-  real('a cancelled handle_dialog ends at once and does not arm (Q-2)', async () => {
+  real('a cancelled handle_dialog ends at once and does not arm', async () => {
     await load(ALERT);
     const abort = new AbortController();
     const waiting = browser.execute('handle_dialog', undefined, { action: 'accept', timeout: 20_000 },
@@ -562,11 +627,10 @@ describe('warnings and timeouts', () => {
 // Without a selector the guard follows the focus from the top document's
 // activeElement (the <iframe> / shadow host) to the field inside it
 // (headless/focus.ts). The Extension path still has the old limit.
-// Moved from password-guard.test.ts (H-29): the guard where the element is
+// Moved from password-guard.test.ts: the guard where the element is
 // resolved by the server rather than by content.ts.
 describe('type / set_value: password guard on the element written to', () => {
-  const script = async (src: string): Promise<unknown> =>
-    (await browser.execute('execute_script', undefined, { script: src }))['result'];
+  const script = inPage;
 
   real('refuses a password field that only appears while the fill waits for it', async () => {
     await load(
@@ -617,7 +681,7 @@ describe('type / set_value: password guard on the element written to', () => {
   });
 });
 
-describe('type without selector: password guard follows the focus (WP30)', () => {
+describe('type without selector: password guard follows the focus', () => {
   const BOX = 'position:absolute;left:0;top:0;width:300px;height:60px;border:0;margin:0';
   const FIELD = (type: string): string => `<input type=${type} style="${BOX}">`;
   const frameDoc = (type: string): string =>
@@ -631,7 +695,7 @@ describe('type without selector: password guard follows the focus (WP30)', () =>
   }
 
   async function valueOf(field: string): Promise<unknown> {
-    return (await browser.execute('execute_script', undefined, { script: `${field}.value` }))['result'];
+    return inPage(`${field}.value`);
   }
 
   real('refuses a focused password field inside a same-origin iframe', async () => {
@@ -665,11 +729,11 @@ describe('type without selector: password guard follows the focus (WP30)', () =>
   //   limitation of headless/focus.ts).
 });
 
-describe('press_key: password guard (H-1)', () => {
+describe('press_key: password guard', () => {
   const PW = '<input id="pw" type="password"><input id="t" type="text">';
 
   async function valueOf(id: string): Promise<unknown> {
-    return (await browser.execute('execute_script', undefined, { script: `document.getElementById("${id}").value` }))['result'];
+    return inPage(`document.getElementById("${id}").value`);
   }
 
   const press = (key: string, extra: Record<string, unknown> = {}): Promise<Result> =>
@@ -680,7 +744,7 @@ describe('press_key: password guard (H-1)', () => {
     await load(PW);
     const bySelector = await press('a', { selector: '#pw' });
     // Refused before the field is focused: focus it for the case without selector.
-    await browser.execute('execute_script', undefined, { script: 'document.getElementById("pw").focus()' });
+    await inPage('document.getElementById("pw").focus()');
     const focused = await press('a');
     for (const r of [bySelector, focused]) {
       expect(r['success']).toBe(false);
@@ -695,7 +759,7 @@ describe('press_key: password guard (H-1)', () => {
 
   real('refuses when the selector cannot take focus and a password field keeps it', async () => {
     await load(`${PW}<div id="d">x</div>`);
-    await browser.execute('execute_script', undefined, { script: 'document.getElementById("pw").focus()' });
+    await inPage('document.getElementById("pw").focus()');
     const r = await press('a', { selector: '#d' });
     expect(r['success']).toBe(false);
     expect(String(r['error'])).toMatch(/password field/);
@@ -712,7 +776,7 @@ describe('press_key: password guard (H-1)', () => {
   });
 });
 
-describe('password fields of an XHTML document (H-5)', () => {
+describe('password fields of an XHTML document', () => {
   const XHTML = (body: string): string =>
     `data:application/xhtml+xml;charset=utf-8,${encodeURIComponent(
       `<html xmlns="http://www.w3.org/1999/xhtml"><body>${body}</body></html>`,
@@ -726,15 +790,16 @@ describe('password fields of an XHTML document (H-5)', () => {
       const r = await browser.execute('type', undefined, { selector, text: 'secret', clear: false });
       expect(String(r['error'])).toMatch(/password field/);
     }
-    await browser.execute('execute_script', undefined, { script: 'document.getElementById("pw").focus()' });
+    await inPage('document.getElementById("pw").focus()');
     const focused = await browser.execute('type', undefined, { text: 'secret', clear: false });
     expect(String(focused['error'])).toMatch(/password field/);
-    expect(await browser.execute('get_value', undefined, { selector: '#pw' })).toMatchObject({ value: '[MASKED]' });
   });
 });
 
-describe('commands given up while waiting for the lock (Q-2)', () => {
-  const TITLE = "document.title = 'ran'";
+describe('commands given up while waiting for the lock', () => {
+  // A click on it sets the title, so a command that ran shows.
+  const BUTTON = `<button id="b" onclick="document.title = 'ran'">x</button>`;
+  const CLICK = { selector: '#b' };
 
   async function busy(): Promise<Result> {
     // Holds the lock for ~500 ms.
@@ -742,10 +807,10 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
   }
 
   real('a command whose caller gave up meanwhile is not run', async () => {
-    await load('<p>x</p>');
+    await load(BUTTON);
     const abort = new AbortController();
     const hold = busy();
-    const queued = browser.execute('execute_script', undefined, { script: TITLE },
+    const queued = browser.execute('click', undefined, CLICK,
       { deadline: Infinity, signal: abort.signal });
     abort.abort();
     await hold;
@@ -757,9 +822,9 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
   });
 
   real('a command whose deadline passed meanwhile is not run', async () => {
-    await load('<p>x</p>');
+    await load(BUTTON);
     const hold = busy();
-    const queued = browser.execute('execute_script', undefined, { script: TITLE },
+    const queued = browser.execute('click', undefined, CLICK,
       { deadline: Date.now() + 100, signal: new AbortController().signal });
     await hold;
     expect(String((await queued)['error'])).toContain('Not run');
@@ -767,7 +832,7 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
     expect(info['title']).not.toBe('ran');
   });
 
-  real('a cancelled wait_for_* ends at once and frees the lock (H-4)', async () => {
+  real('a cancelled wait_for_* ends at once and frees the lock', async () => {
     await load('<p>x</p>');
     const waits: Array<[string, Record<string, unknown>]> = [
       ['wait_for_element', { selector: '#never', timeout: 20_000, visible: true }],
@@ -789,110 +854,17 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
   }, 40_000);
 
   real('a command still awaited runs after the one before it', async () => {
-    await load('<p>x</p>');
+    await load(BUTTON);
     const hold = busy();
-    const queued = browser.execute('execute_script', undefined, { script: TITLE },
+    const queued = browser.execute('click', undefined, CLICK,
       { deadline: Date.now() + 30_000, signal: new AbortController().signal });
     await hold;
     expect((await queued)['success']).toBe(true);
+    expect((await browser.execute('get_page_info', undefined, {}))['title']).toBe('ran');
   });
 });
 
-describe('waits and page scripts end on their own (R-1, L-1, R-8)', () => {
-  const ctx = (ms: number): { deadline: number; signal: AbortSignal } =>
-    ({ deadline: Date.now() + ms, signal: new AbortController().signal });
-
-  real('wait_and_act with pollIntervalMs 0 or negative ends at timeoutMs and frees the lock', async () => {
-    await load('<p>x</p>');
-    for (const pollIntervalMs of [0, -50]) {
-      const started = Date.now();
-      const r = await browser.execute('wait_and_act', undefined,
-        { condition: 'false', actionScript: '1', pollIntervalMs, timeoutMs: 300 });
-      expect(r['success']).toBe(false);
-      expect(String(r['error'])).toContain('Condition not met');
-      expect(Date.now() - started).toBeLessThan(5_000);
-    }
-    expect((await browser.execute('get_page_info', undefined, {}))['success']).toBe(true);
-  });
-
-  real('wait_and_act names the last error of a condition that cannot run (H-9)', async () => {
-    await load('<p>x</p>');
-    const r = await browser.execute('wait_and_act', undefined,
-      { condition: 'noSuchName.value', actionScript: '1', pollIntervalMs: 50, timeoutMs: 300 });
-    expect(r['success']).toBe(false);
-    expect(String(r['error'])).toContain('last condition error');
-    expect(String(r['error'])).toContain('noSuchName');
-  });
-
-  real('wait_and_act ended by the caller\'s deadline says so (H-9)', async () => {
-    await load('<p>x</p>');
-    const r = await browser.execute('wait_and_act', undefined,
-      { condition: 'false', actionScript: '1', pollIntervalMs: 50, timeoutMs: 10_000 }, ctx(300));
-    expect(r['success']).toBe(false);
-    expect(String(r['error'])).toContain("caller's deadline");
-  });
-
-  real('wait_and_act reports the measured elapsed_ms', async () => {
-    await load('<p>x</p>');
-    const r = await browser.execute('wait_and_act', undefined, {
-      condition: `(() => { window.__t ??= Date.now(); return Date.now() - window.__t > 300; })()`,
-      actionScript: "'done'",
-      pollIntervalMs: 50,
-      timeoutMs: 5_000,
-    });
-    expect(r).toMatchObject({ success: true, result: 'done' });
-    expect(r['elapsed_ms'] as number).toBeGreaterThanOrEqual(250);
-  });
-
-  real('a condition that never settles does not hold wait_and_act past timeoutMs', async () => {
-    await load('<p>x</p>');
-    const started = Date.now();
-    const r = await browser.execute('wait_and_act', undefined,
-      { condition: 'new Promise(() => {})', actionScript: '1', pollIntervalMs: 200, timeoutMs: 500 });
-    expect(r['success']).toBe(false);
-    expect(Date.now() - started).toBeLessThan(5_000);
-  });
-
-  real('execute_script whose promise never settles is given up at the deadline', async () => {
-    await load('<p>x</p>');
-    const started = Date.now();
-    const r = await browser.execute('execute_script', undefined, { script: 'new Promise(() => {})' }, ctx(500));
-    expect(r['success']).toBe(false);
-    expect(String(r['error'])).toContain('did not finish');
-    expect(Date.now() - started).toBeLessThan(5_000);
-    expect((await browser.execute('get_page_info', undefined, {}))['success']).toBe(true);
-  });
-
-  real('execute_script is given up at once when the caller gives up', async () => {
-    await load('<p>x</p>');
-    const abort = new AbortController();
-    const running = browser.execute('execute_script', undefined, { script: 'new Promise(() => {})' },
-      { deadline: Infinity, signal: abort.signal });
-    await new Promise((r) => setTimeout(r, 200));
-    abort.abort();
-    const r = await running;
-    expect(r['success']).toBe(false);
-    expect(String(r['error'])).toContain('cancelled');
-  });
-
-  real('an eval_chain step that never settles fails at the deadline', async () => {
-    await load('<p>x</p>');
-    const r = await browser.execute('eval_chain', undefined,
-      {
-        steps: [
-          { script: '1', captureConsole: true, stopOnError: true },
-          { label: 'hang', script: 'new Promise(() => {})', captureConsole: true, stopOnError: true },
-        ],
-      }, ctx(500));
-    expect(r['success']).toBe(true);
-    const steps = r['steps'] as Array<{ label: string; error: string | null }>;
-    expect(defined(steps[0]).error).toBeNull();
-    expect(steps[1]).toMatchObject({ label: 'hang' });
-    expect(String(defined(steps[1]).error)).toContain('did not finish');
-  });
-});
-
-describe('element waits and create_tab (R-3, R-2)', () => {
+describe('element waits and create_tab', () => {
   real('set_value on a missing element fails within the element timeout, not after 60 s', async () => {
     await load('<p>x</p>');
     const started = Date.now();
@@ -913,7 +885,7 @@ describe('element waits and create_tab (R-3, R-2)', () => {
   });
 });
 
-describe('results name the tab and its URL (O-1)', () => {
+describe('results name the tab and its URL', () => {
   real('a click that navigates reports the URL it ended on and the tab id', async () => {
     await load('<a id="a" href="#next">next</a>');
     const tabs = await browser.execute('get_tabs', undefined, {});
@@ -922,8 +894,8 @@ describe('results name the tab and its URL (O-1)', () => {
     expect(click['success']).toBe(true);
     expect(String(click['url'])).toMatch(/#next$/);
     expect(click['tabId']).toBe(active);
-    const script = await browser.execute('execute_script', undefined, { script: '1' });
-    expect(script).toMatchObject({ success: true, result: 1, tabId: active });
+    const text = await browser.execute('get_text', undefined, { maxLength: 100 });
+    expect(text).toMatchObject({ success: true, tabId: active });
     const nav = await browser.execute('navigate', undefined, { url: PAGE('<p>y</p>'), newTab: false });
     expect(nav['tabId']).toBe(active);
   });
@@ -950,7 +922,7 @@ describe('results name the tab and its URL (O-1)', () => {
   });
 });
 
-describe('closing the last tab (Q-1)', () => {
+describe('closing the last tab', () => {
   real('tab commands still work afterwards and other actions name the way out', async () => {
     const list = async (): Promise<number[]> =>
       ((await browser.execute('get_tabs', undefined, {}))['tabs'] as Array<{ id: number }>).map((t) => t.id);

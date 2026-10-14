@@ -10,8 +10,8 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { describe, expect, it } from 'vitest';
-import { BROWSER_ACTIONS } from '@kitsune-mcp/shared';
-import { BROWSER_ACTIONS as NAMES } from '@kitsune-mcp/shared/action-names';
+import { BROWSER_ACTIONS } from '@inari-mcp/shared';
+import { BROWSER_ACTIONS as NAMES } from '@inari-mcp/shared/action-names';
 
 const read = (file: string): string =>
   fs.readFileSync(fileURLToPath(new URL(`../src/${file}`, import.meta.url)), 'utf-8');
@@ -29,8 +29,8 @@ describe('a browser bundle importing BROWSER_ACTIONS from the package root', () 
   // Same resolution as scripts/build-extension.mjs: the shared sources, not dist.
   const src = fileURLToPath(new URL('../src/', import.meta.url));
   const entries: Record<string, string> = {
-    '@kitsune-mcp/shared': path.join(src, 'index.ts'),
-    '@kitsune-mcp/shared/action-names': path.join(src, 'action-names.ts'),
+    '@inari-mcp/shared': path.join(src, 'index.ts'),
+    '@inari-mcp/shared/action-names': path.join(src, 'action-names.ts'),
   };
 
   it.each(Object.keys(entries))('from %s contains no zod and no Node helpers', async (specifier) => {
@@ -43,9 +43,9 @@ describe('a browser bundle importing BROWSER_ACTIONS from the package root', () 
       metafile: true,
       logLevel: 'silent',
       plugins: [{
-        name: 'kitsune-shared',
+        name: 'inari-shared',
         setup(b) {
-          b.onResolve({ filter: /^@kitsune-mcp\/shared(\/|$)/ }, (args) => ({ path: entries[args.path]! }));
+          b.onResolve({ filter: /^@inari-mcp\/shared(\/|$)/ }, (args) => ({ path: entries[args.path]! }));
         },
       }],
     });

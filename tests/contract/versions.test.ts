@@ -10,7 +10,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
-import { signRequest } from '@kitsune-mcp/shared/node';
+import { signRequest } from '@inari-mcp/shared/node';
 import { PACKAGE_VERSION } from '../../packages/mcp-server/src/version.js';
 import { HOST_VERSION } from '../../packages/native-host/src/version.js';
 import { startHttpBridge } from '../../packages/mcp-server/src/transport/http-bridge.js';

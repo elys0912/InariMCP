@@ -120,7 +120,7 @@ describe('relay tool handler', () => {
     expect(client.checkSettings).toHaveBeenCalledTimes(2);
   });
 
-  it('X-4 fox_safety_status says the settings are unknown when /daemon/info cannot be read', async () => {
+  it('fox_safety_status says the settings are unknown when /daemon/info cannot be read', async () => {
     const client = fakeClient();
     client.checkSettings.mockResolvedValue(null);
     const handlers = createRelayHandlers(client, [], () => {});
@@ -128,7 +128,7 @@ describe('relay tool handler', () => {
     expect(texts(r)).toEqual(['done', SETTINGS_UNKNOWN_NOTE]);
   });
 
-  it('L-3 a failed background check is not remembered: the next call checks again', async () => {
+  it('a failed background check is not remembered: the next call checks again', async () => {
     const client = fakeClient();
     client.checkSettings
       .mockResolvedValueOnce(null) // first check: /daemon/info timed out

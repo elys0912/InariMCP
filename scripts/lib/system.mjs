@@ -314,7 +314,7 @@ export function listNodeProcesses(deps) {
     if (r.error || r.status !== 0) return null;
     return parsePsOutput(r.stdout); // filtered by entry path in classifyProcesses
   }
-  const script = path.join(os.tmpdir(), `kitsune-ps-${process.pid}-${crypto.randomBytes(4).toString('hex')}.js`);
+  const script = path.join(os.tmpdir(), `inari-ps-${process.pid}-${crypto.randomBytes(4).toString('hex')}.js`);
   let created = false;
   try {
     // 'wx': never run a script someone else planted under the predictable name.
@@ -448,7 +448,7 @@ export async function stopDaemonGracefully(deps, endpoint, token, graceMs) {
 
 /**
  * What answers on the daemon port.
- * kind 'none': nothing; 'foreign': not a KitsuneMCP daemon; 'kitsune':
+ * kind 'none': nothing; 'foreign': not a InariMCP daemon; 'inari':
  * `verified` when it proved it holds our API token, `pid` from the signed
  * GET /daemon/info (only asked once verified: the token is never sent).
  */
@@ -462,9 +462,9 @@ export async function probeDaemon(deps, endpoint, token) {
   } catch {
     return { kind: 'foreign' };
   }
-  // Same test as kitsuneHealth of @kitsune-mcp/shared/node (health.ts).
+  // Same test as inariHealth of @inari-mcp/shared/node (health.ts).
   if (res.status !== 200 || !body || body.status !== 'ok' || body.service !== SERVICE_NAME) return { kind: 'foreign' };
-  const info = { kind: 'kitsune', verified: false, pid: undefined, version: body.version, browsers: body.browsers_connected };
+  const info = { kind: 'inari', verified: false, pid: undefined, version: body.version, browsers: body.browsers_connected };
   if (!token) return info;
   info.verified = macMatches(body.proof, computeMac(token, 'health', nonce));
   if (!info.verified) return info;

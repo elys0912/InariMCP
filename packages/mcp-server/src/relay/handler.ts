@@ -38,8 +38,8 @@ export const SETTINGS_UNKNOWN_NOTE =
   "NOTE: the shared daemon's settings could not be read, so whether they match this session's is unknown.";
 
 export interface RelayHandlers {
-  /** Handler factory for registerTools(). */
-  handlerFor(toolName: string): (args: Record<string, unknown>, extra: { signal?: AbortSignal }) => Promise<CallToolResult>;
+  /** Handler factory for registerTools() (passed on unbound: a function property, no `this`). */
+  handlerFor: (toolName: string) => (args: Record<string, unknown>, extra: { signal?: AbortSignal }) => Promise<CallToolResult>;
   /** Start the background mismatch check (call right after the MCP connect). */
   startNotice(): void;
 }
@@ -85,7 +85,7 @@ export function createRelayHandlers(
 
     handlerFor: (toolName) => async (args, extra) => {
       if (!(await client.ready())) {
-        return errorResult(`KitsuneMCP daemon unavailable at ${client.baseUrl} (see ${daemonLogPath()})`);
+        return errorResult(`Inari MCP daemon unavailable at ${client.baseUrl} (see ${daemonLogPath()})`);
       }
       const result = await invoke(toolName, args, extra.signal);
       if (result.isError) return result;

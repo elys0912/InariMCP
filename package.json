@@ -1,17 +1,17 @@
 {
-  "name": "kitsune-mcp",
-  "version": "0.2.0",
+  "name": "inari-mcp",
+  "version": "0.1.0",
   "private": true,
-  "description": "Firefox MCP addon for Claude Code — browser automation via extension + native messaging",
+  "description": "Inari MCP for Firefox — lets an MCP client such as Claude Code operate your Firefox through an extension and a native messaging host",
   "license": "MIT",
   "author": "elys0912",
-  "homepage": "https://github.com/elys0912/KitsuneMCP",
+  "homepage": "https://github.com/elys0912/InariMCP",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/elys0912/KitsuneMCP.git"
+    "url": "git+https://github.com/elys0912/InariMCP.git"
   },
   "bugs": {
-    "url": "https://github.com/elys0912/KitsuneMCP/issues"
+    "url": "https://github.com/elys0912/InariMCP/issues"
   },
   "workspaces": [
     "packages/*"
@@ -20,12 +20,17 @@
     "build": "npm run build --workspaces",
     "typecheck": "npm run typecheck --workspaces --if-present && npm run typecheck:tests",
     "typecheck:tests": "tsc -p tsconfig.test.json",
+    "lint:install": "npm ci --prefix tools/lint",
+    "lint": "node tools/lint/node_modules/eslint/bin/eslint.js -c tools/lint/eslint.config.js .",
     "clean": "npm run clean --workspaces",
     "test": "vitest run --project=!e2e",
     "test:e2e": "vitest run --project=e2e",
     "test:firefox": "node scripts/test-firefox.mjs",
     "e2e:extension": "node scripts/e2e/extension-load.mjs",
+    "smoke:reviewer": "node scripts/e2e/reviewer-smoke.mjs",
     "lint:ext": "web-ext lint",
+    "pack:ext": "node scripts/pack-extension.mjs",
+    "pack:source": "node scripts/pack-source.mjs",
     "setup": "node scripts/install.mjs",
     "teardown": "node scripts/uninstall.mjs",
     "install:windows": "node scripts/install.mjs --build",
@@ -34,7 +39,7 @@
     "uninstall:unix": "node scripts/uninstall.mjs"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

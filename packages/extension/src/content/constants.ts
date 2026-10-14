@@ -1,24 +1,23 @@
 // Constants of the content script modules (no side effects).
 
+import { SCROLL_CAPTURE_LIMITS } from "@inari-mcp/shared/action-names";
+
 export const TIMEOUTS = {
-  DEFAULT: 10_000,
   WAIT_ELEMENT: 10_000,
   NETWORK_IDLE: 10_000,
   CAPTCHA: 180_000,
   SCROLL_STEP: 500,
+  /** scroll_and_capture: all the delays together (shared SCROLL_CAPTURE_LIMITS). */
+  SCROLL_CAPTURE_BUDGET: SCROLL_CAPTURE_LIMITS.BUDGET_MS,
   /** fox_type: all per-character delays together (see typingDelay). */
   TYPING_BUDGET: 10_000,
-  /** fox_click_and_wait without waitTimeout. */
-  CLICK_AND_WAIT: 5_000,
   /** fox_highlight without duration. */
   HIGHLIGHT: 3_000,
-  /** Highlight of the context menu's "inspect element". */
-  INSPECT_HIGHLIGHT: 5_000,
 } as const;
 
 /** Pauses and poll intervals (ms). */
 export const DELAYS = {
-  /** Poll interval of waitForElement (default), waitForNetworkIdle and clickAndWait. */
+  /** Poll interval of waitForElement (default) and waitForNetworkIdle. */
   POLL: 100,
   /** After scrollIntoView, before acting on the element (click, type, hover). */
   SCROLL_INTO_VIEW: 100,
@@ -32,8 +31,6 @@ export const DELAYS = {
   CAPTCHA_POLL: 1_000,
   /** fox_wait_for_network_idle without idleTime: no request this long. */
   NETWORK_IDLE_TIME: 500,
-  /** clickAndWait without waitForSelector: no new DOM change this long ends the wait. */
-  CLICK_SETTLE: 500,
 } as const;
 
 /** Defaults of tool arguments the command does not give. */
@@ -46,13 +43,13 @@ export const DEFAULTS = {
   ELEMENTS_LIMIT: 50,
   /** fox_get_text: characters returned. */
   TEXT_MAX_LENGTH: 20_000,
-  /** scroll_and_capture: scroll steps. */
-  SCROLL_CAPTURE_MAX_SCROLLS: 20,
+  /** scroll_and_capture: scroll steps when the command gives none. */
+  SCROLL_CAPTURE_SCROLLS: 20,
   /** scroll_and_capture step: this share of the viewport height. */
   SCROLL_CAPTURE_STEP_RATIO: 0.8,
 } as const;
 
-/** Counts and lengths (characters) that cut what is returned or kept. */
+/** Counts, lengths (characters) and durations (ms) that cut what is returned, kept or waited for. */
 export const LIMITS = {
   /** getPageInfo: interactive elements looked at, and the text / value of each. */
   PAGE_INFO_ELEMENTS: 100,
@@ -72,14 +69,16 @@ export const LIMITS = {
   TEXT_MATCHES: 50,
   /** Classes of one element in a generated selector. */
   SELECTOR_CLASSES: 2,
-  /** Changes kept per observer (oldest dropped). */
-  OBSERVER_CHANGES: 100,
-  /** clickAndWait: changes returned. */
-  CLICK_WAIT_CHANGES: 20,
-  /** Request body of a logged fetch / XHR. */
-  REQUEST_BODY: 1000,
   /** scroll_and_capture: the page counts as scrolled to the end this close (px). */
   SCROLL_END_SLACK: 10,
+  /**
+   * scroll_and_capture: most steps, and the longest delay of one step (ms),
+   * whatever the command asks for (scrollCaptureLimits; shared
+   * SCROLL_CAPTURE_LIMITS). A delay of 2 s still leaves 11 steps in
+   * TIMEOUTS.SCROLL_CAPTURE_BUDGET.
+   */
+  SCROLL_CAPTURE_MAX_SCROLLS: SCROLL_CAPTURE_LIMITS.MAX_SCROLLS,
+  SCROLL_CAPTURE_MAX_DELAY: SCROLL_CAPTURE_LIMITS.MAX_DELAY_MS,
 } as const;
 
 export const INTERACTIVE_SELECTORS = [
@@ -94,19 +93,35 @@ export const INTERACTIVE_SELECTORS = [
   '[tabindex]:not([tabindex="-1"])',
 ] as const;
 
-/** Look of the fox_highlight overlay (highlightElement). */
+/**
+ * Look of the highlight overlay (highlightElement). It is set on the element
+ * itself (style attribute and element.animate): the add-on puts no stylesheet
+ * into pages, whose class or keyframe names a page could probe for.
+ */
 export const HIGHLIGHT_STYLE = {
   /** Border, and background of the label. */
   COLOR: "#7c3aed",
   /** The same color, translucent: fill of the overlay, and its glow. */
   FILL: "rgba(124, 58, 237, 0.1)",
   GLOW: "rgba(124, 58, 237, 0.5)",
+  /** Blur radius of the glow, in px. */
+  GLOW_BLUR: 10,
+  /** The glow at the peak of each pulse: color and blur radius (px). */
+  GLOW_PEAK: "rgba(124, 58, 237, 0.8)",
+  GLOW_PEAK_BLUR: 20,
+  /** One pulse of the glow (out and back). */
+  PULSE_MS: 1_500,
   /** Above the page's own content. */
   Z_INDEX: 999_999,
 } as const;
 
+/**
+ * `type` of the background → content message that stops the commands running
+ * in the frame (the pause switch, abort.ts), with the background's
+ * `pauseCount`. Not a ContentAction: handler.ts answers it before any
+ * command handler.
+ */
+export const ABORT_REQUEST_TYPE = "inari:content:abort";
+
 /** DOM id of the captcha wait banner (solveCaptcha, cancelHumanWait). */
 export const CAPTCHA_BANNER_ID = "__fox_captcha_banner";
-
-// Message types and log limits shared with the background (../wire-messages.ts).
-export { LOG_RECORD_MESSAGE, LOGGING_STATE_QUERY, LOG_ENTRY_LIMIT, LOG_TEXT_LIMIT } from "../wire-messages";

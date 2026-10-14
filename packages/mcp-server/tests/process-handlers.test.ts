@@ -16,13 +16,13 @@ function harness(role: 'daemon' | 'relay'): {
   return { handlers, exits, lines };
 }
 
-describe('process handlers (4.A8)', () => {
+describe('process handlers', () => {
   it('uncaughtException logs and exits 1 in both roles', () => {
     for (const role of ['daemon', 'relay'] as const) {
       const h = harness(role);
       h.handlers.uncaughtException(new Error('boom'));
       expect(h.exits).toEqual([1]);
-      expect(h.lines[0]).toMatch(new RegExp(`\\[KitsuneMCP:${role}\\] FATAL uncaughtException: boom`));
+      expect(h.lines[0]).toMatch(new RegExp(`\\[InariMCP:${role}\\] FATAL uncaughtException: boom`));
     }
   });
 

@@ -48,9 +48,9 @@
 
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
-import { ENV_DEFAULTS, isRecord, parseBrowserResponse, shortId } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord, parseBrowserResponse, shortId } from '@inari-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
-import { AUTH_PROTOCOL, computeMac, isNonce, MAC_LABEL, macMatches, newNonce, stderrLogger } from '@kitsune-mcp/shared/node';
+import { AUTH_PROTOCOL, computeMac, frameText, isNonce, MAC_LABEL, macMatches, newNonce, stderrLogger } from '@inari-mcp/shared/node';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -97,12 +97,6 @@ const TRY_AGAIN_LATER = 1013;
 function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true; // Non-browser client — no Origin header
   return origin.startsWith('moz-extension://');
-}
-
-function frameText(raw: Buffer | ArrayBuffer | Buffer[]): string {
-  if (Array.isArray(raw)) return Buffer.concat(raw).toString('utf-8');
-  if (raw instanceof ArrayBuffer) return Buffer.from(raw).toString('utf-8');
-  return raw.toString('utf-8');
 }
 
 function frameLength(raw: Buffer | ArrayBuffer | Buffer[]): number {
@@ -176,15 +170,7 @@ function checkAuthFrame(raw: RawFrame, apiToken: string, serverNonce: string): A
   const frame = isRecord(msg) ? msg : {};
 
   if (frame['type'] !== 'auth' || frame['protocol'] !== AUTH_PROTOCOL) {
-    const legacy = typeof frame['token'] === 'string';
-    return {
-      ok: false,
-      code: POLICY_VIOLATION,
-      reason: legacy ? 'auth protocol mismatch' : 'auth required',
-      logText: legacy
-        ? 'plaintext token frame from an older Native Host (update it: this daemon uses challenge-response auth)'
-        : 'no valid auth frame',
-    };
+    return { ok: false, code: POLICY_VIOLATION, reason: 'auth required', logText: 'no valid auth frame' };
   }
 
   const clientNonce = frame['nonce'];

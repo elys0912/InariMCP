@@ -2,7 +2,8 @@
 // backoff, and requests the Extension sends itself (L1). Owns the connection
 // state; the rest of the background reacts to its events through the hooks
 // set by background.ts (setConnectionHooks), so this module imports none of
-// the modules above it.
+// the modules above it. It connects only after the user allowed it on the
+// consent page (setConnectionAllowed).
 
 import { errorMessage } from "../error-message";
 import { clipText } from "../text-clip";
@@ -21,7 +22,14 @@ const MAX_SEND_RETRIES = LIMITS.SEND_RETRIES;
 const SEND_RETRY_DELAY_MS = TIMEOUTS.SEND_RETRY_DELAY;
 const CONNECT_SETTLE_MS = TIMEOUTS.CONNECT_SETTLE;
 
-const NATIVE_HOST_NAME = "kitsune_mcp";
+const NATIVE_HOST_NAME = "inari_mcp";
+/**
+ * Off until the user allowed the connection on the consent page
+ * (background.ts sets it from control-state.ts). While off, nothing opens a
+ * port: not the startup, not the reconnect timers, not a request.
+ */
+let connectionAllowed = false;
+const NOT_ALLOWED_ERROR = "Not allowed to connect to the native host (Inari MCP for Firefox is not allowed yet)";
 let nativePort: browser.runtime.Port | null = null;
 let isConnected = false;
 // connectNative() returns a port even when the host is not registered; that
@@ -91,7 +99,7 @@ export function nextReconnectAttempts(
 function scheduleReconnect(): void {
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
     console.error(
-      `[KitsuneMCP] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`,
+      `[InariMCP] Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`,
     );
     // Reset after a while to allow a fresh cycle
     setTimeout(() => {
@@ -104,20 +112,37 @@ function scheduleReconnect(): void {
   const delay = getReconnectDelay();
   reconnectAttempts++;
   console.log(
-    `[KitsuneMCP] Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`,
+    `[InariMCP] Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`,
   );
   setTimeout(connectNativeHost, delay);
 }
 
+/**
+ * Allow or withdraw the connection. Withdrawing closes the current port and
+ * fails its requests; the reconnect timers already set then do nothing.
+ * Allowing does not connect by itself: the caller does (recheckHost).
+ */
+export function setConnectionAllowed(allowed: boolean): void {
+  connectionAllowed = allowed;
+  const port = nativePort;
+  if (allowed || port === null) return;
+
+  clearPortState();
+  releasePort(port);
+  rejectPending(port, NOT_ALLOWED_ERROR);
+  hooks.onDisconnected();
+}
+
 export function connectNativeHost(): void {
+  if (!connectionAllowed) return;
   if (isConnected && nativePort) {
-    console.log("[KitsuneMCP] Already connected");
+    console.log("[InariMCP] Already connected");
     return;
   }
 
   try {
     console.log(
-      `[KitsuneMCP] Connecting to native host (attempt ${reconnectAttempts + 1})...`,
+      `[InariMCP] Connecting to native host (attempt ${reconnectAttempts + 1})...`,
     );
     nativePort = browser.runtime.connectNative(NATIVE_HOST_NAME);
     isConnected = true;
@@ -127,7 +152,7 @@ export function connectNativeHost(): void {
     // even when the host is missing or exits at once, so resetting now would
     // defeat the backoff (a new host process every second). It is reset in
     // handleDisconnect once a connection proved stable.
-    console.log("[KitsuneMCP] Port opened to native host");
+    console.log("[InariMCP] Port opened to native host");
 
     nativePort.onMessage.addListener(handleNativeMessage);
     nativePort.onDisconnect.addListener(handleDisconnect);
@@ -138,7 +163,7 @@ export function connectNativeHost(): void {
       () => {},
     );
   } catch (error) {
-    console.error("[KitsuneMCP] Failed to connect to native host:", error);
+    console.error("[InariMCP] Failed to connect to native host:", error);
     isConnected = false;
     nativePort = null;
     scheduleReconnect();
@@ -183,6 +208,11 @@ function forgetCurrentPort(error: string | undefined): void {
     hostConfirmedAt === null ? null : Date.now() - hostConfirmedAt,
     STABLE_CONNECTION_MS,
   );
+  clearPortState();
+}
+
+/** No current port: nothing connected, the host not confirmed. */
+function clearPortState(): void {
   isConnected = false;
   hostConfirmed = false;
   hostConfirmedAt = null;
@@ -198,8 +228,8 @@ function handleDisconnect(port: browser.runtime.Port): void {
     rejectPending(port, "Native host disconnected - reconnecting...");
     return;
   }
-  console.log("[KitsuneMCP] Disconnected from native host");
-  if (port.error) console.error("[KitsuneMCP] Disconnect error:", port.error);
+  console.log("[InariMCP] Disconnected from native host");
+  if (port.error) console.error("[InariMCP] Disconnect error:", port.error);
   forgetCurrentPort(port.error?.message);
 
   rejectPending(null, "Native host disconnected - reconnecting...");
@@ -213,7 +243,7 @@ function handleDisconnect(port: browser.runtime.Port): void {
 /**
  * One-line summary of a Native Messaging frame for the console: action,
  * requestId and the top-level / data key names -- never the values, which
- * can hold scripts, typed text, form values or page content.
+ * can hold typed text, form values or page content.
  */
 export function describeNativeMessage(raw: unknown): string {
   if (typeof raw !== "object" || raw === null) return `(${typeof raw})`;
@@ -225,13 +255,14 @@ export function describeNativeMessage(raw: unknown): string {
   }
   if (typeof m.success === "boolean") parts.push(`success=${m.success}`);
   const keys = Object.keys(m).filter((k) => k !== "action" && k !== "requestId" && k !== "success");
-  if (keys.length > 0) parts.push(`keys=[${keys.slice(0, LIMITS.NATIVE_SUMMARY_KEYS).join(",")}]`);
-  const data = m.data;
-  if (typeof data === "object" && data !== null && !Array.isArray(data)) {
-    const dataKeys = Object.keys(data);
-    if (dataKeys.length > 0) parts.push(`data=[${dataKeys.slice(0, LIMITS.NATIVE_SUMMARY_KEYS).join(",")}]`);
-  }
+  parts.push(...keyListPart("keys", keys), ...keyListPart("data", isRecord(m.data) ? Object.keys(m.data) : []));
+
   return parts.join(" ");
+}
+
+/** `label=[a,b,...]` of the first LIMITS.NATIVE_SUMMARY_KEYS names; nothing without names. */
+function keyListPart(label: string, names: string[]): string[] {
+  return names.length > 0 ? [`${label}=[${names.slice(0, LIMITS.NATIVE_SUMMARY_KEYS).join(",")}]`] : [];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -247,16 +278,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseNativeMessage(raw: unknown): NativeMessage | null {
   if (!isRecord(raw)) return null;
   const { action, requestId, tabId, data, error } = raw;
-  if (!(action === undefined || typeof action === "string")) return null;
-  if (!(requestId === undefined || typeof requestId === "number" || typeof requestId === "string")) return null;
-  if (!(tabId === undefined || typeof tabId === "number")) return null;
-  if (!(data === undefined || isRecord(data))) return null;
-  if (!(error === undefined || typeof error === "string")) return null;
+  const wellFormed =
+    isOptional(action, isString) &&
+    isOptional(requestId, isRequestId) &&
+    isOptional(tabId, isNumber) &&
+    isOptional(data, isRecord) &&
+    isOptional(error, isString);
+  if (!wellFormed) return null;
   return { ...raw, action, requestId, tabId, data, error };
 }
 
+/** A field that is absent (undefined) or passes `is`. */
+function isOptional<T>(value: unknown, is: (v: unknown) => v is T): value is T | undefined {
+  return value === undefined || is(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === "number";
+}
+
+/** A request id: a number or a string. */
+function isRequestId(value: unknown): value is number | string {
+  return typeof value === "number" || typeof value === "string";
+}
+
 function handleNativeMessage(raw: unknown): void {
-  console.log(`[KitsuneMCP] Received from native host: ${describeNativeMessage(raw)}`);
+  console.log(`[InariMCP] Received from native host: ${describeNativeMessage(raw)}`);
 
   // Any frame shows the host is up, a malformed one included.
   if (!hostConfirmed) {
@@ -267,7 +318,7 @@ function handleNativeMessage(raw: unknown): void {
 
   const message = parseNativeMessage(raw);
   if (message === null) {
-    console.error("[KitsuneMCP] Dropped a malformed message from the native host");
+    console.error("[InariMCP] Dropped a malformed message from the native host");
     return;
   }
 
@@ -275,7 +326,7 @@ function handleNativeMessage(raw: unknown): void {
   const entry = typeof requestId === "number" ? pendingRequests.get(requestId) : undefined;
   if (typeof requestId === "number" && entry !== undefined) {
     pendingRequests.delete(requestId);
-    // BUG FIX: clear the timeout so it doesn't fire after resolution
+    // The request is answered: its timeout must not fire later.
     clearTimeout(entry.timeoutId);
 
     if (message.error) {
@@ -325,6 +376,10 @@ function sendAttempt(message: NativeMessage, timeoutMs: number, retryCount: numb
       }, SEND_RETRY_DELAY_MS);
     };
 
+    if (!connectionAllowed) {
+      reject(new Error(NOT_ALLOWED_ERROR));
+      return;
+    }
     if (!isConnected || !nativePort) {
       connectNativeHost();
 
@@ -332,7 +387,7 @@ function sendAttempt(message: NativeMessage, timeoutMs: number, retryCount: numb
         if (!isConnected || !nativePort) {
           if (retryCount < MAX_SEND_RETRIES) {
             console.log(
-              `[KitsuneMCP] Not connected, retrying (${retryCount + 1}/${MAX_SEND_RETRIES})...`,
+              `[InariMCP] Not connected, retrying (${retryCount + 1}/${MAX_SEND_RETRIES})...`,
             );
             retry();
           } else {
@@ -367,14 +422,14 @@ function sendAttempt(message: NativeMessage, timeoutMs: number, retryCount: numb
 
         const wasCurrent = dropFailedPort(port, error);
         if (retryCount < MAX_SEND_RETRIES) {
-          console.log("[KitsuneMCP] Send failed, reconnecting and retrying...");
+          console.log("[InariMCP] Send failed, reconnecting and retrying...");
           retry();
         } else {
           // Out of retries: the broken port is dropped all the same (kept, it
           // would stay current until an onDisconnect that may never come), and
           // the connection comes back on the usual backoff.
           if (wasCurrent) scheduleReconnect();
-          reject(error);
+          reject(error instanceof Error ? error : new Error(errorMessage(error)));
         }
       }
     }

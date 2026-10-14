@@ -1,9 +1,9 @@
 /**
- * Files under ~/.kitsune-mcp, shared by the daemon, the relays and the
+ * Files under ~/.inari-mcp, shared by the daemon, the relays and the
  * Native Host. Resolved at call time (os.homedir()), so a changed HOME /
  * USERPROFILE — as in the tests — is honoured.
  *
- *   ~/.kitsune-mcp/
+ *   ~/.inari-mcp/
  *     api_token          written by the daemon only (token.ts)
  *     safety.json        safety policy (mcp-server safety/config.ts; FOX_SAFETY_CONFIG overrides)
  *     screenshots/       default FOX_SCREENSHOTS_DIR
@@ -15,13 +15,13 @@
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-/** Mode of the directories created under ~/.kitsune-mcp (POSIX; ignored on Windows). */
+/** Mode of the directories created under ~/.inari-mcp (POSIX; ignored on Windows). */
 export const PRIVATE_DIR_MODE = 0o700;
 /** Mode of the files written there (api_token, logs). */
 export const PRIVATE_FILE_MODE = 0o600;
 
 export function dataDir(): string {
-  return path.join(os.homedir(), '.kitsune-mcp');
+  return path.join(os.homedir(), '.inari-mcp');
 }
 
 export function apiTokenPath(): string {
