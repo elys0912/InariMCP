@@ -514,9 +514,10 @@ Current limitations are listed in [`docs/known-issues.md`](docs/known-issues.md)
 npm ci
 npm run build             # every package; the Extension is bundled by scripts/build-extension.mjs
 npm run typecheck         # type check of the Extension (tsc --noEmit), then of the tests (typecheck:tests)
+npm run lint:install && npm run lint  # ESLint (TypeScript 6 in tools/lint; the build uses TypeScript 7)
 npm test                  # Vitest, without e2e
 npm run lint:ext          # web-ext lint of packages/extension
-npm run pack:ext          # the Extension zip for AMO + SHA-256 of its files + web-ext lint (see docs/BUILD.md)
+npm run pack:ext          # ESLint, then the Extension zip for AMO + SHA-256 of its files + web-ext lint (see docs/BUILD.md)
 npm run pack:source       # the source zip for AMO (needs a clean working tree)
 npm run e2e:extension     # the Extension loads into Firefox (needs Playwright's Firefox)
 ```

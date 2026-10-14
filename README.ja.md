@@ -514,9 +514,10 @@ Inari MCP for Firefox 0.1.0は、addons.mozilla.orgに掲載する最初の版�
 npm ci
 npm run build             # 全パッケージ。拡張機能はscripts/build-extension.mjsでバンドルする
 npm run typecheck         # 拡張機能の型検査（tsc --noEmit）のあと、テストの型検査（typecheck:tests）
+npm run lint:install && npm run lint  # ESLint（tools/lintのTypeScript 6で動く。ビルドはTypeScript 7）
 npm test                  # Vitest（e2eを除く）
 npm run lint:ext          # packages/extensionのweb-ext lint
-npm run pack:ext          # AMOに出す拡張機能のzip、ファイルごとのSHA-256、web-ext lint（docs/BUILD.md）
+npm run pack:ext          # ESLintのあと、AMOに出す拡張機能のzip、ファイルごとのSHA-256、web-ext lint（docs/BUILD.md）
 npm run pack:source       # AMOに出すソースのzip（作業ツリーがきれいなときだけ）
 npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（PlaywrightのFirefoxが必要）
 ```

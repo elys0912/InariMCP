@@ -18,6 +18,7 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - Privacy policy: [docs/PRIVACY.md](./PRIVACY.md) ([日本語](./PRIVACY.ja.md)): what is read and sent, where it goes, what stays on your computer and for how long, how to delete it, consent and control, private browsing.
 - Material for the addons.mozilla.org listing ([docs/amo/listing.md](./amo/listing.md)) and the Notes for Reviewers ([docs/amo/reviewer-notes.md](./amo/reviewer-notes.md)).
 - `npm run smoke:reviewer` (`scripts/e2e/reviewer-smoke.mjs`) and [docs/amo/reviewer-smoke.md](amo/reviewer-smoke.md): a smoke test of the basic features (tabs, opening a tab, reading with masked fields, find, screenshot, a click, closing the tab; each action approved in the popup) against a local test page on 127.0.0.1, with no Claude Code, account or internet access. `-- --headless` runs it without the extension, where nobody can approve: only the tab list runs. `scripts/e2e/tools-smoke.mjs` uses the same local pages instead of example.com.
+- ESLint (including the complexity rules: complexity, max-depth, max-params, max-nested-callbacks, max-lines-per-function, as warnings): `npm run lint:install && npm run lint`. It runs on TypeScript 6 from `tools/lint` (typescript-eslint's peer dependency); the build stays on TypeScript 7. An error fails `npm run lint`, CI and `npm run pack:ext`.
 
 ### Changed
 

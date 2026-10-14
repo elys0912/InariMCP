@@ -3,16 +3,18 @@
 //
 //   npm run pack:ext
 //
-// 1. rebuilds packages/extension/dist (scripts/build-extension.mjs),
-// 2. packs packages/extension with web-ext into
+// 1. runs ESLint over the repository (tools/lint, `npm run lint`); an error
+//    fails the script, warnings (the complexity rules) do not,
+// 2. rebuilds packages/extension/dist (scripts/build-extension.mjs),
+// 3. packs packages/extension with web-ext into
 //      web-ext-artifacts/<name>-<version>.zip
 //    (<name> and <version> come from manifest.json),
-// 3. writes web-ext-artifacts/<name>-<version>.sha256.txt: one line per file
+// 4. writes web-ext-artifacts/<name>-<version>.sha256.txt: one line per file
 //    in the zip, "<sha256>  <path>" (the format of `sha256sum`), sorted by
 //    path. The zip itself carries file times, so its own hash differs from
 //    run to run; the hashes of its contents do not. A reviewer who builds
 //    from the source zip (docs/BUILD.md) compares this file.
-// 4. runs `web-ext lint`; any error or warning fails the script.
+// 5. runs `web-ext lint`; any error or warning fails the script.
 //
 // web-ext is the one in node_modules (a devDependency), not whatever `npx`
 // finds. Its configuration is web-ext-config.mjs only: config discovery is
@@ -29,6 +31,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const artifacts = path.join(root, 'web-ext-artifacts');
 const webExt = path.join(root, 'node_modules', 'web-ext', 'bin', 'web-ext.js');
 const webExtArgs = ['--no-config-discovery', '--config', 'web-ext-config.mjs'];
+const eslint = path.join(root, 'tools', 'lint', 'node_modules', 'eslint', 'bin', 'eslint.js');
 
 function fail(message) {
   console.error(`pack-extension: ${message}`);
@@ -95,6 +98,11 @@ const zipPath = path.join(artifacts, `${base}.zip`);
 const sumsPath = path.join(artifacts, `${base}.sha256.txt`);
 
 if (!existsSync(webExt)) fail('node_modules/web-ext is missing; run `npm ci` first');
+if (!existsSync(eslint)) fail('tools/lint/node_modules is missing; run `npm run lint:install` first');
+
+// --quiet: the errors only. ESLint exits non-zero on an error, not on a warning.
+runNode(eslint, ['-c', path.join('tools', 'lint', 'eslint.config.js'), '--quiet', '.'], { echo: true });
+console.log('pack-extension: eslint: 0 errors');
 
 runNode(path.join(root, 'scripts', 'build-extension.mjs'), [], { echo: true });
 
