@@ -121,6 +121,14 @@ afterEach(() => {
 // native-connection.ts: no connection before consent
 // ---------------------------------------------------------------------------
 
+/**
+ * Long enough for every reconnect timer of native-connection.ts to have fired
+ * several times (the longest are TIMEOUTS.RECONNECT_MAX, 30 s, and
+ * TIMEOUTS.RECONNECT_RESTART, 60 s): a port that no timer opened by then is
+ * never opened by one.
+ */
+const PAST_ALL_RECONNECTS_MS = 5 * 60_000;
+
 describe('native connection before and after consent', () => {
   async function loadNativeConnection() {
     const fake = installFakeBrowser();
@@ -130,45 +138,68 @@ describe('native connection before and after consent', () => {
     return { fake, mod, hooks };
   }
 
-  it('before consent nothing opens a port: not a connect, a recheck, a request or the timers', async () => {
+  /** Consent given, the port open with one request waiting, then the consent withdrawn. */
+  async function withdrawAfterConnecting() {
+    vi.useFakeTimers();
+    const loaded = await loadNativeConnection();
+    loaded.mod.setConnectionAllowed(true);
+    loaded.mod.connectNativeHost();
+    const port = loaded.fake.ports[0]!;
+    const pending = loaded.mod.sendToNativeHost({ action: 'status' }).then(() => 'resolved', (e: Error) => e.message);
+
+    loaded.mod.setConnectionAllowed(false);
+    return { ...loaded, port, pending };
+  }
+
+  it('before consent a request is refused without a port', async () => {
+    vi.useFakeTimers();
+    const { fake, mod } = await loadNativeConnection();
+    const request = mod.sendToNativeHost({ action: 'status' }).then(() => 'resolved', (e: Error) => e.message);
+    expect(await request).toMatch(/^Not allowed to connect/);
+    expect(fake.ports).toHaveLength(0);
+  });
+
+  it('before consent nothing opens a port: not a connect, a recheck or the timers', async () => {
     vi.useFakeTimers();
     const { fake, mod } = await loadNativeConnection();
     mod.connectNativeHost();
     mod.recheckHost();
-    const request = mod.sendToNativeHost({ action: 'status' }).then(() => 'resolved', (e: Error) => e.message);
-    expect(await request).toMatch(/^Not allowed to connect/);
 
-    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    await vi.advanceTimersByTimeAsync(PAST_ALL_RECONNECTS_MS);
     expect(fake.ports).toHaveLength(0);
     expect(mod.hostStatus()).toEqual({ confirmed: false, portOpen: false, lastError: null });
+  });
+
+  it('allowing the connection does not connect by itself', async () => {
+    const { fake, mod } = await loadNativeConnection();
+    mod.setConnectionAllowed(true);
+    expect(fake.ports).toHaveLength(0);
   });
 
   it('after consent the connection opens and pings the host', async () => {
     const { fake, mod } = await loadNativeConnection();
     mod.setConnectionAllowed(true);
-    expect(fake.ports).toHaveLength(0); // allowing does not connect by itself
     mod.recheckHost();
     expect(fake.ports).toHaveLength(1);
     expect(fake.ports[0]!.posted.map((m) => m.action)).toEqual(['ping']);
   });
 
-  it('withdrawing consent closes the port, fails its requests and stops the reconnects', async () => {
-    vi.useFakeTimers();
-    const { fake, mod, hooks } = await loadNativeConnection();
-    mod.setConnectionAllowed(true);
-    mod.connectNativeHost();
-    const port = fake.ports[0]!;
-    const pending = mod.sendToNativeHost({ action: 'status' }).then(() => 'resolved', (e: Error) => e.message);
-
-    mod.setConnectionAllowed(false);
+  it('withdrawing consent closes the port and reports the disconnect once', async () => {
+    const { mod, hooks, port } = await withdrawAfterConnecting();
     expect(port.disconnected).toBe(true);
-    expect(await pending).toMatch(/^Not allowed to connect/);
     expect(hooks.onDisconnected).toHaveBeenCalledTimes(1);
     expect(mod.hostStatus().portOpen).toBe(false);
+  });
 
-    // A late onDisconnect of the old port schedules nothing either.
+  it('withdrawing consent fails the requests that wait for the port', async () => {
+    const { pending } = await withdrawAfterConnecting();
+    expect(await pending).toMatch(/^Not allowed to connect/);
+  });
+
+  it('withdrawing consent stops the reconnects, even after a late onDisconnect of the old port', async () => {
+    const { fake, port } = await withdrawAfterConnecting();
     port.onDisconnect.fire(port);
-    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    await vi.advanceTimersByTimeAsync(PAST_ALL_RECONNECTS_MS);
     expect(fake.ports).toHaveLength(1);
   });
 });
@@ -178,15 +209,15 @@ describe('native connection before and after consent', () => {
 // ---------------------------------------------------------------------------
 
 describe('control-state: saved choices', () => {
-  it('loads the saved consent and pause switch; anything else is undecided and not paused', async () => {
-    installFakeBrowser({ consent: 'granted', paused: true });
+  it.each([
+    ['the saved consent and pause switch', { consent: 'granted', paused: true }, { consent: 'granted', paused: true }],
+    ['a denied consent', { consent: 'denied', paused: false }, { consent: 'denied', paused: false }],
+    ['other values as undecided and not paused', { consent: 'yes', paused: 'true' }, { consent: 'undecided', paused: false }],
+    ['nothing saved as undecided and not paused', {}, { consent: 'undecided', paused: false }],
+  ])('loads %s', async (_label, stored, expected) => {
+    installFakeBrowser(stored);
     const state = await import('../../packages/extension/src/background/control-state.ts');
-    expect(await state.loadControlState()).toEqual({ consent: 'granted', paused: true });
-
-    vi.resetModules();
-    installFakeBrowser({ consent: 'yes', paused: 'true' });
-    const fresh = await import('../../packages/extension/src/background/control-state.ts');
-    expect(await fresh.loadControlState()).toEqual({ consent: 'undecided', paused: false });
+    expect(await state.loadControlState()).toEqual(expected);
   });
 
   it('a failed read leaves the defaults: no consent', async () => {
@@ -196,23 +227,39 @@ describe('control-state: saved choices', () => {
     };
     const state = await import('../../packages/extension/src/background/control-state.ts');
     expect(await state.loadControlState()).toEqual({ consent: 'undecided', paused: false });
-    expect(state.isConsentGranted()).toBe(false);
+    expect(state.controlView().consent).toBe('undecided');
   });
 
-  it('a change applies at once, reaches the hook with its kind and is saved', async () => {
+  /** control-state.ts with a hook set, and the fake browser it saves to. */
+  async function loadWithHook() {
     const fake = installFakeBrowser();
     const state = await import('../../packages/extension/src/background/control-state.ts');
     const hook = vi.fn();
     state.setControlHook(hook);
+    return { fake, state, hook };
+  }
 
+  it('a change applies before its write settles', async () => {
+    const { state } = await loadWithHook();
     const saving = state.setPaused(true);
-    expect(state.isPaused()).toBe(true); // before the write settles
+    expect(state.isPaused()).toBe(true);
     await saving;
+  });
+
+  it('each change reaches the hook with the new view and its kind', async () => {
+    const { state, hook } = await loadWithHook();
+    await state.setPaused(true);
     await state.setConsent(true);
     expect(hook.mock.calls).toEqual([
       [{ consent: 'undecided', paused: true }, 'paused'],
       [{ consent: 'granted', paused: true }, 'consent'],
     ]);
+  });
+
+  it('each change is saved in storage.local', async () => {
+    const { fake, state } = await loadWithHook();
+    await state.setPaused(true);
+    await state.setConsent(true);
     expect(fake.storage).toEqual({ consent: 'granted', paused: true });
   });
 });
@@ -247,18 +294,22 @@ describe('dispatch: paused and running commands', () => {
     expect(fake.badgeText).not.toContain('●');
   });
 
-  it("the popup's own commands still run while paused, and host commands again once resumed", async () => {
+  it("the popup's own commands still run while paused", async () => {
     const { fake, state, handleCommand } = await loadDispatch();
     await state.setPaused(true);
     expect(await handleCommand({ action: 'getTabs' }, 'page')).toMatchObject({ success: true });
     expect(fake.tabQueries).toBe(1);
-
-    await state.setPaused(false);
-    expect(await handleCommand({ action: 'get_tabs', requestId: 'r-2' }, 'host')).toMatchObject({ success: true });
-    expect(fake.tabQueries).toBe(2);
   });
 
-  it('the badge shows a running host command until it ends, not a popup command', async () => {
+  it('host commands run again once resumed', async () => {
+    const { fake, state, handleCommand } = await loadDispatch();
+    await state.setPaused(true);
+    await state.setPaused(false);
+    expect(await handleCommand({ action: 'get_tabs', requestId: 'r-2' }, 'host')).toMatchObject({ success: true });
+    expect(fake.tabQueries).toBe(1);
+  });
+
+  it('the badge shows a running host command until it ends', async () => {
     const { fake, handleCommand } = await loadDispatch();
     let release!: () => void;
     fake.tabQueryGate = new Promise((resolve) => { release = resolve; });
@@ -269,8 +320,10 @@ describe('dispatch: paused and running commands', () => {
     release();
     await running;
     expect(fake.badgeText.at(-1)).toBe('');
+  });
 
-    fake.tabQueryGate = null;
+  it('the badge does not show a popup command as running', async () => {
+    const { fake, handleCommand } = await loadDispatch();
     const before = fake.badgeText.length;
     await handleCommand({ action: 'getTabs' }, 'page');
     expect(fake.badgeText.slice(before)).not.toContain('●');
@@ -292,44 +345,85 @@ describe('listeners: consent page and pause switch messages', () => {
     return { fake, state, send };
   }
 
-  const pageTab = { id: 4, url: 'https://app.example.test/', active: true, windowId: 1, index: 0, pinned: false, status: 'complete', discarded: false, audible: false };
+  const pageTab = {
+    id: 4,
+    url: 'https://app.example.test/',
+    active: true,
+    windowId: 1,
+    index: 0,
+    pinned: false,
+    status: 'complete',
+    discarded: false,
+    audible: false,
+  };
   const contentScript: browser.runtime.MessageSender = { id: EXTENSION_ID, url: pageTab.url, tab: pageTab };
   const popup: browser.runtime.MessageSender = { id: EXTENSION_ID, url: POPUP_URL };
   const popupInTab: browser.runtime.MessageSender = { ...popup, tab: { ...pageTab, id: 9, url: POPUP_URL } };
   const consentPage: browser.runtime.MessageSender = { id: EXTENSION_ID, url: CONSENT_URL, tab: { ...pageTab, id: 7, url: CONSENT_URL } };
   const REFUSED = { success: false, error: expect.stringMatching(/^Refused/) };
 
-  it('opens the consent page on the first install only', async () => {
+  it.each(['update', 'browser_update'])('does not open the consent page on an install of reason %s', async (reason) => {
     const { fake } = await loadListeners();
-    fake.onInstalled.fire({ reason: 'update' });
-    fake.onInstalled.fire({ reason: 'browser_update' });
+    fake.onInstalled.fire({ reason });
+    // A tab is opened asynchronously: let the listener's promises settle first.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fake.createdTabs).toEqual([]);
+  });
+
+  it('opens the consent page on the first install', async () => {
+    const { fake } = await loadListeners();
     fake.onInstalled.fire({ reason: 'install' });
     await vi.waitFor(() => expect(fake.createdTabs).toEqual([CONSENT_URL]));
   });
 
-  it('only the consent page records the consent', async () => {
+  it.each([
+    ['a content script', contentScript],
+    ['the toolbar popup', popup],
+    ['the popup opened in a tab', popupInTab],
+  ])('%s cannot record the consent', async (_label, sender) => {
     const { state, send } = await loadListeners();
-    for (const sender of [contentScript, popup, popupInTab]) {
-      expect(await send({ type: CONTROL_MESSAGE.SET_CONSENT, granted: true }, sender)).toEqual(REFUSED);
-    }
-    expect(await send({ type: CONTROL_MESSAGE.SET_CONSENT, granted: 'yes' }, consentPage)).toEqual(REFUSED);
-    expect(state.isConsentGranted()).toBe(false);
-
-    expect(await send({ type: CONTROL_MESSAGE.SET_CONSENT, granted: true }, consentPage)).toEqual({ consent: 'granted', paused: false });
-    expect(await send({ type: CONTROL_MESSAGE.SET_CONSENT, granted: false }, consentPage)).toEqual({ consent: 'denied', paused: false });
+    expect(await send({ type: CONTROL_MESSAGE.SET_CONSENT, granted: true }, sender)).toEqual(REFUSED);
+    expect(state.controlView().consent).toBe('undecided');
   });
 
-  it('only the toolbar popup switches the pause, and a content script cannot read either', async () => {
+  it('the consent page cannot record a consent that is not a boolean', async () => {
+    const { state, send } = await loadListeners();
+    expect(await send({ type: CONTROL_MESSAGE.SET_CONSENT, granted: 'yes' }, consentPage)).toEqual(REFUSED);
+    expect(state.controlView().consent).toBe('undecided');
+  });
+
+  it.each([
+    [true, { consent: 'granted', paused: false }],
+    [false, { consent: 'denied', paused: false }],
+  ])('the consent page records the consent %s', async (granted, expected) => {
+    const { send } = await loadListeners();
+    expect(await send({ type: CONTROL_MESSAGE.SET_CONSENT, granted }, consentPage)).toEqual(expected);
+  });
+
+  it.each([
+    ['a content script', contentScript],
+    ['the popup opened in a tab', popupInTab],
+    ['the consent page', consentPage],
+  ])('%s cannot switch the pause', async (_label, sender) => {
     const { state, send } = await loadListeners();
     await state.setPaused(true);
-    for (const sender of [contentScript, popupInTab, consentPage]) {
-      expect(await send({ type: CONTROL_MESSAGE.SET_PAUSED, paused: false }, sender)).toEqual(REFUSED);
-    }
+    expect(await send({ type: CONTROL_MESSAGE.SET_PAUSED, paused: false }, sender)).toEqual(REFUSED);
     expect(state.isPaused()).toBe(true);
-    expect(await send({ type: CONTROL_MESSAGE.GET }, contentScript)).toEqual(REFUSED);
+  });
 
+  it('the toolbar popup switches the pause', async () => {
+    const { state, send } = await loadListeners();
+    await state.setPaused(true);
     expect(await send({ type: CONTROL_MESSAGE.SET_PAUSED, paused: false }, popup)).toEqual({ consent: 'undecided', paused: false });
+  });
+
+  it('a content script cannot read the choices', async () => {
+    const { send } = await loadListeners();
+    expect(await send({ type: CONTROL_MESSAGE.GET }, contentScript)).toEqual(REFUSED);
+  });
+
+  it('the consent page reads the choices', async () => {
+    const { send } = await loadListeners();
     expect(await send({ type: CONTROL_MESSAGE.GET }, consentPage)).toEqual({ consent: 'undecided', paused: false });
   });
 });
