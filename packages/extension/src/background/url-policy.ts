@@ -27,6 +27,29 @@ const NEW_TAB_URL = "about:blank";
 export type ApprovalCheck = "act" | "actOnUrl" | "read";
 
 /**
+ * Whether handleCommand applies this approval check before the handler (an
+ * action table `approval` value). The multi-tab rows (actPerTab, readPerTab)
+ * apply theirs in their handlers; "none" rows change no page data.
+ */
+export function isUpfrontApproval(approval: string | undefined): approval is ApprovalCheck {
+  return approval === "act" || approval === "actOnUrl" || approval === "read";
+}
+
+/** What the approval check of one command looks at (resolved once in handleCommand). */
+export interface ApprovalInputs {
+  /**
+   * The target tab (the same tab the container scope check and the handler
+   * use); undefined when it could not be resolved.
+   */
+  tab: browser.tabs.Tab | undefined;
+  data: NativeMessage["data"];
+  /** confirm_read_sites rules attached by the MCP Server. */
+  readRules: CompiledUrlRule[];
+  /** The site a human approved this one call for (MCP Server `approvedHost`). */
+  approvedHost: string | undefined;
+}
+
+/**
  * The approval check of one command. Returns null when the command may
  * proceed.
  *
@@ -37,17 +60,10 @@ export type ApprovalCheck = "act" | "actOnUrl" | "read";
  * the server can ask the human about that site. Reads are checked only
  * against the confirm_read_sites rules the server attached.
  *
- * `tab`: the target tab resolved once in handleCommand (the same tab the
- * container scope check and the handler use). Fails closed when it could
- * not be resolved.
+ * Fails closed when the target tab could not be resolved.
  */
-export function checkApproval(
-  check: ApprovalCheck,
-  tab: browser.tabs.Tab | undefined,
-  data: NativeMessage["data"],
-  readRules: CompiledUrlRule[],
-  approvedHost: string | undefined,
-): CommandResult | null {
+export function checkApproval(check: ApprovalCheck, inputs: ApprovalInputs): CommandResult | null {
+  const { tab, data, readRules, approvedHost } = inputs;
   switch (check) {
     case "act":
       if (!tab) return unresolvedTab();

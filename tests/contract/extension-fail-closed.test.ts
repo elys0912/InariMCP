@@ -141,19 +141,22 @@ describe('Fo-07 acting commands need an approval of their site', () => {
       .toMatchObject({ success: false, safetyDecision: 'confirmation_required' });
   });
 
+  /** checkApproval's inputs: the target tab, the data, no confirm_read_sites rules and the approved site. */
+  const inputs = (target: typeof tab | undefined, data: Record<string, unknown>, approvedHost: string | undefined) =>
+    ({ tab: target, data, readRules: [], approvedHost });
+
   it('an opening command is approved for the URL it opens (a blank tab: about:)', () => {
-    const t = tab;
-    expect(checkApproval('actOnUrl', t, { url: 'https://new.test/a' }, [], 'new.test')).toBeNull();
-    expect(checkApproval('actOnUrl', t, { url: 'https://new.test/a' }, [], 'app.example.test'))
+    expect(checkApproval('actOnUrl', inputs(tab, { url: 'https://new.test/a' }, 'new.test'))).toBeNull();
+    expect(checkApproval('actOnUrl', inputs(tab, { url: 'https://new.test/a' }, 'app.example.test')))
       .toMatchObject({ safetyDecision: 'confirmation_required', url: 'https://new.test/a' });
-    expect(checkApproval('actOnUrl', undefined, {}, [], 'about:')).toBeNull();
-    expect(checkApproval('actOnUrl', undefined, {}, [], undefined))
+    expect(checkApproval('actOnUrl', inputs(undefined, {}, 'about:'))).toBeNull();
+    expect(checkApproval('actOnUrl', inputs(undefined, {}, undefined)))
       .toMatchObject({ safetyDecision: 'confirmation_required', url: 'about:blank' });
   });
 
   it('a tab that cannot be resolved fails closed', () => {
-    expect(checkApproval('act', undefined, {}, [], 'app.example.test')).toMatchObject({ success: false });
-    expect(checkApproval('act', undefined, {}, [], 'app.example.test')).not.toHaveProperty('safetyDecision');
+    expect(checkApproval('act', inputs(undefined, {}, 'app.example.test'))).toMatchObject({ success: false });
+    expect(checkApproval('act', inputs(undefined, {}, 'app.example.test'))).not.toHaveProperty('safetyDecision');
   });
 });
 

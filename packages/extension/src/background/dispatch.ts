@@ -6,14 +6,15 @@
 // toolbar badge shows it (setup-badge.ts).
 
 import { errorMessage } from "../error-message";
+import type { CompiledUrlRule } from "../url-rule";
 import { describeAction, UNKNOWN_ACTION, type ActionContext, type ActionDescriptor } from "./action-table";
 import { parseContainerScope, enforceContainerScope, outOfScope } from "./container-scope";
 import { isPaused } from "./control-state";
 import { postToHost } from "./native-connection";
 import { startHostCommand } from "./setup-badge";
 import { resolveTab } from "./tab-target";
-import type { NativeMessage, CommandResult, ScopeFilter } from "./types";
-import { parseUrlPolicy, hasUrlLists, checkListedTarget, checkApproval } from "./url-policy";
+import type { NativeMessage, CommandResult, ScopeFilter, UrlLists } from "./types";
+import { parseUrlPolicy, hasUrlLists, checkListedTarget, checkApproval, isUpfrontApproval } from "./url-policy";
 import { resolveWireAction, toWireResponse } from "./wire";
 
 /**
@@ -71,16 +72,70 @@ interface RefusedCommand {
 const refused = (result: CommandResult): RefusedCommand => ({ kind: "refused", result });
 
 /**
- * Every check before the handler: the action name, the container scope, the
- * URL rules attached by the MCP Server, the blocked / allowed lists and the
- * human approval.
+ * Every check before the handler, in this order: the action name, the
+ * container scope, the URL rules attached by the MCP Server, the blocked /
+ * allowed lists and the human approval. The first refusal ends it.
  */
 async function checkCommand(message: NativeMessage, source: CommandSource): Promise<CheckedCommand | RefusedCommand> {
-  const { data } = message;
+  const route = routeCommand(message, source);
+  if (route.kind === "refused") return route;
 
-  // Normalize the wire action name (snake_case) to the internal name once,
-  // before any check, so every check and the handler see the same row of
-  // the action table.
+  const target = route.entry?.scope === "tab" ? await pinTargetTab(message.tabId) : undefined;
+  const scope = await checkContainerScope(message, route.entry, target);
+  if (scope.kind === "refused") return scope;
+
+  const policy = checkUrlPolicy(message, route.entry, target);
+  if (policy.kind === "refused") return policy;
+
+  return {
+    kind: "checked",
+    entry: route.entry,
+    context: {
+      action: route.action,
+      message,
+      data: message.data,
+      tabId: target ? target.id : message.tabId,
+      target,
+      scope: scope.filter,
+      readRules: policy.readRules,
+      approvedHost: policy.approvedHost,
+      urlLists: policy.urlLists,
+      navigateInNewTab: route.navigateInNewTab,
+    },
+  };
+}
+
+/** The action a command runs: its internal name and its row of the action table. */
+interface RoutedCommand {
+  kind: "routed";
+  /** Internal action name (undefined: a message without an action). */
+  action: string | undefined;
+  entry: ActionDescriptor | undefined;
+  /** fox_navigate with newTab, routed as createTab. */
+  navigateInNewTab: boolean;
+}
+
+/**
+ * The internal action of `resolved` (an internal name, wire.ts): fox_navigate
+ * with newTab opens the URL in a fresh tab, so it is routed as createTab. The
+ * scope check then treats it like fox_create_tab: the new tab is born inside
+ * the agent container instead of requiring the current active tab to be in
+ * scope.
+ */
+export function routeAction(
+  resolved: string | undefined,
+  data: NativeMessage["data"],
+): { action: string | undefined; navigateInNewTab: boolean } {
+  const navigateInNewTab = resolved === "navigate" && data?.newTab === true;
+  return { action: navigateInNewTab ? "createTab" : resolved, navigateInNewTab };
+}
+
+/**
+ * Normalize the wire action name (snake_case) to the internal name once,
+ * before any check, so every check and the handler see the same row of the
+ * action table.
+ */
+function routeCommand(message: NativeMessage, source: CommandSource): RoutedCommand | RefusedCommand {
   const resolved = resolveWireAction(message.action, source === "host");
   if (resolved.kind === "notImplemented") {
     return refused({ success: false, error: `Not implemented in extension: ${resolved.wireName}` });
@@ -88,39 +143,48 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
   if (resolved.kind === "unknown") {
     return refused({ success: false, error: `Unknown action: ${resolved.wireName}` });
   }
-  // fox_navigate with newTab opens the URL in a fresh tab. Route it as
-  // createTab so the scope check treats it like fox_create_tab: the new tab
-  // is born inside the agent container instead of requiring the current
-  // active tab to be in scope.
-  const navigateInNewTab = resolved.action === "navigate" && data?.newTab === true;
-  const action = navigateInNewTab ? "createTab" : resolved.action;
+
+  const { action, navigateInNewTab } = routeAction(resolved.action, message.data);
   // Row of the action table (fail closed: an unknown name gets the strictest
   // row, UNKNOWN_ACTION). A message without an action has no row: it skips
   // the tab checks, is checked strictly by the container scope, and ends in
   // UNKNOWN_ACTION's refusal.
-  const entry: ActionDescriptor | undefined = action === undefined ? undefined : describeAction(action);
-  const singleTab = entry?.scope === "tab";
+  const entry = action === undefined ? undefined : describeAction(action);
+  return { kind: "routed", action, entry, navigateInNewTab };
+}
 
-  // Resolve the target tab of a single-tab action ONCE (explicit tabId, else
-  // the active tab of the current window) and pin its id: the container
-  // scope check, the approval check, the handler and the URL report
-  // then all see the same tab, even if the active tab changes meanwhile.
-  // Undefined when it cannot be resolved -- the checks then fail closed and
-  // the handler reports the missing tab.
-  let target: browser.tabs.Tab | undefined;
-  if (singleTab) {
-    try {
-      target = await resolveTab(message.tabId);
-    } catch {
-      target = undefined;
-    }
+/**
+ * The target tab of a single-tab action, resolved ONCE (explicit tabId, else
+ * the active tab of the current window) and pinned: the container scope
+ * check, the approval check, the handler and the URL report then all see the
+ * same tab, even if the active tab changes meanwhile. Undefined when it
+ * cannot be resolved -- the checks then fail closed and the handler reports
+ * the missing tab.
+ */
+async function pinTargetTab(tabId: number | undefined): Promise<browser.tabs.Tab | undefined> {
+  try {
+    return await resolveTab(tabId);
+  } catch {
+    return undefined;
   }
-  const tabId = target ? target.id : message.tabId;
+}
 
-  // Container scope check (Layer 0). The MCP Server attaches
-  // `containerScope` to every command when container_scope.enabled is true.
-  // A scope that is there but unusable fails closed, like the URL rules
-  // below.
+/** A command inside the container scope: the filter its handler gets (null when the scope is off). */
+interface ScopedCommand {
+  kind: "scoped";
+  filter: ScopeFilter | null;
+}
+
+/**
+ * Container scope check (Layer 0). The MCP Server attaches `containerScope`
+ * to every command when container_scope.enabled is true. A scope that is
+ * there but unusable fails closed, like the URL rules.
+ */
+async function checkContainerScope(
+  message: NativeMessage,
+  entry: ActionDescriptor | undefined,
+  target: browser.tabs.Tab | undefined,
+): Promise<ScopedCommand | RefusedCommand> {
   const containerScope = parseContainerScope(message.containerScope);
   if (containerScope.kind === "invalid") {
     return refused({
@@ -131,14 +195,33 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
         "(Extension and MCP Server versions may not match).",
     });
   }
-  let scope: ScopeFilter | null = null;
-  if (containerScope.kind === "scope") {
-    const selfScoped = entry !== undefined && entry.scope !== "tab";
-    const decision = await enforceContainerScope(selfScoped, target, containerScope.scope);
-    if (!decision.allowed) return refused(outOfScope(decision.error));
-    scope = decision.scope;
-  }
+  if (containerScope.kind !== "scope") return { kind: "scoped", filter: null };
 
+  const selfScoped = entry !== undefined && entry.scope !== "tab";
+  const decision = await enforceContainerScope(selfScoped, target, containerScope.scope);
+  if (!decision.allowed) return refused(outOfScope(decision.error));
+
+  return { kind: "scoped", filter: decision.scope };
+}
+
+/** A command the URL policy lets through: the rules its handler gets. */
+interface AllowedCommand {
+  kind: "allowed";
+  readRules: CompiledUrlRule[];
+  urlLists: UrlLists;
+  /** Site a human approved for this one call (MCP Server approval token). */
+  approvedHost: string | undefined;
+}
+
+/**
+ * The URL policy attached by the MCP Server (an unusable rule fails closed),
+ * the blocked / allowed lists, then the human approval.
+ */
+function checkUrlPolicy(
+  message: NativeMessage,
+  entry: ActionDescriptor | undefined,
+  target: browser.tabs.Tab | undefined,
+): AllowedCommand | RefusedCommand {
   const policy = parseUrlPolicy(message);
   if (policy.invalid > 0) {
     return refused({
@@ -149,50 +232,29 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
         "(Extension and MCP Server versions may not match).",
     });
   }
-  const readRules = policy.readRules;
-  const urlLists = policy.lists;
-  // Site a human approved for this one call (MCP Server approval token).
   const approvedHost = typeof message.approvedHost === "string" ? message.approvedHost : undefined;
 
   // blocked / allowed lists against the real URL of the target tab (the
   // guard only knows the last URL it saw for the tab, if any). The server
   // attaches them to the commands its own tab check covers; the multi-tab
   // actions skip such tabs themselves. A human approval does not lift this.
-  if (hasUrlLists(urlLists) && singleTab) {
-    const refusal = checkListedTarget(target, urlLists);
-    if (refusal) return refused(refusal);
-  }
+  const listRefusal =
+    hasUrlLists(policy.lists) && entry?.scope === "tab" ? checkListedTarget(target, policy.lists) : null;
+  if (listRefusal) return refused(listRefusal);
 
   // Human approval, against the real URL of the target tab (not the
   // server's last-seen URL, which is shared by every session) or the URL the
   // command opens. Acting rows need it always: the MCP Server cannot switch
   // this off. Reading rows need it only on a tab matching the attached
-  // confirm_read_sites rules. The multi-tab rows (actPerTab, readPerTab)
-  // apply it in their handlers; "none" rows change no page data.
-  // A message without an action has no row: it is refused below
-  // (UNKNOWN_ACTION) without reaching a handler that acts.
+  // confirm_read_sites rules. A message without an action has no row: it is
+  // refused later (UNKNOWN_ACTION) without reaching a handler that acts.
   const approval = entry?.approval;
-  if (approval === "act" || approval === "actOnUrl" || approval === "read") {
-    const refusal = checkApproval(approval, target, data, readRules, approvedHost);
-    if (refusal) return refused(refusal);
-  }
+  const approvalRefusal = isUpfrontApproval(approval)
+    ? checkApproval(approval, { tab: target, data: message.data, readRules: policy.readRules, approvedHost })
+    : null;
+  if (approvalRefusal) return refused(approvalRefusal);
 
-  return {
-    kind: "checked",
-    entry,
-    context: {
-      action,
-      message,
-      data,
-      tabId,
-      target,
-      scope,
-      readRules,
-      approvedHost,
-      urlLists,
-      navigateInNewTab,
-    },
-  };
+  return { kind: "allowed", readRules: policy.readRules, urlLists: policy.lists, approvedHost };
 }
 
 /** Run the handler of a checked command, then report the tab's URL. */
