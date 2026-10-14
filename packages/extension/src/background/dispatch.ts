@@ -29,9 +29,8 @@ export type CommandSource = "host" | "page";
 /**
  * The answer to every command from the Native Host while the user has paused
  * agent actions in the popup (control-state.ts), and to those still running
- * when the pause comes. The error starts with
- * "paused", and safetyDecision "paused" lets the MCP Server tell it from a
- * browser failure.
+ * when the pause comes. The error starts with "paused", and safetyDecision
+ * "paused" lets the MCP Server tell it from a browser failure.
  */
 export const PAUSED_REFUSAL: CommandResult = {
   success: false,
