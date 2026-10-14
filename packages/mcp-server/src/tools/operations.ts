@@ -31,6 +31,18 @@ export interface ResolvedCall {
   label: CallLabel;
 }
 
+/** A discriminator value as the error for an unknown variant shows it. */
+function variantText(value: unknown): string {
+  return typeof value === 'string' || value === undefined ? String(value) : JSON.stringify(value);
+}
+
+/** `raw` parsed by the schema of `op`. Every operation schema is a z.object, so a non-object means a broken table. */
+function parseOperationArgs(op: OperationName, raw: Record<string, unknown>): Record<string, unknown> {
+  const parsed: unknown = callSchemaOf(TOOL_SCHEMAS[op]).parse(raw);
+  if (!isRecord(parsed)) throw new Error(`the arguments of ${op} did not parse to an object`);
+  return parsed;
+}
+
 /**
  * The operation a call runs. `args` are the arguments as parsed by
  * callSchemaFor(toolName).
@@ -52,13 +64,10 @@ export function resolveOperation(toolName: string, args: Record<string, unknown>
       ? tool.variants[value]
       : undefined;
     if (variant === undefined) {
-      const shown = typeof value === 'string' || value === undefined ? String(value) : JSON.stringify(value);
-      throw new Error(`${toolName}: unknown ${tool.discriminator} '${shown}'`);
+      throw new Error(`${toolName}: unknown ${tool.discriminator} '${variantText(value)}'`);
     }
     const op = variant.op(args);
-    // Every operation schema is a z.object, so this throws only on a broken table.
-    const opArgs: unknown = callSchemaOf(TOOL_SCHEMAS[op]).parse(variant.toOp ? variant.toOp(args) : args);
-    if (!isRecord(opArgs)) throw new Error(`${toolName}: the arguments of ${op} did not parse to an object`);
+    const opArgs = parseOperationArgs(op, variant.toOp ? variant.toOp(args) : args);
     return { op, args: opArgs, label: { tool: toolName, args } };
   }
 

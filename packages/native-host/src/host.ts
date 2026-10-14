@@ -101,6 +101,11 @@ function replyToExtension(
   });
 }
 
+/** A response's requestId as text: the ids the server sends are strings; anything else shows as JSON. */
+function requestIdText(requestId: unknown): string {
+  return typeof requestId === 'string' ? requestId : JSON.stringify(requestId);
+}
+
 export function processMessage(
   message: Record<string, unknown>,
   launcher: ServerLauncher,
@@ -109,10 +114,8 @@ export function processMessage(
   const action = typeof message['action'] === 'string' ? message['action'] : undefined;
 
   // Response to a server command (has requestId, no action) → WS to server
-  const rawRequestId = message['requestId'];
-  if (rawRequestId !== undefined && action === undefined) {
-    // The ids the server sends are strings; anything else is logged as JSON.
-    const requestId = typeof rawRequestId === 'string' ? rawRequestId : JSON.stringify(rawRequestId);
+  if (message['requestId'] !== undefined && action === undefined) {
+    const requestId = requestIdText(message['requestId']);
     const entry = inFlight.get(requestId);
     inFlight.delete(requestId);
 
