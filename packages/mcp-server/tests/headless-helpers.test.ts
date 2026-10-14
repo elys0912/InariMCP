@@ -17,10 +17,7 @@ import {
   ELEMENT_TIMEOUT_MS,
   HISTORY_TIMEOUT_MS,
   NAVIGATE_TIMEOUT_MS,
-  SCRIPT_TIMEOUT_MS,
   SELECT_OPTION_TIMEOUT_MS,
-  WAIT_AND_ACT_DEFAULT_MS,
-  WAIT_AND_ACT_POLL_MS,
 } from '../src/headless/limits.js';
 
 describe('parseArgs', () => {
@@ -212,17 +209,9 @@ describe('captcha detection: the same strings as the Extension (H-12)', () => {
   });
 });
 
-describe('wait_and_act values for zero or negative arguments', () => {
-  it('equal the tool schema defaults', () => {
-    const shape = (TOOL_SCHEMAS['fox_wait_and_act']!.inputSchema as AnyZodObject).shape;
-    expect(shape['timeoutMs'].parse(undefined)).toBe(WAIT_AND_ACT_DEFAULT_MS);
-    expect(shape['pollIntervalMs'].parse(undefined)).toBe(WAIT_AND_ACT_POLL_MS);
-  });
-});
-
 describe('step timeouts stay below the headless command timeout (R-3)', () => {
   it('every single-step timeout, and the two waits of type / set_value together, end first', () => {
-    for (const ms of [NAVIGATE_TIMEOUT_MS, HISTORY_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, SELECT_OPTION_TIMEOUT_MS, SCRIPT_TIMEOUT_MS]) {
+    for (const ms of [NAVIGATE_TIMEOUT_MS, HISTORY_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, SELECT_OPTION_TIMEOUT_MS]) {
       expect(ms).toBeLessThan(HEADLESS_COMMAND_TIMEOUT_MS);
     }
     expect(2 * ELEMENT_TIMEOUT_MS).toBeLessThan(HEADLESS_COMMAND_TIMEOUT_MS);

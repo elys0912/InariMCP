@@ -1,8 +1,8 @@
 // InariMCP approval requests (shared by background and popup)
 //
 // Human approval is asked in the toolbar popup, never in the page: content
-// scripts, page JavaScript and the LLM's own tools (fox_click,
-// fox_execute_script, ...) cannot reach the popup, and the background only
+// scripts, page JavaScript and the LLM's own tools (fox_click, ...) cannot
+// reach the popup, and the background only
 // accepts a decision from an extension page (the popup). See
 // background/approvals.ts.
 //

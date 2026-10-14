@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   OBSERVE_TOOLS,
-  SCRIPT_TOOLS,
   TAB_INDEPENDENT_TOOLS,
   isOperationIn,
   toolAnnotations,
@@ -29,7 +28,7 @@ function guard(overrides: Partial<SafetyConfig> = {}): SafetyGuard {
 
 describe('tool sets derived from the schemas', () => {
   it('only name registered tools', () => {
-    for (const name of [...OBSERVE_TOOLS, ...SCRIPT_TOOLS]) {
+    for (const name of OBSERVE_TOOLS) {
       expect(TOOL_SCHEMAS[name], name).toBeDefined();
     }
   });
@@ -48,11 +47,11 @@ describe('tool sets derived from the schemas', () => {
     ]);
   });
 
-  it('put every script-class tool (and nothing else) in SCRIPT_TOOLS', () => {
-    expect([...SCRIPT_TOOLS].sort()).toEqual([
-      'fox_eval_chain', 'fox_execute_script', 'fox_inject_observer',
-      'fox_remove_observer', 'fox_wait_and_act',
-    ]);
+  // InariMCP (AMO): no tool runs caller-supplied JavaScript or records the
+  // page's console / network traffic.
+  it('define no script or logging tool', () => {
+    const classes = new Set(OPERATION_NAMES.map((name) => TOOL_SCHEMAS[name]!.classification));
+    expect([...classes].sort()).toEqual(['act', 'human', 'interact', 'observe', 'wait', 'workflow']);
   });
 
   // The decision per tool is recorded in tests/golden/guard-decisions.json

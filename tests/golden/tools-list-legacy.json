@@ -29,35 +29,6 @@
     }
   },
   {
-    "name": "fox_clear_logs",
-    "description": "[Deprecated: fox_clear_logs is deprecated; use fox_logging with action='clear'.] Clear captured console and/or network logs of this tab. Not supported in headless mode.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "console": {
-          "type": "boolean",
-          "default": true,
-          "description": "Clear console logs"
-        },
-        "network": {
-          "type": "boolean",
-          "default": true,
-          "description": "Clear network logs"
-        },
-        "tabId": {
-          "type": "integer",
-          "description": "Tab ID (defaults to active tab)"
-        }
-      },
-      "additionalProperties": false,
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": false
-    }
-  },
-  {
     "name": "fox_click",
     "description": "Click an element, located by selector (CSS), xpath, text or x+y viewport coordinates, checked in that order. Works in the top document only (not inside iframes or shadow DOM); fails on a disabled element. The element is scrolled into view and receives synthetic mousedown/mouseup/click events (isTrusted=false, not a real OS click; pages that require real user input may ignore it). doubleClick/rightClick send dblclick/contextmenu instead. Returns the clicked element's info. Headless: selector or x+y only.",
     "inputSchema": {
@@ -180,86 +151,6 @@
     }
   },
   {
-    "name": "fox_eval_chain",
-    "description": "[Deprecated: fox_eval_chain is deprecated; use fox_evaluate with mode='chain'.] Extension path: not implemented (returns an error). Headless only: evaluate a sequence of JavaScript expressions in the page; each step receives the prior result as `$prev`, and console output is captured per step.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "steps": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "script": {
-                "type": "string",
-                "description": "JavaScript expression to evaluate"
-              },
-              "label": {
-                "type": "string",
-                "description": "Human-readable label for this step"
-              },
-              "captureConsole": {
-                "type": "boolean",
-                "default": true,
-                "description": "Capture console output for this step"
-              },
-              "stopOnError": {
-                "type": "boolean",
-                "default": true,
-                "description": "Abort chain if this step throws"
-              }
-            },
-            "required": [
-              "script"
-            ],
-            "additionalProperties": false
-          },
-          "minItems": 1,
-          "description": "Ordered list of JS expressions to evaluate. Each step receives the prior result as `$prev`."
-        },
-        "tabId": {
-          "type": "integer",
-          "description": "Tab ID (defaults to active tab)"
-        }
-      },
-      "required": [
-        "steps"
-      ],
-      "additionalProperties": false,
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true
-    }
-  },
-  {
-    "name": "fox_execute_script",
-    "description": "[Deprecated: fox_execute_script is deprecated; use fox_evaluate with mode='script'.] Run JavaScript in the tab's top frame and return the value of the last expression (use a JSON-compatible value; a top-level `return` is not allowed, wrap code in an IIFE). Extension path: runs in the content script's isolated world; it sees the page DOM, but not variables or functions defined by the page's own scripts, and its console.log and fetch/XHR are not captured by the logging tools. Headless: runs in the page's own world (Playwright page.evaluate). Refused when script execution is disabled (allow_script_execution in safety.json or FOX_ALLOW_SCRIPTS=0).",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "script": {
-          "type": "string",
-          "description": "JavaScript code to execute"
-        },
-        "tabId": {
-          "type": "integer",
-          "description": "Tab ID (defaults to active tab)"
-        }
-      },
-      "required": [
-        "script"
-      ],
-      "additionalProperties": false,
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true
-    }
-  },
-  {
     "name": "fox_find_text",
     "description": "[Deprecated: fox_find_text is deprecated; use fox_find with by='text'.] Search for text in the page using the native browser.find API (Firefox-only). Works across frames and finds text outside the viewport without DOM traversal. Returns match count and optionally bounding rects.",
     "inputSchema": {
@@ -301,46 +192,6 @@
     }
   },
   {
-    "name": "fox_get_console_logs",
-    "description": "[Deprecated: fox_get_console_logs is deprecated; use fox_get_logs with kind='console'.] Return console messages captured since fox_start_logging on this tab (the most recent `limit`, filtered by level and/or a case-insensitive search text). Captured: page calls to console.log/warn/error/info/debug in the top frame only; not uncaught exceptions, browser errors, iframes, or console.log inside fox_execute_script. Kept per tab across reloads and navigations (the newest 500) until fox_clear_logs or the tab is closed. currentPageReached=false means the current page could not be asked for its latest entries. Paused while the tab is on a protected site. Not supported in headless mode.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "level": {
-          "type": "string",
-          "enum": [
-            "log",
-            "warn",
-            "error",
-            "info",
-            "debug"
-          ],
-          "description": "Filter by log level"
-        },
-        "search": {
-          "type": "string",
-          "description": "Filter logs containing this text"
-        },
-        "limit": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "default": 100,
-          "description": "Maximum number of logs to return"
-        },
-        "tabId": {
-          "type": "integer",
-          "description": "Tab ID (defaults to active tab)"
-        }
-      },
-      "additionalProperties": false,
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false
-    }
-  },
-  {
     "name": "fox_get_elements",
     "description": "[Deprecated: fox_get_elements is deprecated; use fox_find with by='selector'.] List elements matching a CSS selector (querySelectorAll: the first `limit` matches, plus the total count). Per element: tag, id, classes, name, type, text (first 200 chars), value (password fields masked), href, src, placeholder, ariaLabel, role, disabled, checked, visible, position (viewport coordinates incl. centerX/centerY) and a generated CSS selector. Headless: tag, text and bounding box only, at most 50.",
     "inputSchema": {
@@ -364,48 +215,6 @@
       "required": [
         "selector"
       ],
-      "additionalProperties": false,
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "annotations": {
-      "readOnlyHint": true,
-      "destructiveHint": false
-    }
-  },
-  {
-    "name": "fox_get_network_logs",
-    "description": "[Deprecated: fox_get_network_logs is deprecated; use fox_get_logs with kind='network'.] Return fetch/XHR requests captured since fox_start_logging on this tab (the most recent `limit`), filtered by URL regex, HTTP method, status code, or errors only (network error or status >= 400). Images, scripts, CSS and WebSocket traffic are not captured. Authorization, cookie, API-key and token headers and secret fields in URLs and bodies are masked; other headers and bodies (truncated) are returned as recorded. Kept per tab across navigations like the console logs. Not supported in headless mode.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "urlPattern": {
-          "type": "string",
-          "description": "Only requests whose URL matches this regex. JavaScript regex, case-sensitive, unanchored (matches anywhere in the full URL); use [Ee]xample for a case-insensitive part."
-        },
-        "method": {
-          "type": "string",
-          "description": "Filter by HTTP method (GET, POST, etc.)"
-        },
-        "status": {
-          "type": "integer",
-          "description": "Filter by HTTP status code"
-        },
-        "errorsOnly": {
-          "type": "boolean",
-          "default": false,
-          "description": "Only return failed requests"
-        },
-        "limit": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "default": 100,
-          "description": "Maximum number of logs to return"
-        },
-        "tabId": {
-          "type": "integer",
-          "description": "Tab ID (defaults to active tab)"
-        }
-      },
       "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
     },
@@ -601,49 +410,6 @@
     }
   },
   {
-    "name": "fox_inject_observer",
-    "description": "[Deprecated: fox_inject_observer is deprecated; use fox_observer with action='inject'.] Start a MutationObserver on an element (default body) that collects DOM changes (attributes, child list, subtree). The changes are returned by fox_remove_observer (the last 100). The observer ends when the page reloads or navigates. Requires script execution enabled. Headless: one observer per page (a new call replaces it, observerId is ignored); changes collect in window.__fox_mutations.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "selector": {
-          "type": "string",
-          "default": "body",
-          "description": "Root element to observe"
-        },
-        "observerId": {
-          "type": "string",
-          "description": "ID for this observer (to remove it later)"
-        },
-        "observeAttributes": {
-          "type": "boolean",
-          "default": true,
-          "description": "Observe attribute changes"
-        },
-        "observeChildList": {
-          "type": "boolean",
-          "default": true,
-          "description": "Observe child list changes"
-        },
-        "observeSubtree": {
-          "type": "boolean",
-          "default": true,
-          "description": "Observe subtree changes"
-        },
-        "tabId": {
-          "type": "integer",
-          "description": "Tab ID (defaults to active tab)"
-        }
-      },
-      "additionalProperties": false,
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true
-    }
-  },
-  {
     "name": "fox_list_containers",
     "description": "[Deprecated: fox_list_containers is deprecated; use fox_tabs with what='containers'.] List Firefox container identities (contextualIdentities). Returns name, color, icon, and cookieStoreId for each container. When container scope is enabled in safety.json, only the agent container is returned.",
     "inputSchema": {
@@ -804,32 +570,6 @@
     }
   },
   {
-    "name": "fox_remove_observer",
-    "description": "[Deprecated: fox_remove_observer is deprecated; use fox_observer with action='remove'.] Remove an observer started by fox_inject_observer and get the changes it collected (the last 100). Fails when no observer with that ID exists on the current page. Headless: observerId is ignored and only the number of changes is returned.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "observerId": {
-          "type": "string",
-          "description": "ID of the observer to remove"
-        },
-        "tabId": {
-          "type": "integer",
-          "description": "Tab ID (defaults to active tab)"
-        }
-      },
-      "required": [
-        "observerId"
-      ],
-      "additionalProperties": false,
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": false
-    }
-  },
-  {
     "name": "fox_request_approval",
     "description": "Ask the human at the browser a yes/no question and wait for the answer. Shown in the InariMCP toolbar popup in Firefox (badge + OS notification), never in the page. The answer is for you only: it does not unlock protected-site actions — those ask the human on their own when you call the tool. Unavailable in headless mode.",
     "inputSchema": {
@@ -942,7 +682,7 @@
   },
   {
     "name": "fox_safety_status",
-    "description": "Show the active safety guard policy: read-only mode, script toggle, protected/blocked/allowed URL patterns, rate-limit state, and audit log location.",
+    "description": "Show the active safety guard policy: read-only mode, protected/blocked/allowed URL patterns, rate-limit state, and audit log location.",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -1185,49 +925,6 @@
     }
   },
   {
-    "name": "fox_start_logging",
-    "description": "[Deprecated: fox_start_logging is deprecated; use fox_logging with action='start'.] Start capturing console logs and fetch/XHR requests of the tab (top frame). Use before performing actions you want to monitor. Logs are kept per tab across reloads and navigations (the newest 500 console and 500 network entries) until fox_clear_logs or the tab is closed. Refused on a protected site unless approved; recording pauses while the tab is on one. Not supported in headless mode.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "clearExisting": {
-          "type": "boolean",
-          "default": false,
-          "description": "Clear any existing logs before starting"
-        },
-        "tabId": {
-          "type": "integer",
-          "description": "Tab ID (defaults to active tab)"
-        }
-      },
-      "additionalProperties": false,
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": false
-    }
-  },
-  {
-    "name": "fox_stop_logging",
-    "description": "[Deprecated: fox_stop_logging is deprecated; use fox_logging with action='stop'.] Stop capturing console logs and network requests on this tab. Logs are preserved and can still be retrieved (until fox_clear_logs or the tab is closed). Not supported in headless mode.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "tabId": {
-          "type": "integer",
-          "description": "Tab ID (defaults to active tab)"
-        }
-      },
-      "additionalProperties": false,
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": false
-    }
-  },
-  {
     "name": "fox_switch_tab",
     "description": "[Deprecated: fox_switch_tab is deprecated; use fox_tab with action='switch'.] Focus/activate a browser tab by its tab ID.",
     "inputSchema": {
@@ -1298,50 +995,6 @@
       },
       "required": [
         "text"
-      ],
-      "additionalProperties": false,
-      "$schema": "http://json-schema.org/draft-07/schema#"
-    },
-    "annotations": {
-      "readOnlyHint": false,
-      "destructiveHint": true
-    }
-  },
-  {
-    "name": "fox_wait_and_act",
-    "description": "[Deprecated: fox_wait_and_act is deprecated; use fox_evaluate with mode='wait_and_act'.] Extension path: not implemented (returns an error). Headless only: poll the page until a JS condition is truthy, then run actionScript and return its result. Use for waiting on async UI state.",
-    "inputSchema": {
-      "type": "object",
-      "properties": {
-        "condition": {
-          "type": "string",
-          "description": "JS expression that returns truthy when ready"
-        },
-        "actionScript": {
-          "type": "string",
-          "description": "JS to run once condition is met"
-        },
-        "pollIntervalMs": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "default": 200,
-          "description": "How often to check condition"
-        },
-        "timeoutMs": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 580000,
-          "default": 15000,
-          "description": "Max wait time in ms before giving up (at most 580000)"
-        },
-        "tabId": {
-          "type": "integer",
-          "description": "Tab ID (defaults to active tab)"
-        }
-      },
-      "required": [
-        "condition",
-        "actionScript"
       ],
       "additionalProperties": false,
       "$schema": "http://json-schema.org/draft-07/schema#"
@@ -1430,7 +1083,7 @@
   },
   {
     "name": "fox_wait_for_network_idle",
-    "description": "[Deprecated: fox_wait_for_network_idle is deprecated; use fox_wait with for='network_idle'.] Wait until the page's own fetch/XHR requests (top frame) have been idle for idleTime ms. Use after actions that trigger API calls. Requests made by fox_execute_script, and requests already in flight before the first call on this page, are not seen. Fails when the network does not become idle within the timeout. Headless: uses Playwright's networkidle; idleTime is ignored.",
+    "description": "[Deprecated: fox_wait_for_network_idle is deprecated; use fox_wait with for='network_idle'.] Wait until the page's own fetch/XHR requests (top frame) have been idle for idleTime ms. Use after actions that trigger API calls. Requests already in flight when the call starts are not seen. Fails when the network does not become idle within the timeout. Headless: uses Playwright's networkidle; idleTime is ignored.",
     "inputSchema": {
       "type": "object",
       "properties": {

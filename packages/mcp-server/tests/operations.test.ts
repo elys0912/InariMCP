@@ -5,6 +5,15 @@ import { callSchemaFor, deprecationNote, describeTool, resolveOperation } from '
 // Every operation is a public tool or a replaced name: the type of
 // LEGACY_REPLACEMENTS (Record<LegacyOperationName, ...>) checks that.
 describe('public tools and operations', () => {
+  // InariMCP (AMO): the script and logging tools are gone, under every name.
+  it.each([
+    'fox_evaluate', 'fox_observer', 'fox_logging', 'fox_get_logs',
+    'fox_execute_script', 'fox_eval_chain', 'fox_wait_and_act', 'fox_inject_observer', 'fox_remove_observer',
+    'fox_start_logging', 'fox_stop_logging', 'fox_get_console_logs', 'fox_get_network_logs', 'fox_clear_logs',
+  ])('%s is not callable', (name) => {
+    expect(callSchemaFor(name)).toBeNull();
+    expect(describeTool(name)).toBeNull();
+  });
 
   it('fox_tab create with a container runs fox_open_in_container with the old argument names', () => {
     const args = callSchemaFor('fox_tab')!.parse({
@@ -81,8 +90,6 @@ describe('auditArgs of a deprecated name', () => {
     ['fox_open_in_container', { url: 'https://example.test/', containerName: 'Work' },
       { action: 'create', url: 'https://example.test/', container: { name: 'Work' } }],
     ['fox_select_option', { selector: '#s', index: 2 }, { kind: 'select', selector: '#s', option: { index: 2 } }],
-    ['fox_wait_and_act', { condition: 'true', actionScript: '1', timeoutMs: 500 },
-      { mode: 'wait_and_act', condition: 'true', actionScript: '1', timeout: 500 }],
   ] as const)('%s: discriminator first, arguments renamed back', (name, called, expected) => {
     const opArgs = callSchemaFor(name)!.parse(called) as Record<string, unknown>;
     const { label } = resolveOperation(name, opArgs);
@@ -121,13 +128,9 @@ describe('fox_navigate url', () => {
 // have a lower bound (0 where "none" makes sense, else 1).
 describe('lower bounds of numeric arguments', () => {
   it.each([
-    ['fox_evaluate', { mode: 'wait_and_act', condition: 'true', actionScript: '1' }, 'pollIntervalMs', 1],
-    ['fox_evaluate', { mode: 'wait_and_act', condition: 'true', actionScript: '1' }, 'timeout', 1],
     ['fox_read', { mode: 'text' }, 'maxLength', 1],
     ['fox_find', { by: 'selector', selector: 'a' }, 'limit', 1],
     ['fox_tabs', { what: 'tabs' }, 'limit', 1],
-    ['fox_get_logs', { kind: 'console' }, 'limit', 1],
-    ['fox_get_logs', { kind: 'network' }, 'limit', 1],
     ['fox_interact', { action: 'scroll' }, 'amount', 0],
     ['fox_interact', { action: 'highlight', selector: 'a' }, 'duration', 1],
     ['fox_wait', { for: 'network_idle' }, 'idleTime', 0],

@@ -17,19 +17,15 @@ import {
   highlightElement,
   scrollAndCapture,
   captureFullPage,
-  inspectElement,
   getValue,
   getText,
 } from "./inspect";
-import { startLogging, stopLogging, flushLogs, clearLogs } from "./log-store";
 import { cancelHumanWait } from "./overlay";
 import type { ContentMessage } from "./types";
 import {
   waitForElement,
   waitForChange,
   waitForNetworkIdle,
-  observeElement,
-  stopObserving,
   clickAndWait,
 } from "./wait";
 
@@ -55,18 +51,12 @@ export async function handleMessage(
       return waitForChange(message);
     case "waitForNetworkIdle":
       return waitForNetworkIdle(message);
-    case "observeElement":
-      return observeElement(message);
-    case "stopObserving":
-      return stopObserving(message);
     case "scrollAndCapture":
       return scrollAndCapture(message);
     case "clickAndWait":
       return clickAndWait(message);
     case "captureFullPage":
       return captureFullPage();
-    case "inspectElement":
-      return inspectElement();
     case "getValue":
       return getValue(message);
     case "setValue":
@@ -83,14 +73,6 @@ export async function handleMessage(
       return solveCaptcha(message);
     case "cancelHumanWait":
       return cancelHumanWait();
-    case "startLogging":
-      return startLogging(message);
-    case "stopLogging":
-      return stopLogging();
-    case "flushLogs":
-      return flushLogs();
-    case "clearLogs":
-      return clearLogs(message);
     default: {
       // Reached by a message whose action is not a ContentAction (content.ts
       // takes any runtime message as a ContentMessage).

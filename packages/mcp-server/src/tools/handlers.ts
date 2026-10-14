@@ -183,8 +183,8 @@ function buildCommandData(
 /**
  * Arguments the backends compile with `new RegExp()`, always without flags
  * (case-sensitive) on both backends: fox_get_tabs, fox_screenshot all_tabs,
- * fox_wait_for_url, fox_wait_for_navigation, fox_get_network_logs (and the
- * Extension's reload_by_url / find_tabs). A case-insensitive part needs a
+ * fox_wait_for_url, fox_wait_for_navigation (and the Extension's
+ * reload_by_url / find_tabs). A case-insensitive part needs a
  * character class such as `[Ee]xample`.
  */
 const REGEX_ARGUMENTS = ['urlPattern'] as const;
@@ -219,10 +219,6 @@ export function invalidRegexArgument(args: Record<string, unknown>): string | nu
  *     safetyDecision "confirmation_required" when the actual target tab is
  *     protected — the server-side Layer 4 check only knows the last URL it
  *     saw.
- *     Also on start_logging / get_console_logs / get_network_logs, same
- *     condition: the Extension refuses start_logging on a protected tab
- *     (confirmation_required), keeps the patterns with the tab and pauses
- *     recording while the tab is on a protected page.
  *     Also on every acting tool (not in OBSERVE_TOOLS) without a `url`
  *     argument: the guard's Layer 7 can only check the last URL it saw for
  *     the tab, which may be stale or unknown, so the Extension refuses
@@ -243,9 +239,6 @@ const PROTECTED_CAPTURE_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAct
   'screenshot',
   'scroll_and_capture',
   'screenshot_all_tabs',
-  'start_logging',
-  'get_console_logs',
-  'get_network_logs',
 ]);
 
 export function attachSafetyMetadata(
@@ -461,7 +454,7 @@ function confirmationToCallResult(
       'This call cannot be approved on a protected site: its arguments are too long to show ' +
       `the human in full (at most ${SUMMARY_VALUE_MAX} per argument value and ${SUMMARY_MAX} for all the lines, ` +
       'counted in UTF-16 code units of the value as JSON, including the quotes and escapes, with ' +
-      'invisible characters as \\u escapes). Text or a script that can be split may be sent in ' +
+      'invisible characters as \\u escapes). Text that can be split may be sent in ' +
       'several shorter calls; a value that cannot be split, such as a long URL, cannot be ' +
       'approved on this site: tell the user instead of retrying.',
     );
@@ -487,7 +480,7 @@ function confirmationToCallResult(
       'Firefox, where the InariMCP toolbar button shows a badge and the human approves ' +
       'or denies in its popup. An approval covers one call of this tool with exactly these ' +
       `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
-      'Nothing in the page (buttons, fox_click, fox_evaluate) can approve it. ' +
+      'Nothing in the page (buttons, fox_click) can approve it. ' +
       `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
       'If the human declined, do not retry without asking them first.',
     );

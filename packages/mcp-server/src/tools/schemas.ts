@@ -11,16 +11,13 @@ import { z } from 'zod';
  *   - interact: changes UI state only (hover, scroll, overlay, active tab),
  *               never page data; allowed in read-only mode
  *   - act:      changes page or browser state (input, navigation, tabs)
- *   - script:   runs caller-supplied JavaScript
- *   - wait / logging / workflow / human: as named
+ *   - wait / workflow / human: as named
  */
 export type ToolClassification =
   | 'observe'
   | 'interact'
   | 'act'
-  | 'script'
   | 'wait'
-  | 'logging'
   | 'workflow'
   | 'human';
 
@@ -331,78 +328,6 @@ const foxWaitForUrlSchema = z.object({
 });
 
 // =========================================================================
-// Logging tools
-// =========================================================================
-
-const foxStartLoggingSchema = z.object({
-  clearExisting: z.boolean().optional().default(false).describe('Clear any existing logs before starting'),
-  tabId,
-});
-
-const foxStopLoggingSchema = z.object({
-  tabId,
-});
-
-const foxGetConsoleLogsSchema = z.object({
-  level: z.enum(['log', 'warn', 'error', 'info', 'debug']).optional().describe('Filter by log level'),
-  search: z.string().optional().describe('Filter logs containing this text'),
-  limit: z.number().int().positive().optional().default(100).describe('Maximum number of logs to return'),
-  tabId,
-});
-
-const foxGetNetworkLogsSchema = z.object({
-  urlPattern: z.string().optional().describe(`Only requests whose URL matches this regex. ${URL_PATTERN_NOTE}`),
-  method: z.string().optional().describe('Filter by HTTP method (GET, POST, etc.)'),
-  status: z.number().int().optional().describe('Filter by HTTP status code'),
-  errorsOnly: z.boolean().optional().default(false).describe('Only return failed requests'),
-  limit: z.number().int().positive().optional().default(100).describe('Maximum number of logs to return'),
-  tabId,
-});
-
-const foxClearLogsSchema = z.object({
-  console: z.boolean().optional().default(true).describe('Clear console logs'),
-  network: z.boolean().optional().default(true).describe('Clear network logs'),
-  tabId,
-});
-
-// =========================================================================
-// Script tools (require fox_allow_scripts)
-// =========================================================================
-
-const foxExecuteScriptSchema = z.object({
-  script: z.string().describe('JavaScript code to execute'),
-  tabId,
-});
-
-const evalStepSchema = z.object({
-  script: z.string().describe('JavaScript expression to evaluate'),
-  label: z.string().optional().describe('Human-readable label for this step'),
-  captureConsole: z.boolean().optional().default(true).describe('Capture console output for this step'),
-  stopOnError: z.boolean().optional().default(true).describe('Abort chain if this step throws'),
-});
-
-const foxEvalChainSchema = z.object({
-  steps: z.array(evalStepSchema).min(1).describe(
-    'Ordered list of JS expressions to evaluate. Each step receives the prior result as `$prev`.',
-  ),
-  tabId,
-});
-
-const foxInjectObserverSchema = z.object({
-  selector: z.string().optional().default('body').describe('Root element to observe'),
-  observerId: z.string().optional().describe('ID for this observer (to remove it later)'),
-  observeAttributes: z.boolean().optional().default(true).describe('Observe attribute changes'),
-  observeChildList: z.boolean().optional().default(true).describe('Observe child list changes'),
-  observeSubtree: z.boolean().optional().default(true).describe('Observe subtree changes'),
-  tabId,
-});
-
-const foxRemoveObserverSchema = z.object({
-  observerId: z.string().describe('ID of the observer to remove'),
-  tabId,
-});
-
-// =========================================================================
 // Workflow tools
 // =========================================================================
 
@@ -428,15 +353,6 @@ const foxRunWorkflowSchema = z.object({
 const foxAuditPageSchema = z.object({
   screenshot: z.boolean().optional().default(true).describe('Also capture a screenshot'),
   fullPage: z.boolean().optional().default(false).describe('Make the screenshot full-page'),
-  tabId,
-});
-
-const foxWaitAndActSchema = z.object({
-  condition: z.string().describe('JS expression that returns truthy when ready'),
-  actionScript: z.string().describe('JS to run once condition is met'),
-  pollIntervalMs: z.number().int().positive().optional().default(200).describe('How often to check condition'),
-  timeoutMs: z.number().int().positive().max(MAX_TIMEOUT_ARG_MS).optional().default(15000)
-    .describe(`Max wait time in ms before giving up (at most ${MAX_TIMEOUT_ARG_MS})`),
   tabId,
 });
 
@@ -638,7 +554,7 @@ const OPERATIONS = {
   fox_wait_for_network_idle: {
     name: 'fox_wait_for_network_idle',
     description:
-      'Wait until the page\'s own fetch/XHR requests (top frame) have been idle for idleTime ms. Use after actions that trigger API calls. Requests made by fox_execute_script, and requests already in flight before the first call on this page, are not seen. Fails when the network does not become idle within the timeout. Headless: uses Playwright\'s networkidle; idleTime is ignored.',
+      'Wait until the page\'s own fetch/XHR requests (top frame) have been idle for idleTime ms. Use after actions that trigger API calls. Requests already in flight when the call starts are not seen. Fails when the network does not become idle within the timeout. Headless: uses Playwright\'s networkidle; idleTime is ignored.',
     inputSchema: foxWaitForNetworkIdleSchema,
     classification: 'wait',
   },
@@ -657,76 +573,6 @@ const OPERATIONS = {
     classification: 'wait',
   },
 
-  // --- Logging ---
-  fox_start_logging: {
-    name: 'fox_start_logging',
-    description:
-      'Start capturing console logs and fetch/XHR requests of the tab (top frame). Use before performing actions you want to monitor. Logs are kept per tab across reloads and navigations (the newest 500 console and 500 network entries) until fox_clear_logs or the tab is closed. Refused on a protected site unless approved; recording pauses while the tab is on one. Not supported in headless mode.',
-    inputSchema: foxStartLoggingSchema,
-    classification: 'logging',
-  },
-  fox_stop_logging: {
-    name: 'fox_stop_logging',
-    description:
-      'Stop capturing console logs and network requests on this tab. Logs are preserved and can still be retrieved (until fox_clear_logs or the tab is closed). Not supported in headless mode.',
-    inputSchema: foxStopLoggingSchema,
-    classification: 'logging',
-  },
-  fox_get_console_logs: {
-    name: 'fox_get_console_logs',
-    description:
-      'Return console messages captured since fox_start_logging on this tab (the most recent `limit`, filtered by level and/or a case-insensitive search text). Captured: page calls to console.log/warn/error/info/debug in the top frame only; not uncaught exceptions, browser errors, iframes, or console.log inside fox_execute_script. Kept per tab across reloads and navigations (the newest 500) until fox_clear_logs or the tab is closed. currentPageReached=false means the current page could not be asked for its latest entries. Paused while the tab is on a protected site. Not supported in headless mode.',
-    inputSchema: foxGetConsoleLogsSchema,
-    classification: 'logging',
-    annotations: { readOnlyHint: true },
-  },
-  fox_get_network_logs: {
-    name: 'fox_get_network_logs',
-    description:
-      'Return fetch/XHR requests captured since fox_start_logging on this tab (the most recent `limit`), filtered by URL regex, HTTP method, status code, or errors only (network error or status >= 400). Images, scripts, CSS and WebSocket traffic are not captured. Authorization, cookie, API-key and token headers and secret fields in URLs and bodies are masked; other headers and bodies (truncated) are returned as recorded. Kept per tab across navigations like the console logs. Not supported in headless mode.',
-    inputSchema: foxGetNetworkLogsSchema,
-    classification: 'logging',
-    annotations: { readOnlyHint: true },
-  },
-  fox_clear_logs: {
-    name: 'fox_clear_logs',
-    description:
-      'Clear captured console and/or network logs of this tab. Not supported in headless mode.',
-    inputSchema: foxClearLogsSchema,
-    classification: 'logging',
-  },
-
-  // --- Script ---
-  fox_execute_script: {
-    name: 'fox_execute_script',
-    description:
-      'Run JavaScript in the tab\'s top frame and return the value of the last expression (use a JSON-compatible value; a top-level `return` is not allowed, wrap code in an IIFE). Extension path: runs in the content script\'s isolated world; it sees the page DOM, but not variables or functions defined by the page\'s own scripts, and its console.log and fetch/XHR are not captured by the logging tools. Headless: runs in the page\'s own world (Playwright page.evaluate). Refused when script execution is disabled (allow_script_execution in safety.json or FOX_ALLOW_SCRIPTS=0).',
-    inputSchema: foxExecuteScriptSchema,
-    classification: 'script',
-  },
-  fox_eval_chain: {
-    name: 'fox_eval_chain',
-    description:
-      'Extension path: not implemented (returns an error). Headless only: evaluate a sequence of JavaScript expressions in the page; each step receives the prior result as `$prev`, and console output is captured per step.',
-    inputSchema: foxEvalChainSchema,
-    classification: 'script',
-  },
-  fox_inject_observer: {
-    name: 'fox_inject_observer',
-    description:
-      'Start a MutationObserver on an element (default body) that collects DOM changes (attributes, child list, subtree). The changes are returned by fox_remove_observer (the last 100). The observer ends when the page reloads or navigates. Requires script execution enabled. Headless: one observer per page (a new call replaces it, observerId is ignored); changes collect in window.__fox_mutations.',
-    inputSchema: foxInjectObserverSchema,
-    classification: 'script',
-  },
-  fox_remove_observer: {
-    name: 'fox_remove_observer',
-    description:
-      'Remove an observer started by fox_inject_observer and get the changes it collected (the last 100). Fails when no observer with that ID exists on the current page. Headless: observerId is ignored and only the number of changes is returned.',
-    inputSchema: foxRemoveObserverSchema,
-    classification: 'script',
-    annotations: { destructiveHint: false },
-  },
-
   // --- Workflow ---
   fox_run_workflow: {
     name: 'fox_run_workflow',
@@ -741,13 +587,6 @@ const OPERATIONS = {
       'Not implemented yet on any backend: always returns an error. Use fox_get_page_info, fox_get_elements and fox_screenshot instead.',
     inputSchema: foxAuditPageSchema,
     classification: 'observe',
-  },
-  fox_wait_and_act: {
-    name: 'fox_wait_and_act',
-    description:
-      'Extension path: not implemented (returns an error). Headless only: poll the page until a JS condition is truthy, then run actionScript and return its result. Use for waiting on async UI state.',
-    inputSchema: foxWaitAndActSchema,
-    classification: 'script',
   },
   fox_handle_dialog: {
     name: 'fox_handle_dialog',
@@ -797,7 +636,7 @@ const OPERATIONS = {
   fox_safety_status: {
     name: 'fox_safety_status',
     description:
-      'Show the active safety guard policy: read-only mode, script toggle, protected/blocked/allowed URL patterns, rate-limit state, and audit log location.',
+      'Show the active safety guard policy: read-only mode, protected/blocked/allowed URL patterns, rate-limit state, and audit log location.',
     inputSchema: foxSafetyStatusSchema,
     classification: 'observe',
     tabIndependent: true,

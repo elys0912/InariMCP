@@ -1,4 +1,4 @@
-// InariMCP URL rules (shared by the background and content scripts)
+// InariMCP URL rules (background script)
 //
 // Matches the safety.json URL patterns the MCP Server attaches to a command
 // (BrowserCommand protectedUrlRules / blockedUrlRules / allowedUrlRules,
@@ -20,9 +20,8 @@
 // A plain string is the legacy form (`protectedUrlPatterns` of older MCP
 // Servers): a regex over the raw URL, read as a regex rule with matchRaw.
 //
-// Imported by the background and content modules (bundled into both). Keep it
-// dependency-free and without top-level side effects: content.js runs it on
-// every injection, before its __fox_injected guard.
+// Imported by the background modules (bundled into dist/background.js). Keep
+// it dependency-free and without top-level side effects.
 
 export interface HostUrlRule {
   kind: "host";

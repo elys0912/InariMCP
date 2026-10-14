@@ -65,7 +65,6 @@
   "badgeApprovalPending": { "message": "InariMCP: 承認待ちのリクエストが $1 件あります" },
 
   "menuScreenshot": { "message": "InariMCP でスクリーンショットを撮る" },
-  "menuInspect": { "message": "InariMCP で要素を調べる" },
 
   "notifyApprovalTitle": { "message": "Claude が承認を求めています" },
   "notifyApprovalDefault": { "message": "Claude が操作の実行を求めています" },

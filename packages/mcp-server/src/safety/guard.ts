@@ -9,7 +9,6 @@ import { compileUrlPatterns, normalizeUrl } from './url-pattern.js';
 import type { PatternListName, UrlPattern } from './url-pattern.js';
 import {
   OBSERVE_TOOLS,
-  SCRIPT_TOOLS,
   TAB_INDEPENDENT_TOOLS,
   isOperationIn,
 } from '../tools/classification.js';
@@ -17,7 +16,7 @@ import { SAFETY_STATUS_TOOL, navigateGoesToUrl } from '../tools/schemas.js';
 import { isRecord } from '@inari-mcp/shared';
 
 // Derived from the tool schemas; re-exported for the existing importers.
-export { OBSERVE_TOOLS, SCRIPT_TOOLS, TAB_INDEPENDENT_TOOLS };
+export { OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS };
 
 /**
  * The URL a call goes to or opens, or null when it acts on (or reads) a tab
@@ -62,7 +61,6 @@ export const LAYER = {
   lists: 3,
   observe: 4,
   readOnly: 5,
-  script: 6,
   protected: 7,
 } as const;
 export type Layer = (typeof LAYER)[keyof typeof LAYER];
@@ -111,7 +109,6 @@ export const LAYER_OF: Readonly<Record<DenialDecision, Layer | null>> = {
   not_allowlisted: LAYER.lists,
   blocked_after_navigation: LAYER.lists,
   read_only: LAYER.readOnly,
-  scripts_disabled: LAYER.script,
   // Layer 7, and the Layer 4 exception of a single-tab fox_screenshot.
   confirmation_required: LAYER.protected,
 };
@@ -140,7 +137,6 @@ export interface SafetyStatus {
   /** Non-fatal pattern problems (legacy regex patterns etc.). */
   patternWarnings: string[];
   readOnly: boolean;
-  allowScriptExecution: boolean;
   confirmProtectedActions: boolean;
   allowPasswordTyping: boolean;
   maxActionsPerMinute: number;
@@ -490,7 +486,6 @@ export class SafetyGuard {
       configError: this._configError,
       patternWarnings: [...this._patternWarnings],
       readOnly: this.config.readOnly,
-      allowScriptExecution: this.config.allowScriptExecution,
       confirmProtectedActions: this.config.confirmProtectedActions,
       allowPasswordTyping: this.config.allowPasswordTyping,
       maxActionsPerMinute: this.config.maxActionsPerMinute,
@@ -513,7 +508,6 @@ export class SafetyGuard {
     shown: string,
   ): SafetyDenial | null {
     const isObserve = isOperationIn(OBSERVE_TOOLS, toolName);
-    const isScript = isOperationIn(SCRIPT_TOOLS, toolName);
 
     // Layer 0: Container scope (server-side part only).
     // The server cannot see tabs, so the per-tab cookieStoreId check is done
@@ -584,15 +578,6 @@ export class SafetyGuard {
         `${shown} refused: safety guard is in read-only mode ` +
         '(readOnly in safety.json or FOX_READ_ONLY=1). ' +
         'Observation tools like fox_screenshot remain available.',
-      );
-    }
-
-    // Layer 6: Script toggle
-    if (isScript && !this.config.allowScriptExecution) {
-      return this._deny(
-        'scripts_disabled',
-        `${shown} refused: script execution is disabled ` +
-        '(allowScriptExecution in safety.json or FOX_ALLOW_SCRIPTS=0).',
       );
     }
 

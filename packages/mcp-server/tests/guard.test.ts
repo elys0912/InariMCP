@@ -312,7 +312,7 @@ describe('review follow-ups', () => {
   it('DenialDecision is the refusing part of AuditDecision', () => {
     expectTypeOf<DenialDecision>().toEqualTypeOf<
       'rate_limited' | 'blocked_scheme' | 'blocked_url' | 'not_allowlisted' | 'read_only' |
-      'scripts_disabled' | 'confirmation_required' | 'out_of_scope' | 'invalid_url' |
+      'confirmation_required' | 'out_of_scope' | 'invalid_url' |
       'blocked_after_navigation' | 'config_error'
     >();
   });

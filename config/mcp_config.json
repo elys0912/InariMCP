@@ -4,7 +4,7 @@
       "command": "node",
       "args": ["<INSTALL_PATH>/packages/mcp-server/dist/index.js"],
       "env": {
-        "FOX_CAPS": "core,logs"
+        "FOX_CAPS": "core,human"
       }
     }
   }

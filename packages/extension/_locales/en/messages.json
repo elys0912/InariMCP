@@ -81,7 +81,6 @@
   },
 
   "menuScreenshot": { "message": "Take Screenshot for InariMCP" },
-  "menuInspect": { "message": "Inspect Element for InariMCP" },
 
   "notifyApprovalTitle": { "message": "Claude requests approval" },
   "notifyApprovalDefault": { "message": "Claude wants to perform an action" },

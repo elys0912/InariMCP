@@ -30,7 +30,6 @@ describe('loadConfig (2.B2)', () => {
     vi.stubEnv('USERPROFILE', dir);
     vi.stubEnv('FOX_SAFETY_CONFIG', file);
     vi.stubEnv('FOX_READ_ONLY', '');
-    vi.stubEnv('FOX_ALLOW_SCRIPTS', '');
     return loadConfig();
   }
 
@@ -62,6 +61,8 @@ describe('loadConfig (2.B2)', () => {
   it.each([
     ['a misspelt key', '{ "readonly": true }', 'readonly'],
     ['a key that does not exist', '{ "allow_scripts": false }', 'allow_scripts'],
+    // InariMCP removed the script tools: their switch is no key any more.
+    ['the removed allow_script_execution', '{ "allow_script_execution": true }', 'allow_script_execution'],
     ['an unknown key in container_scope', '{ "container_scope": { "enable": true } }', 'enable'],
     ['a __proto__ key', '{ "__proto__": { "read_only": true } }', '__proto__'],
   ])('reports %s as configError, naming it', (_label, content, key) => {
@@ -121,7 +122,6 @@ describe('loadConfig (2.B2)', () => {
     vi.stubEnv('FOX_SAFETY_CONFIG', '  ');
     vi.stubEnv('CLAUDE_BROWSER_SAFETY_CONFIG', file);
     vi.stubEnv('FOX_READ_ONLY', '');
-    vi.stubEnv('FOX_ALLOW_SCRIPTS', '');
     const cfg = loadConfig();
     expect(cfg.configError).toBeUndefined();
     expect(cfg.readOnly).toBe(true);

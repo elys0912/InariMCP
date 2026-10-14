@@ -37,7 +37,6 @@ const WIRE_ACTIONS = {
   get_elements: "getElements",
   wait_for_element: "waitForElement",
   highlight: "highlight",
-  execute_script: "executeScript",
 
   // --- Tab management ---
   get_tabs: "getTabs",
@@ -65,21 +64,10 @@ const WIRE_ACTIONS = {
   // --- Wait / observe ---
   wait_for_change: "waitForChange",
   wait_for_network_idle: "waitForNetworkIdle",
-  observe_element: "observeElement",
-  stop_observing: "stopObserving",
   scroll_and_capture: "scrollAndCapture",
   click_and_wait: "clickAndWait",
 
-  // --- Console / network logging ---
-  start_logging: "startLogging",
-  stop_logging: "stopLogging",
-  get_console_logs: "getConsoleLogs",
-  get_network_logs: "getNetworkLogs",
-  clear_logs: "clearLogs",
-
-  // --- Advanced scripting ---
-  eval_chain: null,
-  wait_and_act: null,
+  // --- Keyboard / text ---
   press_key: "pressKey",
   get_text: "getText",
 
@@ -89,7 +77,6 @@ const WIRE_ACTIONS = {
   solve_captcha: "solveCaptcha",
   cancel_human_wait: "cancelHumanWait",
   audit_page: null,
-  inject_observer: "observeElement",
 
   // --- P3-3 actions (container / find keep their snake_case internal names) ---
   snapshot: null,
@@ -99,7 +86,6 @@ const WIRE_ACTIONS = {
   open_in_container: "open_in_container",
   wait_for_navigation: "waitForNavigation",
   wait_for_url: "waitForUrl",
-  remove_observer: "stopObserving",
 } as const satisfies Record<BrowserAction, InternalAction | null>;
 
 export const WIRE_ACTION_MAP: ReadonlyMap<string, string | null> = new Map<string, string | null>(

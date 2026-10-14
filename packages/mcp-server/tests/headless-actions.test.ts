@@ -8,6 +8,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Page } from 'playwright';
 import { HeadlessBrowser } from '../src/headless/backend.js';
 import { PASSWORD_REFUSAL } from '../src/safety/password-guard.js';
 import { skipOrFailWithoutFirefox } from '../../../tests/contract/helpers/real-firefox.js';
@@ -47,6 +48,19 @@ function real(name: string, fn: () => Promise<void>, timeout = 30_000): void {
     if (!available) ctx.skip();
     await fn();
   }, timeout);
+}
+
+/**
+ * Runs `js` in the page of the active tab, to set up or read page state in
+ * these tests. The backend itself runs no caller-supplied script (InariMCP
+ * has no execute_script), so this reaches into HeadlessBrowser's tab map.
+ */
+async function inPage(js: string): Promise<unknown> {
+  const internals = browser as unknown as { _tabs: Map<number, Page>; _activeTabId: number | null };
+  const id = internals._activeTabId;
+  const page = id === null ? undefined : internals._tabs.get(id);
+  if (page === undefined) throw new Error('no active headless tab');
+  return page.evaluate(js);
 }
 
 /** `v`, asserted to be defined (in place of the non-null assertion `!`). */
@@ -107,8 +121,7 @@ describe('scroll', () => {
     const r = await browser.execute('scroll', undefined, { direction: 'sideways', amount: 300 });
     expect(r['success']).toBe(false);
     expect(String(r['error'])).toContain('direction');
-    const windowY = await browser.execute('execute_script', undefined, { script: 'window.scrollY' });
-    expect(windowY['result']).toBe(0);
+    expect(await inPage('window.scrollY')).toBe(0);
   });
 
   real('bottom reaches the end and a further down reports scrolled:false', async () => {
@@ -125,8 +138,7 @@ describe('scroll', () => {
     expect(r).toMatchObject({ success: true, target: 'element', position: { y: 200 } });
     const win = await browser.execute('get_page_info', undefined, {});
     expect(win['success']).toBe(true);
-    const windowY = await browser.execute('execute_script', undefined, { script: 'window.scrollY' });
-    expect(windowY['result']).toBe(0);
+    expect(await inPage('window.scrollY')).toBe(0);
   });
 
   real('toElement brings the element into view and wins over direction', async () => {
@@ -225,7 +237,7 @@ describe('type and set_value (H-2, H-6)', () => {
 
   real('type without selector warns that clear is not applied', async () => {
     await load('<input id="t" value="ab">');
-    await browser.execute('execute_script', undefined, { script: 'document.getElementById("t").focus()' });
+    await inPage('document.getElementById("t").focus()');
     const r = await browser.execute('type', undefined, { text: 'c', clear: true });
     expect(r['success']).toBe(true);
     expect(String((r['warnings'] as string[])[0])).toContain('clear');
@@ -238,7 +250,7 @@ describe('type and set_value (H-2, H-6)', () => {
     expect(await valueOf('#t')).toBe('new');
     expect((await browser.execute('set_value', undefined, { selector: '#s', value: 'b' }))['success']).toBe(true);
     expect(await valueOf('#s')).toBe('b');
-    expect((await browser.execute('execute_script', undefined, { script: 'window.events' }))['result']).toEqual(['input', 'change']);
+    expect(await inPage('window.events')).toEqual(['input', 'change']);
   });
 });
 
@@ -277,8 +289,7 @@ describe('reading the page (H-3, H-7, H-8, H-15)', () => {
   real('highlight keeps the outline for duration', async () => {
     await load('<p id="p">x</p>');
     expect((await browser.execute('highlight', undefined, { selector: '#p', duration: 200 }))['success']).toBe(true);
-    const outline = async (): Promise<unknown> =>
-      (await browser.execute('execute_script', undefined, { script: 'document.getElementById("p").style.outline' }))['result'];
+    const outline = (): Promise<unknown> => inPage('document.getElementById("p").style.outline');
     expect(await outline()).not.toBe('');
     await new Promise((r) => setTimeout(r, 400));
     expect(await outline()).toBe('');
@@ -288,8 +299,7 @@ describe('reading the page (H-3, H-7, H-8, H-15)', () => {
 describe('history and waits (H-13)', () => {
   // A wait holds the lock, so the navigation it waits for is started by a
   // timer in the page before the wait is sent.
-  const later = (js: string): Promise<Result> =>
-    browser.execute('execute_script', undefined, { script: `setTimeout(() => { ${js} }, 300); 1` });
+  const later = (js: string): Promise<unknown> => inPage(`setTimeout(() => { ${js} }, 300); 1`);
 
   real('wait_for_navigation ends at the next navigation and names the new page', async () => {
     await load('<title>first</title><p>first</p>');
@@ -328,18 +338,6 @@ describe('other page actions', () => {
     await load('<button id="b" onmouseover="document.title = \'over\'">x</button>');
     expect((await browser.execute('hover', undefined, { selector: '#b' }))['success']).toBe(true);
     expect((await browser.execute('get_page_info', undefined, {}))['title']).toBe('over');
-  });
-
-  real('inject_observer records mutations and remove_observer flushes them', async () => {
-    await load('<div id="box"></div>');
-    const injected = await browser.execute('inject_observer', undefined,
-      { selector: '#box', observeAttributes: false, observeChildList: true, observeSubtree: false });
-    expect(injected).toMatchObject({ success: true });
-    expect(String(injected['message'])).toContain('DIV');
-    await browser.execute('execute_script', undefined, { script: 'document.getElementById("box").append("a", "b"); 1' });
-    const removed = await browser.execute('remove_observer', undefined, {});
-    expect(removed).toMatchObject({ success: true, disconnected: true });
-    expect(removed['mutationsFlushed']).toBeGreaterThan(0);
   });
 
   real('solve_captcha detects a widget and reports that a human is needed', async () => {
@@ -565,8 +563,7 @@ describe('warnings and timeouts', () => {
 // Moved from password-guard.test.ts (H-29): the guard where the element is
 // resolved by the server rather than by content.ts.
 describe('type / set_value: password guard on the element written to', () => {
-  const script = async (src: string): Promise<unknown> =>
-    (await browser.execute('execute_script', undefined, { script: src }))['result'];
+  const script = inPage;
 
   real('refuses a password field that only appears while the fill waits for it', async () => {
     await load(
@@ -631,7 +628,7 @@ describe('type without selector: password guard follows the focus (WP30)', () =>
   }
 
   async function valueOf(field: string): Promise<unknown> {
-    return (await browser.execute('execute_script', undefined, { script: `${field}.value` }))['result'];
+    return inPage(`${field}.value`);
   }
 
   real('refuses a focused password field inside a same-origin iframe', async () => {
@@ -669,7 +666,7 @@ describe('press_key: password guard (H-1)', () => {
   const PW = '<input id="pw" type="password"><input id="t" type="text">';
 
   async function valueOf(id: string): Promise<unknown> {
-    return (await browser.execute('execute_script', undefined, { script: `document.getElementById("${id}").value` }))['result'];
+    return inPage(`document.getElementById("${id}").value`);
   }
 
   const press = (key: string, extra: Record<string, unknown> = {}): Promise<Result> =>
@@ -680,7 +677,7 @@ describe('press_key: password guard (H-1)', () => {
     await load(PW);
     const bySelector = await press('a', { selector: '#pw' });
     // Refused before the field is focused: focus it for the case without selector.
-    await browser.execute('execute_script', undefined, { script: 'document.getElementById("pw").focus()' });
+    await inPage('document.getElementById("pw").focus()');
     const focused = await press('a');
     for (const r of [bySelector, focused]) {
       expect(r['success']).toBe(false);
@@ -695,7 +692,7 @@ describe('press_key: password guard (H-1)', () => {
 
   real('refuses when the selector cannot take focus and a password field keeps it', async () => {
     await load(`${PW}<div id="d">x</div>`);
-    await browser.execute('execute_script', undefined, { script: 'document.getElementById("pw").focus()' });
+    await inPage('document.getElementById("pw").focus()');
     const r = await press('a', { selector: '#d' });
     expect(r['success']).toBe(false);
     expect(String(r['error'])).toMatch(/password field/);
@@ -726,7 +723,7 @@ describe('password fields of an XHTML document (H-5)', () => {
       const r = await browser.execute('type', undefined, { selector, text: 'secret', clear: false });
       expect(String(r['error'])).toMatch(/password field/);
     }
-    await browser.execute('execute_script', undefined, { script: 'document.getElementById("pw").focus()' });
+    await inPage('document.getElementById("pw").focus()');
     const focused = await browser.execute('type', undefined, { text: 'secret', clear: false });
     expect(String(focused['error'])).toMatch(/password field/);
     expect(await browser.execute('get_value', undefined, { selector: '#pw' })).toMatchObject({ value: '[MASKED]' });
@@ -734,7 +731,9 @@ describe('password fields of an XHTML document (H-5)', () => {
 });
 
 describe('commands given up while waiting for the lock (Q-2)', () => {
-  const TITLE = "document.title = 'ran'";
+  // A click on it sets the title, so a command that ran shows.
+  const BUTTON = `<button id="b" onclick="document.title = 'ran'">x</button>`;
+  const CLICK = { selector: '#b' };
 
   async function busy(): Promise<Result> {
     // Holds the lock for ~500 ms.
@@ -742,10 +741,10 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
   }
 
   real('a command whose caller gave up meanwhile is not run', async () => {
-    await load('<p>x</p>');
+    await load(BUTTON);
     const abort = new AbortController();
     const hold = busy();
-    const queued = browser.execute('execute_script', undefined, { script: TITLE },
+    const queued = browser.execute('click', undefined, CLICK,
       { deadline: Infinity, signal: abort.signal });
     abort.abort();
     await hold;
@@ -757,9 +756,9 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
   });
 
   real('a command whose deadline passed meanwhile is not run', async () => {
-    await load('<p>x</p>');
+    await load(BUTTON);
     const hold = busy();
-    const queued = browser.execute('execute_script', undefined, { script: TITLE },
+    const queued = browser.execute('click', undefined, CLICK,
       { deadline: Date.now() + 100, signal: new AbortController().signal });
     await hold;
     expect(String((await queued)['error'])).toContain('Not run');
@@ -789,106 +788,13 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
   }, 40_000);
 
   real('a command still awaited runs after the one before it', async () => {
-    await load('<p>x</p>');
+    await load(BUTTON);
     const hold = busy();
-    const queued = browser.execute('execute_script', undefined, { script: TITLE },
+    const queued = browser.execute('click', undefined, CLICK,
       { deadline: Date.now() + 30_000, signal: new AbortController().signal });
     await hold;
     expect((await queued)['success']).toBe(true);
-  });
-});
-
-describe('waits and page scripts end on their own (R-1, L-1, R-8)', () => {
-  const ctx = (ms: number): { deadline: number; signal: AbortSignal } =>
-    ({ deadline: Date.now() + ms, signal: new AbortController().signal });
-
-  real('wait_and_act with pollIntervalMs 0 or negative ends at timeoutMs and frees the lock', async () => {
-    await load('<p>x</p>');
-    for (const pollIntervalMs of [0, -50]) {
-      const started = Date.now();
-      const r = await browser.execute('wait_and_act', undefined,
-        { condition: 'false', actionScript: '1', pollIntervalMs, timeoutMs: 300 });
-      expect(r['success']).toBe(false);
-      expect(String(r['error'])).toContain('Condition not met');
-      expect(Date.now() - started).toBeLessThan(5_000);
-    }
-    expect((await browser.execute('get_page_info', undefined, {}))['success']).toBe(true);
-  });
-
-  real('wait_and_act names the last error of a condition that cannot run (H-9)', async () => {
-    await load('<p>x</p>');
-    const r = await browser.execute('wait_and_act', undefined,
-      { condition: 'noSuchName.value', actionScript: '1', pollIntervalMs: 50, timeoutMs: 300 });
-    expect(r['success']).toBe(false);
-    expect(String(r['error'])).toContain('last condition error');
-    expect(String(r['error'])).toContain('noSuchName');
-  });
-
-  real('wait_and_act ended by the caller\'s deadline says so (H-9)', async () => {
-    await load('<p>x</p>');
-    const r = await browser.execute('wait_and_act', undefined,
-      { condition: 'false', actionScript: '1', pollIntervalMs: 50, timeoutMs: 10_000 }, ctx(300));
-    expect(r['success']).toBe(false);
-    expect(String(r['error'])).toContain("caller's deadline");
-  });
-
-  real('wait_and_act reports the measured elapsed_ms', async () => {
-    await load('<p>x</p>');
-    const r = await browser.execute('wait_and_act', undefined, {
-      condition: `(() => { window.__t ??= Date.now(); return Date.now() - window.__t > 300; })()`,
-      actionScript: "'done'",
-      pollIntervalMs: 50,
-      timeoutMs: 5_000,
-    });
-    expect(r).toMatchObject({ success: true, result: 'done' });
-    expect(r['elapsed_ms'] as number).toBeGreaterThanOrEqual(250);
-  });
-
-  real('a condition that never settles does not hold wait_and_act past timeoutMs', async () => {
-    await load('<p>x</p>');
-    const started = Date.now();
-    const r = await browser.execute('wait_and_act', undefined,
-      { condition: 'new Promise(() => {})', actionScript: '1', pollIntervalMs: 200, timeoutMs: 500 });
-    expect(r['success']).toBe(false);
-    expect(Date.now() - started).toBeLessThan(5_000);
-  });
-
-  real('execute_script whose promise never settles is given up at the deadline', async () => {
-    await load('<p>x</p>');
-    const started = Date.now();
-    const r = await browser.execute('execute_script', undefined, { script: 'new Promise(() => {})' }, ctx(500));
-    expect(r['success']).toBe(false);
-    expect(String(r['error'])).toContain('did not finish');
-    expect(Date.now() - started).toBeLessThan(5_000);
-    expect((await browser.execute('get_page_info', undefined, {}))['success']).toBe(true);
-  });
-
-  real('execute_script is given up at once when the caller gives up', async () => {
-    await load('<p>x</p>');
-    const abort = new AbortController();
-    const running = browser.execute('execute_script', undefined, { script: 'new Promise(() => {})' },
-      { deadline: Infinity, signal: abort.signal });
-    await new Promise((r) => setTimeout(r, 200));
-    abort.abort();
-    const r = await running;
-    expect(r['success']).toBe(false);
-    expect(String(r['error'])).toContain('cancelled');
-  });
-
-  real('an eval_chain step that never settles fails at the deadline', async () => {
-    await load('<p>x</p>');
-    const r = await browser.execute('eval_chain', undefined,
-      {
-        steps: [
-          { script: '1', captureConsole: true, stopOnError: true },
-          { label: 'hang', script: 'new Promise(() => {})', captureConsole: true, stopOnError: true },
-        ],
-      }, ctx(500));
-    expect(r['success']).toBe(true);
-    const steps = r['steps'] as Array<{ label: string; error: string | null }>;
-    expect(defined(steps[0]).error).toBeNull();
-    expect(steps[1]).toMatchObject({ label: 'hang' });
-    expect(String(defined(steps[1]).error)).toContain('did not finish');
+    expect((await browser.execute('get_page_info', undefined, {}))['title']).toBe('ran');
   });
 });
 
@@ -922,8 +828,8 @@ describe('results name the tab and its URL (O-1)', () => {
     expect(click['success']).toBe(true);
     expect(String(click['url'])).toMatch(/#next$/);
     expect(click['tabId']).toBe(active);
-    const script = await browser.execute('execute_script', undefined, { script: '1' });
-    expect(script).toMatchObject({ success: true, result: 1, tabId: active });
+    const text = await browser.execute('get_text', undefined, { maxLength: 100 });
+    expect(text).toMatchObject({ success: true, tabId: active });
     const nav = await browser.execute('navigate', undefined, { url: PAGE('<p>y</p>'), newTab: false });
     expect(nav['tabId']).toBe(active);
   });

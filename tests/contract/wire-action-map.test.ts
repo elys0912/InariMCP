@@ -4,7 +4,7 @@
  * action table (packages/extension/src/background/action-table.ts).
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { BROWSER_ACTIONS } from '@inari-mcp/shared';
 import { WIRE_ACTION_MAP as wireMap } from '../../packages/extension/src/action-map.ts';
 import {
@@ -53,83 +53,20 @@ describe('BROWSER_ACTIONS ⇔ WIRE_ACTION_MAP', () => {
     });
   });
 
-  it('3.A17: the observer tools reach the content script observer', () => {
-    expect(wireMap.get('inject_observer')).toBe('observeElement');
-    expect(wireMap.get('remove_observer')).toBe('stopObserving');
-  });
-});
-
-describe('3.A17: observer id round trip, wire name to a fake content script', () => {
-  const g = globalThis as Record<string, unknown>;
-  /** The messages the background handed to browser.tabs.sendMessage. */
-  const sent: Record<string, unknown>[] = [];
-  const TAB_ID = 7;
-
-  beforeAll(async () => {
-    // The content modules need a document and a MutationObserver; nothing
-    // here fires a mutation, so observe() only has to be callable.
-    g.document = { querySelector: (selector: string) => (selector === '#missing' ? null : { selector }) };
-    g.MutationObserver = class {
-      observe(): void {}
-      disconnect(): void {}
-    };
-    const { handleMessage } = await import('../../packages/extension/src/content/handler.ts');
-    g.browser = {
-      tabs: {
-        get: async (id: number) => ({ id }),
-        sendMessage: async (_tabId: number, message: Record<string, unknown>) => {
-          sent.push(message);
-          return handleMessage(message as never);
-        },
-      },
-    };
-  });
-
-  afterAll(() => {
-    for (const name of ['document', 'MutationObserver', 'browser']) delete g[name];
-  });
-
-  /** One wire command, through WIRE_ACTION_MAP and the action table. */
-  const run = async (wire: string, data: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    const action = wireMap.get(wire);
-    const row = action ? ACTION_TABLE.get(action) : undefined;
-    if (!action || !row) throw new Error(`${wire} has no row of the action table`);
-    return row.handler({ action, data, tabId: TAB_ID } as never);
-  };
-
-  it('inject_observer gives an id that remove_observer takes back', async () => {
-    const injected = await run('inject_observer', { selector: '#panel' });
-    expect(injected).toMatchObject({ success: true, observing: true, target: '#panel' });
-    const id = injected.observerId as string;
-    // WP44 A-06: time and page-wide counter.
-    expect(id).toMatch(/^obs_\d+_\d+$/);
-    // The internal name, not the wire name, reaches the content script.
-    expect(sent[0]).toEqual({ action: 'observeElement', selector: '#panel' });
-
-    const removed = await run('remove_observer', { observerId: id });
-    expect(removed).toMatchObject({
-      success: true, stopped: true, observerId: id, target: '#panel', totalChanges: 0,
-    });
-    expect(sent[1]).toEqual({ action: 'stopObserving', observerId: id });
-
-    // The id is gone with the observer: the second call fails, it does not
-    // report a second stop.
-    const again = await run('remove_observer', { observerId: id });
-    expect(again.success).toBe(false);
-    expect(again.error).toContain(`No observer '${id}'`);
-  });
-
-  it('an id chosen by the caller comes back unchanged', async () => {
-    const injected = await run('inject_observer', { selector: '#panel', observerId: 'obs_mine' });
-    expect(injected).toMatchObject({ success: true, observerId: 'obs_mine' });
-    expect(await run('remove_observer', { observerId: 'obs_mine' }))
-      .toMatchObject({ success: true, stopped: true, observerId: 'obs_mine' });
-  });
-
-  it('inject_observer on a missing element fails and leaves no id behind', async () => {
-    const injected = await run('inject_observer', { selector: '#missing', observerId: 'obs_none' });
-    expect(injected).toMatchObject({ success: false, error: 'Element not found: #missing' });
-    expect(await run('remove_observer', { observerId: 'obs_none' }))
-      .toMatchObject({ success: false });
+  // InariMCP (AMO): no wire name runs code given as a string or records the
+  // page's console / network traffic.
+  it('the script, observer and logging actions are gone', () => {
+    const removed = [
+      'execute_script', 'eval_chain', 'wait_and_act', 'inject_observer', 'remove_observer',
+      'observe_element', 'stop_observing',
+      'start_logging', 'stop_logging', 'get_console_logs', 'get_network_logs', 'clear_logs',
+    ];
+    for (const name of removed) {
+      expect(wireMap.has(name), name).toBe(false);
+      expect((BROWSER_ACTIONS as readonly string[]).includes(name), name).toBe(false);
+    }
+    for (const internal of ['executeScript', 'observeElement', 'stopObserving', 'startLogging', 'getConsoleLogs']) {
+      expect(describeAction(internal), internal).toBe(UNKNOWN_ACTION);
+    }
   });
 });

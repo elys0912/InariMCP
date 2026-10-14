@@ -1,6 +1,6 @@
 /**
  * Keys compare after normalizeKey(): lower case, '-' and '_' removed, so
- * `action_script`, `actionScript` and `Action-Script` are the same key.
+ * `prompt_text`, `promptText` and `Prompt-Text` are the same key.
  */
 function normalizeKey(key: string): string {
   return key.toLowerCase().replace(/[-_]/g, '');
@@ -8,8 +8,7 @@ function normalizeKey(key: string): string {
 
 /** Tool arguments masked in the audit log. */
 const SENSITIVE_ARGS: ReadonlySet<string> = new Set([
-  'text', 'script', 'value', 'password', 'steps', 'actionscript', 'condition',
-  'prompttext',
+  'text', 'value', 'password', 'steps', 'prompttext',
 ]);
 
 /** Result keys (headers, JSON fields) whose value is always masked. */

@@ -32,9 +32,9 @@ InariMCP is deliberately narrow. If your use case is one of these, you'll be hap
 
 ## Features
 
-- **21 `fox_*` tools** covering navigation, click/type/scroll, screenshots (visible/full page/all tabs), tab management, console/network log capture, script execution and wait helpers. Related operations share one tool with a mode argument (`fox_wait` with `for: "url"`, `fox_tab` with `action: "close"`, …); the 41 earlier tool names still work, see [Tool name migration](#tool-name-migration). Prefixed `fox_` instead of `browser_` so it doesn't collide with Playwright MCP if you run both. Not all of them work on every backend yet: see [Tool availability](#tool-availability).
-- **Tool profiles (`FOX_CAPS`)** — registering every tool costs real context tokens. Pick profiles (`core`, `logs`, `script`, …) to only load what you need. See [`FOX_CAPS` profiles](#fox_caps-profiles).
-- **8-layer safety guard (Layers 0–7)** — container scope (0), rate limit (1), URL scheme check and block/allow lists (2–3), read-only pass-through for observation tools (4), read-only mode (5), script-execution toggle (6) and human approval on protected domains such as banks, payment processors and `.gov` (7). Every decision is written to a JSONL audit log. The guard is always on; only container scoping (Layer 0) needs opt-in.
+- **17 `fox_*` tools** covering navigation, click/type/scroll, screenshots (visible/full page/all tabs), tab management and wait helpers. No tool runs JavaScript you pass in or records the page's console / network traffic. Related operations share one tool with a mode argument (`fox_wait` with `for: "url"`, `fox_tab` with `action: "close"`, …); the 31 earlier tool names still work, see [Tool name migration](#tool-name-migration). Prefixed `fox_` instead of `browser_` so it doesn't collide with Playwright MCP if you run both. Not all of them work on every backend yet: see [Tool availability](#tool-availability).
+- **Tool profiles (`FOX_CAPS`)** — registering every tool costs real context tokens. Pick profiles (`core`, `human`, `wait`, …) to only load what you need. See [`FOX_CAPS` profiles](#fox_caps-profiles).
+- **Safety guard (Layers 0–5 and 7)** — container scope (0), rate limit (1), URL scheme check and block/allow lists (2–3), read-only pass-through for observation tools (4), read-only mode (5) and human approval on protected domains such as banks, payment processors and `.gov` (7). Every decision is written to a JSONL audit log. The guard is always on; only container scoping (Layer 0) needs opt-in.
 - **Human approval outside the page** — an action on a protected site is approved by you, either in Claude Code's own confirmation dialog (MCP elicitation) or in the InariMCP toolbar popup in Firefox. Nothing inside the page can approve it. See [Human approval for protected sites](#human-approval-for-protected-sites).
 - **Container isolation (opt-in)** — using Firefox's `contextualIdentities`, you can restrict the agent to a dedicated container so your banking/email sessions in other tabs stay invisible to it. This is a Firefox-only capability; Chromium has nothing equivalent.
 - **Headless mode (advanced)** — a Playwright-driven, Firefox-only headless backend for when you don't want the extension path. Many tools and parameters are not supported there (see [Tool availability](#tool-availability)).
@@ -111,7 +111,7 @@ The InariMCP button appears in the toolbar. Its popup shows the connection state
 claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server/dist/index.js
 ```
 
-Environment variables for the server go before the name, e.g. `claude mcp add --scope user --env FOX_CAPS=core,logs inari-mcp -- node …` (but read [Whichever side starts the daemon first, its config wins](#whichever-side-starts-the-daemon-first-its-config-wins) before relying on them).
+Environment variables for the server go before the name, e.g. `claude mcp add --scope user --env FOX_CAPS=core,human inari-mcp -- node …` (but read [Whichever side starts the daemon first, its config wins](#whichever-side-starts-the-daemon-first-its-config-wins) before relying on them).
 
 Or add it manually to your MCP config (`config/mcp_config.json` is the same template):
 
@@ -122,7 +122,7 @@ Or add it manually to your MCP config (`config/mcp_config.json` is the same temp
       "command": "node",
       "args": ["<INSTALL_PATH>/packages/mcp-server/dist/index.js"],
       "env": {
-        "FOX_CAPS": "core,logs"
+        "FOX_CAPS": "core,human"
       }
     }
   }
@@ -147,7 +147,7 @@ Replace `<INSTALL_PATH>` with the absolute path of your clone.
 | amber number | approval requests waiting for you | open the popup and approve or deny |
 
 4. Run the diagnostics: `node packages/mcp-server/dist/index.js --doctor` (see [Command line](#command-line)). It checks the build, the Firefox registration, the Claude Code registration, the daemon and the logs, and prints a fix for each problem.
-5. Ask Claude Code to call `fox_safety_status`. It shows the active safety policy (read-only mode, script toggle, URL patterns, rate limit, audit log path) and warns when the running daemon was started with different settings than this session. It does not report whether a browser is connected.
+5. Ask Claude Code to call `fox_safety_status`. It shows the active safety policy (read-only mode, URL patterns, rate limit, audit log path) and warns when the running daemon was started with different settings than this session. It does not report whether a browser is connected.
 6. For a low-level check, query the daemon:
 
 ```bash
@@ -291,21 +291,20 @@ The relay and the Native Host authenticate the daemon, and the daemon them, with
 
 ### Environment variables
 
-The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSER_*` name (inherited from the fork) still works as a fallback when the `FOX_*` one isn't set. The daemon takes an empty or blank `FOX_HEADLESS`, `FOX_HEADLESS_STARTUP_TIMEOUT`, `FOX_EXECUTABLE`, `FOX_SAFETY_CONFIG`, `FOX_SCREENSHOTS_DIR`, `FOX_READ_ONLY`, `FOX_ALLOW_SCRIPTS`, `FOX_APPROVAL_ELICITATION` or `FOX_DAEMON_IDLE_TIMEOUT` as not set (the legacy name where there is one, else the default, applies); the Native Host does the same with `FOX_SCREENSHOTS_DIR`, `FOX_SCREENSHOT_RETENTION_DAYS` and `FOX_NATIVE_HOST_LOG`.
+The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSER_*` name (inherited from the fork) still works as a fallback when the `FOX_*` one isn't set. The daemon takes an empty or blank `FOX_HEADLESS`, `FOX_HEADLESS_STARTUP_TIMEOUT`, `FOX_EXECUTABLE`, `FOX_SAFETY_CONFIG`, `FOX_SCREENSHOTS_DIR`, `FOX_READ_ONLY`, `FOX_APPROVAL_ELICITATION` or `FOX_DAEMON_IDLE_TIMEOUT` as not set (the legacy name where there is one, else the default, applies); the Native Host does the same with `FOX_SCREENSHOTS_DIR`, `FOX_SCREENSHOT_RETENTION_DAYS` and `FOX_NATIVE_HOST_LOG`.
 
 | Variable | Default | Read by | Description |
 |---|---|---|---|
 | `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host, uninstaller | Address of the HTTP/WS server. A non-loopback value logs a warning. An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_HOST` |
 | `FOX_HTTP_PORT` | `8765` | daemon, relay, Native Host, uninstaller | HTTP port (also the daemon's singleton lock). An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_HTTP_PORT` |
 | `FOX_WS_PORT` | `8766` | daemon, Native Host | WebSocket port the Native Host connects to. An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_WS_PORT` |
-| `FOX_CAPS` | unset (all tools) | relay | Tool profiles, comma-separated (see [below](#fox_caps-profiles)); `legacy` lists the earlier tool names instead (see [Tool name migration](#tool-name-migration)). **Not a safety boundary** — it only trims which tool schemas this session registers, to save context tokens. The daemon accepts every tool from every caller; actual restrictions (read-only, no scripts, URL limits, container scope) come from `safety.json` / the safety guard |
+| `FOX_CAPS` | unset (all tools) | relay | Tool profiles, comma-separated (see [below](#fox_caps-profiles)); `legacy` lists the earlier tool names instead (see [Tool name migration](#tool-name-migration)). **Not a safety boundary** — it only trims which tool schemas this session registers, to save context tokens. The daemon accepts every tool from every caller; actual restrictions (read-only, URL limits, container scope) come from `safety.json` / the safety guard |
 | `FOX_HEADLESS` | unset | daemon | `1` / `true` / `yes` uses the headless Playwright backend; anything else leaves it off (an unrecognised value such as `on` is logged as a warning). Legacy: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | Launch timeout of the headless Firefox in **milliseconds** (not seconds). Legacy: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | Playwright's Firefox | daemon (headless only) | Path to the Firefox binary Playwright launches. Legacy: `CLAUDE_BROWSER_EXECUTABLE` |
 | `FOX_SCREENSHOTS_DIR` | `~/.inari-mcp/screenshots` | Native Host (extension path), daemon (headless path, `GET /screenshots`) | Where screenshots are saved; a relative path is taken from the working directory of the process. Legacy: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
 | `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | At each Native Host start, screenshots it saved under a generated name and older than this many days are deleted (`0` keeps everything; a negative or non-numeric value means `30`). Files saved under a `filename` you chose, and headless screenshots, are never deleted |
 | `FOX_READ_ONLY` | unset | daemon | `1` / `true` / `yes` forces read-only mode. Legacy: `CLAUDE_BROWSER_READ_ONLY` |
-| `FOX_ALLOW_SCRIPTS` | unset | daemon | `0` / `false` / `no` / `off` disables the script tools (`fox_evaluate`, `fox_observer`; earlier names `fox_execute_script`, `fox_eval_chain`, `fox_wait_and_act`, `fox_inject_observer`, `fox_remove_observer`). Legacy: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
 | `FOX_SAFETY_CONFIG` | `~/.inari-mcp/safety.json` | daemon | Alternate path of the safety policy file. Legacy: `CLAUDE_BROWSER_SAFETY_CONFIG` |
 | `FOX_APPROVAL_ELICITATION` | on | relay, daemon | `0` / `false` / `off` / `no` turns approval through MCP elicitation off: protected-site actions are then always approved in the Firefox popup. The relay and the daemon each read their own environment: a relay with it off never asks through elicitation; a daemon with it off does not take elicitation answers, so a "yes" given there is asked again in the popup |
 | `FOX_DAEMON_IDLE_TIMEOUT` | `600` | daemon | Seconds without a relay, a Native Host or a running call before the daemon exits (`0` = never) |
@@ -318,9 +317,7 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 | Profile | Tools |
 |---|---|
 | `core` | `fox_navigate`, `fox_click`, `fox_type`, `fox_press_key`, `fox_set_value`, `fox_screenshot`, `fox_snapshot`, `fox_read`, `fox_find`, `fox_tabs`, `fox_tab`, `fox_interact`, `fox_wait`, `fox_handle_dialog` |
-| `logs` | `fox_logging`, `fox_get_logs` |
-| `script` | `fox_evaluate`, `fox_observer` |
-| `workflow` | `fox_evaluate` (its `wait_and_act` mode; the earlier `fox_run_workflow` and `fox_audit_page` were never implemented and are gone) |
+| `workflow` | none (the earlier `fox_wait_and_act` was removed with the script tools; `fox_run_workflow` and `fox_audit_page` were never implemented) |
 | `human` | `fox_request_approval`, `fox_detect_captcha` |
 | `container` | `fox_tabs`, `fox_tab` (containers are `fox_tabs` with `what: "containers"` and `fox_tab` with `action: "create"` and `container`) |
 | `wait` | `fox_wait` |
@@ -330,7 +327,7 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 
 ### Tool name migration
 
-The 41 earlier tools were merged into 21: related operations became one tool with a mode argument. The browser side did not change; each call of a new tool runs exactly what the earlier tool ran.
+The 31 earlier tools were merged into 17: related operations became one tool with a mode argument. The browser side did not change; each call of a new tool runs exactly what the earlier tool ran.
 
 - New sessions list the new names. With `FOX_CAPS=legacy` a session lists the earlier names instead (their descriptions start with `[Deprecated: …]`).
 - The daemon accepts both: the earlier names keep working over HTTP (`POST /mcp/call`) whatever `FOX_CAPS` says.
@@ -353,13 +350,11 @@ The 41 earlier tools were merged into 21: related operations became one tool wit
 | `fox_select_option` | `fox_set_value` `kind: "select"` | `value` / `text` / `index` → `option: { value }` / `{ text }` / `{ index }` (exactly one) |
 | `fox_hover`, `fox_scroll`, `fox_highlight` | `fox_interact` `action: "hover"` / `"scroll"` / `"highlight"` | |
 | `fox_wait_for_element`, `fox_wait_for_network_idle`, `fox_wait_for_navigation`, `fox_wait_for_url` | `fox_wait` `for: "element"` / `"network_idle"` / `"navigation"` / `"url"` | `for: "url"` needs `url` or `urlPattern` |
-| `fox_start_logging`, `fox_stop_logging`, `fox_clear_logs` | `fox_logging` `action: "start"` / `"stop"` / `"clear"` | |
-| `fox_get_console_logs`, `fox_get_network_logs` | `fox_get_logs` `kind: "console"` / `"network"` | |
-| `fox_execute_script`, `fox_eval_chain`, `fox_wait_and_act` | `fox_evaluate` `mode: "script"` / `"chain"` / `"wait_and_act"` | `wait_and_act`: `timeoutMs` → `timeout` |
-| `fox_inject_observer`, `fox_remove_observer` | `fox_observer` `action: "inject"` / `"remove"` | |
 | `fox_run_workflow`, `fox_audit_page` | none | were not implemented on any backend; still callable by name, with the same error |
 
 Unchanged: `fox_screenshot`, `fox_snapshot`, `fox_navigate`, `fox_click`, `fox_type`, `fox_press_key`, `fox_handle_dialog`, `fox_request_approval`, `fox_detect_captcha`, `fox_safety_status`.
+
+Removed under every name: the script tools (`fox_evaluate`, `fox_observer`; earlier `fox_execute_script`, `fox_eval_chain`, `fox_wait_and_act`, `fox_inject_observer`, `fox_remove_observer`) and the logging tools (`fox_logging`, `fox_get_logs`; earlier `fox_start_logging`, `fox_stop_logging`, `fox_clear_logs`, `fox_get_console_logs`, `fox_get_network_logs`). See the [changelog](docs/CHANGELOG.md).
 
 ### `safety.json`
 
@@ -368,9 +363,8 @@ Auto-generated on first run at `~/.inari-mcp/safety.json` (or `FOX_SAFETY_CONFIG
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Safety guard on |
-| `read_only` | `false` | Refuse the tools that change page or browser state (input, navigation, tabs, scripts); observation, waiting, logging and UI-only tools (`fox_interact`, `fox_tab` with `action: "switch"`) still work |
-| `allow_script_execution` | `true` | Allow the script tools. A script is not covered by the URL lists, protected-site approval or password masking: it can read password fields and send requests to other sites (see [Known issues](docs/known-issues.md)) |
-| `confirm_protected_actions` | `true` | Ask a human before acting on (or screenshotting / logging) a protected site |
+| `read_only` | `false` | Refuse the tools that change page or browser state (input, navigation, tabs); observation, waiting and UI-only tools (`fox_interact`, `fox_tab` with `action: "switch"`) still work |
+| `confirm_protected_actions` | `true` | Ask a human before acting on (or screenshotting) a protected site |
 | `allow_password_typing` | `false` | Allow `fox_type` / `fox_set_value` on password fields (`type="password"`, or an `autocomplete` with the token `current-password` / `new-password` in any case, such as `section-login current-password`) |
 | `max_actions_per_minute` | `120` | Rate limit, shared by all sessions (`0` = no limit) |
 | `audit_log` | `true` | Write `~/.inari-mcp/logs/audit.jsonl` |
@@ -402,15 +396,15 @@ When a tool would act on a URL matching `protected_url_patterns` (and `confirm_p
 1. in Claude Code's own confirmation dialog (MCP elicitation), when the client supports it and `FOX_APPROVAL_ELICITATION` is not turned off;
 2. otherwise in Firefox: the InariMCP toolbar button shows an amber count (plus an OS notification), and you approve or deny in its popup. The popup is also used when the elicitation request fails (the client does not know the method, a transport error); when the dialog times out, the call ends unapproved.
 
-Tools that change page data need approval: input, navigation, tab changes, scripts. Of the tools that only read, three need it as well: `fox_screenshot` of a single tab (`scope: "all_tabs"` leaves protected tabs out instead), `scope: "scroll_capture"`, and `fox_logging` with `action: "start"` (recording pauses while a logging tab is on a protected site). Other reading tools (`fox_read`, `fox_find`, `fox_tabs`, …), `fox_wait`, and UI-only tools (`fox_interact`, `fox_tab` with `action: "switch"`) run on protected sites without approval. At most 32 approval requests can wait at a time.
+Tools that change page data need approval: input, navigation, tab changes. Of the tools that only read, two need it as well: `fox_screenshot` of a single tab (`scope: "all_tabs"` leaves protected tabs out instead) and `scope: "scroll_capture"`. Other reading tools (`fox_read`, `fox_find`, `fox_tabs`, …), `fox_wait`, and UI-only tools (`fox_interact`, `fox_tab` with `action: "switch"`) run on protected sites without approval. At most 32 approval requests can wait at a time.
 
-An approval covers one call of that tool with exactly those arguments on that host, must be given before the request expires (120 s; the Firefox popup waits at most 60 s), and is carried by a one-time token that only the relay sees (the model never does). You are shown the arguments in full: invisible and text-direction characters (bidi controls, zero-width and tag characters, U+2028 / U+2029) appear as `\u` escapes under a warning line, and a call whose arguments do not fit (more than 160 in one value, or 800 for all the `name: value` lines; counted in UTF-16 code units with each value as JSON — quotes and escapes included, so a newline in a value counts 2 and an emoji 2) is not offered for approval at all — the model is told so. On a protected site this means long arguments cannot be approved: a long URL for `fox_navigate`, a multi-line script for `fox_evaluate`, or long text for `fox_type`. Text and scripts can sometimes be split into shorter calls; a URL cannot. Nothing in the page — buttons, `fox_click`, `fox_evaluate` — can approve it. One risk is accepted while elicitation approval is on: the answer reaches the daemon over local HTTP, so a local process that can read `~/.inari-mcp/api_token` could approve its own requests. Set `FOX_APPROVAL_ELICITATION=0` to require the Firefox popup (headless mode then cannot approve at all).
+An approval covers one call of that tool with exactly those arguments on that host, must be given before the request expires (120 s; the Firefox popup waits at most 60 s), and is carried by a one-time token that only the relay sees (the model never does). You are shown the arguments in full: invisible and text-direction characters (bidi controls, zero-width and tag characters, U+2028 / U+2029) appear as `\u` escapes under a warning line, and a call whose arguments do not fit (more than 160 in one value, or 800 for all the `name: value` lines; counted in UTF-16 code units with each value as JSON — quotes and escapes included, so a newline in a value counts 2 and an emoji 2) is not offered for approval at all — the model is told so. On a protected site this means long arguments cannot be approved: a long URL for `fox_navigate` or long text for `fox_type`. Text can sometimes be split into shorter calls; a URL cannot. Nothing in the page — buttons or `fox_click` — can approve it. One risk is accepted while elicitation approval is on: the answer reaches the daemon over local HTTP, so a local process that can read `~/.inari-mcp/api_token` could approve its own requests. Set `FOX_APPROVAL_ELICITATION=0` to require the Firefox popup (headless mode then cannot approve at all).
 
 `fox_request_approval` is a separate, plain yes/no question to you in the same popup; its answer does not unlock protected sites.
 
 ### Whichever side starts the daemon first, its config wins
 
-The daemon isn't started fresh per session — whoever gets there first (your Claude Code relay, or Firefox via the Native Host) starts it, and everyone else just talks to that one running daemon. That matters for env vars: `FOX_READ_ONLY`, `FOX_HEADLESS`, `FOX_ALLOW_SCRIPTS`, etc. are only read from the environment of whichever process actually launched the daemon. (`FOX_APPROVAL_ELICITATION` is read on both sides: each relay from its own environment, the daemon from the one it was started with; see [Environment variables](#environment-variables).) A daemon started by the Native Host gets Firefox's environment, not that of any Claude Code session. If Firefox starts the daemon first, a later Claude Code session's `FOX_READ_ONLY=1` in its MCP config does nothing — you'll see a warning (at session start and in `fox_safety_status`), but the existing daemon keeps running with its original settings.
+The daemon isn't started fresh per session — whoever gets there first (your Claude Code relay, or Firefox via the Native Host) starts it, and everyone else just talks to that one running daemon. That matters for env vars: `FOX_READ_ONLY`, `FOX_HEADLESS`, etc. are only read from the environment of whichever process actually launched the daemon. (`FOX_APPROVAL_ELICITATION` is read on both sides: each relay from its own environment, the daemon from the one it was started with; see [Environment variables](#environment-variables).) A daemon started by the Native Host gets Firefox's environment, not that of any Claude Code session. If Firefox starts the daemon first, a later Claude Code session's `FOX_READ_ONLY=1` in its MCP config does nothing — you'll see a warning (at session start and in `fox_safety_status`), but the existing daemon keeps running with its original settings.
 
 `safety.json` doesn't have this problem: it's read from the same fixed path (`~/.inari-mcp/safety.json` by default) no matter which side starts the daemon. If you need `read_only` or similar to reliably take effect, set it in `safety.json` rather than relying on the env var.
 
@@ -445,9 +439,7 @@ This project is **under active, incremental development** — not ready for gene
 | Tools | Extension path | Headless |
 |---|---|---|
 | `fox_snapshot` | not implemented | returns the accessibility tree as YAML text |
-| `fox_evaluate` `mode: "chain"` / `"wait_and_act"`, `fox_handle_dialog` | not implemented | work |
-| `fox_observer` | works | works (one observer per page; `action: "remove"` returns only the number of changes) |
-| `fox_logging`, `fox_get_logs` | work | not supported |
+| `fox_handle_dialog` | not implemented | works |
 | `fox_navigate` with `action: "hard_refresh"`; `fox_screenshot` with `scope: "all_tabs"` or `"scroll_capture"` | work | not supported |
 | `fox_tabs` `what: "containers"`, `fox_tab` `action: "create"` with `container` | work | not supported (no containers) |
 | `fox_request_approval` | works | always refused (nobody to ask) |

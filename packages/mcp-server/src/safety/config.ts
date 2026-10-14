@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
 import { ENV, isRecord, LEGACY_ENV } from '@inari-mcp/shared';
-import { isFalsyEnv, isTruthyEnv, resolveFoxEnv } from '../utils/headless-env.js';
+import { isTruthyEnv, resolveFoxEnv } from '../utils/headless-env.js';
 import { auditLogPath, defaultSafetyConfigPath } from '@inari-mcp/shared/node';
 
 // `.strict()` on both objects: an unknown key (a typo such as `readonly` for
@@ -18,7 +18,6 @@ const ContainerScopeSchema = z.object({
 export const SafetyConfigSchema = z.object({
   enabled: z.boolean(),
   readOnly: z.boolean(),
-  allowScriptExecution: z.boolean(),
   confirmProtectedActions: z.boolean(),
   allowPasswordTyping: z.boolean(),
   maxActionsPerMinute: z.number().int().min(0),
@@ -34,7 +33,6 @@ export type SafetyConfig = z.infer<typeof SafetyConfigSchema>;
 export const DEFAULT_CONFIG: SafetyConfig = {
   enabled: true,
   readOnly: false,
-  allowScriptExecution: true,
   confirmProtectedActions: true,
   allowPasswordTyping: false,
   maxActionsPerMinute: 120,
@@ -73,7 +71,6 @@ export const DEFAULT_CONFIG: SafetyConfig = {
 const FILE_KEYS: { readonly [K in keyof SafetyConfig]: string } = {
   enabled: 'enabled',
   readOnly: 'read_only',
-  allowScriptExecution: 'allow_script_execution',
   confirmProtectedActions: 'confirm_protected_actions',
   allowPasswordTyping: 'allow_password_typing',
   maxActionsPerMinute: 'max_actions_per_minute',
@@ -221,12 +218,9 @@ export function loadConfig(): LoadedSafetyConfig {
     }
   }
 
-  // Both only tighten the policy, so the values beyond 1 / 0 (true, yes, off, …) are safe to accept.
+  // It only tightens the policy, so the values beyond 1 (true, yes) are safe to accept.
   if (isTruthyEnv(resolveFoxEnv(process.env, ENV.FOX_READ_ONLY, LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY))) {
     config = { ...config, readOnly: true };
-  }
-  if (isFalsyEnv(resolveFoxEnv(process.env, ENV.FOX_ALLOW_SCRIPTS, LEGACY_ENV.CLAUDE_BROWSER_ALLOW_SCRIPTS))) {
-    config = { ...config, allowScriptExecution: false };
   }
 
   return config;

@@ -42,7 +42,7 @@ npm run e2e:extension   # the Extension loads into Firefox as a temporary add-on
 | Entry | Bundle | Loaded by |
 |---|---|---|
 | `src/background.ts` | `dist/background.js` | `manifest.json` `background.scripts` |
-| `src/content.ts` | `dist/content.js` | `manifest.json` `content_scripts` (and the early injection on tabs with logging on) |
+| `src/content.ts` | `dist/content.js` | `manifest.json` `content_scripts` |
 | `src/popup/popup.ts` | `dist/popup/popup.js` | `dist/popup/popup.html` (`browser_action.default_popup`) |
 | `src/popup/popup.html`, `src/popup/popup.css`, `src/content.css` | copied to `dist/` | |
 
@@ -104,9 +104,9 @@ Tool lists:
 
 | # | Session | Expected |
 |---|---|---|
-| 1-1 | `FOX_CAPS` unset | the 21 tools; no earlier names |
-| 1-2 | `FOX_CAPS=legacy` | the 41 earlier tools; replaced ones start their description with `[Deprecated: …]` |
-| 1-3 | `FOX_CAPS=core,logs` | the `core` tools, `fox_logging`, `fox_get_logs` and `fox_safety_status` |
+| 1-1 | `FOX_CAPS` unset | the 17 tools; no earlier names |
+| 1-2 | `FOX_CAPS=legacy` | the 31 earlier tools; replaced ones start their description with `[Deprecated: …]` |
+| 1-3 | `FOX_CAPS=core,human` | the `core` tools, `fox_request_approval`, `fox_detect_captcha` and `fox_safety_status` |
 
 New names (on both paths unless noted):
 
@@ -116,18 +116,16 @@ New names (on both paths unless noted):
 | 2-2 | `fox_tab` `{action: "create", url}`, then `{action: "switch", tabId}`, then `{action: "close", tabId}` | creates, switches to, closes the tab |
 | 2-3 | `fox_tab` `{action: "create", url, container: {name: "Work"}}` | extension: a container tab opens. Headless: error, containers not supported |
 | 2-4 | `fox_wait` `{for: "url", urlPattern}` | returns at once when the URL already matches, else after the navigation |
-| 2-5 | `fox_logging` `{action: "start"}`, a fetch in the page, `fox_get_logs` `{kind: "network"}` | extension: the request is listed. Headless: error, not supported |
-| 2-6 | `fox_evaluate` `{mode: "script", script: "document.title"}` | the page title |
-| 2-7 | `fox_evaluate` `{mode: "chain", steps: [...]}` | extension: `Not implemented in extension`. Headless: the result of each step |
-| 2-8 | `fox_read` `{mode: "text"}`, `fox_find` `{by: "text", text}` | the page text; the match count |
-| 2-9 | `fox_set_value` `{kind: "select", selector, option: {text}}` | the option is selected |
-| 2-10 | `fox_interact` `{action: "highlight", selector}` | the element is outlined |
+| 2-5 | `fox_read` `{mode: "text"}`, `fox_find` `{by: "text", text}` | the page text; the match count |
+| 2-6 | `fox_set_value` `{kind: "select", selector, option: {text}}` | the option is selected |
+| 2-7 | `fox_interact` `{action: "highlight", selector}` | the element is outlined |
+| 2-8 | `fox_wait` `{for: "network_idle"}` while the page has a fetch running | extension: returns once it ended; afterwards the page's own `fetch` is back (in the page's console, `window.fetch.toString()` shows `[native code]`) |
 
 Earlier names (`FOX_CAPS=legacy`):
 
 | # | Call | Expected |
 |---|---|---|
-| 3-1 | `fox_get_text` `{}` twice | the same result as 2-8; only the first one ends with `Note: fox_get_text is deprecated; use fox_read with mode='text'.` |
+| 3-1 | `fox_get_text` `{}` twice | the same result as 2-5; only the first one ends with `Note: fox_get_text is deprecated; use fox_read with mode='text'.` |
 | 3-2 | `fox_create_tab` `{url}` | the same as the create step of 2-2 |
 | 3-3 | the `audit.jsonl` line of 3-2 | `"tool": "fox_tab"`, `"legacyTool": "fox_create_tab"` |
 

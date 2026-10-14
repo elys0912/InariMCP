@@ -8,7 +8,6 @@ import { ENV, ENV_DEFAULTS, isRecord, LEGACY_ENV } from '@inari-mcp/shared';
 import { isElicitationApprovalEnabled } from '../safety/approval.js';
 import {
   headlessStartupTimeoutMs,
-  isFalsyEnv,
   isHeadlessEnabled,
   isTruthyEnv,
   resolveFoxEnv,
@@ -47,7 +46,6 @@ export const DAEMON_SETTINGS = [
   'FOX_SCREENSHOTS_DIR',
   'FOX_SAFETY_CONFIG',
   'FOX_READ_ONLY',
-  'FOX_ALLOW_SCRIPTS',
   'FOX_APPROVAL_ELICITATION',
 ] as const;
 export type DaemonSettingName = (typeof DAEMON_SETTINGS)[number];
@@ -60,7 +58,6 @@ const LEGACY_SETTING_NAMES: { readonly [K in DaemonSettingName]: string | undefi
   FOX_SCREENSHOTS_DIR: LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR,
   FOX_SAFETY_CONFIG: LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG,
   FOX_READ_ONLY: LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY,
-  FOX_ALLOW_SCRIPTS: LEGACY_ENV.CLAUDE_BROWSER_ALLOW_SCRIPTS,
   FOX_APPROVAL_ELICITATION: undefined,
 };
 
@@ -85,7 +82,7 @@ type Env = Record<string, string | undefined>;
  * `FOX_HEADLESS=true`, `=1` and `CLAUDE_BROWSER_HEADLESS=yes` compare equal.
  * 'current' follows this version's parsing; 'legacy' follows how a daemon
  * without `effectiveSettings` in /daemon/info read its environment (FOX_ value
- * or else the old name; only `1` turns read-only on, only `0` turns scripts off).
+ * or else the old name; only `1` turns read-only on).
  */
 export function effectiveDaemonSettings(
   env: Env,
@@ -110,11 +107,6 @@ export function effectiveDaemonSettings(
       cur
         ? isTruthyEnv(pick(ENV.FOX_READ_ONLY, LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY))
         : pick(ENV.FOX_READ_ONLY, LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY) === '1',
-    ),
-    FOX_ALLOW_SCRIPTS: onOff(
-      !(cur
-        ? isFalsyEnv(pick(ENV.FOX_ALLOW_SCRIPTS, LEGACY_ENV.CLAUDE_BROWSER_ALLOW_SCRIPTS))
-        : pick(ENV.FOX_ALLOW_SCRIPTS, LEGACY_ENV.CLAUDE_BROWSER_ALLOW_SCRIPTS) === '0'),
     ),
     FOX_APPROVAL_ELICITATION: onOff(isElicitationApprovalEnabled(env)),
   };

@@ -6,13 +6,12 @@
  * of the rules (url-pattern.ts is not browser code), imported here.
  */
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { WireUrlRuleSchema } from '@inari-mcp/shared';
 import { compileUrlPatterns, type PatternListName } from '../../packages/mcp-server/src/safety/url-pattern.js';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG } from '../../packages/mcp-server/src/safety/config.js';
 import * as ext from '../../packages/extension/src/url-rule.ts';
-import type { PageHookSink } from '../../packages/extension/src/content/page-hooks.ts';
 
 /** A wire rule as the Extension reads and compiles it (null if unusable). */
 const compileWire = (wire: unknown): ext.CompiledUrlRule | null => {
@@ -187,74 +186,6 @@ describe('hosts the URL parser rewrites, and a rule without `port`', () => {
   it('a port outside 1-65535 makes the rule unusable (it is not read as "any port")', () => {
     const wire = { ...only('example.test:8443').wire, port: 0 };
     expect(ext.parseUrlRule(wire)).toBeNull();
-  });
-});
-
-describe('content script: protected pages pause recording (content/log-store.ts)', () => {
-  const PAGE_HOOKS = '../../packages/extension/src/content/page-hooks.ts';
-  const g = globalThis as Record<string, unknown>;
-  type LogStore = typeof import('../../packages/extension/src/content/log-store.ts');
-  let log: LogStore;
-  /** What log-store hands to the page hooks: they ask it before recording. */
-  let sink: PageHookSink | undefined;
-
-  beforeAll(async () => {
-    // The page hooks need Firefox's Xray wrappers: replaced by a stub that
-    // keeps the sink log-store installs them with.
-    vi.resetModules();
-    vi.doMock(PAGE_HOOKS, () => ({
-      installPageHooks: (s: PageHookSink) => { sink = s; },
-      interceptionStatus: () => ({ fetch: false, xhr: false, console: false }),
-      injectionStatus: () => ({ readyStateAtInit: null, readyStateAtHookInstall: null }),
-    }));
-    log = await import('../../packages/extension/src/content/log-store.ts');
-  });
-
-  afterAll(() => {
-    vi.doUnmock(PAGE_HOOKS);
-    delete g.window;
-  });
-
-  /** start_logging with the wire rules the server sends for `sources`. */
-  const startWith = (sources: string[]): void => {
-    log.startLogging({ protectedPatterns: compileUrlPatterns(sources, 'protected').patterns.map((p) => p.wire) });
-  };
-
-  /** Would the page hooks record an entry on a document at `href`? */
-  const recordsAt = (href: string): boolean => {
-    g.window = { location: { href } };
-    if (!sink) throw new Error('log-store installed no page hooks');
-    return sink.shouldRecord();
-  };
-
-  it('no patterns: no page is protected', () => {
-    startWith([]);
-    expect(recordsAt('https://example.test/admin')).toBe(true);
-  });
-
-  it('the current document URL decides, as the wire rules match it', () => {
-    startWith(['example.test/admin', '*.bank.test']);
-    for (const href of [
-      'https://example.test/admin',
-      'https://example.test/admin/users?x=1',
-      'https://example.test/%61dmin', // protected rules decode percent-escapes
-      'https://example.test/ADMIN',
-      'https://a.bank.test/',
-    ]) {
-      expect(recordsAt(href), href).toBe(false);
-    }
-    for (const href of ['https://example.test/', 'https://bank.test/', 'https://example.test.attacker.test/admin']) {
-      expect(recordsAt(href), href).toBe(true);
-    }
-  });
-
-  it('a same-document move onto a protected URL pauses recording; stop_logging ends it', () => {
-    startWith(['example.test/admin']);
-    expect(recordsAt('https://example.test/public')).toBe(true);
-    expect(recordsAt('https://example.test/admin/1')).toBe(false); // history.pushState
-    expect(recordsAt('https://example.test/public')).toBe(true);
-    log.stopLogging();
-    expect(recordsAt('https://example.test/public')).toBe(false);
   });
 });
 

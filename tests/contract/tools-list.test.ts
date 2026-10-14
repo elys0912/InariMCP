@@ -70,7 +70,7 @@ describe('tools/list', () => {
 
   it('FOX_CAPS=legacy lists the pre-consolidation tools, deprecated ones marked', async () => {
     const actual = await listTools('legacy');
-    expect(actual).toHaveLength(41);
+    expect(actual).toHaveLength(31);
     expect(actual.find((t) => t.name === 'fox_get_text')?.description)
       .toMatch(/^\[Deprecated: fox_get_text is deprecated; use fox_read with mode='text'\.\] /);
     expect(actual).toEqual(golden('tools-list-legacy.json', actual));
@@ -100,9 +100,22 @@ describe('FOX_CAPS boundaries', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       expect(await names('legacy,nope')).toEqual(['fox_safety_status']);
-      expect(await names('nope,logs')).toEqual(['fox_get_logs', 'fox_logging', 'fox_safety_status']);
+      expect(await names('nope,human')).toEqual(['fox_detect_captcha', 'fox_request_approval', 'fox_safety_status']);
       const warnings = stderr.mock.calls.map(([chunk]) => String(chunk)).filter((t) => t.includes("Unknown FOX_CAPS profile: 'nope'"));
       expect(warnings).toHaveLength(2);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  // InariMCP removed the script and logging tools, and their profiles with them.
+  it('logs and script are no profiles', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(await names('logs,script')).toEqual(['fox_safety_status']);
+      expect(await names('legacy,logs,script')).toEqual(['fox_safety_status']);
+      const warnings = stderr.mock.calls.map(([chunk]) => String(chunk)).filter((t) => t.includes('Unknown FOX_CAPS profile'));
+      expect(warnings).toHaveLength(4);
     } finally {
       stderr.mockRestore();
     }
