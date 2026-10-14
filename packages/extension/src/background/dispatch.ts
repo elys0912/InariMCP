@@ -26,10 +26,12 @@ export type CommandSource = "host" | "page";
 /**
  * The answer to every command from the Native Host while the user has paused
  * agent actions in the popup (control-state.ts). The error starts with
- * "paused" so the MCP client can tell it from a browser failure.
+ * "paused", and safetyDecision "paused" lets the MCP Server tell it from a
+ * browser failure.
  */
 export const PAUSED_REFUSAL: CommandResult = {
   success: false,
+  safetyDecision: "paused",
   error: "paused: the user paused agent actions in the Inari MCP for Firefox toolbar popup",
 };
 

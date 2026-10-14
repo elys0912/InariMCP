@@ -2,7 +2,7 @@
   "name": "inari-mcp",
   "version": "0.1.0",
   "private": true,
-  "description": "Firefox MCP addon for Claude Code — browser automation via extension + native messaging",
+  "description": "Inari MCP for Firefox — lets an MCP client such as Claude Code operate your Firefox through an extension and a native messaging host",
   "license": "MIT",
   "author": "elys0912",
   "homepage": "https://github.com/elys0912/InariMCP",
@@ -36,7 +36,7 @@
     "uninstall:unix": "node scripts/uninstall.mjs"
   },
   "engines": {
-    "node": ">=24.0.0"
+    "node": ">=20"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

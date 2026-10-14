@@ -4,13 +4,13 @@
 
 **普段使いのFirefoxを、Claude CodeなどのMCPクライアントから読んで操作する。** 使い捨てブラウザではなく、あなたの実プロファイル・実ログインをそのまま使う。クリック・入力・ページの移動は、毎回あなたの承認を待つ。
 
-![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
+![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D20-green)
 
 ---
 
 **送るもの。** MCPクライアントがツールを呼ぶと、拡張機能はそのツールに要るものをタブから読み（ページの文字と要素、フォームの値、URLとタイトル、開いているタブの一覧、スクリーンショット）、手元のPCのネイティブホストへ送る。そこから接続したMCPクライアントへ渡り、MCPクライアントがそれを自分のAIの提供元へ送る。開発者には何も送らない。パスワード・hidden・ワンタイムコード・クレジットカードの欄は伏せる。cookieは読まない。詳しくは[プライバシー](#プライバシー)と[プライバシーポリシー](docs/PRIVACY.ja.md)。
 
-**要るもの。** Firefox 142以降と、addons.mozilla.orgの拡張機能。Node.js 18以上と、このリポジトリのネイティブホスト（これが無いと拡張機能は何もしない）。Claude CodeなどのMCPクライアント。[クイックスタート](#クイックスタート)を参照。
+**要るもの。** Firefox 142以降と、addons.mozilla.orgの拡張機能。Node.js 20以上と、このリポジトリのネイティブホスト（これが無いと拡張機能は何もしない）。Claude CodeなどのMCPクライアント。[クイックスタート](#クイックスタート)を参照。
 
 ## これは何？
 
@@ -20,7 +20,7 @@ Inari MCP for Firefoxは、Firefox拡張機能・ネイティブメッセージ�
 
 ### Inari MCPとKitsuneMCP
 
-Inari MCP for Firefoxは[KitsuneMCP](https://github.com/elys0912/KitsuneMCP)のaddons.mozilla.org版で、2026-10-14にKitsuneMCP 0.2.0から分岐し、版は0.1.0から数える。ページでスクリプトを実行せず、コンソール・ネットワークのログを取らず、操作のたびに承認を求める。アドオンのID（`inari-mcp@elys0912.github.io`）、ネイティブメッセージングのホスト名（`inari_mcp`）、状態ディレクトリ（`~/.inari-mcp`）がKitsuneMCPと違うので、両方を同じFirefoxに入れられる。ただし既定のポート（`8765` / `8766`）は同じなので、両方を同時に動かすときは片方のポートを変える（`FOX_HTTP_PORT`、`FOX_WS_PORT`）。
+Inari MCP for Firefoxは[KitsuneMCP](https://github.com/elys0912/KitsuneMCP)のaddons.mozilla.org版で、2026-10-14にKitsuneMCP 0.2.0から分岐し、版は0.1.0から数える。ページでスクリプトを実行せず、コンソール・ネットワークのログを取らず、操作のたびに承認を求める。アドオンのID（`inari-mcp@elys0912.github.io`）、ネイティブメッセージングのホスト名（`inari_mcp`）、状態ディレクトリ（`~/.inari-mcp`）がKitsuneMCPと違うので、両方を同じFirefoxに入れられる。既定のポート（`8785` / `8786`）もKitsuneMCP（`8765` / `8766`）と違うので、両方を同時に動かせる。
 
 ## なぜ作ったか？
 
@@ -56,7 +56,7 @@ Inari MCPは意図的に用途を絞っている。以下に当てはまる場�
 ### 前提条件
 
 - Firefox 142以降（拡張機能の`strict_min_version`）。Developer EditionとNightlyも通常版と同じNative Messagingの登録を読む
-- Node.js >= 18.0.0（ネイティブホストとMCPサーバーの実行に必要。開発時の要件は[開発](#開発)を参照）
+- Node.js 20以上（ネイティブホストとMCPサーバーの実行に必要。審査の再現ビルドはNode.js 24.xとnpm 11.x。[開発](#開発)を参照）
 - Claude CodeなどのMCPクライアント
 - （ヘッドレスモードのみ）PlaywrightとそのFirefox。`playwright`は`packages/mcp-server`の任意の依存（optionalDependencies）で、任意の依存を除かない限り（`--omit=optional`）`npm ci`で入る。Firefoxは別にダウンロードする: `npx playwright install firefox`
 
@@ -93,7 +93,7 @@ npm run setup
 
 `npm run setup`（`node scripts/install.mjs`）が行うこと:
 
-1. Node.js（18以上）とビルド結果（`packages/*/dist`）を確認し、Firefoxを探す（見つからなくても警告だけ）
+1. Node.js（20以上）とビルド結果（`packages/*/dist`）を確認し、Firefoxを探す（見つからなくても警告だけ）
 2. Native Messaging hostのラッパー（`run-host.cmd` / `run-host.sh`）を`~/.inari-mcp/native-host/`に書く
 3. hostのマニフェスト`inari_mcp.json`をFirefoxが読む場所に書く（Windows: ラッパーと同じ場所に置き、全エディション共通の`HKCU\Software\Mozilla\NativeMessagingHosts\inari_mcp`から参照する。macOS: `~/Library/Application Support/Mozilla/NativeMessagingHosts/`。Linux: `~/.mozilla/native-messaging-hosts/`と、XDG・Snap・Flatpak版がありそうならそれぞれの置き場）
 4. `claude mcp add`のコマンドを表示する。`--register-claude`を付けると実行する（[MCPクライアントに登録する](#mcpクライアントに登録する)を参照）
@@ -178,7 +178,7 @@ claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server
 6. 低いレベルで確認するときはdaemonに問い合わせる。
 
 ```bash
-curl --noproxy '*' -sS http://127.0.0.1:8765/health    # Windows PowerShell: curl.exe --noproxy "*" -sS …
+curl --noproxy '*' -sS http://127.0.0.1:8785/health    # Windows PowerShell: curl.exe --noproxy "*" -sS …
 ```
 
 （`--noproxy`は設定済みのHTTPプロキシをローカルへの要求から外す。）`"status":"ok"`ならdaemonは動いている。拡張機能が接続すると（読み込みから数秒後）`browsers_connected`が`1`になる。何も応答しない（「Connection refused」）ならdaemonはまだ動いていない。daemonは最初のClaude Codeセッションか、拡張機能を読み込んだFirefoxが起動し、10分使われなければ終了する。そのうえでログを見る。
@@ -289,7 +289,7 @@ InariMCPを使っているClaude Codeのセッションが残っていると、�
 
 6. 任意、Claude Code: `claude mcp add --scope user inari-mcp -- "C:\Program Files\nodejs\node.exe" "C:\path\to\InariMCP\packages\mcp-server\dist\index.js"`
 
-Windowsで手作業でアンインストールするには（順番が大事。hostが登録されたままFirefoxが拡張機能を動かしていると、Native Hostがdaemonを起動し直す）: `reg delete "HKCU\Software\Mozilla\NativeMessagingHosts\inari_mcp" /f`、`rmdir /s /q "%USERPROFILE%\.inari-mcp\native-host"`、`claude mcp remove --scope user inari-mcp`を実行し、Firefoxで拡張機能を外すかFirefoxを終了する。`netstat -ano | findstr :8765`でdaemonを探して`taskkill /PID <pid> /F`で止める。必要なら`rmdir /s /q "%USERPROFILE%\.inari-mcp"`。
+Windowsで手作業でアンインストールするには（順番が大事。hostが登録されたままFirefoxが拡張機能を動かしていると、Native Hostがdaemonを起動し直す）: `reg delete "HKCU\Software\Mozilla\NativeMessagingHosts\inari_mcp" /f`、`rmdir /s /q "%USERPROFILE%\.inari-mcp\native-host"`、`claude mcp remove --scope user inari-mcp`を実行し、Firefoxで拡張機能を外すかFirefoxを終了する。`netstat -ano | findstr :8785`でdaemonを探して`taskkill /PID <pid> /F`で止める。必要なら`rmdir /s /q "%USERPROFILE%\.inari-mcp"`。
 
 WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外で起動する（そうしないと、Firefoxを閉じたときにdaemonと、それを使うClaude Codeのセッションが止まる）。まずPowerShellを試し、次にWMI（`cscript`）、一回限りのタスク スケジューラのタスク（`schtasks`）を試す。すべて失敗したときだけ、daemonをジョブの中で起動し、`native-host.log`に警告を出す。
 
@@ -302,19 +302,20 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 ## 権限
 
-拡張機能が求める権限は9つ。パスは`packages/extension/src/`からの相対。
+拡張機能が求める権限は10。パスは`packages/extension/src/`からの相対。
 
 | 権限 | 用途 | 使用箇所 |
 |---|---|---|
 | `tabs` | すべてのタブ（`about:`と`file:`のタブも含む）のURLとタイトル。タブの一覧（`fox_tabs`）、対象タブの特定、コマンドを実行する前の`safety.json`のURL規則との照合に使う | `background/tabs.ts`、`background/tab-target.ts`、`background/url-policy.ts`、`background/screenshot.ts`、`background/reload.ts` |
 | `nativeMessaging` | Native Host（`inari_mcp`）への接続。コマンドが拡張機能に届き、結果が拡張機能から出る唯一の経路 | `background/native-connection.ts` |
 | `notifications` | ポップアップで承認要求が待っているとき、CAPTCHAに人の操作が要るとき（`fox_detect_captcha`）のOSの通知 | `background/approvals.ts`、`background/human-wait.ts`、`background/listeners.ts`（通知のクリックでポップアップを開く） |
-| `<all_urls>` | すべてのページでのコンテンツスクリプト（ページの読み取りと操作）、スクリーンショットの`tabs.captureTab`、`tabs.executeScript`（スクリプト系ツールと、ログ収集中のタブへの早期の注入） | `manifest.json`の`content_scripts`、`background/screenshot.ts`、`background/page-actions.ts`、`background/listeners.ts` |
-| `contextMenus` | ページのコンテキストメニューの2項目（スクリーンショットを撮る、要素を調べる） | `background/context-menu.ts` |
+| `storage` | 許可の画面での答えと一時停止スイッチの状態を`storage.local`に保存する（[初回の許可](#初回の許可)、[一時停止](#一時停止)） | `background/control-state.ts` |
+| `<all_urls>` | すべてのページでのコンテンツスクリプト（ページの読み取りと操作）、スクリーンショットの`tabs.captureTab` | `manifest.json`の`content_scripts`、`background/screenshot.ts` |
+| `contextMenus` | ページのコンテキストメニューの1項目（スクリーンショットを撮る） | `background/context-menu.ts` |
 | `contextualIdentities` | Firefoxのコンテナ。一覧（`what: "containers"`の`fox_tabs`）、`container_scope`のエージェント用コンテナの検索と作成、コンテナでタブを開く（`action: "create"`と`container`を指定した`fox_tab`） | `background/container-scope.ts` |
 | `cookies` | Cookieは読みも書きもしない（`browser.cookies`は使わない）。コンテナでタブを開く`tabs.create`の`cookieStoreId`に、Firefoxがこの権限を求める | `background/container-scope.ts`（`openInContainer`）、`background/tabs.ts`（`createNewTab`） |
 | `find` | ページ内の文字列検索の`browser.find.find`（`by: "text"`の`fox_find`） | `background/tabs.ts`（`findText`） |
-| `webNavigation` | タブの遷移が終わるのを待つ（`for: "navigation"`の`fox_wait`）、新しいページが確定したときのログ収集中のタブへの早期の注入 | `background/tab-wait.ts`、`background/listeners.ts` |
+| `webNavigation` | タブの遷移が終わるのを待つ（`for: "navigation"`の`fox_wait`） | `background/tab-wait.ts` |
 
 エージェントはFirefoxのコンテナを作成できる。`action: "create"`の`fox_tab`に存在しない`container`の名前を渡すと作成する。`container_scope`が有効でエージェント用のコンテナがまだないときは、新しいタブを開くときに作成する。コンテナの作成は、それ自体では人に確認する操作になっていない。
 
@@ -356,8 +357,8 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | 変数 | 既定値 | 読むプロセス | 説明 |
 |---|---|---|---|
 | `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host、アンインストーラ | HTTP/WSサーバーのアドレス。ループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）だけ。それ以外ならdaemonはエラーをログに出して起動しない。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HOST` |
-| `FOX_HTTP_PORT` | `8765` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
-| `FOX_WS_PORT` | `8766` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_WS_PORT` |
+| `FOX_HTTP_PORT` | `8785` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
+| `FOX_WS_PORT` | `8786` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_WS_PORT` |
 | `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。`legacy`を指定すると、代わりに以前のツール名を一覧にする（[ツール名の移行](#ツール名の移行)を参照）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
 | `FOX_HEADLESS` | 未設定 | daemon | `1` / `true` / `yes`でヘッドレスPlaywrightバックエンドを使う。それ以外は無効（`on`など認識できない値は警告をログに出す）。旧名: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない）。旧名: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
@@ -377,7 +378,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | プロファイル | ツール |
 |---|---|
 | `core` | `fox_navigate`、`fox_click`、`fox_type`、`fox_press_key`、`fox_set_value`、`fox_screenshot`、`fox_snapshot`、`fox_read`、`fox_find`、`fox_tabs`、`fox_tab`、`fox_interact`、`fox_wait`、`fox_handle_dialog` |
-| `workflow` | なし（以前の`fox_wait_and_act`はスクリプト系ツールと一緒に削除した。`fox_run_workflow`と`fox_audit_page`は実装されなかった） |
+| `workflow` | なし（`fox_run_workflow`と`fox_audit_page`は実装されなかった） |
 | `human` | `fox_request_approval`、`fox_detect_captcha` |
 | `container` | `fox_tabs`、`fox_tab`（コンテナは`what: "containers"`の`fox_tabs`と、`action: "create"`と`container`を指定した`fox_tab`） |
 | `wait` | `fox_wait` |
@@ -413,8 +414,6 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `fox_run_workflow`、`fox_audit_page` | なし | どのバックエンドでも未実装だった。名前での呼び出しは今もでき、同じエラーになる |
 
 変更なし: `fox_screenshot`、`fox_snapshot`、`fox_navigate`、`fox_click`、`fox_type`、`fox_press_key`、`fox_handle_dialog`、`fox_request_approval`、`fox_detect_captcha`、`fox_safety_status`。
-
-どの名前でも使えなくなったもの: スクリプト系ツール（`fox_evaluate`、`fox_observer`。以前の`fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act`、`fox_inject_observer`、`fox_remove_observer`）とログ収集のツール（`fox_logging`、`fox_get_logs`。以前の`fox_start_logging`、`fox_stop_logging`、`fox_clear_logs`、`fox_get_console_logs`、`fox_get_network_logs`）。[変更履歴](docs/CHANGELOG.ja.md)を参照。
 
 ### `safety.json`
 
@@ -525,7 +524,7 @@ npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（Pla
 
 `npm audit`が報告する11件は、すべて`web-ext`（devDependency）の依存ツリーにあり、容認している。監査は`npm audit --omit=dev`（0件）で行う。配布物（mcp-server、native-host、拡張機能の`.xpi`）にweb-extは含まれない。
 
-`npm test`はVitestのテスト（パッケージごとの単体テスト、`tests/contract/`の契約テスト、`tests/scripts/`のインストーラのテスト）を実行する。テストファイルごとに一時的なホームディレクトリを使うので、テストがあなたの`~/.inari-mcp/`に触れることはない。開発にはNode.js 24とnpm 11が必要（AMOの審査環境と同じ版。`.nvmrc`）。InariMCPの実行自体はNode.js 18で足りる。
+`npm test`はVitestのテスト（パッケージごとの単体テスト、`tests/contract/`の契約テスト、`tests/scripts/`のインストーラのテスト）を実行する。テストファイルごとに一時的なホームディレクトリを使うので、テストがあなたの`~/.inari-mcp/`に触れることはない。実行はNode.js 20以上、審査の再現ビルドはNode.js 24.xとnpm 11.x（`.nvmrc`、[docs/BUILD.md](docs/BUILD.md)）。
 
 `npm test`に含めていないエンドツーエンドの確認:
 

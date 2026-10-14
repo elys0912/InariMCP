@@ -23,9 +23,9 @@ export const HOST_NAME = 'inari_mcp';
 export const CLAUDE_NAME = 'inari-mcp';
 /** `service` field of the daemon's GET /health answer. */
 export const SERVICE_NAME = 'inari-mcp';
-export const MIN_NODE_MAJOR = 18;
+export const MIN_NODE_MAJOR = 20;
 export const CLAUDE_SCOPES = ['user', 'local', 'project'];
-export const DEFAULT_HTTP_PORT = 8765;
+export const DEFAULT_HTTP_PORT = 8785;
 export const DEFAULT_HTTP_HOST = '127.0.0.1';
 /** Highest TCP port number (same as MAX_PORT of @inari-mcp/shared). */
 export const MAX_PORT = 65_535;

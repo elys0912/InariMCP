@@ -198,7 +198,8 @@ describe('no "inspect element" context menu', () => {
     const menu = readExtensionSource('background/context-menu.ts');
     expect([...menu.matchAll(/contextMenus\.create\(/g)]).toHaveLength(1);
     expect(menu).not.toMatch(/inspect/i);
-    expect(readExtensionTree('content')).not.toMatch(/contextmenu/);
+    // A right click (fox_click with rightClick) still dispatches a contextmenu event.
+    expect(readExtensionTree('content')).not.toMatch(/addEventListener\(\s*["'`]contextmenu/);
     // WP38: nor does the contextMenus type declare pageX / pageY.
     expect(readExtensionSource('types/browser.d.ts')).not.toMatch(/page[XY]\?: number/);
   });

@@ -325,7 +325,7 @@ describe('review follow-ups', () => {
     expectTypeOf<DenialDecision>().toEqualTypeOf<
       'rate_limited' | 'blocked_scheme' | 'blocked_url' | 'not_allowlisted' | 'read_only' |
       'confirmation_required' | 'out_of_scope' | 'invalid_url' |
-      'blocked_after_navigation' | 'config_error'
+      'blocked_after_navigation' | 'config_error' | 'paused'
     >();
   });
 

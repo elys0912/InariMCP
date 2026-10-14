@@ -3,10 +3,10 @@ import { parsePort, resolveHost, resolveHttpPort, resolveWsPort } from '@inari-m
 
 describe('parsePort (4.A3)', () => {
   it.each([
-    ['8765', 8765],
+    ['8785', 8785],
     ['1', 1],
     ['65535', 65535],
-    [' 8765 ', 8765],
+    [' 8785 ', 8785],
   ])('accepts %j', (raw, port) => {
     expect(parsePort(raw, 9)).toBe(port);
   });
@@ -47,15 +47,15 @@ describe('shared/node endpoint', () => {
       reports.push(name);
     };
     expect(resolveHttpPort(onInvalid, { FOX_HTTP_PORT: ' ', CLAUDE_BROWSER_HTTP_PORT: '9001' })).toBe(9001);
-    expect(resolveWsPort(onInvalid, { FOX_WS_PORT: ' ' })).toBe(8766);
-    expect(resolveHttpPort(onInvalid, { FOX_HTTP_PORT: ' 8765 ' })).toBe(8765);
+    expect(resolveWsPort(onInvalid, { FOX_WS_PORT: ' ' })).toBe(8786);
+    expect(resolveHttpPort(onInvalid, { FOX_HTTP_PORT: ' 8785 ' })).toBe(8785);
     expect(reports).toEqual([]);
   });
 
   it('an invalid port is reported under the name it was read from', () => {
     const reports: string[] = [];
     const port = resolveHttpPort((name) => reports.push(name), { FOX_HTTP_PORT: '', CLAUDE_BROWSER_HTTP_PORT: 'x' });
-    expect(port).toBe(8765);
+    expect(port).toBe(8785);
     expect(reports).toEqual(['CLAUDE_BROWSER_HTTP_PORT']);
   });
 });

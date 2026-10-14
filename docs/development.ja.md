@@ -6,7 +6,7 @@
 
 ## 必要なもの
 
-- 開発にはNode.js 24とnpm 11（`.nvmrc`と`package.json`の`engines`）。AMOの審査環境と同じ版にして、作った拡張機能のパッケージを提出したものと一致させる。InariMCPの実行だけならNode.js 18で足りる（インストーラの下限）。
+- 実行はNode.js 20以上（`package.json`の`engines`、インストーラの下限）。審査の再現ビルドはNode.js 24.xとnpm 11.x（`.nvmrc`、[BUILD.md](BUILD.md)）で、作った拡張機能のパッケージを提出したものと一致させる。
 - `playwright`（`packages/mcp-server`の任意の依存。`--omit=optional`を付けなければ`npm ci`で入る）。`npm run build`に必要（ヘッドレスバックエンドがその型をimportする）。`npm run test:e2e`と`npm run e2e:extension`には、そのFirefox（`npx playwright install firefox`）も必要。
 
 ## 作業の流れ

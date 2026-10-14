@@ -22,6 +22,8 @@ export type AuditDecision =
   | 'invalid_url'
   | 'blocked_after_navigation'
   | 'config_error'
+  /** The user paused agent actions in the toolbar popup; the browser refused the call. */
+  | 'paused'
   /**
    * The browser ran the call the guard allowed (its `allowed` line comes
    * first) and it failed: an ordinary error, not a safety decision.

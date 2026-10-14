@@ -97,10 +97,12 @@ export type DenialDecision = Exclude<
 
 /**
  * The layer each refusal belongs to. A config error is in no layer: the
- * whole policy could not be used, and every tool is refused.
+ * whole policy could not be used, and every tool is refused. Nor is a pause:
+ * the user's switch in the toolbar popup, not a rule of the policy.
  */
 export const LAYER_OF: Readonly<Record<DenialDecision, Layer | null>> = {
   config_error: null,
+  paused: null,
   out_of_scope: LAYER.containerScope,
   rate_limited: LAYER.rateLimit,
   blocked_scheme: LAYER.scheme,

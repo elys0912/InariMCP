@@ -169,6 +169,24 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
     expect(audit.mock.calls.map((c) => c[2])).toEqual(['allowed', 'config_error']);
   });
 
+  // The user's pause switch in the toolbar popup: a known refusal, in no
+  // layer, audited as paused, with no "unknown safetyDecision" warning.
+  it('paused is SAFETY_BLOCKED without a layer, audited as paused, and says the user paused the agent', async () => {
+    const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, protectedUrlPatterns: [] });
+    testGuard.current = g;
+    const audit = vi.spyOn(g, 'recordAudit');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    stubBrowser({ success: false, safetyDecision: 'paused', error: 'paused: the user paused agent actions' });
+
+    const result = await createToolHandler('fox_click')({ tabId: 3, selector: '#a' });
+    expect(result.isError).toBe(true);
+    const first = result.content[0];
+    expect(first?.type === 'text' ? first.text : '').toMatch(/^paused: The user paused the agent in the toolbar popup\./);
+    expect(details(result)).toEqual({ code: 'SAFETY_BLOCKED', decision: 'paused' });
+    expect(audit.mock.calls.map((c) => c[2])).toEqual(['allowed', 'paused']);
+    expect(stderr.mock.calls.map((c) => String(c[0])).join('')).not.toContain('unknown safetyDecision');
+  });
+
   // G-11: a decision this server does not know is no silent `denied`.
   it('an unknown safetyDecision is refused as denied and reported on stderr', async () => {
     const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, protectedUrlPatterns: [] });

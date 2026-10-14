@@ -48,8 +48,8 @@ export const LEGACY_ENV = {
 /** Default values for environment variables */
 export const ENV_DEFAULTS = {
   FOX_HOST: '127.0.0.1',
-  FOX_HTTP_PORT: 8765,
-  FOX_WS_PORT: 8766,
+  FOX_HTTP_PORT: 8785,
+  FOX_WS_PORT: 8786,
   FOX_HEADLESS_STARTUP_TIMEOUT: 45_000,
   HEALTH_CHECK_INTERVAL_MS: 10_000,
   HEALTH_CHECK_MAX_FAILURES: 2,

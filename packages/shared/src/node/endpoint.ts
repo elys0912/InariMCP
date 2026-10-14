@@ -3,8 +3,8 @@
  * Native Host (to reach it) resolve the same env vars the same way:
  *
  *   FOX_HOST      / CLAUDE_BROWSER_HOST       default 127.0.0.1
- *   FOX_HTTP_PORT / CLAUDE_BROWSER_HTTP_PORT  default 8765
- *   FOX_WS_PORT   / CLAUDE_BROWSER_WS_PORT    default 8766
+ *   FOX_HTTP_PORT / CLAUDE_BROWSER_HTTP_PORT  default 8785
+ *   FOX_WS_PORT   / CLAUDE_BROWSER_WS_PORT    default 8786
  *
  * An empty or blank value counts as unset (the legacy name, then the default,
  * apply); a set value is used without its surrounding blanks. A port must be an integer in 1..65535; anything else falls back to the

@@ -4,13 +4,13 @@
 
 **Let an MCP client such as Claude Code read and operate your everyday Firefox.** Your real profile and your real logins, no throwaway browser. Clicking, typing and navigating always wait for your approval.
 
-![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D18-green)
+![license](https://img.shields.io/badge/license-MIT-blue) ![node](https://img.shields.io/badge/node-%3E%3D20-green)
 
 ---
 
 **What it sends.** When the MCP client calls a tool, the extension reads what that tool needs from your tabs (page text and elements, form values, the URL and title, the list of open tabs, screenshots) and sends it to the native host on your computer. From there it goes to the MCP client you connected, and that client sends it to its AI provider. Nothing is sent to the developer. Password, hidden, one-time-code and credit card fields are masked; cookies are not read. Details: [Privacy](#privacy) and the [privacy policy](docs/PRIVACY.md).
 
-**What you need.** Firefox 142 or later with the extension from addons.mozilla.org; Node.js 18 or later and the native host from this repository (the extension does nothing without it); an MCP client such as Claude Code. See [Quick Start](#quick-start).
+**What you need.** Firefox 142 or later with the extension from addons.mozilla.org; Node.js 20 or later and the native host from this repository (the extension does nothing without it); an MCP client such as Claude Code. See [Quick Start](#quick-start).
 
 ## What is this?
 
@@ -20,7 +20,7 @@ It's a fork of [nanogenomic/ClaudeCodeBrowser](https://github.com/nanogenomic/Cl
 
 ### Inari MCP and KitsuneMCP
 
-Inari MCP for Firefox is the addons.mozilla.org edition of [KitsuneMCP](https://github.com/elys0912/KitsuneMCP), split off from KitsuneMCP 0.2.0 on 2026-10-14 and numbered from 0.1.0. It runs no scripts in pages, records no console or network logs, and asks before every action. It has its own add-on ID (`inari-mcp@elys0912.github.io`), native messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), so both can be installed in the same Firefox. Both use the same default ports (`8765` / `8766`), though: to run both at the same time, give one of them other ports (`FOX_HTTP_PORT`, `FOX_WS_PORT`).
+Inari MCP for Firefox is the addons.mozilla.org edition of [KitsuneMCP](https://github.com/elys0912/KitsuneMCP), split off from KitsuneMCP 0.2.0 on 2026-10-14 and numbered from 0.1.0. It runs no scripts in pages, records no console or network logs, and asks before every action. It has its own add-on ID (`inari-mcp@elys0912.github.io`), native messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), so both can be installed in the same Firefox. Its default ports (`8785` / `8786`) differ from KitsuneMCP's (`8765` / `8766`), so both can also run at the same time.
 
 ## Why?
 
@@ -56,7 +56,7 @@ Three steps: 1. [install the extension from AMO](#install-the-extension-from-amo
 ### Prerequisites
 
 - Firefox 142 or later (`strict_min_version` of the extension). Developer Edition and Nightly read the same Native Messaging registration as the release build
-- Node.js >= 18.0.0 (to run the native host and the MCP server; development needs more, see [Development](#development))
+- Node.js 20 or later (to run the native host and the MCP server; the reproducible build for the AMO review uses Node.js 24.x and npm 11.x, see [Development](#development))
 - An MCP client, such as Claude Code
 - (Headless mode only) Playwright and its Firefox. `playwright` is an optional dependency of `packages/mcp-server`: `npm ci` installs it unless optional dependencies are omitted (`--omit=optional`). Its Firefox is a separate download: `npx playwright install firefox`
 
@@ -93,7 +93,7 @@ The installer works the same way on Windows, macOS and Linux; macOS is untested 
 
 `npm run setup` (`node scripts/install.mjs`):
 
-1. checks Node.js (>= 18) and the build output (`packages/*/dist`), and looks for Firefox (warning only),
+1. checks Node.js (>= 20) and the build output (`packages/*/dist`), and looks for Firefox (warning only),
 2. writes the Native Messaging host wrapper (`run-host.cmd` / `run-host.sh`) to `~/.inari-mcp/native-host/`,
 3. writes the host manifest `inari_mcp.json` where Firefox reads it (Windows: next to the wrapper, with `HKCU\Software\Mozilla\NativeMessagingHosts\inari_mcp` pointing to it, for every edition; macOS: `~/Library/Application Support/Mozilla/NativeMessagingHosts/`; Linux: `~/.mozilla/native-messaging-hosts/`, plus the XDG, Snap and Flatpak directories when those builds seem to be present),
 4. prints the `claude mcp add` command, or runs it with `--register-claude` (see [Register with your MCP client](#register-with-your-mcp-client)).
@@ -178,7 +178,7 @@ The badge shows one state at a time, the first that applies: `OFF`, `II`, the ap
 6. For a low-level check, query the daemon:
 
 ```bash
-curl --noproxy '*' -sS http://127.0.0.1:8765/health    # Windows PowerShell: curl.exe --noproxy "*" -sS …
+curl --noproxy '*' -sS http://127.0.0.1:8785/health    # Windows PowerShell: curl.exe --noproxy "*" -sS …
 ```
 
 (`--noproxy` keeps a configured HTTP proxy out of a local request.) `"status":"ok"` means the daemon runs; `browsers_connected` should be `1` once the extension is connected (a few seconds after loading it). If nothing answers ("Connection refused"), no daemon is running yet: it is started by the first Claude Code session or by Firefox with the extension loaded, and it exits after 10 minutes unused. Then look at the logs.
@@ -289,7 +289,7 @@ Where the installer cannot run, set things up by hand. `node scripts/install.mjs
 
 6. Optional, Claude Code: `claude mcp add --scope user inari-mcp -- "C:\Program Files\nodejs\node.exe" "C:\path\to\InariMCP\packages\mcp-server\dist\index.js"`
 
-To uninstall by hand on Windows (order matters: while the host is registered and Firefox runs the extension, the Native Host starts the daemon again): `reg delete "HKCU\Software\Mozilla\NativeMessagingHosts\inari_mcp" /f`; `rmdir /s /q "%USERPROFILE%\.inari-mcp\native-host"`; `claude mcp remove --scope user inari-mcp`; remove the extension in Firefox or quit Firefox; find the daemon with `netstat -ano | findstr :8765` and stop it with `taskkill /PID <pid> /F`; optionally `rmdir /s /q "%USERPROFILE%\.inari-mcp"`.
+To uninstall by hand on Windows (order matters: while the host is registered and Firefox runs the extension, the Native Host starts the daemon again): `reg delete "HKCU\Software\Mozilla\NativeMessagingHosts\inari_mcp" /f`; `rmdir /s /q "%USERPROFILE%\.inari-mcp\native-host"`; `claude mcp remove --scope user inari-mcp`; remove the extension in Firefox or quit Firefox; find the daemon with `netstat -ano | findstr :8785` and stop it with `taskkill /PID <pid> /F`; optionally `rmdir /s /q "%USERPROFILE%\.inari-mcp"`.
 
 On Windows the Native Host starts the daemon outside Firefox's job object (otherwise closing Firefox kills the daemon and every Claude Code session using it). It tries PowerShell first, then WMI (`cscript`) and a one-off Task Scheduler task (`schtasks`); only if all of them fail is the daemon started inside the job, with a warning in `native-host.log`.
 
@@ -302,19 +302,20 @@ On Windows the Native Host starts the daemon outside Firefox's job object (other
 
 ## Permissions
 
-The extension asks for nine permissions. Paths are under `packages/extension/src/`.
+The extension asks for ten permissions. Paths are under `packages/extension/src/`.
 
 | Permission | What for | Where |
 |---|---|---|
 | `tabs` | The URL and title of every tab, `about:` and `file:` tabs included: the tab list (`fox_tabs`), finding the target tab, and checking a tab against the URL rules of `safety.json` before a command runs on it | `background/tabs.ts`, `background/tab-target.ts`, `background/url-policy.ts`, `background/screenshot.ts`, `background/reload.ts` |
 | `nativeMessaging` | The connection to the Native Host (`inari_mcp`), the only way commands reach the extension and results leave it | `background/native-connection.ts` |
 | `notifications` | An OS notification when an approval request waits in the popup, and when a CAPTCHA needs a human (`fox_detect_captcha`) | `background/approvals.ts`, `background/human-wait.ts`, `background/listeners.ts` (a click on the notification opens the popup) |
-| `<all_urls>` | The content script on every page (reading and acting on the page), `tabs.captureTab` for screenshots, and `tabs.executeScript` (the script tools, and the early injection of a logging tab) | `manifest.json` `content_scripts`, `background/screenshot.ts`, `background/page-actions.ts`, `background/listeners.ts` |
-| `contextMenus` | Two items of the page context menu: take a screenshot, inspect the element | `background/context-menu.ts` |
+| `storage` | `storage.local` keeps your answer on the permission page and the state of the pause switch ([First-run permission](#first-run-permission), [Pausing the agent](#pausing-the-agent)) | `background/control-state.ts` |
+| `<all_urls>` | The content script on every page (reading and acting on the page), and `tabs.captureTab` for screenshots | `manifest.json` `content_scripts`, `background/screenshot.ts` |
+| `contextMenus` | One item of the page context menu: take a screenshot | `background/context-menu.ts` |
 | `contextualIdentities` | Firefox containers: listing them (`fox_tabs` with `what: "containers"`), finding or creating the agent container of `container_scope`, and opening a tab in a container (`fox_tab` with `action: "create"` and `container`) | `background/container-scope.ts` |
 | `cookies` | No cookie is read or written (`browser.cookies` is not used). Firefox requires this permission to open a tab in a container: `tabs.create` with `cookieStoreId` | `background/container-scope.ts` (`openInContainer`), `background/tabs.ts` (`createNewTab`) |
 | `find` | `browser.find.find` for text search in the page (`fox_find` with `by: "text"`) | `background/tabs.ts` (`findText`) |
-| `webNavigation` | Waiting for a tab's navigation to finish (`fox_wait` with `for: "navigation"`), and the early injection of a logging tab when a new page commits | `background/tab-wait.ts`, `background/listeners.ts` |
+| `webNavigation` | Waiting for a tab's navigation to finish (`fox_wait` with `for: "navigation"`) | `background/tab-wait.ts` |
 
 The agent can create a Firefox container: `fox_tab` with `action: "create"` and a `container` name that does not exist creates it, and with `container_scope` on, opening a new tab creates the agent container when it does not exist yet. Creating a container is not one of the actions that ask a human by themselves.
 
@@ -356,8 +357,8 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 | Variable | Default | Read by | Description |
 |---|---|---|---|
 | `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host, uninstaller | Address of the HTTP/WS server. Loopback addresses only (127.0.0.0/8, `::1`, `localhost`): with any other value the daemon logs an error and does not start. An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_HOST` |
-| `FOX_HTTP_PORT` | `8765` | daemon, relay, Native Host, uninstaller | HTTP port (also the daemon's singleton lock). An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_HTTP_PORT` |
-| `FOX_WS_PORT` | `8766` | daemon, Native Host | WebSocket port the Native Host connects to. An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_WS_PORT` |
+| `FOX_HTTP_PORT` | `8785` | daemon, relay, Native Host, uninstaller | HTTP port (also the daemon's singleton lock). An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_HTTP_PORT` |
+| `FOX_WS_PORT` | `8786` | daemon, Native Host | WebSocket port the Native Host connects to. An empty or blank value counts as unset (the legacy name, then the default, applies). Legacy: `CLAUDE_BROWSER_WS_PORT` |
 | `FOX_CAPS` | unset (all tools) | relay | Tool profiles, comma-separated (see [below](#fox_caps-profiles)); `legacy` lists the earlier tool names instead (see [Tool name migration](#tool-name-migration)). **Not a safety boundary** — it only trims which tool schemas this session registers, to save context tokens. The daemon accepts every tool from every caller; actual restrictions (read-only, URL limits, container scope) come from `safety.json` / the safety guard |
 | `FOX_HEADLESS` | unset | daemon | `1` / `true` / `yes` uses the headless Playwright backend; anything else leaves it off (an unrecognised value such as `on` is logged as a warning). Legacy: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | Launch timeout of the headless Firefox in **milliseconds** (not seconds). Legacy: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
@@ -377,7 +378,7 @@ The names below are the ones the code reads. Where noted, the old `CLAUDE_BROWSE
 | Profile | Tools |
 |---|---|
 | `core` | `fox_navigate`, `fox_click`, `fox_type`, `fox_press_key`, `fox_set_value`, `fox_screenshot`, `fox_snapshot`, `fox_read`, `fox_find`, `fox_tabs`, `fox_tab`, `fox_interact`, `fox_wait`, `fox_handle_dialog` |
-| `workflow` | none (the earlier `fox_wait_and_act` was removed with the script tools; `fox_run_workflow` and `fox_audit_page` were never implemented) |
+| `workflow` | none (`fox_run_workflow` and `fox_audit_page` were never implemented) |
 | `human` | `fox_request_approval`, `fox_detect_captcha` |
 | `container` | `fox_tabs`, `fox_tab` (containers are `fox_tabs` with `what: "containers"` and `fox_tab` with `action: "create"` and `container`) |
 | `wait` | `fox_wait` |
@@ -413,8 +414,6 @@ The 31 earlier tools were merged into 17: related operations became one tool wit
 | `fox_run_workflow`, `fox_audit_page` | none | were not implemented on any backend; still callable by name, with the same error |
 
 Unchanged: `fox_screenshot`, `fox_snapshot`, `fox_navigate`, `fox_click`, `fox_type`, `fox_press_key`, `fox_handle_dialog`, `fox_request_approval`, `fox_detect_captcha`, `fox_safety_status`.
-
-Removed under every name: the script tools (`fox_evaluate`, `fox_observer`; earlier `fox_execute_script`, `fox_eval_chain`, `fox_wait_and_act`, `fox_inject_observer`, `fox_remove_observer`) and the logging tools (`fox_logging`, `fox_get_logs`; earlier `fox_start_logging`, `fox_stop_logging`, `fox_clear_logs`, `fox_get_console_logs`, `fox_get_network_logs`). See the [changelog](docs/CHANGELOG.md).
 
 ### `safety.json`
 
@@ -525,7 +524,7 @@ Build, packages and checks in detail: [`docs/development.md`](docs/development.m
 
 `npm audit` reports 11 vulnerabilities, all in the dependency tree of `web-ext` (a devDependency); they are accepted. Audit with `npm audit --omit=dev` (0 vulnerabilities): the distributed parts (mcp-server, native-host, the extension `.xpi`) do not contain web-ext.
 
-`npm test` runs the Vitest suites (unit tests per package, contract tests in `tests/contract/`, installer tests in `tests/scripts/`). Each test file gets a temporary home directory, so the tests never touch your `~/.inari-mcp/`. Development needs Node.js 24 and npm 11 (the versions of the AMO review environment; `.nvmrc`), although running InariMCP only needs Node.js 18.
+`npm test` runs the Vitest suites (unit tests per package, contract tests in `tests/contract/`, installer tests in `tests/scripts/`). Each test file gets a temporary home directory, so the tests never touch your `~/.inari-mcp/`. Running InariMCP needs Node.js 20 or later; the reproducible build for the AMO review uses Node.js 24.x and npm 11.x (`.nvmrc`, [docs/BUILD.md](docs/BUILD.md)).
 
 End-to-end checks, kept out of `npm test`:
 

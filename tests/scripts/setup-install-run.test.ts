@@ -392,7 +392,7 @@ describe('install (real run in a temp home)', () => {
     const ctx = realRunDeps(home, repoRoot, { env: { PATH: '', FOX_HTTP_PORT: '9999' } });
     expect(await runInstall([], ctx.deps)).toBe(0);
     expect(ctx.text()).toContain('-s http://127.0.0.1:9999/health');
-    expect(ctx.text()).not.toContain(':8765');
+    expect(ctx.text()).not.toContain(':8785');
   });
 
   it('reports a usage error with exit code 2 and writes nothing', async () => {

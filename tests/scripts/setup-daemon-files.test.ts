@@ -174,7 +174,7 @@ describe('probeDaemon', () => {
 
 describe('stopDaemonGracefully', () => {
   const token = 'c'.repeat(64);
-  const endpoint = { host: '127.0.0.1', port: 8765 };
+  const endpoint = { host: '127.0.0.1', port: 8785 };
   type Answer = { status: number; headers: Record<string, string>; body: Buffer } | null;
 
   /** POST /daemon/shutdown answered by `post`; /health answers `healthAnswers` times, then goes quiet. */
@@ -480,7 +480,7 @@ describe('daemon authentication copy', () => {
     expect(MAX_PORT).toBe(SHARED_MAX_PORT);
     expect(httpEndpoint({ FOX_HOST: '[::ffff:127.0.0.1]', FOX_HTTP_PORT: String(MAX_PORT) }))
       .toEqual({ host: '::ffff:127.0.0.1', port: MAX_PORT });
-    expect(httpEndpoint({ FOX_HTTP_PORT: String(MAX_PORT + 1) }).port).toBe(8765);
+    expect(httpEndpoint({ FOX_HTTP_PORT: String(MAX_PORT + 1) }).port).toBe(8785);
   });
 
   it('httpEndpoint treats an empty or blank variable as unset like @inari-mcp/shared (R2-A R-2, R3 N-1)', () => {
@@ -490,7 +490,7 @@ describe('daemon authentication copy', () => {
     const legacyHostEnv = { FOX_HOST: '', CLAUDE_BROWSER_HOST: legacyHost };
     const emptyEnv = { FOX_HOST: '', FOX_HTTP_PORT: '' };
     const blankEnv = { FOX_HOST: ' ', FOX_HTTP_PORT: ' ', CLAUDE_BROWSER_HTTP_PORT: String(legacyPort) };
-    const paddedEnv = { FOX_HOST: ' 127.0.0.1 ', FOX_HTTP_PORT: ' 8765 ' };
+    const paddedEnv = { FOX_HOST: ' 127.0.0.1 ', FOX_HTTP_PORT: ' 8785 ' };
     for (const env of [legacyPortEnv, legacyHostEnv, emptyEnv, blankEnv, paddedEnv]) {
       const endpoint = httpEndpoint(env);
       expect(endpoint.port, JSON.stringify(env)).toBe(serverAuth.resolveHttpPort(undefined, env));
@@ -499,6 +499,6 @@ describe('daemon authentication copy', () => {
     expect(httpEndpoint(legacyPortEnv).port).toBe(legacyPort);
     expect(httpEndpoint(legacyHostEnv).host).toBe(legacyHost);
     expect(httpEndpoint(blankEnv)).toEqual({ host: '127.0.0.1', port: legacyPort });
-    expect(httpEndpoint(paddedEnv)).toEqual({ host: '127.0.0.1', port: 8765 });
+    expect(httpEndpoint(paddedEnv)).toEqual({ host: '127.0.0.1', port: 8785 });
   });
 });

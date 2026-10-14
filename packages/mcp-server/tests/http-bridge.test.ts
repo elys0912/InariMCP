@@ -506,12 +506,12 @@ describe('daemon state seen by tool calls', () => {
 
 describe('isAllowedHostHeader', () => {
   it.each([
-    ['127.0.0.1:8765', true],
+    ['127.0.0.1:8785', true],
     ['localhost', true],
     ['LOCALHOST:1', true],
-    ['[::1]:8765', true],
-    ['10.0.0.5:8765', true],
-    ['myhost.local:8765', false],
+    ['[::1]:8785', true],
+    ['10.0.0.5:8785', true],
+    ['myhost.local:8785', false],
     ['127.0.0.1.nip.io', false],
     ['[::1', false],
   ])('%s → %s', (hostHeader, allowed) => {
@@ -519,7 +519,7 @@ describe('isAllowedHostHeader', () => {
   });
 
   it('accepts the configured host name and a missing header', () => {
-    expect(isAllowedHostHeader('myhost.local:8765', 'myhost.local')).toBe(true);
+    expect(isAllowedHostHeader('myhost.local:8785', 'myhost.local')).toBe(true);
     expect(isAllowedHostHeader(undefined, '127.0.0.1')).toBe(true);
   });
 });

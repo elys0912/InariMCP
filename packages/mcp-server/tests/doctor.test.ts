@@ -248,6 +248,13 @@ describe('doctor', () => {
     expect(byId(results, 'daemon')).toMatchObject({ status: 'FAIL' });
     expect(byId(results, 'safety-config')).toMatchObject({ status: 'FAIL' });
   });
+
+  it('node: the engines of this repository accept Node.js 20 and refuse 18', async () => {
+    expect(byId(await runChecks(deps(undefined, { nodeVersion: '20.0.0' })), 'node'))
+      .toMatchObject({ status: 'OK', detail: 'v20.0.0 (engines >=20)' });
+    expect(byId(await runChecks(deps(undefined, { nodeVersion: '18.20.4' })), 'node'))
+      .toMatchObject({ status: 'FAIL' });
+  });
 });
 
 describe('doctor: native-messaging', () => {

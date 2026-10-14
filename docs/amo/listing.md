@@ -38,7 +38,7 @@ When the MCP client calls a tool, the extension reads what that tool needs from 
 Password, hidden, one-time-code and credit card fields are masked and never sent. Cookies are not read.
 
 What you need
-- Node.js 18 or later
+- Node.js 20 or later
 - The native host and MCP server from https://github.com/elys0912/InariMCP (clone, then npm ci, npm run build, npm run setup). The extension does nothing without it.
 - An MCP client, such as Claude Code
 
@@ -78,7 +78,7 @@ MCP クライアントがツールを呼ぶと、拡張機能はそのツール�
 パスワード・hidden・ワンタイムコード・クレジットカードの欄は伏せて、送らない。cookie は読まない。
 
 要るもの
-- Node.js 18 以上
+- Node.js 20 以上
 - https://github.com/elys0912/InariMCP のネイティブホストと MCP サーバー（clone して npm ci、npm run build、npm run setup）。これが無いと拡張機能は何もしない。
 - Claude Code などの MCP クライアント
 

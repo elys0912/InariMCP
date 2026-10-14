@@ -129,7 +129,7 @@ Registers the InariMCP Native Messaging host for Firefox (Windows / macOS /
 Linux, no PowerShell needed) and, on request, the MCP server with Claude Code.
 Safe to run again: unchanged files and registrations are left alone.
 
-  1. checks Node.js (>= 18) and the build output (packages/*/dist)
+  1. checks Node.js (>= 20) and the build output (packages/*/dist)
   2. creates ~/.inari-mcp/native-host/ with the host wrapper (run-host.cmd / run-host.sh)
   3. writes ${HOST_NAME}.json where Firefox reads it
        Windows: ~/.inari-mcp/native-host/${HOST_NAME}.json + registry ${WIN_REG_KEY}

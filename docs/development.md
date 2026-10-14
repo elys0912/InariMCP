@@ -6,7 +6,7 @@ How the packages are built and checked. For using InariMCP, see the [README](../
 
 ## Requirements
 
-- Node.js 24 and npm 11 for development (`.nvmrc`, `engines` in `package.json`): the versions of the AMO review environment, so the Extension package you build matches the submitted one. Running InariMCP itself needs only Node.js 18 (the installer's minimum).
+- Running InariMCP needs Node.js 20 or later (`engines` in `package.json`, the installer's minimum). The reproducible build for the AMO review uses Node.js 24.x and npm 11.x (`.nvmrc`, [BUILD.md](BUILD.md)), so the Extension package you build matches the submitted one.
 - `playwright` (an optional dependency of `packages/mcp-server`, installed by `npm ci` unless `--omit=optional` is given). `npm run build` needs it: the headless backend imports its types. `npm run test:e2e` and `npm run e2e:extension` also need its Firefox (`npx playwright install firefox`).
 
 ## Workflow

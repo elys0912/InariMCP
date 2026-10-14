@@ -183,6 +183,8 @@ export const BROWSER_SAFETY_DECISIONS = [
   'not_allowlisted',
   'out_of_scope',
   'config_error',
+  // The user paused agent actions in the toolbar popup (dispatch.ts).
+  'paused',
 ] as const;
 export type BrowserSafetyDecision = (typeof BROWSER_SAFETY_DECISIONS)[number];
 

@@ -14,7 +14,7 @@ Tools:
 
 | Tool | Version | Note |
 |---|---|---|
-| Node.js | 24.x (tested with 24.14) | `.nvmrc` says `24`; `package.json` `engines` says `>=24.0.0` |
+| Node.js | 24.x (tested with 24.14) | `.nvmrc` says `24`. Running Inari MCP needs Node.js 20 or later (`package.json` `engines`: `>=20`); the reproducible build for the review uses Node.js 24.x |
 | npm | 11.x (the one that comes with Node.js 24) | |
 
 Nothing else is needed: no compiler, no Python, no Java, no network access other than the npm registry in the first step.

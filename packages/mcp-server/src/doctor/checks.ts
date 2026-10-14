@@ -130,7 +130,7 @@ const UNROTATED_LOG_BYTES = 2 * MAX_LOG_BYTES;
 const NM_HOST_NAME = 'inari_mcp';
 const CLAUDE_SERVER_NAME = 'inari-mcp';
 /** Node.js major assumed when package.json has no readable engines.node. */
-const DEFAULT_NODE_MAJOR = 18;
+const DEFAULT_NODE_MAJOR = 20;
 const DEFAULT_NODE_ENGINES = `>=${DEFAULT_NODE_MAJOR}.0.0`;
 /**
  * Lines the doctor looks for in native-host.log. They mirror the Native
@@ -365,7 +365,7 @@ function sessionEnv(ctx: DoctorContext): Record<string, string | undefined> {
 // Checks
 // ---------------------------------------------------------------------------
 
-/** The first number of an engines range (`>=18.0.0` → 18), if any. */
+/** The first number of an engines range (`>=20` → 20), if any. */
 function majorOf(range: string): number | undefined {
   const digits = /(\d+)/.exec(range)?.[1];
   return digits === undefined ? undefined : Number(digits);

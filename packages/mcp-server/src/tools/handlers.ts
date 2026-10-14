@@ -742,7 +742,12 @@ const BROWSER_REFUSAL_NOTES_URL: Readonly<Record<Exclude<BrowserSafetyDecision, 
   blocked_url: true,
   not_allowlisted: true,
   config_error: false,
+  paused: false,
 };
+
+/** The tool result text of a refusal while the user has paused the agent. */
+const PAUSED_MESSAGE =
+  'paused: The user paused the agent in the toolbar popup. Every call is refused until the user turns the pause switch off.';
 
 /** The URL a browser result reports (`data.url`), or null. */
 function reportedUrlOf(response: BrowserResponse): string | null {
@@ -754,8 +759,9 @@ function reportedUrlOf(response: BrowserResponse): string | null {
  * The result of a refusal the browser made itself (`safetyDecision`):
  * confirmation_required (the actual target tab is protected: the same
  * elicitation result as guard Layer 7), Layer 0 out_of_scope, Layer 3
- * blocked_url / not_allowlisted on the actual target tab, or config_error
- * (the browser could not use the attached rules): SAFETY_BLOCKED, distinct
+ * blocked_url / not_allowlisted on the actual target tab, config_error
+ * (the browser could not use the attached rules), or paused (the user's
+ * pause switch in the toolbar popup): SAFETY_BLOCKED, distinct
  * from ordinary browser errors. A decision this server does not know is
  * refused as `denied` and reported on stderr.
  */
@@ -804,7 +810,9 @@ function browserRefusalToResult(
   return safetyDenialToCallResult({
     safetyDecision: decision,
     layer: LAYER_OF[decision],
-    error: response.error ?? `Refused by browser safety check (${decision})`,
+    error: decision === 'paused'
+      ? PAUSED_MESSAGE
+      : response.error ?? `Refused by browser safety check (${decision})`,
     ...(notesUrl ? { url: refusedUrl } : {}),
   });
 }

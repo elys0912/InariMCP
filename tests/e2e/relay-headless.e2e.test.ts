@@ -8,7 +8,7 @@
  * Isolation: HOME / USERPROFILE point at a temporary directory
  * (tests/setup/isolate-home.ts; token, safety.json, audit log and
  * screenshots go there) and the daemon gets free ports, so a daemon in real
- * use on 8765/8766 is neither reused nor disturbed.
+ * use on 8785/8786 is neither reused nor disturbed.
  *
  * Cleanup: the relay spawns the daemon detached, and the daemon only exits
  * after RELAY_TTL (90 s) + idle timeout. The test therefore stops it over

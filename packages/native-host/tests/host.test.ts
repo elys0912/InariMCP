@@ -105,11 +105,11 @@ describe('processMessage replies (shared/host-messages.ts)', () => {
   it('status reports a running daemon with its relays and version', async () => {
     const up = {
       host: '127.0.0.1',
-      httpPort: 8765,
+      httpPort: 8785,
       checkHealth: vi.fn(async () => true),
       fetchDaemonInfo: vi.fn(async () => ({ relays: 2, version: '9.9.9' })),
     } as unknown as ServerLauncher;
-    const connected = { url: 'ws://127.0.0.1:8766', isConnected: true, send: vi.fn(() => true) } as unknown as ServerConnection;
+    const connected = { url: 'ws://127.0.0.1:8786', isConnected: true, send: vi.fn(() => true) } as unknown as ServerConnection;
     processMessage({ action: 'status', requestId: 's2' }, up, connected);
     await vi.waitFor(() => expect(decodeFrames(out)).toHaveLength(1));
     expect(decodeFrames(out)[0]).toMatchObject({

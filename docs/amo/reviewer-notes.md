@@ -17,8 +17,9 @@ Source: https://github.com/elys0912/InariMCP (tag v<version>). The native host a
 - tabs: list tabs for the tab-listing tool, create / close / switch / reload tabs, read the URL and title of the target tab (URL checks run on them), and tabs.captureTab for screenshots.
 - nativeMessaging: runtime.connectNative("inari_mcp"), the only channel to the local host.
 - notifications: an OS notification when an action waits for the user's approval, and when a CAPTCHA is detected and the user has to act.
+- storage: storage.local keeps the user's answer on the permission page and the state of the pause switch.
 - <all_urls>: the packaged content script runs on web pages to read text and elements and to perform approved clicks and typing; captureTab needs it for screenshots.
-- contextMenus: two menu items, "Take Screenshot for InariMCP" (page) and "Inspect Element for InariMCP".
+- contextMenus: one menu item, "Take Screenshot for InariMCP" (page).
 - contextualIdentities: optional container scope (the agent is limited to one container, off by default), listing containers, and opening a tab in a container.
 - cookies: only because Firefox requires it to pass cookieStoreId to tabs.create (opening a tab in a container). The cookies API is never called; no cookie is read or sent.
 - find: browser.find.find for the text search mode of fox_find.
@@ -35,11 +36,11 @@ Native messaging carries tool results to the local host: page text and elements,
 Privacy policy: https://github.com/elys0912/InariMCP/blob/main/docs/PRIVACY.md
 
 4. No remote code
-- No eval, no new Function, no string passed to setTimeout, no tabs.executeScript with a "code" string. Nothing received from the native host is executed as code.
+- No eval, no new Function, no string passed to setTimeout, no tabs.executeScript. Nothing received from the native host is executed as code.
 - The only content script is the packaged file dist/content.js (with dist/content.css), declared in manifest.json. Extension pages load only packaged scripts; the default CSP is not changed.
 
 5. How to test
-No account or credentials are needed. Testing needs Node.js 18 or later and the native host:
+No account or credentials are needed. Testing needs Node.js 20 or later and the native host:
   git clone https://github.com/elys0912/InariMCP.git && cd InariMCP && git checkout v<version>
   npm ci && npm run build && npm run setup
 Then follow docs/amo/reviewer-smoke.md: scripts/e2e/reviewer-smoke.mjs drives the basic functions (open a tab, read it, click with approval, screenshot) against a local test page, without the internet and without an MCP client.

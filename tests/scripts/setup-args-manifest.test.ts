@@ -273,7 +273,7 @@ describe('manual steps (--help / --manual)', () => {
     const md = manualMarkdown('uninstall');
     expect(md).toContain('rm -rf "$HOME/.inari-mcp"/native-host');
     expect(md).not.toContain('~/.inari-mcp/native-host`');
-    expect(md).toContain('lsof -tiTCP:8765');
+    expect(md).toContain('lsof -tiTCP:8785');
     const v = { repoRoot: '/r', nodePath: '/n', dataDir: '/d', port: 9999 };
     expect(manualForPlatform('uninstall', 'linux', v)).toContain('lsof -tiTCP:9999');
     expect(manualForPlatform('uninstall', 'win32', v)).toContain('findstr :9999');

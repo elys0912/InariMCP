@@ -1,8 +1,8 @@
 /**
  * InariMCP shared daemon (`node dist/index.js --daemon`).
  *
- * The one process that owns the HTTP (FOX_HTTP_PORT, default 8765) and
- * WebSocket (FOX_WS_PORT, default 8766) ports, and with them the
+ * The one process that owns the HTTP (FOX_HTTP_PORT, default 8785) and
+ * WebSocket (FOX_WS_PORT, default 8786) ports, and with them the
  * SafetyGuard (rate limit, audit log, current URL), the browser connection
  * manager, the ws-bridge the Native Host connects to, and the headless
  * backend. Every Claude Code session reaches it through its own stdio relay

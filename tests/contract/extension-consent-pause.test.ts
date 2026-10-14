@@ -241,7 +241,7 @@ describe('dispatch: paused and running commands', () => {
 
     const result = await handleCommand({ action: 'get_tabs', requestId: 'r-1' }, 'host');
     expect(result).toMatchObject({ success: false, error: expect.stringMatching(/^paused: /) });
-    expect(posted).toEqual([{ requestId: 'r-1', success: false, error: result.error }]);
+    expect(posted).toEqual([{ requestId: 'r-1', success: false, error: result.error, safetyDecision: 'paused' }]);
     expect(fake.tabQueries).toBe(0);
     // A refused command is not shown as running.
     expect(fake.badgeText).not.toContain('●');
@@ -293,7 +293,7 @@ describe('listeners: consent page and pause switch messages', () => {
   }
 
   const pageTab = { id: 4, url: 'https://app.example.test/', active: true, windowId: 1, index: 0, pinned: false, status: 'complete', discarded: false, audible: false };
-  const contentScript: browser.runtime.MessageSender = { id: EXTENSION_ID, url: pageTab.url, tab: pageTab, frameId: 0 };
+  const contentScript: browser.runtime.MessageSender = { id: EXTENSION_ID, url: pageTab.url, tab: pageTab };
   const popup: browser.runtime.MessageSender = { id: EXTENSION_ID, url: POPUP_URL };
   const popupInTab: browser.runtime.MessageSender = { ...popup, tab: { ...pageTab, id: 9, url: POPUP_URL } };
   const consentPage: browser.runtime.MessageSender = { id: EXTENSION_ID, url: CONSENT_URL, tab: { ...pageTab, id: 7, url: CONSENT_URL } };

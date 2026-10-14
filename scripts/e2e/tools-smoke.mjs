@@ -3,7 +3,7 @@
 // daemon's HTTP API (POST /mcp/call) and checks the results.
 //
 // Prerequisites: installer run, Firefox running with the extension loaded
-// (`curl -s http://127.0.0.1:8765/health` shows "browsers_connected":1).
+// (`curl -s http://127.0.0.1:8785/health` shows "browsers_connected":1).
 // For a throwaway profile with the extension loaded as a temporary add-on
 // (web-ext is a devDependency; run from the repository root):
 //   npx web-ext run --start-url about:blank
@@ -19,7 +19,7 @@
 // in a new tab (closed again at the end). Needs internet access.
 //
 // Usage: node scripts/e2e/tools-smoke.mjs
-//   FOX_HOST / FOX_HTTP_PORT override the daemon address (default 127.0.0.1:8765;
+//   FOX_HOST / FOX_HTTP_PORT override the daemon address (default 127.0.0.1:8785;
 //   same rules as the installer: loopback hosts only, legacy CLAUDE_BROWSER_* names)
 // Requests are signed with the API token (the token itself is never sent).
 // Exit code: 0 = all checks pass, 1 = at least one failed
