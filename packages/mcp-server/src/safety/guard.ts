@@ -87,6 +87,28 @@ export interface CallLabel {
   args: Record<string, unknown>;
 }
 
+/** SafetyGuard.check: who called, and the approval presented for the call. */
+export interface GuardCheckOptions {
+  /** The caller's transport (audit log). */
+  transport?: string;
+  /**
+   * A consumed human-approval token for this exact call
+   * (safety/approval.ts). It lifts only a Layer 4/7
+   * `confirmation_required` for the approved site; every other denial
+   * stands. A call the grant let through is audited as
+   * `allowed_by_human`; a grant that lifts nothing changes nothing.
+   */
+  grant?: ApprovalGrant | null;
+  /** The tool name and arguments the caller used, when it called an operation through a grouped tool. */
+  label?: CallLabel;
+}
+
+/** The audit decision of a checked call: the denial's, else whether a human approval let it through. */
+function auditDecisionOf(denial: SafetyDenial | null, liftedByHuman: boolean): AuditDecision {
+  if (denial !== null) return denial.safetyDecision;
+  return liftedByHuman ? 'allowed_by_human' : 'allowed';
+}
+
 /** The decisions a denial carries: those of the audit log that refuse. */
 export type DenialDecision = Exclude<
   AuditDecision,
@@ -230,20 +252,11 @@ export class SafetyGuard {
   }
 
   /**
-   * @param grant  A consumed human-approval token for this exact call
-   *               (safety/approval.ts). It lifts only a Layer 4/7
-   *               `confirmation_required` for the approved site; every other
-   *               denial stands. A call the grant let through is audited
-   *               as `allowed_by_human`; a grant that lifts nothing
-   *               changes nothing.
+   * The safety decision on one tool call: null to run it, else the denial.
+   * Every decision is audited.
    */
-  check(
-    toolName: string,
-    args: Record<string, unknown>,
-    transport?: string,
-    grant?: ApprovalGrant | null,
-    label?: CallLabel,
-  ): SafetyDenial | null {
+  check(toolName: string, args: Record<string, unknown>, options: GuardCheckOptions = {}): SafetyDenial | null {
+    const { transport, grant, label } = options;
     const shown = label?.tool ?? toolName;
     const targetUrl = targetUrlOf(toolName, args);
     const currentUrl = this.urlFor(this._tabIdArg(args));
@@ -252,12 +265,7 @@ export class SafetyGuard {
     // whatever its `enabled` flag says.
     if (this._configError !== null) {
       this.recordAudit(toolName, args, 'config_error', transport, label, targetUrl ?? currentUrl);
-      return this._deny(
-        'config_error',
-        `${shown} refused: the safety config cannot be used (${this._configError}). ` +
-        'Every tool is refused until it is fixed and the InariMCP daemon restarted. ' +
-        'fox_safety_status shows the error.',
-      );
+      return this._configErrorDenial(shown, this._configError);
     }
 
     // Off, the guard asks nothing; the human approval stays: the Extension
@@ -271,29 +279,32 @@ export class SafetyGuard {
     // The grant counts only when it lifts this very denial: a grant for
     // another host, or for a call that needed none, changes nothing.
     const liftedByHuman = grantCoversDenial(inner, grant);
-    let denial = liftedByHuman ? null : inner;
+    const denial = (liftedByHuman ? null : inner) ?? this._rateLimitDenial(toolName);
 
-    // Layer 1: Rate limit, checked last so that only calls that would run
-    // count: refused calls and fox_safety_status do not use up the budget.
-    if (denial === null && toolName !== SAFETY_STATUS_TOOL && !this._withinRateLimit()) {
-      denial = this._deny(
-        'rate_limited',
-        `Rate limit exceeded: more than ${this.config.maxActionsPerMinute} actions ` +
-        'in the last minute. Wait a few seconds and retry.',
-      );
-    }
-
-    let decision: AuditDecision;
-    if (denial !== null) {
-      decision = denial.safetyDecision;
-    } else if (liftedByHuman) {
-      decision = 'allowed_by_human';
-    } else {
-      decision = 'allowed';
-    }
-
-    this.recordAudit(toolName, args, decision, transport, label, targetUrl ?? currentUrl);
+    this.recordAudit(toolName, args, auditDecisionOf(denial, liftedByHuman), transport, label, targetUrl ?? currentUrl);
     return denial;
+  }
+
+  private _configErrorDenial(shown: string, configError: string): SafetyDenial {
+    return this._deny(
+      'config_error',
+      `${shown} refused: the safety config cannot be used (${configError}). ` +
+      'Every tool is refused until it is fixed and the InariMCP daemon restarted. ' +
+      'fox_safety_status shows the error.',
+    );
+  }
+
+  /**
+   * Layer 1: Rate limit, checked last so that only calls that would run
+   * count: refused calls and fox_safety_status do not use up the budget.
+   */
+  private _rateLimitDenial(toolName: string): SafetyDenial | null {
+    if (toolName === SAFETY_STATUS_TOOL || this._withinRateLimit()) return null;
+    return this._deny(
+      'rate_limited',
+      `Rate limit exceeded: more than ${this.config.maxActionsPerMinute} actions ` +
+      'in the last minute. Wait a few seconds and retry.',
+    );
   }
 
   /**

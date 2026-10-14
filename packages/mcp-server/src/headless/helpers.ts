@@ -182,7 +182,7 @@ export const HEADLESS_IGNORED: Readonly<Partial<Record<BrowserAction, readonly I
   refresh: [{ key: 'bypassCache', def: false, note: 'cache is not bypassed' }],
   screenshot: [
     { key: 'saveToFile', def: true, note: 'the screenshot is always saved to a file' },
-    // fox_screenshot timeout is the all_tabs time budget (WP5); scope
+    // fox_screenshot timeout is the all_tabs time budget; scope
     // all_tabs is not supported here, a single capture has no own timeout.
     { key: 'timeout', note: 'it is the all_tabs time budget; all_tabs is not supported in headless mode' },
   ],

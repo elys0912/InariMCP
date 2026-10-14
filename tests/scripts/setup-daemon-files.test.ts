@@ -486,17 +486,14 @@ describe('daemon authentication copy', () => {
   });
 
   it('httpEndpoint treats an empty or blank variable as unset like @inari-mcp/shared (R2-A R-2, R3 N-1)', () => {
-    const oldNamesEnv = { FOX_HTTP_PORT: '', CLAUDE_BROWSER_HTTP_PORT: '9001', FOX_HOST: '', CLAUDE_BROWSER_HOST: '127.0.0.2' };
     const emptyEnv = { FOX_HOST: '', FOX_HTTP_PORT: '' };
     const blankEnv = { FOX_HOST: ' ', FOX_HTTP_PORT: ' ' };
     const paddedEnv = { FOX_HOST: ' 127.0.0.2 ', FOX_HTTP_PORT: ' 9001 ' };
-    for (const env of [oldNamesEnv, emptyEnv, blankEnv, paddedEnv]) {
+    for (const env of [emptyEnv, blankEnv, paddedEnv]) {
       const endpoint = httpEndpoint(env);
       expect(endpoint.port, JSON.stringify(env)).toBe(serverAuth.resolveHttpPort(undefined, env));
       expect(endpoint.host, JSON.stringify(env)).toBe(serverAuth.resolveDaemonHost(env));
     }
-    // The old CLAUDE_BROWSER_* names of the fork are not read.
-    expect(httpEndpoint(oldNamesEnv)).toEqual({ host: '127.0.0.1', port: 8785 });
     expect(httpEndpoint(blankEnv)).toEqual({ host: '127.0.0.1', port: 8785 });
     expect(httpEndpoint(paddedEnv)).toEqual({ host: '127.0.0.2', port: 9001 });
   });

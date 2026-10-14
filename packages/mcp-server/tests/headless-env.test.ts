@@ -24,10 +24,9 @@ describe('isTruthyEnv', () => {
 });
 
 describe('isHeadlessEnabled', () => {
-  it('reads FOX_HEADLESS, not the old CLAUDE_BROWSER_HEADLESS', () => {
+  it('reads FOX_HEADLESS', () => {
     expect(isHeadlessEnabled({})).toBe(false);
     expect(isHeadlessEnabled({ FOX_HEADLESS: '1' })).toBe(true);
-    expect(isHeadlessEnabled({ CLAUDE_BROWSER_HEADLESS: 'true' })).toBe(false);
   });
 
   it('FOX_HEADLESS=0 / false is off (it used to count as on)', () => {
@@ -64,10 +63,9 @@ describe('resolveFoxEnv', () => {
 });
 
 describe('headlessStartupTimeoutMs', () => {
-  it('uses the setting, else the default (the old CLAUDE_BROWSER_* name is not read)', () => {
+  it('uses the setting, else the default', () => {
     expect(headlessStartupTimeoutMs({ FOX_HEADLESS_STARTUP_TIMEOUT: '1234' })).toBe(1234);
     const def = ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT;
-    expect(headlessStartupTimeoutMs({ CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT: '99' })).toBe(def);
     expect(headlessStartupTimeoutMs({})).toBe(def);
     expect(headlessStartupTimeoutMs({ FOX_HEADLESS_STARTUP_TIMEOUT: 'abc' })).toBe(def);
     expect(headlessStartupTimeoutMs({ FOX_HEADLESS_STARTUP_TIMEOUT: '-5' })).toBe(def);
@@ -137,9 +135,8 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
     }
   });
 
-  it('the old CLAUDE_BROWSER_HEADLESS selects no headless backend', () => {
+  it('a blank FOX_HEADLESS selects no headless backend', () => {
     vi.stubEnv('FOX_HEADLESS', '');
-    vi.stubEnv('CLAUDE_BROWSER_HEADLESS', 'yes');
     expect(checkHeadlessContainerScope(config)).toBeNull();
     expect(scopedGuard().check('fox_get_text', {})).toBeNull();
   });
@@ -150,7 +147,7 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
       vi.stubEnv('HOME', dir);
       vi.stubEnv('USERPROFILE', dir);
       vi.stubEnv('FOX_HEADLESS', '1');
-      expect(scopedGuard({ auditLog: true }).check('fox_get_text', { selector: '#a' }, 'stdio'))
+      expect(scopedGuard({ auditLog: true }).check('fox_get_text', { selector: '#a' }, { transport: 'stdio' }))
         .not.toBeNull();
 
       const logFile = path.join(dir, '.inari-mcp', 'logs', 'audit.jsonl');

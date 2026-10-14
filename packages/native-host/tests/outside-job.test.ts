@@ -145,10 +145,10 @@ describe('startOutsideJob', () => {
 });
 
 describe('daemonEnvFrom', () => {
-  it('keeps FOX_* names, drops the rest (the old CLAUDE_BROWSER_* names too)', () => {
+  it('keeps FOX_* names, drops the rest', () => {
     const env = daemonEnvFrom({
       FOX_HTTP_PORT: '1',
-      CLAUDE_BROWSER_HTTP_PORT: '2',
+      OTHER_HTTP_PORT: '2',
       PATH: 'x',
       SECRET_TOKEN: 'y',
       FOX_EMPTY: undefined,

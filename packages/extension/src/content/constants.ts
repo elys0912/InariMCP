@@ -1,17 +1,14 @@
 // Constants of the content script modules (no side effects).
 
+import { SCROLL_CAPTURE_LIMITS } from "@inari-mcp/shared/action-names";
+
 export const TIMEOUTS = {
   WAIT_ELEMENT: 10_000,
   NETWORK_IDLE: 10_000,
   CAPTCHA: 180_000,
   SCROLL_STEP: 500,
-  /**
-   * scroll_and_capture: all the delays together, the one before the first
-   * step included. 5 s under the MCP Server's command timeout (30 s), for
-   * the work of each step, so the capture ends before the server stops
-   * waiting for it.
-   */
-  SCROLL_CAPTURE_BUDGET: 25_000,
+  /** scroll_and_capture: all the delays together (shared SCROLL_CAPTURE_LIMITS). */
+  SCROLL_CAPTURE_BUDGET: SCROLL_CAPTURE_LIMITS.BUDGET_MS,
   /** fox_type: all per-character delays together (see typingDelay). */
   TYPING_BUDGET: 10_000,
   /** fox_highlight without duration. */
@@ -76,12 +73,12 @@ export const LIMITS = {
   SCROLL_END_SLACK: 10,
   /**
    * scroll_and_capture: most steps, and the longest delay of one step (ms),
-   * whatever the command asks for (scrollCaptureLimits). 50 steps are
-   * 2.5 times the default 20; a delay of 2 s still leaves 11 steps in
+   * whatever the command asks for (scrollCaptureLimits; shared
+   * SCROLL_CAPTURE_LIMITS). A delay of 2 s still leaves 11 steps in
    * TIMEOUTS.SCROLL_CAPTURE_BUDGET.
    */
-  SCROLL_CAPTURE_MAX_SCROLLS: 50,
-  SCROLL_CAPTURE_MAX_DELAY: 2_000,
+  SCROLL_CAPTURE_MAX_SCROLLS: SCROLL_CAPTURE_LIMITS.MAX_SCROLLS,
+  SCROLL_CAPTURE_MAX_DELAY: SCROLL_CAPTURE_LIMITS.MAX_DELAY_MS,
 } as const;
 
 export const INTERACTIVE_SELECTORS = [

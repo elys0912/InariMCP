@@ -101,7 +101,7 @@ async function runHostCommand(message: NativeMessage): Promise<CommandResult> {
  * comes first. The handler is not waited for then: the content script of
  * `tabId` is told to stop, and its typing, waits and scroll_and_capture end
  * at their next step (content/abort.ts). What runs in the background only
- * (screenshot_all_tabs, reload_all, reload_by_url, the tab waits) is not
+ * (screenshot_all_tabs, the tab waits) is not
  * stopped: it ends on its own, and its result is dropped.
  */
 function racePause(running: Promise<CommandResult>, tabId: number | undefined): Promise<CommandResult> {
@@ -337,39 +337,40 @@ function checkUrlPolicy(
   return { kind: "allowed", confirmReadRules: policy.confirmReadRules, urlLists: policy.lists, approvedSite };
 }
 
-/** Run the handler of a checked command, then report the tab's URL. */
-async function runChecked({ entry, context }: CheckedCommand): Promise<CommandResult> {
+/** Run the handler of a checked command (a needsTabId row without an explicit tabId is refused). */
+async function runHandler({ entry, context }: CheckedCommand): Promise<CommandResult> {
   const descriptor = entry ?? UNKNOWN_ACTION;
   const missingTabId =
     descriptor.scope === "tab" &&
     descriptor.needsTabId === true &&
     (context.tabId === undefined || context.message.tabId === undefined);
-  let result: CommandResult;
   try {
-    result = missingTabId ? { success: false, error: "tabId is required" } : await descriptor.handler(context);
+    return missingTabId ? { success: false, error: "tabId is required" } : await descriptor.handler(context);
   } catch (error) {
-    result = { success: false, error: errorMessage(error) };
+    return { success: false, error: errorMessage(error) };
   }
+}
 
-  // Report the target tab's URL after the operation so the server's guard
-  // can track the current page (data.url). Only for single-tab actions; the
-  // tab-creating actions set `url` themselves, and a closed tab has none.
-  if (
-    result.success &&
-    typeof result.url !== "string" &&
-    entry?.scope === "tab" &&
-    entry.skipUrlReport !== true
-  ) {
-    try {
-      const tab = await resolveTab(context.tabId);
-      if (tab && tab.url) {
-        result = { ...result, url: tab.url };
-      }
-    } catch {
-      // Tab vanished -- report the result without a URL
-    }
+/**
+ * Report the target tab's URL after the operation so the server's guard
+ * can track the current page (data.url). Only for single-tab actions; the
+ * tab-creating actions set `url` themselves, and a closed tab has none.
+ */
+async function withTabUrl(result: CommandResult, { entry, context }: CheckedCommand): Promise<CommandResult> {
+  const reports = result.success && typeof result.url !== "string" && entry?.scope === "tab" && entry.skipUrlReport !== true;
+  if (!reports) return result;
+  try {
+    const tab = await resolveTab(context.tabId);
+    return tab?.url ? { ...result, url: tab.url } : result;
+  } catch {
+    // Tab vanished -- report the result without a URL
+    return result;
   }
-  return result;
+}
+
+/** Run the handler of a checked command, then report the tab's URL. */
+async function runChecked(command: CheckedCommand): Promise<CommandResult> {
+  return withTabUrl(await runHandler(command), command);
 }
 
 /**

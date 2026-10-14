@@ -278,12 +278,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseNativeMessage(raw: unknown): NativeMessage | null {
   if (!isRecord(raw)) return null;
   const { action, requestId, tabId, data, error } = raw;
-  if (!(action === undefined || typeof action === "string")) return null;
-  if (!(requestId === undefined || typeof requestId === "number" || typeof requestId === "string")) return null;
-  if (!(tabId === undefined || typeof tabId === "number")) return null;
-  if (!(data === undefined || isRecord(data))) return null;
-  if (!(error === undefined || typeof error === "string")) return null;
+  const wellFormed =
+    isOptional(action, isString) &&
+    isOptional(requestId, isRequestId) &&
+    isOptional(tabId, isNumber) &&
+    isOptional(data, isRecord) &&
+    isOptional(error, isString);
+  if (!wellFormed) return null;
   return { ...raw, action, requestId, tabId, data, error };
+}
+
+/** A field that is absent (undefined) or passes `is`. */
+function isOptional<T>(value: unknown, is: (v: unknown) => v is T): value is T | undefined {
+  return value === undefined || is(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === "number";
+}
+
+/** A request id: a number or a string. */
+function isRequestId(value: unknown): value is number | string {
+  return typeof value === "number" || typeof value === "string";
 }
 
 function handleNativeMessage(raw: unknown): void {

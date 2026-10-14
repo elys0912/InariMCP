@@ -296,32 +296,44 @@ const FAILURE_DETAIL_KEYS = ['availableOptions', 'dialogs', 'warnings'] as const
  */
 export const BROWSER_ERROR_PREFIX = 'Browser error: ';
 
-export function toolResultToCallResult(result: ToolResult): CallToolResult {
-  if (result.success) {
-    if (isAriaSnapshot(result.data)) {
-      const { snapshot, ...meta } = result.data;
-      const truncated = meta['truncated'] === true
-        ? `\n[truncated: ${snapshot.length} of ${String(meta['totalLength'])} chars]`
-        : '';
-      return {
-        content: [
-          { type: 'text' as const, text: JSON.stringify(meta) },
-          { type: 'text' as const, text: `${snapshot}${truncated}` },
-        ],
-      };
-    }
-
-    const textContent = typeof result.data === 'string'
-      ? result.data
-      // Compact: indentation costs tokens and no reader needs it.
-      : JSON.stringify(result.data ?? { success: true });
-
+/** A successful result: an ARIA snapshot as its meta and its text, anything else as one text block. */
+function successToCallResult(data: unknown): CallToolResult {
+  if (isAriaSnapshot(data)) {
+    const { snapshot, ...meta } = data;
+    const truncated = meta['truncated'] === true
+      ? `\n[truncated: ${snapshot.length} of ${String(meta['totalLength'])} chars]`
+      : '';
     return {
-      content: [{ type: 'text' as const, text: textContent }],
+      content: [
+        { type: 'text' as const, text: JSON.stringify(meta) },
+        { type: 'text' as const, text: `${snapshot}${truncated}` },
+      ],
     };
   }
 
-  // Error case
+  const textContent = typeof data === 'string'
+    ? data
+    // Compact: indentation costs tokens and no reader needs it.
+    : JSON.stringify(data ?? { success: true });
+
+  return {
+    content: [{ type: 'text' as const, text: textContent }],
+  };
+}
+
+/** The FAILURE_DETAIL_KEYS of a failed result's data, under `browser`; null when it has none. */
+function failureDetailsBlock(data: unknown): string | null {
+  if (!isRecord(data)) return null;
+  const kept: Record<string, unknown> = {};
+  for (const key of FAILURE_DETAIL_KEYS) {
+    if (key in data) kept[key] = data[key];
+  }
+  return Object.keys(kept).length > 0 ? JSON.stringify({ browser: kept }) : null;
+}
+
+export function toolResultToCallResult(result: ToolResult): CallToolResult {
+  if (result.success) return successToCallResult(result.data);
+
   const errorText = result.error ?? 'Unknown error';
   const details = result.details ? `\n\nDetails: ${JSON.stringify(result.details)}` : '';
   const code = result.code ? ` [${result.code}]` : '';
@@ -329,16 +341,8 @@ export function toolResultToCallResult(result: ToolResult): CallToolResult {
   const content: CallToolResult['content'] = [
     { type: 'text' as const, text: `${BROWSER_ERROR_PREFIX}${errorText}${code}${details}` },
   ];
-  const data = result.data;
-  if (isRecord(data)) {
-    const kept: Record<string, unknown> = {};
-    for (const key of FAILURE_DETAIL_KEYS) {
-      if (key in data) kept[key] = data[key];
-    }
-    if (Object.keys(kept).length > 0) {
-      content.push({ type: 'text' as const, text: JSON.stringify({ browser: kept }) });
-    }
-  }
+  const detailsBlock = failureDetailsBlock(result.data);
+  if (detailsBlock !== null) content.push({ type: 'text' as const, text: detailsBlock });
 
   return { content, isError: true };
 }
@@ -361,7 +365,7 @@ function safetyDenialToCallResult(
 ): CallToolResult {
   const details: Record<string, unknown> = {
     code: 'SAFETY_BLOCKED',
-    // A config error is in no layer (null): left out as before.
+    // A config error is in no layer (null): no `layer` then.
     layer: denial.layer ?? undefined,
     decision: denial.safetyDecision,
     url: denial.url,
@@ -554,6 +558,15 @@ function screenshotResourceLinks(paths: string[]): CallToolResult['content'] {
 // createToolHandler — factory for MCP tool callbacks
 // ---------------------------------------------------------------------------
 
+export interface ToolCallOptions {
+  /**
+   * One-time human-approval token for this exact call (safety/approval.ts),
+   * sent out of band (POST /mcp/call body) after the human approved.
+   * Consumed on use.
+   */
+  approvalToken?: string;
+}
+
 /**
  * Create an MCP tool callback function for the given tool name.
  *
@@ -564,15 +577,6 @@ function screenshotResourceLinks(paths: string[]): CallToolResult['content'] {
  *                  'http' for POST /mcp/call). Every entry point goes through
  *                  the same SafetyGuard pipeline.
  */
-export interface ToolCallOptions {
-  /**
-   * One-time human-approval token for this exact call (safety/approval.ts),
-   * sent out of band (POST /mcp/call body) after the human approved.
-   * Consumed on use.
-   */
-  approvalToken?: string;
-}
-
 export function createToolHandler(
   calledName: string,
   transport: string = 'stdio',
@@ -637,7 +641,7 @@ function toolCall(
     // -----------------------------------------------------------------------
     // A confirmation_required answer after a presented token means the token
     // did not lift it (not valid, or approved for another host): say so.
-    const denial = guard.check(toolName, args, transport, grant, label);
+    const denial = guard.check(toolName, args, { transport, grant, label });
     if (denial !== null) {
       return denial.safetyDecision === 'confirmation_required'
         ? confirmationToCallResult(label, denial, presented)

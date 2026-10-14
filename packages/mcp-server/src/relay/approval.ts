@@ -90,37 +90,48 @@ export interface ApprovalDeps {
   log?: (msg: string) => void;
 }
 
+/** The approval request in the `approval` object of a JSON block, or null when it is not a complete one. */
+function approvalInfoOf(a: Record<string, unknown>): ApprovalInfo | null {
+  const str = (k: string): string | null => {
+    const v = a[k];
+    return typeof v === 'string' ? v : null;
+  };
+  const requestId = str('requestId');
+  const toolName = str('toolName');
+  const host = str('host');
+  const expiresAt = a['expiresAt'];
+  if (!requestId || !toolName || !host || typeof expiresAt !== 'number') return null;
+  return {
+    requestId,
+    toolName,
+    host,
+    url: str('url') ?? '',
+    matchedPattern: str('matchedPattern'),
+    summary: str('summary') ?? '',
+    expiresAt,
+  };
+}
+
+/** The approval request of one text block: JSON with `confirmationRequired: true` and an `approval` object. */
+function approvalInfoOfText(text: string): ApprovalInfo | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed) || parsed['confirmationRequired'] !== true) return null;
+  const a = parsed['approval'];
+  return isRecord(a) ? approvalInfoOf(a) : null;
+}
+
 /** The approval request of a confirmation_required result, if any. */
 export function findApprovalRequest(result: CallToolResult): ApprovalInfo | null {
   if (result.isError !== true) return null;
   for (const block of result.content) {
     if (block.type !== 'text') continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(block.text);
-    } catch {
-      continue;
-    }
-    if (!isRecord(parsed) || parsed['confirmationRequired'] !== true) continue;
-    const a = parsed['approval'];
-    if (!isRecord(a)) continue;
-    const str = (k: string): string | null => {
-      const v = a[k];
-      return typeof v === 'string' ? v : null;
-    };
-    const requestId = str('requestId');
-    const toolName = str('toolName');
-    const host = str('host');
-    if (!requestId || !toolName || !host || typeof a['expiresAt'] !== 'number') continue;
-    return {
-      requestId,
-      toolName,
-      host,
-      url: str('url') ?? '',
-      matchedPattern: str('matchedPattern'),
-      summary: str('summary') ?? '',
-      expiresAt: a['expiresAt'],
-    };
+    const info = approvalInfoOfText(block.text);
+    if (info !== null) return info;
   }
   return null;
 }
@@ -179,42 +190,56 @@ function fromReply(via: 'elicitation' | 'browser', reply: ApprovalReply): Approv
   return { kind: 'not_approved', via, reason: reply.reason ?? 'declined' };
 }
 
-/** Ask the human: elicitation first, the Extension's popup as fallback. */
-export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Promise<ApprovalOutcome> {
-  const now = deps.now ?? Date.now;
-  let elicitationProblem: string | null = null;
+/** What the elicitation step ends with: the outcome, or why the browser is asked instead. */
+type ElicitationStep = { outcome: ApprovalOutcome } | { fallback: string };
 
-  if (deps.canElicit) {
-    const waitMs = Math.max(MIN_WAIT_MS, info.expiresAt - now() - EXPIRY_MARGIN_MS);
-    let answer: ElicitResult | null = null;
-    try {
-      answer = await deps.elicit(elicitationParams(info), waitMs);
-    } catch (err: unknown) {
-      if (err instanceof McpError && err.code === REQUEST_TIMEOUT_CODE) {
-        return { kind: 'not_approved', via: 'elicitation', reason: 'timeout' };
-      }
-      elicitationProblem = errorMessage(err);
-      deps.log?.(`elicitation failed (${elicitationProblem}) — asking in the browser instead`);
-    }
-    if (answer !== null) {
-      const approved = elicitationApproved(answer);
-      let reply: ApprovalReply;
-      try {
-        reply = await deps.reportElicitation(info.requestId, approved);
-      } catch (err: unknown) {
-        return { kind: 'unavailable', detail: errorMessage(err) };
-      }
-      if (reply.reason !== 'elicitation_disabled') return fromReply('elicitation', reply);
-      // The running daemon does not take elicitation answers (its
-      // FOX_APPROVAL_ELICITATION differs from this relay's). A "no" stays a
-      // no; a "yes" would be lost, so the human is asked in the browser
-      // (the request is still open in the daemon).
-      if (!approved) return { kind: 'not_approved', via: 'elicitation', reason: 'declined' };
-      elicitationProblem = reply.error ?? 'the daemon does not accept elicitation answers';
-      deps.log?.(`daemon refused the elicitation answer (${elicitationProblem}) — asking in the browser instead`);
-    }
+/** Hand the human's answer in the MCP client's dialog to the daemon. */
+async function reportElicitationAnswer(
+  info: ApprovalInfo,
+  deps: ApprovalDeps,
+  answer: ElicitResult,
+): Promise<ElicitationStep> {
+  const approved = elicitationApproved(answer);
+  let reply: ApprovalReply;
+  try {
+    reply = await deps.reportElicitation(info.requestId, approved);
+  } catch (err: unknown) {
+    return { outcome: { kind: 'unavailable', detail: errorMessage(err) } };
   }
+  if (reply.reason !== 'elicitation_disabled') return { outcome: fromReply('elicitation', reply) };
+  // The running daemon does not take elicitation answers (its
+  // FOX_APPROVAL_ELICITATION differs from this relay's). A "no" stays a
+  // no; a "yes" would be lost, so the human is asked in the browser
+  // (the request is still open in the daemon).
+  if (!approved) return { outcome: { kind: 'not_approved', via: 'elicitation', reason: 'declined' } };
+  const problem = reply.error ?? 'the daemon does not accept elicitation answers';
+  deps.log?.(`daemon refused the elicitation answer (${problem}) — asking in the browser instead`);
+  return { fallback: problem };
+}
 
+/** Ask the human in the MCP client's dialog (MCP elicitation). */
+async function askByElicitation(info: ApprovalInfo, deps: ApprovalDeps, now: () => number): Promise<ElicitationStep> {
+  const waitMs = Math.max(MIN_WAIT_MS, info.expiresAt - now() - EXPIRY_MARGIN_MS);
+  let answer: ElicitResult;
+  try {
+    answer = await deps.elicit(elicitationParams(info), waitMs);
+  } catch (err: unknown) {
+    if (err instanceof McpError && err.code === REQUEST_TIMEOUT_CODE) {
+      return { outcome: { kind: 'not_approved', via: 'elicitation', reason: 'timeout' } };
+    }
+    const problem = errorMessage(err);
+    deps.log?.(`elicitation failed (${problem}) — asking in the browser instead`);
+    return { fallback: problem };
+  }
+  return reportElicitationAnswer(info, deps, answer);
+}
+
+/** Ask the human in the Extension's popup; `elicitationProblem`: why the dialog did not answer, if it was tried. */
+async function askInBrowser(
+  info: ApprovalInfo,
+  deps: ApprovalDeps,
+  elicitationProblem: string | null,
+): Promise<ApprovalOutcome> {
   try {
     const outcome = fromReply('browser', await deps.askBrowser(info.requestId));
     if (outcome.kind === 'unavailable') {
@@ -227,6 +252,17 @@ export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Pr
   } catch (err: unknown) {
     return { kind: 'unavailable', detail: errorMessage(err) };
   }
+}
+
+/** Ask the human: elicitation first, the Extension's popup as fallback. */
+export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Promise<ApprovalOutcome> {
+  let elicitationProblem: string | null = null;
+  if (deps.canElicit) {
+    const step = await askByElicitation(info, deps, deps.now ?? Date.now);
+    if ('outcome' in step) return step.outcome;
+    elicitationProblem = step.fallback;
+  }
+  return askInBrowser(info, deps, elicitationProblem);
 }
 
 export function describeOutcome(outcome: ApprovalOutcome): string {

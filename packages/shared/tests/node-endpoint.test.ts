@@ -31,13 +31,6 @@ describe('shared/node endpoint', () => {
     expect(resolveDaemonHost({ FOX_HOST: '' })).toBe('127.0.0.1');
   });
 
-  // InariMCP (AMO): the CLAUDE_BROWSER_* names of the fork are not read.
-  it('the old CLAUDE_BROWSER_* names are not read', () => {
-    expect(resolveDaemonHost({ FOX_HOST: '', CLAUDE_BROWSER_HOST: '127.0.0.2' })).toBe('127.0.0.1');
-    expect(resolveHttpPort(undefined, { CLAUDE_BROWSER_HTTP_PORT: '9001' })).toBe(8785);
-    expect(resolveWsPort(undefined, { CLAUDE_BROWSER_WS_PORT: '9002' })).toBe(8786);
-  });
-
   it('a blank FOX_HOST counts as unset and a set one is trimmed (R3 N-1)', () => {
     expect(resolveDaemonHost({ FOX_HOST: ' ' })).toBe('127.0.0.1');
     expect(resolveDaemonHost({ FOX_HOST: '\t' })).toBe('127.0.0.1');

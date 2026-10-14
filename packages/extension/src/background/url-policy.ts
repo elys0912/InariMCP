@@ -2,7 +2,12 @@
 // confirm-read / blocked / allowed rules attached by the MCP Server, and the
 // target-tab checks built on them (L2).
 
-import { isApprovedSite } from "../approval";
+import {
+  ACT_APPROVAL_REQUIRED_MESSAGE,
+  isApprovedSite,
+  READ_APPROVAL_REQUIRED_MESSAGE,
+  urlToOpen,
+} from "@inari-mcp/shared/approval-site";
 import {
   compileUrlRules,
   urlListViolation,
@@ -11,9 +16,6 @@ import {
   type UrlListViolation,
 } from "../url-rule";
 import type { CommandResult, UrlLists, NativeMessage } from "./types";
-
-/** The page a new tab opened without a URL shows (background/tabs.ts createNewTab). */
-const NEW_TAB_URL = "about:blank";
 
 /**
  * Which approval check handleCommand applies to a single command before its
@@ -69,7 +71,7 @@ export function checkApproval(check: ApprovalCheck, inputs: ApprovalInputs): Com
       if (!tab) return unresolvedTab();
       return checkApprovedUrl(tab.url, approvedSite);
     case "actOnUrl":
-      return checkApprovedUrl(urlToOpen(data), approvedSite);
+      return checkApprovedUrl(urlToOpen(data?.url), approvedSite);
     case "read":
       if (confirmReadRules.length === 0) return null;
       if (!tab) return unresolvedTab();
@@ -85,12 +87,6 @@ function unresolvedTab(): CommandResult {
   return { success: false, error: "Could not resolve the target tab for the approval check" };
 }
 
-/** The URL an opening command opens: `data.url`, else a blank tab. */
-function urlToOpen(data: NativeMessage["data"]): string {
-  const url = data?.url;
-  return typeof url === "string" && url !== "" ? url : NEW_TAB_URL;
-}
-
 /** An acting command on `url`: runs only with an approval for its site. */
 function checkApprovedUrl(url: string | undefined, approvedSite: string | undefined): CommandResult | null {
   if (isApprovedSite(url, approvedSite)) return null;
@@ -99,7 +95,7 @@ function checkApprovedUrl(url: string | undefined, approvedSite: string | undefi
   return {
     success: false,
     safetyDecision: "confirmation_required",
-    error: "Human approval required: an acting command runs only on the site a human approved",
+    error: ACT_APPROVAL_REQUIRED_MESSAGE,
     ...(url ? { url } : {}),
   };
 }
@@ -129,7 +125,8 @@ function shownPageUrl(url: string): string | null {
  * The first confirm_read_sites rule `url` matches, or the page it shows
  * matches: a view-source: or about:reader tab has no host of its own, so a
  * host rule could never match it. Past MAX_SHOWN_PAGE_DEPTH wrappers, the
- * first rule (fail closed).
+ * first rule (fail closed). The Extension only: the headless backend has no
+ * such pages (mcp-server tests/headless-approval-floor.test.ts).
  */
 function findReadRule(url: string, rules: CompiledUrlRule[]): CompiledUrlRule | undefined {
   let current: string | null = url;
@@ -160,7 +157,7 @@ function checkReadSite(
   return {
     success: false,
     safetyDecision: "confirmation_required",
-    error: "Human approval required: the target tab is on a site of confirm_read_sites",
+    error: READ_APPROVAL_REQUIRED_MESSAGE,
     url,
     matchedPattern: matched.rule.source,
   };

@@ -64,7 +64,7 @@ describe('tool sets derived from the schemas', () => {
     ]);
   });
 
-  // InariMCP (AMO): no tool runs caller-supplied JavaScript or records the
+  // No tool runs caller-supplied JavaScript or records the
   // page's console / network traffic, and the never implemented workflow
   // tools are gone.
   it('define no script, logging or workflow tool', () => {

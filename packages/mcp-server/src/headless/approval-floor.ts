@@ -17,11 +17,21 @@
  *
  * A refusal has the shape of the Extension's (safetyDecision
  * "confirmation_required", the page's `url`), so tools/handlers.ts opens
- * the approval request for that site the same way on both backends.
+ * the approval request for that site the same way on both backends. The
+ * site rule and the refusal texts are shared/src/approval-site.ts. Unlike
+ * the Extension, a read is checked against the page's own URL only (no
+ * view-source: or about:reader page to unwrap).
  */
 
-import { approvalSiteOf, BrowserActionSchema, type BrowserAction, type BrowserCommand } from '@inari-mcp/shared';
-import { NEW_TAB_URL } from '../safety/approval.js';
+import {
+  ACT_APPROVAL_REQUIRED_MESSAGE,
+  BrowserActionSchema,
+  isApprovedSite,
+  READ_APPROVAL_REQUIRED_MESSAGE,
+  urlToOpen,
+  type BrowserAction,
+  type BrowserCommand,
+} from '@inari-mcp/shared';
 import { compileUrlPatterns, type UrlPattern } from '../safety/url-pattern.js';
 
 /** What the floor checks before an action (the approval column of the Extension's action table). */
@@ -91,25 +101,13 @@ export function commandApprovalOf(command: BrowserCommand): CommandApproval {
 
 type Refusal = Record<string, unknown>;
 
-/** The URL an opening action opens: `url`, else a blank tab. */
-function urlToOpen(args: Record<string, unknown>): string {
-  const url = args['url'];
-  return typeof url === 'string' && url !== '' ? url : NEW_TAB_URL;
-}
-
-/** Whether `url` is on the site a human approved. */
-function isApprovedSite(url: string | null, approvedSite: string | undefined): boolean {
-  const site = approvalSiteOf(url);
-  return site !== null && site === approvedSite;
-}
-
 /** An acting action on `url`: runs only with an approval for its site. */
 function checkApprovedUrl(url: string | null, approvedSite: string | undefined): Refusal | null {
   if (isApprovedSite(url, approvedSite)) return null;
   return {
     success: false,
     safetyDecision: 'confirmation_required',
-    error: 'Human approval required: an acting command runs only on the site a human approved',
+    error: ACT_APPROVAL_REQUIRED_MESSAGE,
     ...(url !== null ? { url } : {}),
   };
 }
@@ -119,7 +117,7 @@ function readSiteRefusal(url: string | null, matchedPattern: string | null): Ref
   return {
     success: false,
     safetyDecision: 'confirmation_required',
-    error: 'Human approval required: the target tab is on a site of confirm_read_sites',
+    error: READ_APPROVAL_REQUIRED_MESSAGE,
     ...(url !== null ? { url } : {}),
     ...(matchedPattern !== null ? { matchedPattern } : {}),
   };
@@ -158,7 +156,7 @@ export function floorRefusal(
     case 'act':
       return checkApprovedUrl(pageUrl, approval.approvedSite);
     case 'actOnUrl':
-      return checkApprovedUrl(urlToOpen(args), approval.approvedSite);
+      return checkApprovedUrl(urlToOpen(args['url']), approval.approvedSite);
     case 'read':
       return checkReadSite(pageUrl, approval);
     case 'none':

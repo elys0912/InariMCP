@@ -11,13 +11,13 @@
 //              confirm_read_sites site (shared ApprovalPromptSchema).
 //              Approving it lets the server issue a one-time token for
 //              exactly that call.
-//   message    fox_request_approval: a yes/no question written by Claude.
-//              The answer goes back to Claude and unlocks nothing.
+//   message    fox_request_approval: a yes/no question written by the MCP
+//              client. The answer goes back to the MCP client and unlocks
+//              nothing.
 //
 // Imported by the background modules and popup.ts (bundled into both).
 // Contract tests import it as a module.
 
-import { approvalSiteOf, bareHost } from "@inari-mcp/shared/approval-site";
 import { clipText } from "./text-clip";
 
 /** runtime.sendMessage types between the popup and the background. */
@@ -57,6 +57,39 @@ export function clipApprovalText(value: unknown, max: number): string | undefine
   return value.length > max ? `${clipText(value, max)}…` : value;
 }
 
+/** The request's timeout (a positive number of ms), else the default. */
+function approvalTimeout(d: Record<string, unknown>, defaultTimeoutMs: number): number {
+  return typeof d.timeout === "number" && Number.isFinite(d.timeout) && d.timeout > 0 ? d.timeout : defaultTimeoutMs;
+}
+
+/** A non-empty string field of the request, else null. */
+function requestText(d: Record<string, unknown>, key: string): string | null {
+  const value = d[key];
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+/** The view of a tool_call request; null when it is malformed or already expired. */
+function toolCallView(d: Record<string, unknown>, now: number, timeout: number): ApprovalView | null {
+  const approvalId = requestText(d, "approvalId");
+  const toolName = requestText(d, "toolName");
+  const host = requestText(d, "host");
+  const expiresAt = d.expiresAt;
+  if (!approvalId || !toolName || !host || typeof expiresAt !== "number" || !(expiresAt > now)) {
+    return null;
+  }
+  return {
+    id: approvalId,
+    kind: "tool_call",
+    createdAt: now,
+    deadline: Math.min(now + timeout, expiresAt),
+    toolName,
+    host,
+    url: clipApprovalText(d.url, APPROVAL_TEXT_LIMITS.URL),
+    matchedPattern: clipApprovalText(d.matchedPattern, APPROVAL_TEXT_LIMITS.URL),
+    summary: clipApprovalText(d.summary, APPROVAL_TEXT_LIMITS.SUMMARY),
+  };
+}
+
 /**
  * Build the popup view of a `request_approval` command. Null when a
  * tool_call request is malformed (it is refused, not shown).
@@ -68,35 +101,8 @@ export function parseApprovalPrompt(
   defaultTimeoutMs: number,
 ): ApprovalView | null {
   const d = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
-  const timeout =
-    typeof d.timeout === "number" && Number.isFinite(d.timeout) && d.timeout > 0
-      ? d.timeout
-      : defaultTimeoutMs;
-
-  if (d.kind === "tool_call") {
-    const str = (k: string): string | null => {
-      const value = d[k];
-      return typeof value === "string" && value !== "" ? value : null;
-    };
-    const approvalId = str("approvalId");
-    const toolName = str("toolName");
-    const host = str("host");
-    const expiresAt = d.expiresAt;
-    if (!approvalId || !toolName || !host || typeof expiresAt !== "number" || !(expiresAt > now)) {
-      return null;
-    }
-    return {
-      id: approvalId,
-      kind: "tool_call",
-      createdAt: now,
-      deadline: Math.min(now + timeout, expiresAt),
-      toolName,
-      host,
-      url: clipApprovalText(d.url, APPROVAL_TEXT_LIMITS.URL),
-      matchedPattern: clipApprovalText(d.matchedPattern, APPROVAL_TEXT_LIMITS.URL),
-      summary: clipApprovalText(d.summary, APPROVAL_TEXT_LIMITS.SUMMARY),
-    };
-  }
+  const timeout = approvalTimeout(d, defaultTimeoutMs);
+  if (d.kind === "tool_call") return toolCallView(d, now, timeout);
 
   return {
     id: `msg-${requestId}`,
@@ -125,15 +131,5 @@ export function approvalCommandResult(
   };
 }
 
-/**
- * Whether an approved call may run on this URL (the target tab's, or the URL
- * a new tab opens): its site (approvalSiteOf, the rule the MCP Server binds
- * the approval with) equals the site the human approved (the command's
- * `approvedHost`), compared as bare hostnames, so `example.com.` is the
- * approved `example.com`.
- */
-export function isApprovedSite(url: string | undefined, approvedSite: unknown): boolean {
-  if (typeof approvedSite !== "string" || approvedSite === "") return false;
-  const site = approvalSiteOf(url);
-  return site !== null && site === bareHost(approvedSite);
-}
+/** The rule of shared/src/approval-site.ts, for the modules that import it from here. */
+export { isApprovedSite } from "@inari-mcp/shared/approval-site";

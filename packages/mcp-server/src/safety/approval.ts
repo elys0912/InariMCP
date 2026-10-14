@@ -100,8 +100,8 @@ interface StoredToken extends ApprovalGrant {
 // Target helpers
 // ---------------------------------------------------------------------------
 
-/** The page a new tab opened without a URL shows (the Extension and the headless backend open the same). */
-export const NEW_TAB_URL = 'about:blank';
+/** The page a new tab opened without a URL shows (shared/src/approval-site.ts). */
+export { NEW_TAB_URL } from '@inari-mcp/shared';
 
 /** JSON with object keys sorted at every level (stable across key order). */
 export function canonicalJson(value: unknown): string {

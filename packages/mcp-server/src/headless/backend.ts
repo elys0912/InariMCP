@@ -505,11 +505,21 @@ export class HeadlessBrowser {
       return settle(pending);
     }
 
-    // A later fox_handle_dialog on the same tab replaces this one: the
-    // earlier wait ends without arming, so it cannot accept a later,
-    // unrelated dialog.
+    const outcome = await this._waitForDialog(id, timeout, signal);
+    if (typeof outcome !== 'string') return settle(outcome);
+    const refusal = this._dialogWaitRefusal(id, outcome);
+    if (refusal !== null) return refusal;
+    return this._armDialog(id, action, promptText);
+  }
+
+  /**
+   * Wait up to `timeout` ms for a dialog on tab `id`. A later
+   * fox_handle_dialog on the same tab replaces this one: the earlier wait
+   * ends without arming, so it cannot accept a later, unrelated dialog.
+   */
+  private _waitForDialog(id: number, timeout: number, signal: AbortSignal | undefined): Promise<Dialog | WaitEnd> {
     this._dialogWaiters.get(id)?.end('superseded');
-    const outcome = await new Promise<Dialog | WaitEnd>((resolve) => {
+    return new Promise<Dialog | WaitEnd>((resolve) => {
       const finish = (v: Dialog | WaitEnd): void => {
         clearTimeout(timer);
         signal?.removeEventListener('abort', onAbort);
@@ -523,7 +533,10 @@ export class HeadlessBrowser {
       if (signal?.aborted === true) finish('cancelled');
       else signal?.addEventListener('abort', onAbort, { once: true });
     });
-    if (typeof outcome !== 'string') return settle(outcome);
+  }
+
+  /** The failure of a dialog wait that ended without a dialog, or null when it timed out (the tab still open). */
+  private _dialogWaitRefusal(id: number, outcome: WaitEnd): Record<string, unknown> | null {
     if (outcome === 'closed' || !this._tabs.has(id)) {
       return { success: false, error: `Tab ${id} was closed while waiting for a dialog` };
     }
@@ -533,7 +546,11 @@ export class HeadlessBrowser {
     if (outcome === 'cancelled') {
       return { success: false, error: 'Cancelled: the caller gave up on fox_handle_dialog; nothing was armed' };
     }
+    return null;
+  }
 
+  /** No dialog came: settle the next one on the tab within ARM_TTL_MS the same way. */
+  private _armDialog(id: number, action: DialogAction, promptText: string | undefined): Record<string, unknown> {
     this._armed.set(id, {
       action,
       ...(promptText !== undefined ? { promptText } : {}),

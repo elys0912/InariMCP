@@ -31,13 +31,13 @@ describe('SafetyGuard.check with an approval grant', () => {
 
   it('a grant for the site lets exactly that call through', () => {
     const args = { url: SITE };
-    expect(guard().check('fox_navigate', args, undefined, grantFor('fox_navigate', args))).toBeNull();
+    expect(guard().check('fox_navigate', args, { grant: grantFor('fox_navigate', args) })).toBeNull();
   });
 
   it('a grant for another host does not', () => {
     const args = { url: SITE };
     expect(
-      guard().check('fox_navigate', args, undefined, grantFor('fox_navigate', args, 'other.example.test')),
+      guard().check('fox_navigate', args, { grant: grantFor('fox_navigate', args, 'other.example.test') }),
     ).toMatchObject({ safetyDecision: 'confirmation_required' });
   });
 
@@ -46,27 +46,27 @@ describe('SafetyGuard.check with an approval grant', () => {
     g.noteUrl({ url: SITE });
     const click = { selector: '#go' };
     expect(g.check('fox_click', click)).toMatchObject({ safetyDecision: 'confirmation_required' });
-    expect(g.check('fox_click', click, undefined, grantFor('fox_click', click))).toBeNull();
+    expect(g.check('fox_click', click, { grant: grantFor('fox_click', click) })).toBeNull();
 
     const shot = { scope: 'viewport' };
     expect(g.check('fox_screenshot', shot)).toMatchObject({ safetyDecision: 'confirmation_required' });
-    expect(g.check('fox_screenshot', shot, undefined, grantFor('fox_screenshot', shot))).toBeNull();
+    expect(g.check('fox_screenshot', shot, { grant: grantFor('fox_screenshot', shot) })).toBeNull();
   });
 
   it('never lifts other denials (read-only, blocklist, scheme)', () => {
     const click = { selector: '#go' };
     const ro = guard({ readOnly: true });
     ro.noteUrl({ url: SITE });
-    expect(ro.check('fox_click', click, undefined, grantFor('fox_click', click)))
+    expect(ro.check('fox_click', click, { grant: grantFor('fox_click', click) }))
       .toMatchObject({ safetyDecision: 'read_only' });
 
     const nav = { url: SITE };
     expect(
-      guard({ blockedUrlPatterns: ['bank.example.test/transfer'] }).check('fox_navigate', nav, undefined, grantFor('fox_navigate', nav)),
+      guard({ blockedUrlPatterns: ['bank.example.test/transfer'] }).check('fox_navigate', nav, { grant: grantFor('fox_navigate', nav) }),
     ).toMatchObject({ safetyDecision: 'blocked_url' });
 
     const js = { url: 'javascript:alert(1)' };
-    expect(guard().check('fox_navigate', js, undefined, grantFor('fox_navigate', js)))
+    expect(guard().check('fox_navigate', js, { grant: grantFor('fox_navigate', js) }))
       .toMatchObject({ safetyDecision: 'blocked_scheme' });
   });
 
@@ -77,13 +77,13 @@ describe('SafetyGuard.check with an approval grant', () => {
     const g = guard({ auditLog: true });
 
     const nav = { url: SITE };
-    expect(g.check('fox_navigate', nav, undefined, grantFor('fox_navigate', nav))).toBeNull();
+    expect(g.check('fox_navigate', nav, { grant: grantFor('fox_navigate', nav) })).toBeNull();
     expect(lastDecision()).toBe('allowed_by_human');
 
     // Nothing to lift: a read that needs no approval stays an ordinary allowed call.
     g.noteUrl({ url: SITE });
     const read = {};
-    expect(g.check('fox_get_text', read, undefined, grantFor('fox_get_text', read))).toBeNull();
+    expect(g.check('fox_get_text', read, { grant: grantFor('fox_get_text', read) })).toBeNull();
     expect(lastDecision()).toBe('allowed');
   });
 
@@ -91,15 +91,15 @@ describe('SafetyGuard.check with an approval grant', () => {
     const g = guard();
     g.noteUrl({ url: 'file:///tmp/inari-test/page.html' });
     const click = { selector: '#go' };
-    expect(g.check('fox_click', click, undefined, grantFor('fox_click', click, 'file:'))).toBeNull();
-    expect(g.check('fox_click', click, undefined, grantFor('fox_click', click, 'bank.example.test')))
+    expect(g.check('fox_click', click, { grant: grantFor('fox_click', click, 'file:') })).toBeNull();
+    expect(g.check('fox_click', click, { grant: grantFor('fox_click', click, 'bank.example.test') }))
       .toMatchObject({ safetyDecision: 'confirmation_required' });
-    expect(guard().check('fox_create_tab', {}, undefined, grantFor('fox_create_tab', {}, 'about:'))).toBeNull();
+    expect(guard().check('fox_create_tab', {}, { grant: grantFor('fox_create_tab', {}, 'about:') })).toBeNull();
   });
 
   it('a call on a tab the guard does not know cannot be lifted by any grant', () => {
     const click = { selector: '#go' };
-    expect(guard().check('fox_click', click, undefined, grantFor('fox_click', click)))
+    expect(guard().check('fox_click', click, { grant: grantFor('fox_click', click) }))
       .toMatchObject({ safetyDecision: 'confirmation_required', elicitation: { url: null } });
   });
 });

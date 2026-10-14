@@ -25,32 +25,36 @@ export const SETUP_REFRESH_MS = 30_000;
 /** Badge color of the setup state: "!" when the setup needs attention, else no text. */
 export const SETUP_BADGE_COLOR = "#D9372B";
 
-async function getSetupState(): Promise<SetupState> {
+/** The state while the Native Host is not connected (null when it is). */
+function hostConnectionState(): SetupState | null {
   const host = hostStatus();
-  if (!host.confirmed || !host.portOpen) {
-    const lastHostError = host.lastError;
-    if (lastHostError === null) return { kind: "connecting" };
-    return NATIVE_HOST_MISSING.test(lastHostError)
-      ? { kind: "hostMissing", error: lastHostError }
-      : { kind: "hostError", error: lastHostError };
-  }
+  if (host.confirmed && host.portOpen) return null;
 
-  let reply: HostStatusReply;
+  const lastHostError = host.lastError;
+  if (lastHostError === null) return { kind: "connecting" };
+  return NATIVE_HOST_MISSING.test(lastHostError)
+    ? { kind: "hostMissing", error: lastHostError }
+    : { kind: "hostError", error: lastHostError };
+}
+
+/** The Native Host's answer to `status`; rejects after SETUP_STATUS_TIMEOUT_MS. */
+async function requestHostStatus(): Promise<HostStatusReply> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    reply = (await Promise.race([
+    return (await Promise.race([
       // The request itself gives up as well, so it does not stay pending.
       sendToNativeHost({ action: "status" }, { timeoutMs: SETUP_STATUS_TIMEOUT_MS }),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(new Error("Native host status timed out")), SETUP_STATUS_TIMEOUT_MS);
       }),
     ])) as HostStatusReply;
-  } catch (error) {
-    return { kind: "hostError", error: errorMessage(error) };
   } finally {
     clearTimeout(timer);
   }
+}
 
+/** The setup state the Native Host's `status` answer tells (the daemon and its sessions). */
+function setupStateOf(reply: HostStatusReply): SetupState {
   const server = reply.mcp_server ?? {};
   const serverUrl = typeof server.url === "string" ? server.url : undefined;
   // Native Hosts before 0.1.2 do not send `relays` at all (current ones send
@@ -70,6 +74,19 @@ async function getSetupState(): Promise<SetupState> {
     };
   }
   return { kind: "ready", serverUrl, relays: server.relays };
+}
+
+async function getSetupState(): Promise<SetupState> {
+  const unconnected = hostConnectionState();
+  if (unconnected) return unconnected;
+
+  let reply: HostStatusReply;
+  try {
+    reply = await requestHostStatus();
+  } catch (error) {
+    return { kind: "hostError", error: errorMessage(error) };
+  }
+  return setupStateOf(reply);
 }
 
 /** Toolbar tooltip per state (message keys); null = the plain name. */

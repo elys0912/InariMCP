@@ -125,14 +125,11 @@ describe('loadConfig (2.B2)', () => {
   });
 
   // R2-B L-5: a blank FOX_SAFETY_CONFIG is unset, as for every other daemon
-  // setting. InariMCP (AMO): the old CLAUDE_BROWSER_SAFETY_CONFIG is not read.
+  // setting.
   it('WP-G T-5: with FOX_SAFETY_CONFIG blank, fox_safety_status names the default file by its full path', () => {
-    const file = path.join(dir, 'old-name.json');
-    fs.writeFileSync(file, '{ "read_only": true }');
     vi.stubEnv('HOME', dir);
     vi.stubEnv('USERPROFILE', dir);
     vi.stubEnv('FOX_SAFETY_CONFIG', ' ');
-    vi.stubEnv('CLAUDE_BROWSER_SAFETY_CONFIG', file);
     vi.stubEnv('FOX_READ_ONLY', '');
     const cfg = loadConfig();
     expect(cfg.readOnly).toBe(false);

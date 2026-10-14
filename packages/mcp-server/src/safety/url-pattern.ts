@@ -156,24 +156,27 @@ const HOST_MATCHES: { readonly [K in HostSpec['hosts']]: (h: string, host: strin
 /** Why a host-form pattern is unusable, or a spec. */
 type ParseResult = HostSpec | { error: string } | null;
 
-function parseHostForm(s: string): ParseResult {
-  const m = HOST_FORM_RE.exec(s);
-  if (!m) return null;
-  const ipv6 = m[3].startsWith('[');
-  const host = canonicalHost(m[3]);
-  if (host === null) return ipv6 ? { error: `'${m[3]}' is not a valid IPv6 address` } : null;
-  if (ipv6 && m[2] !== undefined) return { error: "'*.' cannot precede an IP address" };
-  let port: number | null = null;
-  if (m[4] !== undefined) {
-    port = /^\d{1,5}$/.test(m[4]) ? Number(m[4]) : 0;
-    if (port < 1 || port > 65535) return { error: `'${m[4]}' is not a valid port (1-65535)` };
-  }
-  let path: string | null = m[5] ?? null;
+/** Whether a part of a host pattern is unusable (it carries the reason). */
+function isProblem(part: number | string | null | { error: string }): part is { error: string } {
+  return part !== null && typeof part === 'object';
+}
+
+/** The `:port` of a host pattern: null when there is none, else a port number (1-65535) or why not. */
+function parsePort(raw: string | undefined): number | null | { error: string } {
+  if (raw === undefined) return null;
+  const port = /^\d{1,5}$/.test(raw) ? Number(raw) : 0;
+  if (port < 1 || port > 65535) return { error: `'${raw}' is not a valid port (1-65535)` };
+  return port;
+}
+
+/** The path of a host pattern: null for any path, else the prefix to compare, or why it cannot be used. */
+function parsePath(raw: string | undefined): string | null | { error: string } {
+  if (raw === undefined) return null;
   // The path is compared with the URL's path only, which never holds a query
   // or fragment: such a pattern would match nothing. `%3F` / `%23` are refused
   // too, since blocked / confirm-read paths are compared decoded and the wire
   // rule must not carry a `?` / `#` (the Extension refuses such a rule).
-  if (path !== null && /[?#]|%3f|%23/i.test(path)) {
+  if (/[?#]|%3f|%23/i.test(raw)) {
     return {
       error:
         "'?', '#' (or %3F, %23) cannot appear in a path: patterns compare the URL path only, " +
@@ -181,11 +184,24 @@ function parseHostForm(s: string): ParseResult {
     };
   }
   // A trailing `/*` is the usual way to write "any path below".
-  if (path !== null && path.endsWith('/*')) path = path.slice(0, -1);
-  if (path !== null && path.includes('*')) {
+  const path = raw.endsWith('/*') ? raw.slice(0, -1) : raw;
+  if (path.includes('*')) {
     return { error: "'*' in a path is only supported as a trailing '/*'" };
   }
-  if (path === '/') path = null;
+  return path === '/' ? null : path;
+}
+
+function parseHostForm(s: string): ParseResult {
+  const m = HOST_FORM_RE.exec(s);
+  if (!m) return null;
+  const ipv6 = m[3].startsWith('[');
+  const host = canonicalHost(m[3]);
+  if (host === null) return ipv6 ? { error: `'${m[3]}' is not a valid IPv6 address` } : null;
+  if (ipv6 && m[2] !== undefined) return { error: "'*.' cannot precede an IP address" };
+  const port = parsePort(m[4]);
+  if (isProblem(port)) return port;
+  const path = parsePath(m[5]);
+  if (isProblem(path)) return path;
   return {
     scheme: m[1] ? m[1].toLowerCase() : null,
     hosts: m[2] !== undefined ? 'sub' : 'tree',
@@ -281,61 +297,66 @@ function regexPattern(source: string, regexSource: string, list: PatternListName
   };
 }
 
+/** One entry of a list, compiled: its pattern (none when it is unusable) and its issues. */
+interface CompiledEntry {
+  pattern?: UrlPattern;
+  issues: PatternIssue[];
+}
+
+function fatalEntry(source: string, message: string): CompiledEntry {
+  return { issues: [{ pattern: source, message, fatal: true }] };
+}
+
+/** A `re:` entry: always a whole-URL match, in every list. */
+function compileRegexEntry(source: string, regex: string, list: PatternListName): CompiledEntry {
+  const compiled = regexPattern(source, anchorRegex(regex), list);
+  if ('error' in compiled) return fatalEntry(source, `invalid regex: ${compiled.error}`);
+  return { pattern: compiled, issues: [] };
+}
+
+/**
+ * A dot-less name written as a host pattern (any case, with or without a
+ * scheme, port or path) is easily mistaken for "any URL containing it":
+ * warned about in the blocked and confirm-read lists.
+ */
+function singleLabelWarnings(source: string, spec: HostSpec, list: PatternListName): PatternIssue[] {
+  const singleLabel = !spec.host.includes('.') && !spec.host.startsWith('[') && spec.hosts === 'tree';
+  if (list === 'allowed' || !singleLabel) return [];
+  return [{
+    pattern: source,
+    message:
+      `matches only the host '${spec.host}' and its subdomains ` +
+      `(e.g. www.${spec.host}), not '${spec.host}.com' or other names containing it`,
+    fatal: false,
+  }];
+}
+
+const NOT_A_PATTERN_MESSAGE =
+  'not a host pattern (e.g. "example.com", "*.example.com", "example.com/path"); ' +
+  'a bare regex could match unintended URLs. ' +
+  'Rewrite it as a host pattern, or as "re:https://example\\.com/.*" (re: matches the whole URL)';
+
+function compileEntry(source: string, list: PatternListName): CompiledEntry {
+  const s = source.trim();
+  if (s === '') return fatalEntry(source, 'empty pattern');
+  if (s.startsWith('re:')) return compileRegexEntry(source, s.slice(3), list);
+
+  const spec = parseHostForm(s);
+  if (spec === null) return fatalEntry(source, NOT_A_PATTERN_MESSAGE);
+  if ('error' in spec) return fatalEntry(source, spec.error);
+  return { pattern: hostPattern(source, spec, list), issues: singleLabelWarnings(source, spec, list) };
+}
+
 export function compileUrlPatterns(
   sources: readonly string[],
   list: PatternListName,
 ): CompiledPatterns {
   const patterns: UrlPattern[] = [];
   const issues: PatternIssue[] = [];
-
   for (const source of sources) {
-    const s = source.trim();
-    if (s === '') {
-      issues.push({ pattern: source, message: 'empty pattern', fatal: true });
-      continue;
-    }
-
-    if (s.startsWith('re:')) {
-      // Always a whole-URL match, in every list.
-      const compiled = regexPattern(source, anchorRegex(s.slice(3)), list);
-      if ('error' in compiled) {
-        issues.push({ pattern: source, message: `invalid regex: ${compiled.error}`, fatal: true });
-      } else {
-        patterns.push(compiled);
-      }
-      continue;
-    }
-
-    const spec = parseHostForm(s);
-    if (spec !== null && 'error' in spec) {
-      issues.push({ pattern: source, message: spec.error, fatal: true });
-      continue;
-    }
-    if (spec !== null) {
-      patterns.push(hostPattern(source, spec, list));
-      // A dot-less name written as a host pattern (any case, with or without
-      // a scheme, port or path) is easily mistaken for "any URL containing it".
-      if (list !== 'allowed' && !spec.host.includes('.') && !spec.host.startsWith('[') && spec.hosts === 'tree') {
-        issues.push({
-          pattern: source,
-          message:
-            `matches only the host '${spec.host}' and its subdomains ` +
-            `(e.g. www.${spec.host}), not '${spec.host}.com' or other names containing it`,
-          fatal: false,
-        });
-      }
-      continue;
-    }
-
-    issues.push({
-      pattern: source,
-      message:
-        'not a host pattern (e.g. "example.com", "*.example.com", "example.com/path"); ' +
-        'a bare regex could match unintended URLs. ' +
-        'Rewrite it as a host pattern, or as "re:https://example\\.com/.*" (re: matches the whole URL)',
-      fatal: true,
-    });
+    const entry = compileEntry(source, list);
+    if (entry.pattern !== undefined) patterns.push(entry.pattern);
+    issues.push(...entry.issues);
   }
-
   return { patterns, issues };
 }

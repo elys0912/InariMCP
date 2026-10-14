@@ -189,19 +189,18 @@ function pressEnterOn(target: Element, submit: boolean): string {
   return implicitSubmit(form);
 }
 
-export async function performType(
-  options: TypeOptions,
-): Promise<Record<string, unknown>> {
+/**
+ * The element fox_type types into: the one its locator finds, else (no
+ * locator, or focusFirst: false and nothing found) the focused editable
+ * field. Refused when there is none, when it is disabled, and when it is a
+ * password field without allowPassword.
+ */
+function findTypeTarget(options: TypeOptions): Element {
   // `text` is what to type, never a locator (see locatorWithoutText).
   const locator = locatorWithoutText(options);
   const located = hasLocator(locator);
   let element: Element | null = located ? findElement(locator) : null;
-
-  // No locator (or focusFirst: false and nothing found): the focused field.
-  if (!element && (!located || options.focusFirst === false)) {
-    const active = document.activeElement;
-    if (active && active !== document.body && isEditable(active)) element = active;
-  }
+  if (!element && (!located || options.focusFirst === false)) element = focusedEditable();
 
   if (!element) {
     throw located
@@ -219,8 +218,66 @@ export async function performType(
         : `Focused element is disabled: ${JSON.stringify(elementIdentity(element))}`,
     );
   }
-
   assertNotPasswordField(element, options);
+  return element;
+}
+
+/** The focused element when it is an editable field (not the body), else null. */
+function focusedEditable(): Element | null {
+  const active = document.activeElement;
+  return active && active !== document.body && isEditable(active) ? active : null;
+}
+
+/** Empty the field (a text input's value, an editable region's text) and fire input. */
+function clearTarget(element: Element): void {
+  if (isTextInput(element)) {
+    element.value = "";
+  } else if (isContentEditable(element)) {
+    element.textContent = "";
+  }
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+/** Put the whole text in at once (after what is there, unless `clear`), then fire input and change. */
+function typeInstantly(element: Element, text: string, clear: boolean): void {
+  if (isTextInput(element)) {
+    element.value = clear ? text : element.value + text;
+  } else if (isContentEditable(element)) {
+    element.textContent = clear ? text : (element.textContent || "") + text;
+  }
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/** One character: keydown, keypress, the character put in, input, keyup. */
+function typeCharacter(element: Element, char: string): void {
+  const keyInit: KeyboardEventInit = { key: char, bubbles: true, cancelable: true };
+  element.dispatchEvent(new KeyboardEvent("keydown", keyInit));
+  element.dispatchEvent(new KeyboardEvent("keypress", keyInit));
+
+  if (isTextInput(element)) {
+    element.value += char;
+  } else if (isContentEditable(element)) {
+    document.execCommand("insertText", false, char);
+  }
+
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+  element.dispatchEvent(new KeyboardEvent("keyup", keyInit));
+}
+
+/** Type the text one character at a time, `delay` ms apart (each wait can be aborted), then fire change. */
+async function typeByKeys(element: Element, text: string, delay: number): Promise<void> {
+  for (const char of text) {
+    typeCharacter(element, char);
+    if (delay > 0) await sleep(delay);
+  }
+  element.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+export async function performType(
+  options: TypeOptions,
+): Promise<Record<string, unknown>> {
+  const element = findTypeTarget(options);
 
   // focus() exists on HTML and SVG elements alike (HTMLOrSVGElement).
   (element as HTMLElement).focus();
@@ -228,46 +285,12 @@ export async function performType(
   await sleep(DELAYS.SCROLL_INTO_VIEW);
 
   const text = options.text || "";
-
-  if (options.clear) {
-    if (isTextInput(element)) {
-      element.value = "";
-    } else if (isContentEditable(element)) {
-      element.textContent = "";
-    }
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-  }
+  const clear = Boolean(options.clear);
+  if (clear) clearTarget(element);
 
   const delay = typingDelay(text.length, options.delay, TIMEOUTS.TYPING_BUDGET);
-  if (options.instant) {
-    if (isTextInput(element)) {
-      element.value = options.clear ? text : element.value + text;
-    } else if (isContentEditable(element)) {
-      element.textContent = options.clear
-        ? text
-        : (element.textContent || "") + text;
-    }
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-  } else {
-    for (const char of text) {
-      const keyInit: KeyboardEventInit = { key: char, bubbles: true, cancelable: true };
-      element.dispatchEvent(new KeyboardEvent("keydown", keyInit));
-      element.dispatchEvent(new KeyboardEvent("keypress", keyInit));
-
-      if (isTextInput(element)) {
-        element.value += char;
-      } else if (isContentEditable(element)) {
-        document.execCommand("insertText", false, char);
-      }
-
-      element.dispatchEvent(new Event("input", { bubbles: true }));
-      element.dispatchEvent(new KeyboardEvent("keyup", keyInit));
-
-      if (delay > 0) await sleep(delay);
-    }
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-  }
+  if (options.instant) typeInstantly(element, text, clear);
+  else await typeByKeys(element, text, delay);
 
   const enter = options.pressEnter
     ? pressEnterOn(element, options.submitForm !== false)
@@ -489,11 +512,11 @@ export function selectOption(
 
   sel.dispatchEvent(new Event("change", { bubbles: true }));
 
-  // A masked select (a card expiry) answers as a read of it would.
-  const masked = isMaskedField(sel);
-  return {
-    selected: true,
-    value: masked ? MASKED_VALUE : sel.value,
-    text: masked ? MASKED_VALUE : sel.options[sel.selectedIndex]?.text,
-  };
+  return selectedOptionResult(sel);
+}
+
+/** What select_option answers: the chosen value and text, masked for a masked select (a card expiry), as a read of it would be. */
+function selectedOptionResult(sel: HTMLSelectElement): Record<string, unknown> {
+  if (isMaskedField(sel)) return { selected: true, value: MASKED_VALUE, text: MASKED_VALUE };
+  return { selected: true, value: sel.value, text: sel.options[sel.selectedIndex]?.text };
 }

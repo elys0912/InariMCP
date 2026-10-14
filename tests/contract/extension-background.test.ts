@@ -66,10 +66,16 @@ function fakeTabs(initial: { status: string; url: string }) {
 type WaitForTabLoad = (
   tabs: unknown,
   tabId: number,
-  trigger: () => Promise<unknown>,
-  isLoaded: (tab: { status: string }) => boolean,
-  options: { timeoutMs: number; settleMs: number; requireLoading: boolean },
+  options: {
+    trigger: () => Promise<unknown>;
+    isLoaded: (tab: { status: string }) => boolean;
+    timeoutMs: number;
+    settleMs: number;
+    requireLoading: boolean;
+  },
 ) => Promise<'complete' | 'timeout' | 'removed'>;
+
+const isComplete = (t: { status: string }): boolean => t.status === 'complete';
 
 let waitForTabLoad: WaitForTabLoad;
 
@@ -87,11 +93,14 @@ describe('3.A6 / 5.11 waitForTabLoad', () => {
   it('ignores a "complete" left over from the previous page and fails on timeout', async () => {
     vi.useFakeTimers();
     const tabs = fakeTabs({ status: 'complete', url: 'https://old.test/' });
-    const done = waitForTabLoad(tabs, 7, async () => {
-      // stale event of the old document, before the new load starts
-      tabs.onUpdated.fire(7, { status: 'complete' }, { ...tabs.tab });
-      tabs.tab.status = 'loading';
-    }, (t) => t.status === 'complete', { timeoutMs: 5_000, settleMs: 1_000, requireLoading: true });
+    const done = waitForTabLoad(tabs, 7, {
+      trigger: async () => {
+        // stale event of the old document, before the new load starts
+        tabs.onUpdated.fire(7, { status: 'complete' }, { ...tabs.tab });
+        tabs.tab.status = 'loading';
+      },
+      isLoaded: isComplete, timeoutMs: 5_000, settleMs: 1_000, requireLoading: true,
+    });
     await vi.advanceTimersByTimeAsync(5_000);
     await expect(done).resolves.toBe('timeout');
     expect(tabs.onUpdated.size()).toBe(0);
@@ -100,41 +109,47 @@ describe('3.A6 / 5.11 waitForTabLoad', () => {
 
   it('completes after loading → complete, and reports a closed tab as removed', async () => {
     const tabs = fakeTabs({ status: 'complete', url: 'https://old.test/' });
-    const opts = { timeoutMs: 5_000, settleMs: 1_000, requireLoading: true };
-    const loaded = waitForTabLoad(tabs, 7, async () => {
-      tabs.onUpdated.fire(7, { status: 'loading' }, { ...tabs.tab, status: 'loading' });
-      tabs.onUpdated.fire(7, { status: 'complete' }, { ...tabs.tab, status: 'complete' });
-    }, (t) => t.status === 'complete', opts);
+    const opts = { isLoaded: isComplete, timeoutMs: 5_000, settleMs: 1_000, requireLoading: true };
+    const loaded = waitForTabLoad(tabs, 7, {
+      ...opts,
+      trigger: async () => {
+        tabs.onUpdated.fire(7, { status: 'loading' }, { ...tabs.tab, status: 'loading' });
+        tabs.onUpdated.fire(7, { status: 'complete' }, { ...tabs.tab, status: 'complete' });
+      },
+    });
     await expect(loaded).resolves.toBe('complete');
 
-    const closed = waitForTabLoad(tabs, 7, async () => {
-      tabs.onUpdated.fire(7, { status: 'loading' }, { ...tabs.tab, status: 'loading' });
-      tabs.onRemoved.fire(7, {});
-    }, (t) => t.status === 'complete', opts);
+    const closed = waitForTabLoad(tabs, 7, {
+      ...opts,
+      trigger: async () => {
+        tabs.onUpdated.fire(7, { status: 'loading' }, { ...tabs.tab, status: 'loading' });
+        tabs.onRemoved.fire(7, {});
+      },
+    });
     await expect(closed).resolves.toBe('removed');
   });
 
   it('settles on the current state when no load starts within settleMs', async () => {
     vi.useFakeTimers();
-    const opts = { timeoutMs: 5_000, settleMs: 1_000, requireLoading: true };
+    const opts = { trigger: async () => {}, isLoaded: isComplete, timeoutMs: 5_000, settleMs: 1_000, requireLoading: true };
     // Same-document navigation: nothing loads, the tab is already complete.
     const settled = fakeTabs({ status: 'complete', url: 'https://same.test/#a' });
-    const done = waitForTabLoad(settled, 7, async () => {}, (t) => t.status === 'complete', opts);
+    const done = waitForTabLoad(settled, 7, opts);
     await vi.advanceTimersByTimeAsync(1_000);
     await expect(done).resolves.toBe('complete');
     expect(settled.onUpdated.size()).toBe(0);
 
     // Still loading at the settle point: the wait runs into its timeout.
     const slow = fakeTabs({ status: 'loading', url: 'https://slow.test/' });
-    const late = waitForTabLoad(slow, 7, async () => {}, (t) => t.status === 'complete', opts);
+    const late = waitForTabLoad(slow, 7, opts);
     await vi.advanceTimersByTimeAsync(5_000);
     await expect(late).resolves.toBe('timeout');
   });
 
   it('requireLoading false: the current state counts at once', async () => {
     const tabs = fakeTabs({ status: 'complete', url: 'https://new.test/' });
-    const done = waitForTabLoad(tabs, 7, async () => {}, (t) => t.status === 'complete', {
-      timeoutMs: 5_000, settleMs: 1_000, requireLoading: false,
+    const done = waitForTabLoad(tabs, 7, {
+      trigger: async () => {}, isLoaded: isComplete, timeoutMs: 5_000, settleMs: 1_000, requireLoading: false,
     });
     await expect(done).resolves.toBe('complete');
     expect(tabs.get).toHaveBeenCalledTimes(1);
@@ -143,8 +158,10 @@ describe('3.A6 / 5.11 waitForTabLoad', () => {
 
   it('a trigger that rejects rejects the wait and removes the listeners', async () => {
     const tabs = fakeTabs({ status: 'complete', url: 'https://x.test/' });
-    const done = waitForTabLoad(tabs, 7, async () => { throw new Error('tabs.reload failed'); },
-      (t) => t.status === 'complete', { timeoutMs: 5_000, settleMs: 1_000, requireLoading: true });
+    const done = waitForTabLoad(tabs, 7, {
+      trigger: async () => { throw new Error('tabs.reload failed'); },
+      isLoaded: isComplete, timeoutMs: 5_000, settleMs: 1_000, requireLoading: true,
+    });
     await expect(done).rejects.toThrow('tabs.reload failed');
     expect(tabs.onUpdated.size()).toBe(0);
     expect(tabs.onRemoved.size()).toBe(0);

@@ -84,7 +84,7 @@ describe('BROWSER_ACTIONS ⇔ WIRE_ACTION_MAP', () => {
     });
   });
 
-  // InariMCP (AMO): no wire name runs code given as a string or records the
+  // No wire name runs code given as a string or records the
   // page's console / network traffic.
   it('the script, observer and logging actions are gone', () => {
     const removed = [

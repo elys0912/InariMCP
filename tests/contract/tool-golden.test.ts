@@ -317,7 +317,7 @@ function recordGuardDecisions(calls: Call[]): GuardEntry[] {
     const call = resolveOperation(tool, args);
     const entry: GuardEntry = { id, tool };
     for (const [name, guard] of guards) {
-      entry[name] = guard.check(call.op, call.args, undefined, null, call.label)?.safetyDecision ?? null;
+      entry[name] = guard.check(call.op, call.args, { label: call.label })?.safetyDecision ?? null;
     }
     return entry;
   });

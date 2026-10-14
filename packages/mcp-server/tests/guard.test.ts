@@ -195,7 +195,7 @@ describe('approval by tool class (acting tools always ask)', () => {
   describe('the public tools get the same decisions', () => {
     const call = (g: SafetyGuard, tool: string, raw: Record<string, unknown>) => {
       const { op, args, label } = resolveOperation(tool, callSchemaFor(tool)!.parse(raw) as Record<string, unknown>);
-      return g.check(op, args, undefined, null, label)?.safetyDecision ?? null;
+      return g.check(op, args, { label })?.safetyDecision ?? null;
     };
     const cases: Array<[tool: string, args: Record<string, unknown>, plain: string | null, readSite: string | null]> = [
       ['fox_read', { mode: 'text' }, null, 'confirmation_required'],
@@ -782,8 +782,8 @@ describe('rate limit counts only calls that would run (2.B7)', () => {
 describe('call label (the name the caller used)', () => {
   it('names the called tool and its arguments in messages and the audit log, not the operation', () => {
     const g = guard({ readOnly: true, auditLog: true });
-    const denial = g.check('fox_close_tab', { tabId: 7 }, 'stdio', null, {
-      tool: 'fox_tab', args: { action: 'close', tabId: 7 },
+    const denial = g.check('fox_close_tab', { tabId: 7 }, {
+      transport: 'stdio', label: { tool: 'fox_tab', args: { action: 'close', tabId: 7 } },
     });
     expect(denial?.error).toMatch(/^fox_tab refused/);
     const lines = fs.readFileSync(getAuditLogPath(), 'utf-8').trim().split('\n');

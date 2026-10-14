@@ -77,6 +77,16 @@ describe('floorRefusal: reads and the rest', () => {
     expect(floorRefusal('snapshot', {}, PAGE, approvalWithReadSites(['bank.example.test']))).toBeNull();
   });
 
+  it('compares the page URL as it is: a view-source: or about:reader URL is not unwrapped, unlike the Extension', () => {
+    // The Extension (background/url-policy.ts findReadRule) checks the page
+    // such a tab shows; the headless backend never shows one (fox_navigate
+    // takes http(s) and about:blank only), so its floor reads no wrapper.
+    const rules = approvalWithReadSites(['bank.example.test']);
+    expect(floorRefusal('get_text', {}, 'view-source:https://bank.example.test/a', rules)).toBeNull();
+    const reader = `about:reader?url=${encodeURIComponent('https://bank.example.test/a')}`;
+    expect(floorRefusal('get_text', {}, reader, rules)).toBeNull();
+  });
+
   it('refuses a command whose confirm_read_sites rules cannot be used', () => {
     expect(floorRefusal('get_text', {}, PAGE, approval({ unusableRules: 1 })))
       .toMatchObject({ success: false, safetyDecision: 'config_error' });

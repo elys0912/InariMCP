@@ -74,38 +74,60 @@ function isPortNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 65535;
 }
 
+function isHostsKind(value: unknown): value is HostUrlRule["hosts"] {
+  return value === "tree" || value === "sub" || value === "exact";
+}
+
+function isPathMatch(value: unknown): value is HostUrlRule["pathMatch"] {
+  return value === "strict" || value === "loose";
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+/**
+ * A rule's path: null, or a string without `?` / `#`. A path is compared
+ * with the URL's pathname, which never holds a query or fragment: such a
+ * rule would match nothing (the server refuses the pattern; this guards
+ * against a server that does not).
+ */
+function isRulePath(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && !/[?#]/.test(value));
+}
+
+/** A rule's port: null (any port) or a port number. */
+function isRulePort(value: unknown): value is number | null {
+  return value === null || isPortNumber(value);
+}
+
+/** Validate a wire entry of kind "host". null if unusable. */
+function parseHostRule(r: Record<string, unknown>, source: string): HostUrlRule | null {
+  const { host, hosts, scheme, path, pathMatch } = r;
+  // A missing port is any port (also when an older server sent none).
+  const port = r.port ?? null;
+  if (typeof host !== "string" || host === "") return null;
+  if (!isHostsKind(hosts) || !isNullableString(scheme) || !isRulePath(path)) return null;
+  if (!isPathMatch(pathMatch) || !isRulePort(port)) return null;
+
+  return { kind: "host", source, scheme, hosts, host, port, path, pathMatch };
+}
+
+/** Validate a wire entry of kind "regex". null if unusable. */
+function parseRegexRule(r: Record<string, unknown>, source: string): RegexUrlRule | null {
+  const { re, matchRaw } = r;
+  if (typeof re !== "string" || typeof matchRaw !== "boolean") return null;
+
+  return { kind: "regex", source, re, matchRaw };
+}
+
 /** Validate one wire entry. null if unusable. */
 export function parseUrlRule(raw: unknown): UrlRule | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.source !== "string") return null;
-  if (r.kind === "host") {
-    if (typeof r.host !== "string" || r.host === "") return null;
-    if (r.hosts !== "tree" && r.hosts !== "sub" && r.hosts !== "exact") return null;
-    if (r.scheme !== null && typeof r.scheme !== "string") return null;
-    if (r.path !== null && typeof r.path !== "string") return null;
-    // A path is compared with the URL's pathname, which never holds a query
-    // or fragment: such a rule would match nothing (the server refuses the
-    // pattern; this guards against a server that does not).
-    if (typeof r.path === "string" && /[?#]/.test(r.path)) return null;
-    if (r.pathMatch !== "strict" && r.pathMatch !== "loose") return null;
-    const port = r.port ?? null;
-    if (port !== null && !isPortNumber(port)) return null;
-    return {
-      kind: "host",
-      source: r.source,
-      scheme: r.scheme,
-      hosts: r.hosts,
-      host: r.host,
-      port,
-      path: r.path,
-      pathMatch: r.pathMatch,
-    };
-  }
-  if (r.kind === "regex") {
-    if (typeof r.re !== "string" || typeof r.matchRaw !== "boolean") return null;
-    return { kind: "regex", source: r.source, re: r.re, matchRaw: r.matchRaw };
-  }
+  if (r.kind === "host") return parseHostRule(r, r.source);
+  if (r.kind === "regex") return parseRegexRule(r, r.source);
   return null;
 }
 
@@ -175,33 +197,46 @@ export function looseRulePath(pathname: string): string {
   return p.replace(/\/{2,}/g, "/").toLowerCase();
 }
 
+/** A regex rule: the normalised URL, and with matchRaw the URL as given (also when it does not parse). */
+function regexRuleMatches(rule: RegexUrlRule, re: RegExp | null, raw: string, n: RuleUrl | null): boolean {
+  if (re === null) return false;
+  if (n === null) return rule.matchRaw && re.test(raw);
+  return re.test(n.normalized) || (rule.matchRaw && re.test(raw));
+}
+
+/** Whether `hostname` is one of the hosts the rule covers ('exact', 'sub' or 'tree'). */
+function ruleHostMatches(rule: HostUrlRule, hostname: string): boolean {
+  const isSub = hostname.endsWith(`.${rule.host}`);
+  if (rule.hosts === "exact") return hostname === rule.host;
+  if (rule.hosts === "sub") return isSub;
+  return hostname === rule.host || isSub;
+}
+
+/** Whether the URL's path starts with the rule's (null: any path), strict at a segment boundary. */
+function rulePathMatches(rule: HostUrlRule, url: URL): boolean {
+  const want = rule.path;
+  if (want === null) return true;
+  const strict = rule.pathMatch === "strict";
+  const actual = strict ? url.pathname : looseRulePath(url.pathname);
+  if (!actual.startsWith(want)) return false;
+  const boundary = strict && !want.endsWith("/");
+  return !boundary || actual.length === want.length || actual[want.length] === "/";
+}
+
+/** A host rule: scheme, host, port and path of the parsed URL (one with a host). */
+function hostRuleMatches(rule: HostUrlRule, n: RuleUrl | null): boolean {
+  if (n === null || n.hostname === "") return false;
+  if (rule.scheme !== null && n.url.protocol !== `${rule.scheme}:`) return false;
+  if (!ruleHostMatches(rule, n.hostname)) return false;
+  if (rule.port !== null && effectiveRulePort(n.url) !== rule.port) return false;
+  return rulePathMatches(rule, n.url);
+}
+
 /** Whether the URL matches the rule (url-pattern.ts UrlPattern.test). */
 export function urlRuleMatches(compiled: CompiledUrlRule, raw: string): boolean {
   const rule = compiled.rule;
   const n = normalizeRuleUrl(raw);
-  if (rule.kind === "regex") {
-    const re = compiled.regex;
-    if (re === null) return false;
-    if (n === null) return rule.matchRaw && re.test(raw);
-    return re.test(n.normalized) || (rule.matchRaw && re.test(raw));
-  }
-  if (n === null || n.hostname === "") return false;
-  if (rule.scheme !== null && n.url.protocol !== `${rule.scheme}:`) return false;
-  const h = n.hostname;
-  const isSub = h.endsWith(`.${rule.host}`);
-  const hostOk =
-    rule.hosts === "exact" ? h === rule.host
-      : rule.hosts === "sub" ? isSub
-        : h === rule.host || isSub;
-  if (!hostOk) return false;
-  if (rule.port !== null && effectiveRulePort(n.url) !== rule.port) return false;
-  const want = rule.path;
-  if (want === null) return true;
-  const strict = rule.pathMatch === "strict";
-  const actual = strict ? n.url.pathname : looseRulePath(n.url.pathname);
-  if (!actual.startsWith(want)) return false;
-  const boundary = strict && !want.endsWith("/");
-  return !boundary || actual.length === want.length || actual[want.length] === "/";
+  return rule.kind === "regex" ? regexRuleMatches(rule, compiled.regex, raw, n) : hostRuleMatches(rule, n);
 }
 
 /** The first rule the URL matches, if any. */

@@ -5,7 +5,7 @@ import { callSchemaFor, callableToolNames, describeTool, resolveOperation } from
 // Every operation is run by a public tool: tests/contract/tool-golden.test.ts
 // checks that.
 describe('public tools and operations', () => {
-  // InariMCP (AMO): the script and logging tools are gone, under every name.
+  // The script and logging tools are gone, under every name.
   it.each([
     'fox_evaluate', 'fox_observer', 'fox_logging', 'fox_get_logs',
     'fox_execute_script', 'fox_eval_chain', 'fox_wait_and_act', 'fox_inject_observer', 'fox_remove_observer',
@@ -15,7 +15,7 @@ describe('public tools and operations', () => {
     expect(describeTool(name)).toBeNull();
   });
 
-  // InariMCP (AMO): the earlier tool names of KitsuneMCP, and the never
+  // The earlier tool names of KitsuneMCP, and the never
   // implemented workflow tools, are no tools.
   it.each([
     'fox_get_text', 'fox_get_page_info', 'fox_get_elements', 'fox_find_text', 'fox_get_tabs',

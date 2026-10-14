@@ -59,7 +59,7 @@ export const BROWSER_ACTIONS = [
    */
   'cancel_human_wait',
 
-  // --- New actions (P3-3) ---
+  // --- Snapshot, find, dialogs, containers, navigation and URL waits ---
   'snapshot',
   'find_text',
   'handle_dialog',
@@ -71,3 +71,22 @@ export const BROWSER_ACTIONS = [
 
 /** Union type of all valid browser action names */
 export type BrowserAction = (typeof BROWSER_ACTIONS)[number];
+
+/**
+ * Upper bounds of scroll_capture (the screenshot scope; the browser action
+ * scrollAndCapture), so that one call cannot keep the user's tab scrolling
+ * for long: the MCP Server's schema refuses more (mcp-server
+ * tools/schemas.ts), and the Extension's content script cuts a command to
+ * them (content/inspect.ts scrollCaptureLimits).
+ *   MAX_SCROLLS   steps: 2.5 times the default 20
+ *   MAX_DELAY_MS  the delay between two steps: 4 times the default 500 ms
+ *   BUDGET_MS     all the delays together, the one before the first step
+ *                 included: 5 s under the daemon's command timeout (30 s),
+ *                 for the work of each step, so the answer comes before the
+ *                 daemon stops waiting
+ */
+export const SCROLL_CAPTURE_LIMITS = {
+  MAX_SCROLLS: 50,
+  MAX_DELAY_MS: 2_000,
+  BUDGET_MS: 25_000,
+} as const;

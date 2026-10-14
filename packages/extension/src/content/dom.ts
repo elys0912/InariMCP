@@ -5,6 +5,7 @@ import {
   isMaskedField as isMaskedByRule,
   MASKED_VALUE,
   maskedText,
+  PASSWORD_AUTOCOMPLETE_TOKENS,
   type MaskFieldInfo,
 } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
@@ -41,9 +42,6 @@ export function isButtonElement(el: Element): el is HTMLButtonElement {
 export function isSelectElement(el: Element): el is HTMLSelectElement {
   return el.localName === "select";
 }
-
-/** autocomplete tokens that mark a password field. */
-const PASSWORD_AUTOCOMPLETE_TOKENS: readonly string[] = ["current-password", "new-password"];
 
 /**
  * An input of type password, or one whose autocomplete has a password

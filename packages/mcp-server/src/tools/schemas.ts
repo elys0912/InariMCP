@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { READ_SELECTOR_RULE_TEXT } from '@inari-mcp/shared';
+import { READ_SELECTOR_RULE_TEXT, SCROLL_CAPTURE_LIMITS } from '@inari-mcp/shared';
 
 // ---------------------------------------------------------------------------
 // Tool classification (used by SafetyGuard and the MCP annotations)
@@ -124,16 +124,14 @@ export const SCREENSHOT_SCOPES = ['viewport', 'full_page', 'all_tabs', 'scroll_c
 export type ScreenshotScope = (typeof SCREENSHOT_SCOPES)[number];
 
 /**
- * Upper bounds of scroll_capture, so that one call cannot keep the user's
- * tab scrolling for long: 50 steps (2.5 times the default 20) and 2 s
- * between them (4 times the default 500 ms). The Extension also stops after
- * 25 s of delays in total (content/constants.ts SCROLL_CAPTURE_BUDGET), so
- * the answer comes before the daemon stops waiting (30 s).
+ * Upper bounds of scroll_capture (shared SCROLL_CAPTURE_LIMITS): the
+ * schema refuses more steps or a longer delay, and the Extension also stops
+ * after the budget of delays in total.
  */
-const MAX_SCROLL_CAPTURE_STEPS = 50;
-const MAX_SCROLL_CAPTURE_DELAY_MS = 2_000;
-/** The total of the delays of one scroll_capture (the Extension's budget). */
-const SCROLL_CAPTURE_BUDGET_S = 25;
+const MAX_SCROLL_CAPTURE_STEPS = SCROLL_CAPTURE_LIMITS.MAX_SCROLLS;
+const MAX_SCROLL_CAPTURE_DELAY_MS = SCROLL_CAPTURE_LIMITS.MAX_DELAY_MS;
+/** The total of the delays of one scroll_capture (the Extension's budget), in seconds. */
+const SCROLL_CAPTURE_BUDGET_S = SCROLL_CAPTURE_LIMITS.BUDGET_MS / 1_000;
 
 const foxScreenshotSchema = z.object({
   scope: z.enum(SCREENSHOT_SCOPES)

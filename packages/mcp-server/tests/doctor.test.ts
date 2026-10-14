@@ -599,26 +599,21 @@ describe('doctor: safety-config (the daemon\'s own validator)', () => {
     expect(s.status).toBe('OK');
   });
 
-  it('a blank FOX_SAFETY_CONFIG is the default file, as in the daemon; CLAUDE_BROWSER_SAFETY_CONFIG is not read', async () => {
-    const file = writeSafety('{ "audit_log": "yes" }', tempDir('inari-doctor-safety-'));
+  it('a blank FOX_SAFETY_CONFIG is the default file, as in the daemon', async () => {
     process.env['FOX_SAFETY_CONFIG'] = ' ';
-    process.env['CLAUDE_BROWSER_SAFETY_CONFIG'] = file;
     const s = byId(await runChecks(deps(undefined)), 'safety-config');
     expect(s.status).toBe('OK');
     expect(s.detail).toContain(path.join(home, '.inari-mcp', 'safety.json'));
-    expect(s.detail).not.toContain(file);
   });
 
   it("the running daemon's path wins; its blank FOX_ value is the default file", async () => {
     writeToken(TOKEN);
-    const file = writeSafety('{ "audit_log": "yes" }', tempDir('inari-doctor-safety-'));
     const s = byId(await runChecks(deps({
       token: TOKEN,
-      info: { settings: { FOX_SAFETY_CONFIG: '', CLAUDE_BROWSER_SAFETY_CONFIG: file } },
+      info: { settings: { FOX_SAFETY_CONFIG: '' } },
     })), 'safety-config');
     expect(s.status).toBe('OK');
     expect(s.detail).toContain(path.join(home, '.inari-mcp', 'safety.json'));
-    expect(s.detail).not.toContain(file);
   });
 
   it("the running daemon's path wins over the session's", async () => {

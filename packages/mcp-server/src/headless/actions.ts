@@ -498,7 +498,7 @@ const type: ActionHandler = async ({ page, args }) => {
 // scrolls the window; without toElement and direction nothing moves.
 type ScrollDirection = (typeof SCROLL_DIRECTIONS)[number];
 
-/** An unknown direction fails the parse (it used to be ignored: nothing moved). */
+/** An unknown direction fails the parse. */
 const scrollArgs = z.object({
   toElement: z.string().optional(),
   direction: z.enum(SCROLL_DIRECTIONS).optional(),
@@ -752,6 +752,16 @@ const selectOptionArgs = z.object({
   text: z.string().optional(),
 });
 
+/**
+ * The options of a select as select_option answers with them: masked for a
+ * masked select (a card expiry), as a read of it would be
+ * (shared/src/field-mask.ts).
+ */
+function shownOptions(mask: MaskFieldInfo, options: { value: string; text: string }[]): { value: string; text: string }[] {
+  if (!isMaskedField(mask)) return options;
+  return options.map(() => ({ value: MASKED_VALUE, text: MASKED_VALUE }));
+}
+
 const selectOption: ActionHandler = async ({ page, args }) => {
   const { selector, ...want } = parseArgs(selectOptionArgs, args, 'select_option');
   if (want.value === undefined && want.index === undefined && want.text === undefined) {
@@ -783,11 +793,7 @@ const selectOption: ActionHandler = async ({ page, args }) => {
   if (info.kind === 'not-select') {
     return { success: false, error: `Element is not a <select>: ${selector}` };
   }
-  // A masked select (a card expiry) answers as a read of it would: the
-  // options of such a select are masked (shared/src/field-mask.ts).
-  const shown = isMaskedField(info.mask)
-    ? info.options.map(() => ({ value: MASKED_VALUE, text: MASKED_VALUE }))
-    : info.options;
+  const shown = shownOptions(info.mask, info.options);
   const picked = info.idx < 0 ? undefined : shown[info.idx];
   if (picked === undefined) {
     const what = want.value !== undefined ? `value "${want.value}"`
@@ -1049,7 +1055,7 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   solve_captcha: dispatch(solveCaptcha),
   cancel_human_wait: UNSUPPORTED,
 
-  // --- P3-3 ---
+  // --- Snapshot, find, dialogs, containers, navigation and URL waits ---
   snapshot: reading(['selector'], snapshot),
   find_text: dispatch(findText),
   handle_dialog: { kind: 'unlocked', run: (c) => c.dialogs.handleDialog(c.tabId, c.args, c.signal) },

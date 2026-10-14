@@ -1,15 +1,32 @@
 /**
  * approval-site.ts: the one rule of the site a human approval is bound to,
- * used by the MCP Server (safety/approval.ts) and the Extension (approval.ts
- * isApprovedSite). The Extension's check is tested in
- * tests/contract/approval-flow.test.ts and extension-background-async.test.ts.
+ * used by the MCP Server (safety/approval.ts), the Extension
+ * (background/url-policy.ts) and the headless floor (headless/approval-floor.ts).
+ * The Extension's check is tested in tests/contract/approval-flow.test.ts and
+ * extension-background-async.test.ts.
  */
 
 import * as fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { approvalSiteOf, bareHost } from '@inari-mcp/shared/approval-site';
+import { approvalSiteOf, bareHost, isApprovedSite, NEW_TAB_URL, urlToOpen } from '@inari-mcp/shared/approval-site';
 import * as root from '@inari-mcp/shared';
+
+describe('urlToOpen and isApprovedSite', () => {
+  it('an opening command without a url opens a blank tab', () => {
+    expect([urlToOpen('https://a.test/'), urlToOpen(''), urlToOpen(undefined), urlToOpen(3)])
+      .toEqual(['https://a.test/', NEW_TAB_URL, NEW_TAB_URL, NEW_TAB_URL]);
+  });
+
+  it('compares the site of the URL with the approved site as bare hostnames', () => {
+    expect(isApprovedSite('https://Pay.example.test./x', 'pay.example.test.')).toBe(true);
+    expect(isApprovedSite(NEW_TAB_URL, 'about:')).toBe(true);
+    expect(isApprovedSite('https://evil.pay.example.test/', 'pay.example.test')).toBe(false);
+    expect(isApprovedSite('https://pay.example.test/', '')).toBe(false);
+    expect(isApprovedSite('https://pay.example.test/', undefined)).toBe(false);
+    expect(isApprovedSite(null, 'pay.example.test')).toBe(false);
+  });
+});
 
 describe('approvalSiteOf', () => {
   it('is the lower-case hostname without a trailing dot, the scheme of a URL without one, null for non-URLs', () => {

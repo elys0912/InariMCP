@@ -69,7 +69,8 @@ const WIRE_ACTIONS = {
   solve_captcha: "solveCaptcha",
   cancel_human_wait: "cancelHumanWait",
 
-  // --- P3-3 actions (container / find keep their snake_case internal names) ---
+  // --- Snapshot, find, dialogs, containers, navigation and URL waits (container and find keep
+  // their snake_case internal names) ---
   snapshot: null,
   find_text: "find_text",
   handle_dialog: null,

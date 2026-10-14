@@ -24,7 +24,7 @@ export async function getPageInfo(
       ...result,
     };
   } catch (error) {
-    // E-21: the same failure text as the tools sent through sendToContentScript.
+    // The same failure text as the tools sent through sendToContentScript.
     return contentScriptFailure(error);
   }
 }

@@ -162,9 +162,8 @@ describe('HeadlessBrowser lifecycle', () => {
     expect(launch).toHaveBeenCalledWith(expect.objectContaining({ headless: true, timeout: 4321 }));
   });
 
-  it('uses the Firefox of Playwright when FOX_EXECUTABLE is blank; the old CLAUDE_BROWSER_EXECUTABLE is not read', async () => {
+  it('uses the Firefox of Playwright when FOX_EXECUTABLE is blank', async () => {
     vi.stubEnv('FOX_EXECUTABLE', '  ');
-    vi.stubEnv('CLAUDE_BROWSER_EXECUTABLE', '/opt/old/firefox');
     fakeBrowser();
     await new HeadlessBrowser().start();
     expect(launch.mock.calls[0]?.[0]).not.toHaveProperty('executablePath');

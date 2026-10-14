@@ -55,15 +55,13 @@ afterEach(() => {
 });
 
 describe('getScreenshotsDir', () => {
-  const OLD_NAME_DIR = path.join(os.tmpdir(), 'inari-shots-old-name');
-
   it('uses FOX_SCREENSHOTS_DIR when set', () => {
     expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: dir })).toBe(path.resolve(dir));
   });
 
-  it('uses the default when FOX_SCREENSHOTS_DIR is blank; the old CLAUDE_BROWSER_* name is not read', () => {
+  it('uses the default when FOX_SCREENSHOTS_DIR is blank', () => {
     for (const blank of ['', '   ']) {
-      const fromBlank = getScreenshotsDir({ FOX_SCREENSHOTS_DIR: blank, CLAUDE_BROWSER_SCREENSHOTS_DIR: OLD_NAME_DIR });
+      const fromBlank = getScreenshotsDir({ FOX_SCREENSHOTS_DIR: blank });
       expect(fromBlank).toBe(getScreenshotsDir({}));
       expect(fromBlank).not.toBe(path.resolve(blank));
     }

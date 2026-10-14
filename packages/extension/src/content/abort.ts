@@ -2,12 +2,18 @@
 // when the user pauses agent actions while a command runs
 // (background/dispatch.ts, ABORT_REQUEST_TYPE). A running command sees it at
 // each of its steps: every wait between two steps is sleep() (dom.ts), which
-// then ends at once with ABORTED_MESSAGE, and the waits on page events
-// listen through whenAborted(). The abort carries the background's pause
-// count, and so does each command from the Native Host: a command sent
-// before that pause but arriving after the abort is refused before it starts
-// (isSentBeforeAbort). A command sent after the pause was lifted runs as
-// usual: beginCommand().
+// listens through whenAborted() and then ends at once with ABORTED_MESSAGE.
+// The captcha wait ends another way: the abort cancels it like
+// cancel_human_wait (handler.ts abortCommands). The abort carries the
+// background's pause count, and so does each command from the Native Host: a
+// command sent before that pause but arriving after the abort is refused
+// before it starts (isSentBeforeAbort). A command sent after the pause was
+// lifted runs as usual: beginCommand().
+//
+// Constraint: a command awaits only sleep() or a promise that whenAborted()
+// ends (and the captcha wait above). The controller is replaced when the
+// next command starts, so a command that awaited anything else could miss
+// an abort that came meanwhile.
 
 /**
  * The error a command ends with when the pause stops it. It starts with

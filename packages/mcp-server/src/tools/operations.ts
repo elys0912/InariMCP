@@ -92,7 +92,7 @@ export function callableToolNames(): Set<string> {
 /** What GET /mcp/tools says about a callable name. */
 export interface ToolDescription {
   description: string;
-  /** The safety classes of the operations it can run, joined by `|` (as before). */
+  /** The safety classes of the operations it can run, joined by `|`. */
   classification: string;
   /** The same classes as a list. */
   classifications: ToolClassification[];

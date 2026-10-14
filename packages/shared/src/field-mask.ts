@@ -18,15 +18,18 @@ export const MASKED_VALUE = '[MASKED]';
 export const MASKED_INPUT_TYPES: readonly string[] = ['password', 'hidden'];
 
 /**
+ * autocomplete tokens that mark a password field (HTML autofill field
+ * names). The Extension refuses to type into such a field
+ * (content/dom.ts isPasswordField); its value is masked like the others.
+ */
+export const PASSWORD_AUTOCOMPLETE_TOKENS: readonly string[] = ['current-password', 'new-password'];
+
+/**
  * autocomplete tokens whose field is masked (HTML autofill field names):
  * passwords and one-time codes. Payment card fields are masked by
  * MASKED_AUTOCOMPLETE_PREFIX.
  */
-export const MASKED_AUTOCOMPLETE_TOKENS: readonly string[] = [
-  'current-password',
-  'new-password',
-  'one-time-code',
-];
+export const MASKED_AUTOCOMPLETE_TOKENS: readonly string[] = [...PASSWORD_AUTOCOMPLETE_TOKENS, 'one-time-code'];
 
 /**
  * autocomplete tokens starting with this are masked: every payment card

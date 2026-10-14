@@ -136,68 +136,78 @@ export async function listContainers(
   }
 }
 
+/** fox_tab create with a container: the arguments open_in_container reads. */
+interface OpenInContainerData {
+  url: string;
+  containerName?: string;
+  cookieStoreId?: string;
+  color?: string;
+  icon?: string;
+  active?: boolean;
+}
+
+/**
+ * Container scope: opening a tab in any container other than the agent
+ * container is refused (user decision -- no new tabs outside the scope).
+ * Null when the container is allowed, or there is no scope.
+ */
+function containerScopeRefusal(data: OpenInContainerData, scope: ScopeFilter | null): CommandResult | null {
+  if (!scope) return null;
+  if (data.containerName !== undefined && data.containerName !== scope.containerName) {
+    return outOfScope(
+      `Container '${data.containerName}' is outside the container scope ` +
+      `(only '${scope.containerName}' is allowed)`,
+    );
+  }
+  if (data.cookieStoreId !== undefined && (scope.cookieStoreId === null || data.cookieStoreId !== scope.cookieStoreId)) {
+    return outOfScope(
+      `cookieStoreId '${data.cookieStoreId}' is outside the container scope ` +
+      `(only '${scope.containerName}' is allowed)`,
+    );
+  }
+  return null;
+}
+
+/** Verify the container exists before handing the ID to tabs.create: the failure, or null. */
+async function missingContainer(storeId: string): Promise<CommandResult | null> {
+  try {
+    await browser.contextualIdentities.get(storeId);
+    return null;
+  } catch {
+    return {
+      success: false,
+      error: `Container with cookieStoreId '${storeId}' does not exist`,
+    };
+  }
+}
+
+/** The cookieStoreId of the container named `containerName`, created when there is none. */
+async function containerIdByName(containerName: string, data: OpenInContainerData): Promise<string> {
+  const matches = await browser.contextualIdentities.query({ name: containerName });
+  if (matches.length > 0) return matches[0].cookieStoreId;
+
+  const created = await browser.contextualIdentities.create({
+    name: containerName,
+    color: data.color || "toolbar",
+    icon: data.icon || "circle",
+  });
+  return created.cookieStoreId;
+}
+
 export async function openInContainer(
-  data: {
-    url: string;
-    containerName?: string;
-    cookieStoreId?: string;
-    color?: string;
-    icon?: string;
-    active?: boolean;
-  },
+  data: OpenInContainerData,
   scope: ScopeFilter | null = null,
 ): Promise<CommandResult> {
   try {
-    // Container scope: opening a tab in any container other than the agent
-    // container is refused (user decision -- no new tabs outside the scope).
-    if (scope) {
-      if (data.containerName !== undefined && data.containerName !== scope.containerName) {
-        return outOfScope(
-          `Container '${data.containerName}' is outside the container scope ` +
-          `(only '${scope.containerName}' is allowed)`,
-        );
-      }
-      if (
-        data.cookieStoreId !== undefined &&
-        (scope.cookieStoreId === null || data.cookieStoreId !== scope.cookieStoreId)
-      ) {
-        return outOfScope(
-          `cookieStoreId '${data.cookieStoreId}' is outside the container scope ` +
-          `(only '${scope.containerName}' is allowed)`,
-        );
-      }
-    }
+    const refusal = containerScopeRefusal(data, scope);
+    if (refusal) return refusal;
 
     let storeId = data.cookieStoreId;
-
     if (storeId) {
-      // Verify the container exists before handing the ID to tabs.create.
-      try {
-        await browser.contextualIdentities.get(storeId);
-      } catch {
-        return {
-          success: false,
-          error: `Container with cookieStoreId '${storeId}' does not exist`,
-        };
-      }
+      const missing = await missingContainer(storeId);
+      if (missing) return missing;
     }
-
-    if (!storeId && data.containerName) {
-      const matches = await browser.contextualIdentities.query({
-        name: data.containerName,
-      });
-      if (matches.length > 0) {
-        storeId = matches[0].cookieStoreId;
-      } else {
-        const created = await browser.contextualIdentities.create({
-          name: data.containerName,
-          color: data.color || "toolbar",
-          icon: data.icon || "circle",
-        });
-        storeId = created.cookieStoreId;
-      }
-    }
-
+    if (!storeId && data.containerName) storeId = await containerIdByName(data.containerName, data);
     if (!storeId) {
       return {
         success: false,
@@ -205,18 +215,9 @@ export async function openInContainer(
       };
     }
 
-    const tab = await browser.tabs.create({
-      url: data.url || "about:blank",
-      cookieStoreId: storeId,
-      active: data.active !== false,
-    });
-
-    return {
-      success: true,
-      tabId: tab.id,
-      cookieStoreId: storeId,
-      url: data.url || "about:blank",
-    };
+    const url = data.url || "about:blank";
+    const tab = await browser.tabs.create({ url, cookieStoreId: storeId, active: data.active !== false });
+    return { success: true, tabId: tab.id, cookieStoreId: storeId, url };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
