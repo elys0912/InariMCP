@@ -9,7 +9,8 @@
 // the runtime messages below (background/listeners.ts checks the sender).
 //
 // Imported by the background modules, popup.ts and consent.ts (bundled into
-// each). Contract tests import it as a module.
+// each). The background holds the state in background/control-state.ts.
+// Contract tests import it as a module.
 
 /** Privacy policy linked from the consent page (also the AMO listing's). */
 export const PRIVACY_POLICY_URL = "https://github.com/elys0912/InariMCP/blob/main/docs/PRIVACY.md";
@@ -45,11 +46,6 @@ export interface ControlReply extends ControlView {
   saved: boolean;
 }
 
-/** Whether `value` is a reply that says the change was not saved. */
-export function isUnsavedReply(value: unknown): boolean {
-  return typeof value === "object" && value !== null && (value as Record<string, unknown>).saved === false;
-}
-
 /** `value` as a ControlView, or null when it is not one (a failed reply). */
 export function parseControlView(value: unknown): ControlView | null {
   if (typeof value !== "object" || value === null) return null;
@@ -58,4 +54,22 @@ export function parseControlView(value: unknown): ControlView | null {
   if (!isConsent || typeof paused !== "boolean") return null;
 
   return { consent, paused };
+}
+
+/**
+ * Send a control message to the background (from a page: popup.ts,
+ * consent.ts). The choices it answers with and whether it saved the change
+ * (`saved` is true for GET, which changes nothing); null when the request
+ * failed or the answer is not a ControlView.
+ */
+export async function requestControl(message: { type: string } & Record<string, unknown>): Promise<ControlReply | null> {
+  try {
+    const reply: unknown = await browser.runtime.sendMessage(message);
+    const control = parseControlView(reply);
+    if (control === null) return null;
+
+    return { ...control, saved: (reply as Record<string, unknown>).saved !== false };
+  } catch {
+    return null;
+  }
 }

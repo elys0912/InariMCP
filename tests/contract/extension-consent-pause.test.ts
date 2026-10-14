@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, isUnsavedReply } from '../../packages/extension/src/user-control.ts';
+import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, requestControl } from '../../packages/extension/src/user-control.ts';
 import { readExtensionSource } from './helpers/extension-source.js';
 
 const EXTENSION_ID = 'inari@test';
@@ -213,12 +213,18 @@ describe('control-state: saved choices', () => {
   });
 
   it.each([
-    [{ consent: 'granted', paused: true, saved: false }, true],
-    [{ consent: 'granted', paused: true, saved: true }, false],
-    [{ consent: 'granted', paused: true }, false],
-    [null, false],
-  ])('the popup warns for an unsaved reply only: %j → %s', (reply, unsaved) => {
-    expect(isUnsavedReply(reply)).toBe(unsaved);
+    ['an unsaved change', { consent: 'granted', paused: true, saved: false }, { consent: 'granted', paused: true, saved: false }],
+    ['a saved change', { consent: 'granted', paused: true, saved: true }, { consent: 'granted', paused: true, saved: true }],
+    ['GET (nothing written)', { consent: 'granted', paused: true }, { consent: 'granted', paused: true, saved: true }],
+    ['a refusal', { success: false, error: 'Refused' }, null],
+  ])('the pages read the reply to %s (requestControl)', async (_label, reply, expected) => {
+    (globalThis as { browser?: unknown }).browser = { runtime: { sendMessage: async () => reply } };
+    expect(await requestControl({ type: CONTROL_MESSAGE.GET })).toEqual(expected);
+  });
+
+  it('a failed control request reads as null', async () => {
+    (globalThis as { browser?: unknown }).browser = { runtime: { sendMessage: async () => { throw new Error('no background'); } } };
+    expect(await requestControl({ type: CONTROL_MESSAGE.GET })).toBeNull();
   });
 
   it('a change applies at once, reaches the hook with its kind and is saved', async () => {
@@ -336,7 +342,7 @@ describe('listeners: consent page and pause switch messages', () => {
       expect(await send({ type: CONTROL_MESSAGE.SET_CONSENT, granted: true }, sender)).toEqual(REFUSED);
     }
     expect(await send({ type: CONTROL_MESSAGE.SET_CONSENT, granted: 'yes' }, consentPage)).toEqual(REFUSED);
-    expect(state.isConsentGranted()).toBe(false);
+    expect(state.controlView().consent).toBe('undecided');
 
     expect(await send({ type: CONTROL_MESSAGE.SET_CONSENT, granted: true }, consentPage)).toEqual({ consent: 'granted', paused: false, saved: true });
     expect(await send({ type: CONTROL_MESSAGE.SET_CONSENT, granted: false }, consentPage)).toEqual({ consent: 'denied', paused: false, saved: true });

@@ -7,7 +7,7 @@ import { APPROVAL_MESSAGE, type ApprovalView } from '../approval';
 import { TOP_FRAME_ID } from '../background/constants';
 import type { ContentRequest } from '../content/types';
 import type { SetupState } from '../types/setup';
-import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, isUnsavedReply, parseControlView, type ControlView } from '../user-control';
+import { CONSENT_PAGE_PATH, CONTROL_MESSAGE, requestControl, type ControlView } from '../user-control';
 import { setupStateOfReply, setupStateOfFailure } from './setup-status';
 
 interface StatusResponse {
@@ -401,16 +401,9 @@ async function decide(id: string, approved: boolean): Promise<void> {
 // Consent and pause switch
 // ---------------------------------------------------------------------------
 //
-// The background holds both (user-control.ts). Without consent the popup
-// only offers to open the consent page again; with it, the pause switch.
-
-async function fetchControl(): Promise<ControlView | null> {
-  try {
-    return parseControlView(await browser.runtime.sendMessage({ type: CONTROL_MESSAGE.GET }));
-  } catch {
-    return null;
-  }
-}
+// The background holds both (background/control-state.ts; the messages are
+// in user-control.ts). Without consent the popup only offers to open the
+// consent page again; with it, the pause switch.
 
 function renderControl(control: ControlView): void {
   const granted = control.consent === 'granted';
@@ -437,18 +430,15 @@ function setupPauseSwitch(): void {
  * until Firefox restarts).
  */
 async function applyPauseSwitch(toggle: HTMLInputElement): Promise<void> {
-  const reply = await browser.runtime
-    .sendMessage({ type: CONTROL_MESSAGE.SET_PAUSED, paused: toggle.checked })
-    .catch(() => null);
-  const control = parseControlView(reply);
-  if (control === null) {
+  const reply = await requestControl({ type: CONTROL_MESSAGE.SET_PAUSED, paused: toggle.checked });
+  if (reply === null) {
     toggle.checked = !toggle.checked;
     showToast(t('toastPauseFailed'), 'error');
     return;
   }
 
-  renderControl(control);
-  if (isUnsavedReply(reply)) showToast(t('toastPauseNotSaved'), 'warning');
+  renderControl(reply);
+  if (!reply.saved) showToast(t('toastPauseNotSaved'), 'warning');
 }
 
 /** Opens the consent page in a tab (the popup closes when the tab opens). */
@@ -558,7 +548,7 @@ async function init(): Promise<void> {
 
   // Without consent nothing connects: the status would only say
   // "Connecting...". A failed query shows neither section.
-  const control = await fetchControl();
+  const control = await requestControl({ type: CONTROL_MESSAGE.GET });
   if (control !== null) renderControl(control);
   if (control === null || control.consent === 'granted') void refreshStatus(os, false);
 
