@@ -378,8 +378,8 @@ export class SafetyGuard {
     }
     // One active tab per window: only an unambiguous list names "the" active tab.
     if (active.length === 1) {
-      this._activeTabId = active[0]!.id;
-      this._activeUrl = active[0]!.url;
+      this._activeTabId = active[0].id;
+      this._activeUrl = active[0].url;
     }
   }
 
@@ -734,7 +734,7 @@ export class SafetyGuard {
     const now = Date.now();
     const cutoff = now - RATE_WINDOW_MS;
 
-    while (this._actionTimes.length > 0 && this._actionTimes[0]! <= cutoff) {
+    while (this._actionTimes.length > 0 && this._actionTimes[0] <= cutoff) {
       this._actionTimes.shift();
     }
 

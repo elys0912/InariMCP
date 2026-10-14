@@ -190,7 +190,7 @@ export async function clickAndWait(
   const waitForSel = options.waitForSelector;
   const shouldWaitForChange = options.waitForChange !== false;
 
-  let changes: Record<string, unknown>[] = [];
+  const changes: Record<string, unknown>[] = [];
   let observer: MutationObserver | null = null;
 
   if (shouldWaitForChange) {

@@ -169,8 +169,8 @@ type ParseResult = HostSpec | { error: string } | null;
 function parseHostForm(s: string): ParseResult {
   const m = HOST_FORM_RE.exec(s);
   if (!m) return null;
-  const ipv6 = m[3]!.startsWith('[');
-  const host = canonicalHost(m[3]!);
+  const ipv6 = m[3].startsWith('[');
+  const host = canonicalHost(m[3]);
   if (host === null) return ipv6 ? { error: `'${m[3]}' is not a valid IPv6 address` } : null;
   if (ipv6 && m[2] !== undefined) return { error: "'*.' cannot precede an IP address" };
   let port: number | null = null;
@@ -218,7 +218,7 @@ function convertLegacy(s: string): HostSpec | null {
   let scheme: string | null = null;
   const anchored = /^\^(https?)(\?)?:\\?\/\\?\//i.exec(t);
   if (anchored) {
-    scheme = anchored[2] ? null : anchored[1]!.toLowerCase();
+    scheme = anchored[2] ? null : anchored[1].toLowerCase();
     t = t.slice(anchored[0].length);
   }
   t = t.replace(/\((?:\/\|\$|\$\|\/)\)$/, '');

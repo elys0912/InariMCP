@@ -185,7 +185,7 @@ export function locatorOf(options: FindElementOptions): FindElementOptions {
   for (const key of keys) {
     if (options[key] !== undefined && options[key] !== "") locator[key] = options[key];
   }
-  return locator as FindElementOptions;
+  return locator;
 }
 
 /**

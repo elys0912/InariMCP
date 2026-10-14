@@ -131,7 +131,7 @@ function flatListSchema(
   const shape: ZodRawShape = { [discriminator]: discriminatorOptional ? disc.optional() : disc };
 
   for (const [key, list] of occurrences) {
-    const first = unwrap(list[0]!.field);
+    const first = unwrap(list[0].field);
     const used = list.map((o) => o.variant);
     const scope = used.length === names.length ? '' : `${discriminator}=${used.join('|')}`;
     const required = list.filter((o) => unwrap(o.field).required).map((o) => o.variant);
@@ -143,13 +143,13 @@ function flatListSchema(
       .map((o) => ({ variant: o.variant, value: unwrap(o.field).defaultValue }))
       .filter((d) => d.value !== undefined);
     const sameDefault = defaults.length > 0 &&
-      defaults.every((d) => JSON.stringify(d.value) === JSON.stringify(defaults[0]!.value));
+      defaults.every((d) => JSON.stringify(d.value) === JSON.stringify(defaults[0].value));
     const defaultNote =
       defaults.length === 0 ? ''
-        : sameDefault && defaults.length === used.length ? `default ${formatDefault(defaults[0]!.value)}`
+        : sameDefault && defaults.length === used.length ? `default ${formatDefault(defaults[0].value)}`
           : `default ${defaults.map((d) => `${formatDefault(d.value)} (${d.variant})`).join(', ')}`;
     const notes = [scope, requiredNote, defaultNote].filter(Boolean).join('; ');
-    const description = list[0]!.field.description ?? first.base.description ?? '';
+    const description = list[0].field.description ?? first.base.description ?? '';
     shape[key] = first.base.optional().describe(notes ? `(${notes}) ${description}` : description);
   }
   return z.object(shape);
