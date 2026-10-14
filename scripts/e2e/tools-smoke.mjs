@@ -15,8 +15,9 @@
 //                           (scripts/e2e/extension-load.mjs)
 // This script covers the remaining path: daemon → Native Host → Extension.
 //
-// It opens https://example.com/ in the active tab and https://example.org/
-// in a new tab (closed again at the end). Needs internet access.
+// It serves the local test pages of scripts/e2e/fixtures/reviewer/ on
+// 127.0.0.1, opens page 1 in the active tab and page 2 in a new tab (closed
+// again at the end). No internet access is needed.
 //
 // Usage: node scripts/e2e/tools-smoke.mjs
 //   FOX_HOST / FOX_HTTP_PORT override the daemon address (default 127.0.0.1:8785;
@@ -28,6 +29,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dataPaths, httpEndpoint, signPost } from '../lib/core.mjs';
 import { httpGet, httpPost } from '../lib/system.mjs';
+import { REVIEWER_FIXTURES, startFixtureServer } from './fixture-server.mjs';
 import { interpretCallResponse, truncate as short } from './smoke-core.mjs';
 
 const CALL_TIMEOUT_MS = 60_000;
@@ -63,28 +65,33 @@ function check(label, cond, detail = '') {
 }
 const tabCount = (r) => (Array.isArray(r.data?.tabs) ? r.data.tabs.length : NaN);
 
+const fixtures = await startFixtureServer(REVIEWER_FIXTURES);
+const page1 = `${fixtures.baseUrl}index.html`;
+const page2 = `${fixtures.baseUrl}page2.html`;
+const heading = 'InariMCP reviewer smoke test';
+
 const tabs0 = await call('fox_get_tabs');
 const before = tabCount(tabs0);
 check('fox_get_tabs', !tabs0.isError && before >= 1, `tabs=${before}`);
 
-const nav = await call('fox_navigate', { action: 'goto', url: 'https://example.com/' });
+const nav = await call('fox_navigate', { action: 'goto', url: page1 });
 check('fox_navigate goto', !nav.isError, short(nav.text));
 
 const info = await call('fox_get_page_info');
-check('fox_get_page_info', !info.isError && info.data?.url === 'https://example.com/', short(info.data?.title));
+check('fox_get_page_info', !info.isError && info.data?.url === page1, short(info.data?.title));
 
 const text = await call('fox_get_text');
-check('fox_get_text', !text.isError && /Example Domain/.test(text.data?.text ?? ''), short(text.data?.text, 60));
+check('fox_get_text', !text.isError && (text.data?.text ?? '').includes(heading), short(text.data?.text, 60));
 
-const find = await call('fox_find_text', { query: 'Example Domain' });
+const find = await call('fox_find_text', { query: heading });
 check('fox_find_text', !find.isError && find.data?.count >= 1, `count=${find.data?.count}`);
 
-const opened = await call('fox_navigate', { action: 'goto', url: 'https://example.org/', newTab: true });
+const opened = await call('fox_navigate', { action: 'goto', url: page2, newTab: true });
 const newTabId = opened.data?.tabId;
 check('fox_navigate newTab', !opened.isError && newTabId !== undefined, short(opened.text));
 const tabs1 = await call('fox_get_tabs');
 const newTab = tabs1.data?.tabs?.find((t) => t.id === newTabId);
-check('  new tab is open on example.org', /example\.org/.test(newTab?.url ?? ''), `tabs ${before} -> ${tabCount(tabs1)}`);
+check('  new tab is open on page 2', newTab?.url === page2, `tabs ${before} -> ${tabCount(tabs1)}`);
 
 const shot = await call('fox_screenshot', { scope: 'viewport' });
 const imagePath = shot.data?.imagePath;
@@ -100,6 +107,8 @@ if (newTabId !== undefined) {
 
 const safety = await call('fox_safety_status');
 check('fox_safety_status', !safety.isError && safety.data !== undefined && safety.data.success !== false, short(safety.text, 80));
+
+await fixtures.close();
 
 const passed = results.filter(Boolean).length;
 console.log(`\n${passed}/${results.length} PASS`);

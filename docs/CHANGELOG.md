@@ -18,6 +18,8 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - Privacy policy: [docs/PRIVACY.md](./PRIVACY.md) ([日本語](./PRIVACY.ja.md)): what is read and sent, where it goes, what stays on your computer and for how long, how to delete it, consent and control, private browsing.
 - Material for the addons.mozilla.org listing ([docs/amo/listing.md](./amo/listing.md)) and the Notes for Reviewers ([docs/amo/reviewer-notes.md](./amo/reviewer-notes.md)).
 
+- `npm run smoke:reviewer` (`scripts/e2e/reviewer-smoke.mjs`) and [docs/amo/reviewer-smoke.md](amo/reviewer-smoke.md): a smoke test of the basic features (tabs, reading with masked fields, find, screenshot, a click approved in the popup) against a local test page on 127.0.0.1, with no Claude Code, account or internet access. `-- --headless` runs it without the extension. `scripts/e2e/tools-smoke.mjs` uses the same local pages instead of example.com.
+
 ### Changed
 
 - Renamed from KitsuneMCP to Inari MCP for Firefox. Add-on ID `inari-mcp@elys0912.github.io`, host manifest `inari_mcp`, state directory `~/.inari-mcp`, npm packages `@inari-mcp/*`.
