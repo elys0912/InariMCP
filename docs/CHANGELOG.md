@@ -22,3 +22,7 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The `allow_script_execution` key of `safety.json` and the `FOX_ALLOW_SCRIPTS` / `CLAUDE_BROWSER_ALLOW_SCRIPTS` variables. A `safety.json` that still has the key is refused as an unknown key until the key is deleted.
 - The `logs` and `script` profiles of `FOX_CAPS` (an unknown profile name is ignored with a warning).
 - The "Inspect Element for InariMCP" context menu entry: it handed its result to nobody.
+
+### Added
+
+- `npm run smoke:reviewer` (`scripts/e2e/reviewer-smoke.mjs`) and [docs/amo/reviewer-smoke.md](amo/reviewer-smoke.md): a smoke test of the basic features (tabs, reading with masked fields, find, screenshot, a click approved in the popup) against a local test page on 127.0.0.1, with no Claude Code, account or internet access. `-- --headless` runs it without the extension. `scripts/e2e/tools-smoke.mjs` uses the same local pages instead of example.com.

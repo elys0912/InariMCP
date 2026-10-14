@@ -24,6 +24,8 @@ npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefo
 
 `npm run test:e2e`（中継 → daemon → ヘッドレスFirefox）と`scripts/e2e/`のスクリプトは、READMEの「開発」に一覧がある。
 
+`npm run smoke:reviewer`（`scripts/e2e/reviewer-smoke.mjs`）は、MCPクライアントとして127.0.0.1のテストページでツールを呼び、クリックは拡張機能のポップアップで承認されるまで待つ。`npm run smoke:reviewer -- --headless`は、拡張機能なしでヘッドレスFirefoxで動かす。アドオンの審査者向けの手順は[amo/reviewer-smoke.md](./amo/reviewer-smoke.md)（英語）。
+
 ## ビルド
 
 `npm run build`は全workspaceの`build`を実行する。

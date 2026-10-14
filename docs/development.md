@@ -24,6 +24,8 @@ npm run e2e:extension   # the Extension loads into Firefox as a temporary add-on
 
 `npm run test:e2e` (relay → daemon → headless Firefox) and the scripts in `scripts/e2e/` are listed under "Development" in the README.
 
+`npm run smoke:reviewer` (`scripts/e2e/reviewer-smoke.mjs`) calls the tools as an MCP client against a local test page on 127.0.0.1 and waits for the click to be approved in the extension's popup; `npm run smoke:reviewer -- --headless` runs it on headless Firefox without the extension. The steps for add-on reviewers are in [amo/reviewer-smoke.md](./amo/reviewer-smoke.md).
+
 ## Build
 
 `npm run build` runs `build` in every workspace.

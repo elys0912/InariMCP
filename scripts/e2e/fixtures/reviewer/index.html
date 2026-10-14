@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>InariMCP reviewer smoke: page 1</title>
+</head>
+<body>
+<h1>InariMCP reviewer smoke test</h1>
+<p>A local test page, served from 127.0.0.1 by scripts/e2e/reviewer-smoke.mjs. It loads nothing from the internet.</p>
+<p><a id="to-page-2" href="page2.html">Go to page 2</a></p>
+<form id="sample-form" action="page2.html" method="get">
+  <p><label>Name <input id="name" name="name" type="text" value="Sample name"></label></p>
+  <p><label>Password <input id="password" name="password" type="password" value="reviewer-smoke-password-value"></label></p>
+  <input id="session" name="session" type="hidden" value="reviewer-smoke-hidden-value">
+  <p><button id="button" type="button">A button that does nothing</button></p>
+</form>
+</body>
+</html>

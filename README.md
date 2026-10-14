@@ -472,7 +472,8 @@ End-to-end checks, kept out of `npm test`:
 |---|---|
 | `npm run test:e2e` | relay → daemon → headless Firefox over MCP (`tests/e2e/`; needs `npx playwright install firefox`). Uses a temporary home directory and free ports, so a running daemon is not touched |
 | `npm run e2e:extension` | the extension loads into Firefox as a temporary add-on (`scripts/e2e/extension-load.mjs`, `web-ext` with Playwright's Firefox; another Firefox with `FOX_E2E_FIREFOX` or a path argument, overall limit `FOX_E2E_TIMEOUT_MS`, default 60000) |
-| `node scripts/e2e/tools-smoke.mjs` | daemon → Native Host → extension in your real Firefox (installer run, extension loaded; needs internet access) |
+| `node scripts/e2e/tools-smoke.mjs` | daemon → Native Host → extension in your real Firefox (installer run, extension loaded; local test pages on 127.0.0.1) |
+| `npm run smoke:reviewer` | the basic features as an MCP client against a local test page, with the click approved in the popup (`scripts/e2e/reviewer-smoke.mjs`; `-- --headless` without the extension). For add-on reviewers: [docs/amo/reviewer-smoke.md](docs/amo/reviewer-smoke.md) |
 | `node scripts/e2e/nm-probe.mjs` | the installed Native Messaging host starts and reaches the daemon |
 
 ## Credits

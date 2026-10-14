@@ -25,6 +25,7 @@
     "test:e2e": "vitest run --project=e2e",
     "test:firefox": "node scripts/test-firefox.mjs",
     "e2e:extension": "node scripts/e2e/extension-load.mjs",
+    "smoke:reviewer": "node scripts/e2e/reviewer-smoke.mjs",
     "lint:ext": "web-ext lint",
     "setup": "node scripts/install.mjs",
     "teardown": "node scripts/uninstall.mjs",
