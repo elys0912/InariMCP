@@ -48,7 +48,7 @@ describe('ServerLauncher.isPortInUse', () => {
 
 describe('daemonEnvNote', () => {
   it('names the inherited policy settings but never their values', () => {
-    const note = daemonEnvNote({ FOX_READ_ONLY: '1', FOX_SAFETY_CONFIG: 'C:\secret\path.json' });
+    const note = daemonEnvNote({ FOX_READ_ONLY: '1', FOX_SAFETY_CONFIG: 'C:\\secret\\path.json' });
     expect(note).toContain('FOX_READ_ONLY');
     expect(note).toContain('FOX_SAFETY_CONFIG');
     expect(note).not.toContain('secret');

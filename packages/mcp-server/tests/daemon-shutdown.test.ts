@@ -77,7 +77,7 @@ describe('buildShutdownSteps (R-3)', () => {
   }
 
   it('reads the WebSocket server when the step runs, not when the steps are built', async () => {
-    let ws: ClosableWsServer | undefined;
+    let ws: ClosableWsServer | undefined = undefined;
     const manager = new BrowserConnectionManager();
     const shutdownSpy = vi.spyOn(manager, 'shutdown');
     const steps = buildShutdownSteps({ getWsServer: () => ws, headlessMode: false, connectionManager: manager });

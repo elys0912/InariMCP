@@ -109,8 +109,10 @@ export function processMessage(
   const action = typeof message['action'] === 'string' ? message['action'] : undefined;
 
   // Response to a server command (has requestId, no action) → WS to server
-  if (message['requestId'] !== undefined && action === undefined) {
-    const requestId = String(message['requestId']);
+  const rawRequestId = message['requestId'];
+  if (rawRequestId !== undefined && action === undefined) {
+    // The ids the server sends are strings; anything else is logged as JSON.
+    const requestId = typeof rawRequestId === 'string' ? rawRequestId : JSON.stringify(rawRequestId);
     const entry = inFlight.get(requestId);
     inFlight.delete(requestId);
 

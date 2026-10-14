@@ -71,6 +71,15 @@ export function evaluateHealth(
   return { kind: 'ok', ...withVersion };
 }
 
+/**
+ * The protocol of an incompatible daemon, as text for messages. Protocol 1
+ * daemons send none; anything but a number or a string also reads
+ * "1 or older" (never "[object Object]").
+ */
+export function protocolText(protocol: unknown): string {
+  return typeof protocol === 'number' || typeof protocol === 'string' ? String(protocol) : '1 or older';
+}
+
 /** A daemon we can use: compatible, and not caught failing its proof. */
 export function isUsable(verdict: HealthVerdict): boolean {
   return verdict.kind === 'ok' || verdict.kind === 'unverified';

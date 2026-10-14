@@ -6,9 +6,15 @@ import { clipText } from "../text-clip";
 import { LIMITS } from "./constants";
 import type { FindElementOptions, ElementInfo } from "./types";
 
-/** An element's `value` as a truncated string (null when it has none). */
+/**
+ * An element's `value` as a truncated string. `value` is a string on form
+ * fields and a number on e.g. <li> / <progress>; anything else (none, or an
+ * object) is null.
+ */
 export function truncatedValue(value: unknown, max: number): string | null {
-  return value === undefined || value === null ? null : clipText(String(value), max);
+  if (typeof value === "string") return clipText(value, max);
+  if (typeof value === "number" || typeof value === "boolean") return clipText(String(value), max);
+  return null;
 }
 
 // Element kinds by localName, not instanceof (elements of another realm,
@@ -195,7 +201,8 @@ export function locatorOf(options: FindElementOptions): FindElementOptions {
  * it is about to type.
  */
 export function locatorWithoutText(options: FindElementOptions): FindElementOptions {
-  const { text: _data, ...locator } = locatorOf(options);
+  const locator = locatorOf(options);
+  delete locator.text;
   return locator;
 }
 

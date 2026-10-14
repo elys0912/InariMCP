@@ -33,7 +33,7 @@ function installFakeBrowser(overrides: Record<string, unknown> = {}) {
   const spies = {
     query: vi.fn(async (q: { currentWindow?: boolean }) => (q.currentWindow ? TABS.filter((t) => t.windowId === 1) : TABS)),
     create: vi.fn(async (props: { url: string }) => tab({ id: 9, url: props.url })),
-    remove: vi.fn(async (_id: number) => {}),
+    remove: vi.fn<(id: number) => Promise<void>>(async () => {}),
     update: vi.fn(async (id: number) => tab({ id, windowId: 2 })),
     windowsUpdate: vi.fn(async () => ({})),
     createContainer: vi.fn(async () => ({ cookieStoreId: 'c-new' })),

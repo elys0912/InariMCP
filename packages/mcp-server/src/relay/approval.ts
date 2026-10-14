@@ -166,6 +166,9 @@ export function elicitationApproved(result: ElicitResult): boolean {
 const MIN_WAIT_MS = 10_000;
 const EXPIRY_MARGIN_MS = 5_000;
 
+/** ErrorCode.RequestTimeout as McpError#code holds it (a plain number). */
+const REQUEST_TIMEOUT_CODE: number = ErrorCode.RequestTimeout;
+
 function fromReply(via: 'elicitation' | 'browser', reply: ApprovalReply): ApprovalOutcome {
   if (reply.approved && typeof reply.approvalToken === 'string') {
     return { kind: 'approved', via, token: reply.approvalToken };
@@ -187,7 +190,7 @@ export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Pr
     try {
       answer = await deps.elicit(elicitationParams(info), waitMs);
     } catch (err: unknown) {
-      if (err instanceof McpError && err.code === ErrorCode.RequestTimeout) {
+      if (err instanceof McpError && err.code === REQUEST_TIMEOUT_CODE) {
         return { kind: 'not_approved', via: 'elicitation', reason: 'timeout' };
       }
       elicitationProblem = errorMessage(err);

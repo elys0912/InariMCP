@@ -141,15 +141,18 @@ export interface GetElementsOptions {
   limit?: number;
 }
 
+/** Options of an action that reads none (any object; nothing is read from it). */
+type NoOptions = object;
+
 /**
  * The options each background → content action carries next to `action`
- * (one key per case of handler.ts handleMessage). `{}`: no options read.
+ * (one key per case of handler.ts handleMessage).
  */
 export interface ContentOptionsByAction {
   click: ClickOptions;
   type: TypeOptions;
   scroll: ScrollOptions;
-  getPageInfo: {};
+  getPageInfo: NoOptions;
   getElements: GetElementsOptions;
   highlight: HighlightOptions;
   waitForElement: WaitOptions;
@@ -157,7 +160,7 @@ export interface ContentOptionsByAction {
   waitForNetworkIdle: NetworkIdleOptions;
   scrollAndCapture: ScrollCaptureOptions;
   clickAndWait: ClickAndWaitOptions;
-  captureFullPage: {};
+  captureFullPage: NoOptions;
   getValue: FindElementOptions;
   setValue: SetValueOptions;
   hover: FindElementOptions;
@@ -165,7 +168,7 @@ export interface ContentOptionsByAction {
   pressKey: PressKeyOptions;
   getText: TextOptions;
   solveCaptcha: CaptchaOptions;
-  cancelHumanWait: {};
+  cancelHumanWait: NoOptions;
 }
 
 /** Action name of a background → content message. */

@@ -32,6 +32,7 @@ import {
   evaluateHealth,
   isUsable,
   newNonce,
+  protocolText,
   readApiTokenFile,
   readPackageVersion,
   resolveHost,
@@ -378,7 +379,7 @@ export class ServerLauncher {
     switch (verdict.kind) {
       case 'incompatible':
         line =
-          `the daemon on ${this.host}:${this.httpPort} speaks protocol ${String(verdict.protocol ?? '1')} ` +
+          `the daemon on ${this.host}:${this.httpPort} speaks protocol ${protocolText(verdict.protocol)} ` +
           `(version ${verdict.version ?? 'unknown'}); this Native Host needs ${DAEMON_PROTOCOL_VERSION}. ` +
           'Stop that daemon process (end it by PID; an older daemon has no --stop-daemon) — a matching one is started automatically.';
         break;

@@ -11,12 +11,13 @@
 
 import type { BrowserContext, ElementHandle, Page } from 'playwright';
 import { z } from 'zod';
-import { BrowserActionSchema, isMaskedField, isRecord, MASKED_VALUE, type BrowserAction, type MaskFieldInfo } from '@inari-mcp/shared';
+import { BrowserActionSchema, isMaskedField, MASKED_VALUE, type BrowserAction, type MaskFieldInfo } from '@inari-mcp/shared';
 import { screenshotStem } from '@inari-mcp/shared/node';
 import { countOccurrences, filterAriaSnapshot, parseArgs } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
 import { focusedIsPassword } from './focus.js';
 import { getScreenshotsDir } from '../utils/screenshot.js';
+import { errorMessage } from '../utils/errors.js';
 import { SCROLL_DIRECTIONS } from '../tools/schemas.js';
 import {
   AVAILABLE_OPTIONS_MAX,
@@ -182,7 +183,10 @@ function bounded<T>(work: Promise<T>, bound: Bound, ms: number, what: string): P
       return;
     }
     bound.signal?.addEventListener('abort', onAbort, { once: true });
-    work.then((v) => { done(); resolve(v); }, (e: unknown) => { done(); reject(e); });
+    work.then(
+      (v) => { done(); resolve(v); },
+      (e: unknown) => { done(); reject(e instanceof Error ? e : new Error(errorMessage(e))); },
+    );
   });
 }
 
@@ -803,15 +807,13 @@ const findText: ActionHandler = async ({ page, args }) => {
 };
 
 // --- request_approval ---
-const requestApproval: TablessHandler = async () => {
-  return {
-    success: false,
-    approved: false,
-    error:
-      'No human is present in headless mode. Tool calls that need approval are approved ' +
-      "through the MCP client's confirmation dialog (MCP elicitation) when it supports one.",
-  };
-};
+const requestApproval: TablessHandler = () => Promise.resolve({
+  success: false,
+  approved: false,
+  error:
+    'No human is present in headless mode. Tool calls that need approval are approved ' +
+    "through the MCP client's confirmation dialog (MCP elicitation) when it supports one.",
+});
 
 // --- solve_captcha ---
 /** detectOnly is set by handlers.ts for fox_detect_captcha (always true there). */
@@ -885,12 +887,10 @@ const waitForUrl: ActionHandler = async (c) => {
 };
 
 // --- container actions (unsupported) ---
-const containersUnsupported: TablessHandler = async () => {
-  return {
-    success: false,
-    error: 'Container actions are not supported in headless mode. Use the Firefox extension.',
-  };
-};
+const containersUnsupported: TablessHandler = () => Promise.resolve({
+  success: false,
+  error: 'Container actions are not supported in headless mode. Use the Firefox extension.',
+});
 
 // ---------------------------------------------------------------------------
 // Table

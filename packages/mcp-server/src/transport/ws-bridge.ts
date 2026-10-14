@@ -50,7 +50,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import { ENV_DEFAULTS, isRecord, parseBrowserResponse, shortId } from '@inari-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
-import { AUTH_PROTOCOL, computeMac, isNonce, MAC_LABEL, macMatches, newNonce, stderrLogger } from '@inari-mcp/shared/node';
+import { AUTH_PROTOCOL, computeMac, frameText, isNonce, MAC_LABEL, macMatches, newNonce, stderrLogger } from '@inari-mcp/shared/node';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -97,12 +97,6 @@ const TRY_AGAIN_LATER = 1013;
 function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true; // Non-browser client — no Origin header
   return origin.startsWith('moz-extension://');
-}
-
-function frameText(raw: Buffer | ArrayBuffer | Buffer[]): string {
-  if (Array.isArray(raw)) return Buffer.concat(raw).toString('utf-8');
-  if (raw instanceof ArrayBuffer) return Buffer.from(raw).toString('utf-8');
-  return raw.toString('utf-8');
 }
 
 function frameLength(raw: Buffer | ArrayBuffer | Buffer[]): number {

@@ -23,7 +23,7 @@ import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
 import { isRecord } from '@inari-mcp/shared';
 import { TOOL_SCHEMAS, callSchemaOf } from './schemas.js';
-import type { OperationName } from './schemas.js';
+import type { ObjectSchema, OperationName } from './schemas.js';
 import { toolAnnotations } from './classification.js';
 import type { ToolAnnotations } from './classification.js';
 import { isOneOf } from './one-of.js';
@@ -54,7 +54,7 @@ export interface PublicTool {
   /** Parses a call (daemon, transport/http-bridge.ts). */
   callSchema: z.ZodType;
   /** Listed in tools/list (registry.ts): always a ZodObject. */
-  listSchema: z.AnyZodObject;
+  listSchema: ObjectSchema;
   annotations: ToolAnnotations;
   /** Absent for the tools that are an operation as is. */
   discriminator?: string;
@@ -80,19 +80,29 @@ function fieldsOf(op: OperationName, keys?: string[]): ZodRawShape {
   return picked;
 }
 
+// Type guards rather than a bare instanceof, which narrows to ZodDefault<any>
+// / ZodOptional<any> and makes the inner schema `any`.
+function isZodDefault(field: ZodTypeAny): field is z.ZodDefault<ZodTypeAny> {
+  return field instanceof z.ZodDefault;
+}
+
+function isZodOptional(field: ZodTypeAny): field is z.ZodOptional<ZodTypeAny> {
+  return field instanceof z.ZodOptional;
+}
+
 /** Strip ZodDefault / ZodOptional wrappers (also used by tests/contract/public-tools.test.ts). */
 export function unwrap(field: ZodTypeAny): { base: ZodTypeAny; required: boolean; defaultValue?: unknown } {
   let base = field;
   let required = true;
   let defaultValue: unknown;
   for (;;) {
-    if (base instanceof z.ZodDefault) {
+    if (isZodDefault(base)) {
       defaultValue = base._def.defaultValue();
       required = false;
-      base = base._def.innerType;
-    } else if (base instanceof z.ZodOptional) {
+      base = base.removeDefault();
+    } else if (isZodOptional(base)) {
       required = false;
-      base = base._def.innerType;
+      base = base.unwrap();
     } else {
       return { base, required, defaultValue };
     }
@@ -110,9 +120,9 @@ function formatDefault(value: unknown): string {
 function flatListSchema(
   discriminator: string,
   discriminatorDescription: string,
-  variants: Record<string, z.AnyZodObject>,
+  variants: Record<string, ObjectSchema>,
   discriminatorOptional = false,
-): z.AnyZodObject {
+): ObjectSchema {
   const names = Object.keys(variants);
   const occurrences = new Map<string, Array<{ variant: string; field: ZodTypeAny }>>();
   for (const [variant, schema] of Object.entries(variants)) {
@@ -204,7 +214,7 @@ function grouped(options: {
   refine?: (args: Record<string, unknown>, ctx: z.RefinementCtx) => void;
 }): PublicTool {
   const { discriminator } = options;
-  const objects: Record<string, z.AnyZodObject> = {};
+  const objects: Record<string, ObjectSchema> = {};
   for (const [value, spec] of Object.entries(options.variants)) {
     objects[value] = z.object({ [discriminator]: z.literal(value), ...spec.fields });
   }

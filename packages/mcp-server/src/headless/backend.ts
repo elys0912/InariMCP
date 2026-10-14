@@ -130,6 +130,7 @@ export class HeadlessBrowser {
         'FOX_HEADLESS needs the optional dependency playwright, which is not installed ' +
         `(${err instanceof Error ? err.message : String(err)}). Install it in packages/mcp-server ` +
         '(npm install playwright) and its Firefox (npx playwright install firefox).',
+        { cause: err },
       );
     }
     this._browser = await firefox.launch({

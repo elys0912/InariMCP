@@ -312,6 +312,7 @@ async function recordCommands(calls: Call[]): Promise<CommandEntry[]> {
       id, tool, args: raw, ...(request !== null ? { approval: request.host } : {}), command: null,
     };
     if (command) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to leave requestId out of the entry
       const { requestId: _requestId, ...rest } = command;
       entry.command = rest;
       entry.timeoutMs = {

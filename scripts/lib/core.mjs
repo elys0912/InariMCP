@@ -204,7 +204,7 @@ export function serializeJson(value) {
 }
 
 export function isAscii(text) {
-  return /^[\x00-\x7f]*$/.test(text);
+  return /^\p{ASCII}*$/u.test(text);
 }
 
 /**

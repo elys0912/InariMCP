@@ -11,7 +11,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   CLAUDE_NAME, WIN_REG_KEY, buildManifest, buildWrapper, dataPaths, nmManifestTargets, serializeJson,
 } from '../../scripts/lib/core.mjs';
-import { httpGet } from '../../scripts/lib/system.mjs';
 import { runInstall } from '../../scripts/install.mjs';
 import { runUninstall } from '../../scripts/uninstall.mjs';
 import { isWin, useTempDir } from './helpers/test-env.js';

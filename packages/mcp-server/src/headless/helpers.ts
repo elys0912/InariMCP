@@ -14,11 +14,11 @@ import { GET_ELEMENTS_MAX } from './limits.js';
  * no defaults of their own. Anything else (a direct execute() call) fails
  * with the zod issues.
  */
-export function parseArgs<S extends z.ZodTypeAny>(
-  schema: S,
+export function parseArgs<T>(
+  schema: z.ZodType<T, z.ZodTypeDef, unknown>,
   args: Record<string, unknown>,
   action: string,
-): z.output<S> {
+): T {
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
     throw new Error(`Invalid arguments for ${action}: ${formatZodIssues(parsed.error.issues)}`);

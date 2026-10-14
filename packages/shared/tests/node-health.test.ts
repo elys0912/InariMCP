@@ -6,6 +6,7 @@ import {
   evaluateHealth,
   isUsable,
   newNonce,
+  protocolText,
 } from '@inari-mcp/shared/node';
 
 const TOKEN = 'c'.repeat(64);
@@ -54,5 +55,17 @@ describe('evaluateHealth (4.A4)', () => {
     expect(isUsable({ kind: 'unverified' })).toBe(true);
     for (const kind of ['down', 'foreign', 'impostor'] as const) expect(isUsable({ kind })).toBe(false);
     expect(isUsable({ kind: 'incompatible', protocol: 1 })).toBe(false);
+  });
+});
+
+describe('protocolText', () => {
+  it('shows a number or string protocol as is', () => {
+    expect(protocolText(2)).toBe('2');
+    expect(protocolText('3')).toBe('3');
+  });
+
+  it('shows a missing or non-primitive protocol as "1 or older"', () => {
+    expect(protocolText(undefined)).toBe('1 or older');
+    expect(protocolText({ major: 9 })).toBe('1 or older');
   });
 });

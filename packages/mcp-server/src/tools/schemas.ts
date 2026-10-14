@@ -25,13 +25,16 @@ export type ToolClassification =
 // ToolDefinition
 // ---------------------------------------------------------------------------
 
+/** A z.object of any fields. Unlike z.AnyZodObject, its `shape` is typed (ZodRawShape, not any). */
+export type ObjectSchema = z.ZodObject<z.ZodRawShape, z.UnknownKeysParam>;
+
 export interface ToolDefinition {
   /** fox_* prefixed tool name */
   name: string;
   /** MCP tool description (English) */
   description: string;
   /** Zod input schema: the object listed in tools/list (FOX_CAPS=legacy). */
-  inputSchema: z.AnyZodObject;
+  inputSchema: ObjectSchema;
   /**
    * Parses a call when the arguments have rules across fields that an
    * object schema cannot express (default: inputSchema). See callSchemaOf().

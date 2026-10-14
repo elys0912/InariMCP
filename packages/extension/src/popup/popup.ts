@@ -327,7 +327,7 @@ let shownApproval: { id: string; more: number; shownAt: number } | null = null;
  * when the request on screen changes; otherwise just the countdown updates.
  */
 async function refreshApprovals(): Promise<void> {
-  let approvals: ApprovalView[] = [];
+  let approvals: ApprovalView[];
   try {
     const reply = await browser.runtime.sendMessage({ type: APPROVAL_MESSAGE.LIST }) as ApprovalListResponse;
     approvals = reply?.success && Array.isArray(reply.approvals) ? reply.approvals : [];
@@ -416,19 +416,22 @@ function renderControl(control: ControlView): void {
 /** The pause switch: the background refuses or accepts commands from now on. */
 function setupPauseSwitch(): void {
   const toggle = document.getElementById('pause-switch') as HTMLInputElement | null;
-  toggle?.addEventListener('change', async () => {
-    const reply = await browser.runtime
-      .sendMessage({ type: CONTROL_MESSAGE.SET_PAUSED, paused: toggle.checked })
-      .catch(() => null);
-    const control = parseControlView(reply);
-    if (control === null) {
-      toggle.checked = !toggle.checked;
-      showToast(t('toastPauseFailed'), 'error');
-      return;
-    }
+  toggle?.addEventListener('change', () => { void applyPauseSwitch(toggle); });
+}
 
-    renderControl(control);
-  });
+/** Sends the switch's state to the background; puts the switch back if that fails. */
+async function applyPauseSwitch(toggle: HTMLInputElement): Promise<void> {
+  const reply = await browser.runtime
+    .sendMessage({ type: CONTROL_MESSAGE.SET_PAUSED, paused: toggle.checked })
+    .catch(() => null);
+  const control = parseControlView(reply);
+  if (control === null) {
+    toggle.checked = !toggle.checked;
+    showToast(t('toastPauseFailed'), 'error');
+    return;
+  }
+
+  renderControl(control);
 }
 
 /** Opens the consent page in a tab (the popup closes when the tab opens). */
@@ -448,66 +451,72 @@ function showCurrentTab(tab: browser.tabs.Tab): void {
 
 /** Screenshot button: capture through the background and download the image. */
 function setupScreenshotButton(): void {
-  document.getElementById('btn-screenshot')?.addEventListener('click', async () => {
-    try {
-      const result = await browser.runtime.sendMessage({
-        target: 'background',
-        action: 'screenshot',
-      }) as ScreenshotResponse;
+  document.getElementById('btn-screenshot')?.addEventListener('click', () => { void downloadScreenshot(); });
+}
 
-      if (result.success && result.imageData) {
-        showToast(t('toastScreenshotCaptured'), 'success');
-        const link = document.createElement('a');
-        link.href = result.imageData;
-        link.download = `screenshot-${Date.now()}.png`;
-        link.click();
-      } else {
-        showToast(result.error || t('toastScreenshotFailed'), 'error');
-      }
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : t('toastUnknownError');
-      showToast(msg, 'error');
+async function downloadScreenshot(): Promise<void> {
+  try {
+    const result = await browser.runtime.sendMessage({
+      target: 'background',
+      action: 'screenshot',
+    }) as ScreenshotResponse;
+
+    if (result.success && result.imageData) {
+      showToast(t('toastScreenshotCaptured'), 'success');
+      const link = document.createElement('a');
+      link.href = result.imageData;
+      link.download = `screenshot-${Date.now()}.png`;
+      link.click();
+    } else {
+      showToast(result.error || t('toastScreenshotFailed'), 'error');
     }
-  });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : t('toastUnknownError');
+    showToast(msg, 'error');
+  }
 }
 
 /** Page info button: copy the page info of `tab` (top frame) to the clipboard. */
 function setupPageInfoButton(tab: browser.tabs.Tab): void {
-  document.getElementById('btn-pageinfo')?.addEventListener('click', async () => {
-    try {
-      const result = await browser.tabs.sendMessage(
-        tab.id,
-        { action: 'getPageInfo' } satisfies ContentRequest,
-        { frameId: TOP_FRAME_ID },
-      ) as PageInfoResponse;
+  document.getElementById('btn-pageinfo')?.addEventListener('click', () => { void copyPageInfo(tab); });
+}
 
-      console.log('Page Info:', result);
-      const count = result.interactiveElements?.length ?? 0;
-      showToast(t('toastFoundElements', String(count)), 'success');
+async function copyPageInfo(tab: browser.tabs.Tab): Promise<void> {
+  try {
+    const result = await browser.tabs.sendMessage(
+      tab.id,
+      { action: 'getPageInfo' } satisfies ContentRequest,
+      { frameId: TOP_FRAME_ID },
+    ) as PageInfoResponse;
 
-      await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
-      showToast(t('toastPageInfoCopied'), 'success');
-    } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : t('toastUnknownError');
-      showToast(msg, 'error');
-    }
-  });
+    console.log('Page Info:', result);
+    const count = result.interactiveElements?.length ?? 0;
+    showToast(t('toastFoundElements', String(count)), 'success');
+
+    await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+    showToast(t('toastPageInfoCopied'), 'success');
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : t('toastUnknownError');
+    showToast(msg, 'error');
+  }
 }
 
 /** Copy button of the setup command. */
 function setupCopyCommandButton(): void {
-  document.getElementById('btn-copy-command')?.addEventListener('click', async () => {
-    const command = document.getElementById('setup-command-text')?.textContent ?? '';
-    try {
-      await navigator.clipboard.writeText(command);
-      showToast(t('toastCopied'), 'success');
-    } catch {
-      showToast(t('toastCopyFailed'), 'error');
-    }
-  });
+  document.getElementById('btn-copy-command')?.addEventListener('click', () => { void copySetupCommand(); });
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+async function copySetupCommand(): Promise<void> {
+  const command = document.getElementById('setup-command-text')?.textContent ?? '';
+  try {
+    await navigator.clipboard.writeText(command);
+    showToast(t('toastCopied'), 'success');
+  } catch {
+    showToast(t('toastCopyFailed'), 'error');
+  }
+}
+
+async function init(): Promise<void> {
   localizePage();
   const os = await browser.runtime.getPlatformInfo().then(info => info.os, () => '');
 
@@ -540,4 +549,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   // (new requests arrive, others time out).
   void refreshApprovals();
   setInterval(() => { void refreshApprovals(); }, APPROVAL_POLL_MS);
-});
+}
+
+document.addEventListener('DOMContentLoaded', () => { void init(); });

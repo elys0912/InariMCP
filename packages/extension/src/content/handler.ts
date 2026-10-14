@@ -77,7 +77,7 @@ export async function handleMessage(
       // Reached by a message whose action is not a ContentAction (content.ts
       // takes any runtime message as a ContentMessage).
       const unhandled: never = message;
-      throw new Error(`Unknown action: ${(unhandled as { action: unknown }).action}`);
+      throw new Error(`Unknown action: ${String((unhandled as { action: unknown }).action)}`);
     }
   }
 }

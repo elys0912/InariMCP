@@ -51,7 +51,6 @@ function harness(results: Record<string, RunResult>, consume = true): Harness {
   return { deps, calls, files };
 }
 
-const ok: RunResult = { code: 0, stdout: '', stderr: '' };
 const bad = (stderr: string): RunResult => ({ code: 1, stdout: '', stderr });
 
 describe('wmiStrategy', () => {

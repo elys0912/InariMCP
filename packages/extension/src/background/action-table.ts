@@ -275,7 +275,7 @@ export const ACTION_TABLE: ReadonlyMap<string, ActionDescriptor> = new Map<strin
 export const UNKNOWN_ACTION: ActionDescriptor = {
   scope: "tab",
   approval: "act",
-  handler: async (c) => ({ success: false, error: `Unknown action: ${c.action}` }),
+  handler: (c) => Promise.resolve({ success: false, error: `Unknown action: ${c.action}` }),
 };
 
 /** The descriptor of an internal action name (UNKNOWN_ACTION if none). */

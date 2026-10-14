@@ -409,9 +409,9 @@ export async function hoverElement(
   return { hovered: true, element: getElementInfo(element) };
 }
 
-export async function pressKey(
+export function pressKey(
   options: PressKeyOptions,
-): Promise<Record<string, unknown>> {
+): Record<string, unknown> {
   // Same locator resolution as fox_click (`key` is not a locator); without
   // one, the focused element receives the key.
   const locator = locatorOf(options);

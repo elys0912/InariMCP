@@ -15,7 +15,7 @@
 import {
   CLAUDE_NAME, MS_PER_SECOND, UsageError, claudeConfigPath, claudeRemoveArgs, classifyProcesses, dataPaths,
   findClaudeEntries, formatCommand, httpEndpoint, nmManifestTargets, parseRegDefaultValue,
-  lookup, parseUninstallArgs, pathApi, repoPaths, samePath,
+  lookup, parseUninstallArgs, repoPaths, samePath,
 } from './lib/core.mjs';
 import {
   PROGRAM_TIMEOUT_MS, confirm, defaultDeps, exists, exitOnBrokenPipe, findClaude, isMain, listNodeProcesses,
@@ -64,7 +64,6 @@ export async function runUninstall(argv, overrides = {}) {
 async function uninstall(argv, deps, r) {
   const opts = parseUninstallArgs(argv);
   const { platform, home, env } = deps;
-  const p = pathApi(platform);
   const data = dataPaths(platform, home);
   const repo = repoPaths(platform, deps.repoRoot);
   const fsx = (f) => exists(deps.fs, f);

@@ -79,13 +79,12 @@ export function waitForTabLoad(
   return new Promise<TabLoadOutcome>((resolve, reject) => {
     let done = false;
     let sawLoading = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     let settleTimer: ReturnType<typeof setTimeout> | undefined;
     const cleanup = (): void => {
       done = true;
       tabs.onUpdated.removeListener(onUpdated);
       tabs.onRemoved.removeListener(onRemoved);
-      if (timer !== undefined) clearTimeout(timer);
+      clearTimeout(timer);
       if (settleTimer !== undefined) clearTimeout(settleTimer);
     };
     const finish = (outcome: TabLoadOutcome): void => {
@@ -114,7 +113,7 @@ export function waitForTabLoad(
     };
     tabs.onUpdated.addListener(onUpdated);
     tabs.onRemoved.addListener(onRemoved);
-    timer = setTimeout(() => finish("timeout"), options.timeoutMs);
+    const timer = setTimeout(() => finish("timeout"), options.timeoutMs);
 
     trigger().then(
       () => {
@@ -130,7 +129,7 @@ export function waitForTabLoad(
       (error: unknown) => {
         if (done) return;
         cleanup();
-        reject(error);
+        reject(error instanceof Error ? error : new Error(errorMessage(error)));
       },
     );
   });

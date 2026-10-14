@@ -794,6 +794,14 @@ describe('doctor: token, powershell, foreign daemons', () => {
     expect(byId(results, 'settings')).toMatchObject({ status: 'SKIP' });
   });
 
+  it('a protocol that is neither a number nor a string is shown as "1 or older", not "[object Object]"', async () => {
+    writeToken(TOKEN);
+    const results = await runChecks(deps({ token: TOKEN, health: { protocol: { major: 9 }, version: '0.0.9' } }));
+    const d = byId(results, 'daemon');
+    expect(d.status).toBe('FAIL');
+    expect(d.detail).toContain('daemon of another protocol (protocol 1 or older, version 0.0.9');
+  });
+
   it('a daemon that answers but is not ready → WARN', async () => {
     writeToken(TOKEN);
     const d = byId(await runChecks(deps({ token: TOKEN, health: { ready: false } })), 'daemon');

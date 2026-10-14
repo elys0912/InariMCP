@@ -56,8 +56,10 @@ function beginRequest(): () => void {
 
 /** Hook the page's fetch; returns what puts it back, or null when not hooked. */
 function hookFetch(pageWin: Window & typeof globalThis): (() => void) | null {
-  const originalFetch: unknown = pageWin.fetch;
-  const pagePromiseThen: unknown = pageWin.Promise.prototype.then;
+  // Reflect.get reads the functions as values, unbound: they are only ever
+  // called through Reflect.apply with the page's own `this`.
+  const originalFetch: unknown = Reflect.get(pageWin, "fetch");
+  const pagePromiseThen: unknown = Reflect.get(pageWin.Promise.prototype, "then");
   if (typeof originalFetch !== "function" || typeof pagePromiseThen !== "function") {
     return null;
   }
@@ -93,16 +95,16 @@ function hookFetch(pageWin: Window & typeof globalThis): (() => void) | null {
   exportFunction(fetchHook, pageWin, { defineAs: "fetch" });
   // Read back the same way it is read when putting the original back, so
   // the identity check below compares like with like.
-  const installed: unknown = pageWin.fetch;
+  const installed: unknown = Reflect.get(pageWin, "fetch");
   return () => {
-    if (pageWin.fetch === installed) pageWin.fetch = originalFetch as typeof fetch;
+    if (Reflect.get(pageWin, "fetch") === installed) pageWin.fetch = originalFetch as typeof fetch;
   };
 }
 
 /** Hook XMLHttpRequest.prototype.send; returns what puts it back, or null. */
 function hookXhrSend(pageWin: Window & typeof globalThis): (() => void) | null {
   const proto = pageWin.XMLHttpRequest.prototype;
-  const originalSend: unknown = proto.send;
+  const originalSend: unknown = Reflect.get(proto, "send");
   if (typeof originalSend !== "function") return null;
 
   const sendHook = function (this: unknown, ...args: unknown[]): unknown {
@@ -129,9 +131,9 @@ function hookXhrSend(pageWin: Window & typeof globalThis): (() => void) | null {
   };
 
   exportFunction(sendHook, proto, { defineAs: "send" });
-  const installed: unknown = proto.send;
+  const installed: unknown = Reflect.get(proto, "send");
   return () => {
-    if (proto.send === installed) proto.send = originalSend as XMLHttpRequest["send"];
+    if (Reflect.get(proto, "send") === installed) proto.send = originalSend as XMLHttpRequest["send"];
   };
 }
 

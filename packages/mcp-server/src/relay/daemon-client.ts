@@ -46,6 +46,7 @@ import {
   DAEMON_PROTOCOL_VERSION,
   evaluateHealth,
   newNonce,
+  protocolText,
   signRequest,
   verifyResponse,
   type HealthVerdict,
@@ -373,7 +374,7 @@ export class DaemonClient {
     if (!this.daemonSeen || this.daemonProtocol === DAEMON_PROTOCOL_VERSION) return undefined;
     return (
       `The InariMCP daemon running at ${this.baseUrl} is from another version ` +
-      `(protocol ${this.daemonProtocol === undefined ? '1 or older' : String(this.daemonProtocol)}, ` +
+      `(protocol ${protocolText(this.daemonProtocol)}, ` +
       `this session needs ${DAEMON_PROTOCOL_VERSION}). Stop that daemon process (end it by PID: ` +
       'it predates --stop-daemon; then restart Firefox if it was started by the Native Host); ' +
       'the next tool call starts a matching one.'

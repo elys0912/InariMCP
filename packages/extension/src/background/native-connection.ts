@@ -406,7 +406,7 @@ function sendAttempt(message: NativeMessage, timeoutMs: number, retryCount: numb
           // would stay current until an onDisconnect that may never come), and
           // the connection comes back on the usual backoff.
           if (wasCurrent) scheduleReconnect();
-          reject(error);
+          reject(error instanceof Error ? error : new Error(errorMessage(error)));
         }
       }
     }

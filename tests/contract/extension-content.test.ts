@@ -329,10 +329,11 @@ describe('fox_type / fox_click targets', () => {
       `const seen = [];
        document.addEventListener('keydown', (e) => seen.push(e.target.id || e.target.tagName));
        document.getElementById('c').focus();
-       const byXpath = await f.input.pressKey({ key: 'a', xpath: '//input[@id="a"]' });
-       const byId = await f.input.pressKey({ key: 'a', id: 'b' });
-       const byText = await f.input.pressKey({ key: 'a', text: 'Send' });
-       const missing = await f.input.pressKey({ key: 'a', id: 'nope' }).catch((e) => e.message);
+       const byXpath = f.input.pressKey({ key: 'a', xpath: '//input[@id="a"]' });
+       const byId = f.input.pressKey({ key: 'a', id: 'b' });
+       const byText = f.input.pressKey({ key: 'a', text: 'Send' });
+       const missing = (() => { try { return f.input.pressKey({ key: 'a', id: 'nope' }); }
+                                catch (e) { return e.message; } })();
        return [byXpath.element.id, byId.element.id, byText.element.tag, seen, missing];`,
     );
     expect(r).toEqual(['a', 'b', 'button', ['a', 'b', 'BUTTON'], 'Element not found: {"id":"nope"}']);
@@ -622,8 +623,14 @@ describe('WP44 content input checks and truncation (E-12, E-13, E-17)', () => {
     const dom = await import('../../packages/extension/src/content/dom.ts');
     expect(dom.truncatedValue(3, 10)).toBe('3');
     expect(dom.truncatedValue(12345, 3)).toBe('123');
+    expect(dom.truncatedValue('abcd', 2)).toBe('ab');
     expect(dom.truncatedValue(undefined, 10)).toBeNull();
     expect(dom.truncatedValue(null, 10)).toBeNull();
+  });
+
+  it('E-17 truncatedValue returns null for an object value instead of "[object Object]"', async () => {
+    const dom = await import('../../packages/extension/src/content/dom.ts');
+    expect(dom.truncatedValue({}, 20)).toBeNull();
   });
 
   real('E-17 getText and element info cut on character boundaries; numeric values do not fail', async () => {

@@ -49,6 +49,7 @@ const JSON_SECRET_RE = new RegExp(`("${SECRET_NAME}"\\s*:\\s*")(?:[^"\\\\]|\\\\.
  * supplementary variation selectors (U+E0100-E01EF). ZWNJ / ZWJ
  * (U+200C-200D) and U+FE00-FE0F stay: scripts and emoji need them.
  */
+// eslint-disable-next-line no-control-regex -- matching the C0 / C1 controls is what this pattern is for
 const INVISIBLE_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u061C\u180E\u200B\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]|\uDB40[\uDC00-\uDC7F\uDD00-\uDDEF]/g;
 
 export function maskSensitiveArgs(
@@ -75,7 +76,8 @@ export function stripInvisible(s: string): string {
  * separators (U+2028-2029), which `JSON.stringify` leaves as they are and
  * which break or join lines in the popup and the MCP client.
  */
-const HUMAN_HIDDEN_RE = new RegExp(`${INVISIBLE_RE.source}|[\\u200C\\u200D\\u2028\\u2029]`, 'g');
+// ZWJ stands apart from the class: inside one, it reads as joining its neighbours.
+const HUMAN_HIDDEN_RE = new RegExp(`${INVISIBLE_RE.source}|[\\u200C\\u2028\\u2029]|\\u200D`, 'g');
 
 /** Digits of a `\uXXXX` escape (BMP code points). */
 const BMP_ESCAPE_DIGITS = 4;

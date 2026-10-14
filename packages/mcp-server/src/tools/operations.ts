@@ -52,12 +52,13 @@ export function resolveOperation(toolName: string, args: Record<string, unknown>
       ? tool.variants[value]
       : undefined;
     if (variant === undefined) {
-      throw new Error(`${toolName}: unknown ${tool.discriminator} '${String(value)}'`);
+      const shown = typeof value === 'string' || value === undefined ? String(value) : JSON.stringify(value);
+      throw new Error(`${toolName}: unknown ${tool.discriminator} '${shown}'`);
     }
     const op = variant.op(args);
-    const opArgs: Record<string, unknown> = callSchemaOf(TOOL_SCHEMAS[op]).parse(
-      variant.toOp ? variant.toOp(args) : args,
-    );
+    // Every operation schema is a z.object, so this throws only on a broken table.
+    const opArgs: unknown = callSchemaOf(TOOL_SCHEMAS[op]).parse(variant.toOp ? variant.toOp(args) : args);
+    if (!isRecord(opArgs)) throw new Error(`${toolName}: the arguments of ${op} did not parse to an object`);
     return { op, args: opArgs, label: { tool: toolName, args } };
   }
 

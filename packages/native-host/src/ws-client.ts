@@ -34,7 +34,7 @@ import WebSocket from 'ws';
 import { ENV_DEFAULTS, MS_PER_SECOND, isRecord } from '@inari-mcp/shared';
 import type { ServerLauncher } from './server-launcher.js';
 import { log } from './logger.js';
-import { AUTH_PROTOCOL, MAC_LABEL, computeMac, isNonce, macMatches, newNonce } from '@inari-mcp/shared/node';
+import { AUTH_PROTOCOL, MAC_LABEL, computeMac, frameText, isNonce, macMatches, newNonce } from '@inari-mcp/shared/node';
 
 const AUTH_TIMEOUT_MS = 10_000;
 /** 2.5 × the ws-bridge heartbeat interval (30 s). */
@@ -187,7 +187,7 @@ export class ServerConnection {
 
       let parsed: unknown;
       try {
-        parsed = JSON.parse(raw.toString());
+        parsed = JSON.parse(frameText(raw));
       } catch {
         log('invalid JSON from MCP server — ignored');
         return;

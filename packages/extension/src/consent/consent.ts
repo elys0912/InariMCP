@@ -39,7 +39,7 @@ async function answer(granted: boolean): Promise<void> {
   showState(control.consent);
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+async function init(): Promise<void> {
   localizePage();
   const link = document.getElementById('privacy-link') as HTMLAnchorElement | null;
   if (link) link.href = PRIVACY_POLICY_URL;
@@ -51,4 +51,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     await browser.runtime.sendMessage({ type: CONTROL_MESSAGE.GET }).catch(() => null),
   );
   if (control !== null) showState(control.consent);
-});
+}
+
+document.addEventListener('DOMContentLoaded', () => { void init(); });

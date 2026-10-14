@@ -12,3 +12,4 @@ export * from './paths.js';
 export * from './spawn.js';
 export * from './token.js';
 export * from './version.js';
+export * from './ws-frame.js';

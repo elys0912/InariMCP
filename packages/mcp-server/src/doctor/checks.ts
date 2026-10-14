@@ -27,6 +27,7 @@ import {
   inariHealth,
   logsDir,
   nativeHostLogPath,
+  protocolText,
   type HealthVerdict,
 } from '@inari-mcp/shared/node';
 import { DAEMON_SETTING_KEYS, compareDaemonSettings, readApiTokenFile, resolveHost, resolveHttpPort } from '../utils/endpoint.js';
@@ -681,7 +682,7 @@ export function checkDaemon(ctx: DoctorContext): CheckResult {
       return {
         id,
         status: 'FAIL',
-        detail: `daemon of another protocol (protocol ${String(health?.['protocol'] ?? '1 or older')}, version ${version}; this build needs ${DAEMON_PROTOCOL_VERSION})`,
+        detail: `daemon of another protocol (protocol ${protocolText(health?.['protocol'])}, version ${version}; this build needs ${DAEMON_PROTOCOL_VERSION})`,
         fix: `${stopByPid(ctx)} (an older daemon has no --stop-daemon); then restart Firefox; the next tool call starts the installed daemon`,
       };
     case 'impostor':
@@ -877,7 +878,7 @@ function tail(file: string, bytes = LOG_TAIL_BYTES): string {
   }
 }
 
-export function checkLogs(ctx: DoctorContext): CheckResult {
+export function checkLogs(): CheckResult {
   const id = 'logs';
   const logs = logsDir();
   const rawHostLog = process.env[ENV.FOX_NATIVE_HOST_LOG]?.trim();

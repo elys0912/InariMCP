@@ -174,6 +174,7 @@ async function record(): Promise<GrantEntry[]> {
     if (result.isError) throw new Error(`${id}: failed: ${JSON.stringify(result.content)}`);
     if (browser.sent.length !== 1) throw new Error(`${id}: ${browser.sent.length} commands on the approved call`);
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructured only to leave requestId out of the entry
     const { requestId: _requestId, ...command } = browser.sent[0]!;
     entries.push(JSON.parse(JSON.stringify({ id, tool, args: raw, approvals, refusedByBrowser, command })) as GrantEntry);
   }
