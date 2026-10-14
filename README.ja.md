@@ -20,7 +20,7 @@ Inari MCP for Firefoxは、Firefox拡張機能・ネイティブメッセージ�
 
 ### Inari MCPとKitsuneMCP
 
-Inari MCP for Firefoxは[KitsuneMCP](https://github.com/elys0912/KitsuneMCP)のaddons.mozilla.org版で、2026-10-14にKitsuneMCP 0.2.0から分岐し、版は0.1.0から数える。MCPクライアントやAIから来たコードをページで実行せず、コンソール・ネットワークのログを取らず、ページやブラウザへの操作のたびに承認を求める（読み取り・待機・スクロール・要素の強調表示・タブの切り替えは承認を求めない）。アドオンのID（`inari-mcp@elys0912.github.io`）、ネイティブメッセージングのホスト名（`inari_mcp`）、状態ディレクトリ（`~/.inari-mcp`）がKitsuneMCPと違うので、両方を同じFirefoxに入れられる。既定のポート（`8785` / `8786`）もKitsuneMCP（`8765` / `8766`）と違うので、両方を同時に動かせる。
+Inari MCP for FirefoxはKitsuneMCP（非公開）のaddons.mozilla.org版で、2026-10-14にKitsuneMCP 0.2.0から分岐し、版は0.1.0から数える。MCPクライアントやAIから来たコードをページで実行せず、コンソール・ネットワークのログを取らず、ページやブラウザへの操作のたびに承認を求める（読み取り・待機・スクロール・要素の強調表示・タブの切り替えは承認を求めない）。アドオンのID（`inari-mcp@elys0912.github.io`）、ネイティブメッセージングのホスト名（`inari_mcp`）、状態ディレクトリ（`~/.inari-mcp`）がKitsuneMCPと違うので、両方を同じFirefoxに入れられる。既定のポート（`8785` / `8786`）もKitsuneMCP（`8765` / `8766`）と違うので、両方を同時に動かせる。
 
 ## なぜ作ったか？
 
@@ -514,7 +514,7 @@ npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（Pla
 - [既知の制約](docs/known-issues.ja.md)
 - [開発](docs/development.ja.md)
 - [Issues](https://github.com/elys0912/InariMCP/issues) — 質問と不具合の報告
-- [KitsuneMCP](https://github.com/elys0912/KitsuneMCP) — この版の分岐元
+- KitsuneMCP（非公開） — この版の分岐元
 
 ## Credits
 

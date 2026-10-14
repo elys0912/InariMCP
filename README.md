@@ -20,7 +20,7 @@ It's a fork of [nanogenomic/ClaudeCodeBrowser](https://github.com/nanogenomic/Cl
 
 ### Inari MCP and KitsuneMCP
 
-Inari MCP for Firefox is the addons.mozilla.org edition of [KitsuneMCP](https://github.com/elys0912/KitsuneMCP), split off from KitsuneMCP 0.2.0 on 2026-10-14 and numbered from 0.1.0. It runs no code that comes from the MCP client or the AI in pages, records no console or network logs, and asks before every action on a page or the browser (reading, waiting, scrolling, highlighting an element and switching tabs do not ask). It has its own add-on ID (`inari-mcp@elys0912.github.io`), native messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), so both can be installed in the same Firefox. Its default ports (`8785` / `8786`) differ from KitsuneMCP's (`8765` / `8766`), so both can also run at the same time.
+Inari MCP for Firefox is the addons.mozilla.org edition of KitsuneMCP (private), split off from KitsuneMCP 0.2.0 on 2026-10-14 and numbered from 0.1.0. It runs no code that comes from the MCP client or the AI in pages, records no console or network logs, and asks before every action on a page or the browser (reading, waiting, scrolling, highlighting an element and switching tabs do not ask). It has its own add-on ID (`inari-mcp@elys0912.github.io`), native messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), so both can be installed in the same Firefox. Its default ports (`8785` / `8786`) differ from KitsuneMCP's (`8765` / `8766`), so both can also run at the same time.
 
 ## Why?
 
@@ -514,7 +514,7 @@ End-to-end checks, kept out of `npm test`:
 - [Known issues](docs/known-issues.md)
 - [Development](docs/development.md)
 - [Issues](https://github.com/elys0912/InariMCP/issues) — questions and bug reports
-- [KitsuneMCP](https://github.com/elys0912/KitsuneMCP) — the edition this one split off from
+- KitsuneMCP (private) — the edition this one split off from
 
 ## Credits
 
