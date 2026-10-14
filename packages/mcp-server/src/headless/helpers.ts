@@ -86,7 +86,7 @@ export interface MaskedSnapshotTexts {
 
 /** Text as an aria snapshot shows it (Playwright's normalizeWhiteSpace). */
 function ariaText(text: string): string {
-  return text.replace(/[​­]/g, '').trim().replace(/\s+/g, ' ');
+  return text.replace(/[\u200b\u00ad]/g, '').trim().replace(/\s+/g, ' ');
 }
 
 /** One character escaped inside a double-quoted YAML value, as Playwright escapes it. */
