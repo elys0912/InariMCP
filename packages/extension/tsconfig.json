@@ -24,7 +24,9 @@
     // the browser-safe entry points (the build refuses @inari-mcp/shared/node).
     "paths": {
       "@inari-mcp/shared": ["../shared/src/index.ts"],
-      "@inari-mcp/shared/action-names": ["../shared/src/action-names.ts"]
+      "@inari-mcp/shared/action-names": ["../shared/src/action-names.ts"],
+      "@inari-mcp/shared/field-mask": ["../shared/src/field-mask.ts"],
+      "@inari-mcp/shared/url-pattern-limit": ["../shared/src/url-pattern-limit.ts"]
     }
   },
   "include": ["src"]

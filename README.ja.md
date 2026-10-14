@@ -285,7 +285,25 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 `claude mcp add`のコマンドは変わらない。中継が最初の利用時に共有サーバーを起動し（Firefoxが先ならNative Hostが起動する）、共有サーバーは10分使われなければ自分で終了する（`FOX_DAEMON_IDLE_TIMEOUT`）。セッションごとに中継が1つずつ立ち、全員が1つの共有サーバーを使うので、Claude Codeを複数セッション同時に使ってもポートがぶつからない。安全ガードの状態（レート制限、監査ログ、タブごとの最後に見たURL）もセッション間で共有される。
 
-中継とNative Hostはdaemonを、daemonは中継とNative Hostを、`~/.inari-mcp/api_token`のAPIトークンを使ったHMACのチャレンジ応答で確かめ合う（トークン自体は送らない）。ポートを横取りしたプログラムはdaemonになりすませない。`GET /health`は認証不要で、nonceを付けると`proof`を加え、中継とNative Hostが確認する`protocol`の版を返す。中継はツールの呼び出し・承認の回答・`--stop-daemon`のたびにこの`proof`を確かめ、正しいときだけ署名付きの要求（ツール名・引数・承認トークン、承認要求のIDと人の回答、停止の要求）を送るので、ポートを横取りしたプログラムにはそれも届かない。HTTP APIは`X-API-Key: <token>`ヘッダーも受け付けるが、手作業のデバッグ用（その応答には署名が付かない）。ただし`POST /daemon/shutdown`は署名付きの要求しか受け付けない。`FOX_HOST`がループバック以外のアドレスだと、daemonは警告をログに出す（ポートが他のマシンから届くようになる）。
+中継とNative Hostはdaemonを、daemonは中継とNative Hostを、`~/.inari-mcp/api_token`のAPIトークンを使ったHMACのチャレンジ応答で確かめ合う（トークン自体は送らない）。ポートを横取りしたプログラムはdaemonになりすませない。`GET /health`は認証不要で、nonceを付けると`proof`を加え、中継とNative Hostが確認する`protocol`の版を返す。中継はツールの呼び出し・承認の回答・`--stop-daemon`のたびにこの`proof`を確かめ、正しいときだけ署名付きの要求（ツール名・引数・承認トークン、承認要求のIDと人の回答、停止の要求）を送るので、ポートを横取りしたプログラムにはそれも届かない。HTTP APIは`X-API-Key: <token>`ヘッダーも受け付けるが、手作業のデバッグ用（その応答には署名が付かない）。ただし`POST /daemon/shutdown`は署名付きの要求しか受け付けない。`FOX_HOST`がループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）でなければ、daemonは起動しない。HTTPとWebSocketのポートは平文なので、他のマシンから届いてはならない。
+
+## 権限
+
+拡張機能が求める権限は9つ。パスは`packages/extension/src/`からの相対。
+
+| 権限 | 用途 | 使用箇所 |
+|---|---|---|
+| `tabs` | すべてのタブ（`about:`と`file:`のタブも含む）のURLとタイトル。タブの一覧（`fox_tabs`）、対象タブの特定、コマンドを実行する前の`safety.json`のURL規則との照合に使う | `background/tabs.ts`、`background/tab-target.ts`、`background/url-policy.ts`、`background/screenshot.ts`、`background/reload.ts` |
+| `nativeMessaging` | Native Host（`inari_mcp`）への接続。コマンドが拡張機能に届き、結果が拡張機能から出る唯一の経路 | `background/native-connection.ts` |
+| `notifications` | ポップアップで承認要求が待っているとき、CAPTCHAに人の操作が要るとき（`fox_detect_captcha`）のOSの通知 | `background/approvals.ts`、`background/human-wait.ts`、`background/listeners.ts`（通知のクリックでポップアップを開く） |
+| `<all_urls>` | すべてのページでのコンテンツスクリプト（ページの読み取りと操作）、スクリーンショットの`tabs.captureTab`、`tabs.executeScript`（スクリプト系ツールと、ログ収集中のタブへの早期の注入） | `manifest.json`の`content_scripts`、`background/screenshot.ts`、`background/page-actions.ts`、`background/listeners.ts` |
+| `contextMenus` | ページのコンテキストメニューの2項目（スクリーンショットを撮る、要素を調べる） | `background/context-menu.ts` |
+| `contextualIdentities` | Firefoxのコンテナ。一覧（`what: "containers"`の`fox_tabs`）、`container_scope`のエージェント用コンテナの検索と作成、コンテナでタブを開く（`action: "create"`と`container`を指定した`fox_tab`） | `background/container-scope.ts` |
+| `cookies` | Cookieは読みも書きもしない（`browser.cookies`は使わない）。コンテナでタブを開く`tabs.create`の`cookieStoreId`に、Firefoxがこの権限を求める | `background/container-scope.ts`（`openInContainer`）、`background/tabs.ts`（`createNewTab`） |
+| `find` | ページ内の文字列検索の`browser.find.find`（`by: "text"`の`fox_find`） | `background/tabs.ts`（`findText`） |
+| `webNavigation` | タブの遷移が終わるのを待つ（`for: "navigation"`の`fox_wait`）、新しいページが確定したときのログ収集中のタブへの早期の注入 | `background/tab-wait.ts`、`background/listeners.ts` |
+
+エージェントはFirefoxのコンテナを作成できる。`action: "create"`の`fox_tab`に存在しない`container`の名前を渡すと作成する。`container_scope`が有効でエージェント用のコンテナがまだないときは、新しいタブを開くときに作成する。コンテナの作成は、それ自体では人に確認する操作になっていない。
 
 ## 設定
 
@@ -295,7 +313,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 | 変数 | 既定値 | 読むプロセス | 説明 |
 |---|---|---|---|
-| `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host、アンインストーラ | HTTP/WSサーバーのアドレス。ループバック以外なら警告を出す。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HOST` |
+| `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host、アンインストーラ | HTTP/WSサーバーのアドレス。ループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）だけ。それ以外ならdaemonはエラーをログに出して起動しない。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HOST` |
 | `FOX_HTTP_PORT` | `8765` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
 | `FOX_WS_PORT` | `8766` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_WS_PORT` |
 | `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。`legacy`を指定すると、代わりに以前のツール名を一覧にする（[ツール名の移行](#ツール名の移行)を参照）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、スクリプト禁止、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
@@ -303,7 +321,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない）。旧名: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | PlaywrightのFirefox | daemon（ヘッドレスのみ） | Playwrightが起動するFirefoxバイナリのパス。旧名: `CLAUDE_BROWSER_EXECUTABLE` |
 | `FOX_SCREENSHOTS_DIR` | `~/.inari-mcp/screenshots` | Native Host（拡張機能経路）、daemon（ヘッドレス経路、`GET /screenshots`） | スクリーンショットの保存先。相対パスはそのプロセスの作業ディレクトリから解決する。旧名: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
-| `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | Native Hostが起動するたびに、自動で付けた名前で保存したスクリーンショットのうち、この日数より古いものを削除する（`0`ですべて残す。負の値や数値でない値は`30`として扱う）。`filename`を指定して保存したものと、ヘッドレスのスクリーンショットは削除しない |
+| `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | Native Hostが起動するたびに、自分が保存したスクリーンショットのうち、この日数より古いものを削除する。`filename`を指定して保存したものも含む（同じディレクトリの`.named-screenshots`に名前を記録する）（`0`ですべて残す。負の値や数値でない値は`30`として扱う）。ディレクトリにあるほかのファイルと、ヘッドレスのスクリーンショットは削除しない |
 | `FOX_READ_ONLY` | 未設定 | daemon | `1` / `true` / `yes`で読み取り専用モードを強制する。旧名: `CLAUDE_BROWSER_READ_ONLY` |
 | `FOX_ALLOW_SCRIPTS` | 未設定 | daemon | `0` / `false` / `no` / `off`でスクリプト系ツール（`fox_evaluate`、`fox_observer`。以前の名前は`fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act`、`fox_inject_observer`、`fox_remove_observer`）を無効化する。旧名: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
 | `FOX_SAFETY_CONFIG` | `~/.inari-mcp/safety.json` | daemon | 安全ポリシーファイルの代替パス。旧名: `CLAUDE_BROWSER_SAFETY_CONFIG` |
@@ -371,7 +389,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ、スクリプト）を拒否する。観察・待機・ログ・UIだけを変えるツール（`fox_interact`、`action: "switch"`の`fox_tab`）は使える |
 | `allow_script_execution` | `true` | スクリプト系ツールを許可する。スクリプトの実行は、URLのリスト・保護対象サイトの承認・パスワードのマスクの対象外で、パスワード欄を読むことも、ほかのサイトへ要求を送ることもできる（[既知の制約](docs/known-issues.ja.md)を参照） |
 | `confirm_protected_actions` | `true` | 保護対象サイトでの操作（スクリーンショット・ログ収集を含む）の前に人に尋ねる |
-| `allow_password_typing` | `false` | パスワード欄（`type="password"`、または`autocomplete`に`current-password` / `new-password`のトークンを含むもの。大文字小文字は問わず、`section-login current-password`も含む）への`fox_type` / `fox_set_value`を許可する |
+| `allow_password_typing` | `false` | パスワード欄（`type="password"`、または`autocomplete`に`current-password` / `new-password`のトークンを含むもの。大文字小文字は問わず、`section-login current-password`も含む）への`fox_type` / `fox_set_value`を許可する。伏せ字は解かない: パスワード欄と隠し欄（`type="password"` / `"hidden"`）、`autocomplete`に`current-password`・`new-password`・`one-time-code`・`cc-number`・`cc-csc`・`cc-exp`・`cc-exp-month`・`cc-exp-year`を含む欄の値は、読み取るツール（`fox_read`、`fox_find`）で両方のバックエンドとも常に`[MASKED]`になる |
 | `max_actions_per_minute` | `120` | レート制限。全セッション共通（`0`で制限なし） |
 | `audit_log` | `true` | `~/.inari-mcp/logs/audit.jsonl`に書く |
 | `blocked_url_patterns` | `[]` | 拒否するURL |
@@ -393,7 +411,7 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 
 ホストとスキームは大文字小文字を区別しない。`allowed_url_patterns`ではパスは書いたとおりに一致する（区切りの位置で: `/admin`は`/administrator`を含まない）。ブロックと保護対象のリストでは、`%xx`のエスケープを戻し、連続するスラッシュをまとめ、大文字小文字をそろえたうえで、後ろに何が続いても一致する。以前の版の正規表現もできるだけそのまま使える。単純なもの（`paypal\.com`、`\.gov(/|$)`、`^https://a\.example/`）は同じ意味のホストパターンとして読む。それ以外は、ブロックと保護対象のリストでは以前の意味（URLのどこかに一致）のまま警告付きで使い、許可リストではエラーにする。
 
-`safety.json`を使えない場合（読めない、JSONとして不正、未知のキー、型の誤り、使えないURLパターン）、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。使えないURLパターンとは、空のもの、不正な`re:`の正規表現、ホストパターンのうち不正なポート（1〜65535以外）やIPv6アドレス、IPアドレスの前の`*.`、末尾の`/*`以外でパスに含まれる`*`、パスに含まれる`?` / `#`（`%3F` / `%23`も）、`allowed_url_patterns`のうちホストパターンでも`re:`でもないもの、コンパイルできない以前の版の正規表現。ブロックと保護対象のリストにあるドットのないホストパターン（`paypal`はホスト`paypal`とそのサブドメインにだけ一致する）と、そのまま使う以前の版の正規表現は、警告付きで使い、警告は`fox_safety_status`（`patternWarnings`）に出る。遷移先も確認する: 許可するのは`http://`・`https://`・`about:blank`だけで、ホストの前にユーザー名やパスワードが付いたURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。
+`safety.json`を使えない場合（読めない、JSONとして不正、未知のキー、型の誤り、使えないURLパターン）、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。使えないURLパターンとは、空のもの、不正な`re:`の正規表現、ホストパターンのうち不正なポート（1〜65535以外）やIPv6アドレス、IPアドレスの前の`*.`、末尾の`/*`以外でパスに含まれる`*`、パスに含まれる`?` / `#`（`%3F` / `%23`も）、`allowed_url_patterns`のうちホストパターンでも`re:`でもないもの、コンパイルできない以前の版の正規表現。ブロックと保護対象のリストにあるドットのないホストパターン（`paypal`はホスト`paypal`とそのサブドメインにだけ一致する）と、そのまま使う以前の版の正規表現は、警告付きで使い、警告は`fox_safety_status`（`patternWarnings`）に出る。遷移先も確認する: 許可するのは`http://`・`https://`・`about:blank`だけで、ホストの前にユーザー名やパスワードが付いたURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。ホストの無いページ（`view-source:`、`blob:`、`data:`など。`about:`のページと`file:`は除く）にあるタブはどのURLパターンにも一致しないので、そこで操作するツールは拒否する。読み取るツールは動く。
 
 ### 保護対象サイトでの人による承認
 

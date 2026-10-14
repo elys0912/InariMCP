@@ -1,6 +1,7 @@
 // DOM helpers: element location, locators, selectors / XPath, element info,
-// and the password field guard.
+// the masked-value rule and the password field guard.
 
+import { isMaskedField as isMaskedFieldInfo, MASKED_VALUE } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
 import { LIMITS } from "./constants";
 import type { FindElementOptions, ElementInfo } from "./types";
@@ -43,6 +44,23 @@ export function isPasswordField(element: Element): boolean {
   if (element.type === "password") return true;
   const tokens = (element.getAttribute("autocomplete") ?? "").toLowerCase().split(/\s+/);
   return tokens.some((token) => PASSWORD_AUTOCOMPLETE_TOKENS.includes(token));
+}
+
+/**
+ * Whether the element's value is masked in what the tools return (password,
+ * hidden, one-time code and payment card fields: shared/src/field-mask.ts).
+ */
+export function isMaskedField(element: Element): boolean {
+  return isMaskedFieldInfo({
+    localName: element.localName,
+    type: isInputElement(element) ? element.type : "",
+    autocomplete: element.getAttribute("autocomplete"),
+  });
+}
+
+/** An element's value as the tools return it: MASKED_VALUE for a masked field, else truncated. */
+export function shownValue(element: Element, value: unknown, max: number): string | null {
+  return isMaskedField(element) ? MASKED_VALUE : truncatedValue(value, max);
 }
 
 export function assertNotPasswordField(
@@ -319,7 +337,6 @@ export function getElementInfo(element: Element): ElementInfo {
   const rect = element.getBoundingClientRect();
   // Property reads only: on an element without them they are undefined (→ null below).
   const htmlEl = element as HTMLInputElement;
-  const isPassword = isPasswordField(element);
 
   return {
     tag: element.tagName.toLowerCase(),
@@ -328,7 +345,7 @@ export function getElementInfo(element: Element): ElementInfo {
     name: htmlEl.name || null,
     type: htmlEl.type || null,
     text: clipText(element.textContent?.trim() ?? "", LIMITS.ELEMENT_TEXT) || null,
-    value: isPassword ? "[MASKED]" : truncatedValue(htmlEl.value, LIMITS.ELEMENT_TEXT),
+    value: shownValue(element, htmlEl.value, LIMITS.ELEMENT_TEXT),
     href: (element as HTMLAnchorElement).href || null,
     src: (element as HTMLImageElement).src || null,
     placeholder: htmlEl.placeholder || null,

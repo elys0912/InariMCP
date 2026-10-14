@@ -279,19 +279,25 @@ interface DaemonEndpoint {
   headlessMode: boolean;
 }
 
-function resolveDaemonEndpoint(): DaemonEndpoint {
+/**
+ * The endpoint, or null (logged) when FOX_HOST is not a loopback address:
+ * the HTTP and WebSocket ports carry page content in plain text, so the
+ * daemon refuses to start rather than listen where other machines reach it.
+ */
+function resolveDaemonEndpoint(): DaemonEndpoint | null {
   const host = resolveHost();
+  if (!isLoopbackHost(host)) {
+    log(
+      `ERROR: ${ENV.FOX_HOST}=${host} is not a loopback address (127.0.0.0/8, ::1, localhost). ` +
+      'The daemon serves plain HTTP and WebSocket and only listens on this machine: ' +
+      `unset ${ENV.FOX_HOST} or set it to 127.0.0.1.`,
+    );
+    return null;
+  }
   const headlessMode = isHeadlessEnabled();
   const odd = unrecognizedHeadlessValue();
   if (odd !== undefined) {
     log(`WARNING: ${ENV.FOX_HEADLESS}='${odd}' is not 1/true/yes — headless mode is OFF`);
-  }
-  if (!isLoopbackHost(host)) {
-    log(
-      `WARNING: ${ENV.FOX_HOST}=${host} is not a loopback address — the HTTP and WebSocket ` +
-      'ports are reachable from other machines. Every endpoint except /health still needs ' +
-      'the API token, but browser control should stay local: unset it unless you really need this.',
-    );
   }
   return { host, httpPort: resolveHttpPort(), wsPort: resolveWsPort(), headlessMode };
 }
@@ -320,8 +326,12 @@ function logStartup(endpoint: DaemonEndpoint, idleMs: number): void {
 
 export async function runDaemon(deps: RunDaemonDeps = {}): Promise<void> {
   const exit = deps.exit ?? ((code: number): void => process.exit(code));
-  const connectionManager = getConnectionManager();
   const endpoint = resolveDaemonEndpoint();
+  if (endpoint === null) {
+    exit(1);
+    return;
+  }
+  const connectionManager = getConnectionManager();
   const { host, httpPort, wsPort, headlessMode } = endpoint;
   const activity = new DaemonActivity();
   const settings = snapshotDaemonSettings();

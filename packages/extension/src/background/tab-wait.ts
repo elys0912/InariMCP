@@ -1,5 +1,6 @@
 // Tab URL filters and waits for loads / navigations / URLs (L1).
 
+import { urlPatternProblem } from "@inari-mcp/shared/url-pattern-limit";
 import { errorMessage } from "../error-message";
 import { TIMEOUTS, TOP_FRAME_ID } from "./constants";
 import { resolveTab, noTargetTab } from "./tab-target";
@@ -17,10 +18,15 @@ type UrlPatternArg = { ok: true; pattern: RegExp | null } | { ok: false; result:
 /**
  * Compile a `urlPattern` argument: a regex without flags (case-sensitive),
  * as on every urlPattern tool of both backends. null pattern when absent;
- * a failure result when it does not compile.
+ * a failure result when it does not compile, or is refused by the limits
+ * the MCP Server applies as well (shared/src/url-pattern-limit.ts): this
+ * background page is persistent, and a regex that backtracks for minutes
+ * would stall every tool and approval.
  */
 export function urlPatternArg(source: unknown): UrlPatternArg {
   if (typeof source !== "string" || source === "") return { ok: true, pattern: null };
+  const problem = urlPatternProblem(source);
+  if (problem !== null) return { ok: false, result: { success: false, error: `Invalid urlPattern: ${problem}` } };
   try {
     return { ok: true, pattern: new RegExp(source) };
   } catch (error) {

@@ -34,7 +34,7 @@ import type {
   BrowserSafetyDecision,
   ToolResult,
 } from '@inari-mcp/shared';
-import { BROWSER_ACTIONS, BROWSER_SAFETY_DECISIONS, ErrorCode, isRecord } from '@inari-mcp/shared';
+import { BROWSER_ACTIONS, BROWSER_SAFETY_DECISIONS, ErrorCode, isRecord, urlPatternProblem } from '@inari-mcp/shared';
 import { LAYER_OF, OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS, getSafetyGuard, targetUrlOf } from '../safety/guard.js';
 import type { CallLabel, SafetyDenial, SafetyGuard } from '../safety/guard.js';
 import {
@@ -185,15 +185,19 @@ function buildCommandData(
  * (case-sensitive) on both backends: fox_get_tabs, fox_screenshot all_tabs,
  * fox_wait_for_url, fox_wait_for_navigation, fox_get_network_logs (and the
  * Extension's reload_by_url / find_tabs). A case-insensitive part needs a
- * character class such as `[Ee]xample`.
+ * character class such as `[Ee]xample`. Each must also pass the limits of
+ * shared/src/url-pattern-limit.ts (length, no repeated group containing a
+ * repeat), which the Extension checks again.
  */
 const REGEX_ARGUMENTS = ['urlPattern'] as const;
 
-/** Error message for the first regex argument that does not compile, or null. */
+/** Error message for the first regex argument that is refused or does not compile, or null. */
 export function invalidRegexArgument(args: Record<string, unknown>): string | null {
   for (const key of REGEX_ARGUMENTS) {
     const value = args[key];
     if (typeof value !== 'string') continue;
+    const problem = urlPatternProblem(value);
+    if (problem !== null) return `Invalid ${key}: ${problem}`;
     try {
       new RegExp(value);
     } catch (e) {

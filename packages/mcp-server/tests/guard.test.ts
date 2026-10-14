@@ -117,6 +117,18 @@ describe('per-tab URL tracking (2.B4)', () => {
     expect(decision(g, 'fox_click', { tabId: 7 })).toBeNull();
   });
 
+  // Fs-09: such a page matches no URL pattern, so the protected check could not see it.
+  it('refuses acting tools on a tab without a host, and lets reading tools and about: / file: pages through', () => {
+    const g = guard(PROTECTED);
+    const tabs = ['view-source:https://bank.test/', 'blob:https://bank.test/0b1c', 'data:text/html,<p>x</p>', 'about:blank', 'file:///tmp/a.html'];
+    tabs.forEach((url, i) => g.noteUrl({ url }, { tabId: i + 1 }, 'fox_get_text'));
+    const acting = tabs.map((_url, i) => decision(g, 'fox_click', { tabId: i + 1, selector: 'a' }));
+    const reading = tabs.map((_url, i) => decision(g, 'fox_get_text', { tabId: i + 1 }));
+    expect(acting).toEqual(['blocked_scheme', 'blocked_scheme', 'blocked_scheme', null, null]);
+    expect(reading).toEqual([null, null, null, null, null]);
+    expect(g.check('fox_click', { tabId: 1 })?.error).toMatch(/a page without a host/);
+  });
+
   it('a background tab does not become the active one', () => {
     const g = guard();
     g.noteUrl({ url: 'https://a.test/' }, {}, 'fox_navigate');

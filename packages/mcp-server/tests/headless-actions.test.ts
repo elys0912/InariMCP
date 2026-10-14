@@ -196,6 +196,19 @@ describe('get_value', () => {
     expect(await browser.execute('get_value', undefined, { selector: '#t' })).toMatchObject({ success: true, value: 'plain' });
   });
 
+  // Decision #4 / Fo-03: the rule of shared/src/field-mask.ts, as on the Extension.
+  real('masks hidden, one-time code and card fields as the Extension does', async () => {
+    await load('<input id="h" type="hidden" value="secret"><input id="o" autocomplete="one-time-code" value="secret">' +
+      '<input id="n" autocomplete="cc-number" value="secret"><input id="v" autocomplete="section-pay CC-CSC" value="secret">' +
+      '<select id="m" autocomplete="cc-exp-month"><option value="secret" selected>05</option></select>' +
+      '<input id="u" autocomplete="name" value="plain">');
+    for (const selector of ['#h', '#o', '#n', '#v', '#m']) {
+      expect(await browser.execute('get_value', undefined, { selector }), selector)
+        .toMatchObject({ success: true, value: '[MASKED]' });
+    }
+    expect(await browser.execute('get_value', undefined, { selector: '#u' })).toMatchObject({ success: true, value: 'plain' });
+  });
+
   real('reads a <label>, a <select> and other elements as the Extension does (H-20, H-21)', async () => {
     await load('<label id="l" for="p">Password</label><input id="p" type="password" value="secret">' +
       '<select id="s"><option value="a">A</option><option value="b" selected>B</option></select><div id="d">some <b>text</b></div>');

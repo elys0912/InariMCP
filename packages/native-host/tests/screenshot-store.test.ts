@@ -164,7 +164,7 @@ describe('externalizeScreenshots', () => {
     expect(shots[4]).toBe('not-an-object');
     for (const shot of shots.slice(0, 3)) expect(shot).not.toHaveProperty('imageData');
     expect(response['success']).toBe(true);
-    expect(fs.readdirSync(dir).sort()).toEqual(['all_1.png', 'all_tab12.png']);
+    expect(fs.readdirSync(dir).sort()).toEqual(['.named-screenshots', 'all_1.png', 'all_tab12.png']);
   });
 
   it('warns when a caller-chosen filename replaces an existing file (5.7)', () => {
@@ -200,7 +200,7 @@ describe('externalizeScreenshots', () => {
     expect(shotAt(second, 1)).not.toHaveProperty('imageOverwritten');
     expect(dataOf(second)['warnings']).toEqual([expect.stringContaining('same_tab12.png already existed')]);
     expect(second['success']).toBe(true);
-    expect(fs.readdirSync(dir).sort()).toEqual(['same_tab12.png', 'same_tab13.png']);
+    expect(fs.readdirSync(dir).sort()).toEqual(['.named-screenshots', 'same_tab12.png', 'same_tab13.png']);
   });
 
   it('never warns about generated names: they are unique (5.7)', () => {

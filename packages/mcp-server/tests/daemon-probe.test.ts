@@ -175,3 +175,19 @@ describe('runDaemon when the HTTP port is already taken (singleton lock)', () =>
     expect(await exitCodeFor(portOf(s))).toBe(1);
   });
 });
+
+describe('runDaemon with a FOX_HOST that is not a loopback address (Po-09)', () => {
+  it('exits 1 before listening, with the reason in the log', async () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const free = await closedPort();
+    process.env[ENV.FOX_HOST] = '0.0.0.0';
+    process.env[ENV.FOX_HTTP_PORT] = String(free);
+    process.env[ENV.FOX_WS_PORT] = String(free);
+    const codes: number[] = [];
+    await runDaemon({ exit: (code) => { codes.push(code); } });
+    expect(codes).toEqual([1]);
+    expect(stderr.mock.calls.map((c) => String(c[0])).join('')).toMatch(/FOX_HOST=0\.0\.0\.0 is not a loopback address/);
+    // Nothing took the port.
+    expect((await probeExistingDaemon('127.0.0.1', free, TOKEN)).kind).toBe('down');
+  });
+});

@@ -28,6 +28,14 @@
       "types": "./dist/action-names.d.ts",
       "default": "./dist/action-names.js"
     },
+    "./field-mask": {
+      "types": "./dist/field-mask.d.ts",
+      "default": "./dist/field-mask.js"
+    },
+    "./url-pattern-limit": {
+      "types": "./dist/url-pattern-limit.d.ts",
+      "default": "./dist/url-pattern-limit.js"
+    },
     "./package.json": "./package.json"
   },
   "sideEffects": false,

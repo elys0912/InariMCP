@@ -25,7 +25,9 @@
     "paths": {
       "@inari-mcp/shared": ["./packages/shared/src/index.ts"],
       "@inari-mcp/shared/node": ["./packages/shared/src/node/index.ts"],
-      "@inari-mcp/shared/action-names": ["./packages/shared/src/action-names.ts"]
+      "@inari-mcp/shared/action-names": ["./packages/shared/src/action-names.ts"],
+      "@inari-mcp/shared/field-mask": ["./packages/shared/src/field-mask.ts"],
+      "@inari-mcp/shared/url-pattern-limit": ["./packages/shared/src/url-pattern-limit.ts"]
     }
   },
   // Directories only (new test files are picked up without editing this),

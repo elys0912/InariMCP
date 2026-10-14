@@ -162,6 +162,17 @@ function isHttp(url: string): boolean {
   return n !== null && (n.url.protocol === 'http:' || n.url.protocol === 'https:');
 }
 
+/**
+ * A page without a host other than about: and file: (view-source:, blob:,
+ * data:, ...). about: pages (about:blank, a new tab) and local files are no
+ * site's pages; the others may show or carry one, under a URL no pattern
+ * can match.
+ */
+function isHostlessPage(url: string): boolean {
+  const n = normalizeUrl(url);
+  return n !== null && n.hostname === '' && n.url.protocol !== 'about:' && n.url.protocol !== 'file:';
+}
+
 export class SafetyGuard {
   readonly config: LoadedSafetyConfig;
   private _actionTimes: number[] = [];
@@ -575,6 +586,21 @@ export class SafetyGuard {
         return this._protectedConfirmation(shown, targetUrl ?? currentUrl);
       }
       return null;
+    }
+
+    // Layer 2 for acting tools: a tab on a page without a host
+    // (view-source:, blob:, data:, ...) matches no URL pattern, so Layer 7
+    // could not tell such a page of a protected site from any other. Acting
+    // there is refused; the reading tools above stay allowed.
+    if (targetUrl === null && currentUrl !== null && !isOperationIn(TAB_INDEPENDENT_TOOLS, toolName) &&
+      isHostlessPage(currentUrl)) {
+      return this._deny(
+        'blocked_scheme',
+        `${shown} refused: the target tab is on '${currentUrl}', a page without a host ` +
+        '(such as view-source:, blob: or data:), where only reading tools are allowed. ' +
+        'Navigate it to an http(s) URL (fox_navigate with a url) first.',
+        currentUrl,
+      );
     }
 
     // Layer 5: Read-only mode
