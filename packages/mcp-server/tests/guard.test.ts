@@ -647,6 +647,16 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     expect(lines).toEqual([]);
   });
 
+  it('masks a secret in the url of an audit line, as in the url argument', async () => {
+    const g = handlerGuard({ auditLog: true });
+    const lines = await auditLinesOf(async () => {
+      g.check('fox_navigate', { url: 'https://fine.test/cb?code=1#access_token=abc' });
+      await Promise.resolve();
+    });
+    const masked = 'https://fine.test/cb?code=1#access_token=[MASKED]';
+    expect(lines).toEqual([expect.objectContaining({ decision: 'confirmation_required', url: masked, args: { url: masked } })]);
+  });
+
   // WP-G P-3: refused before the guard, so neither counted nor audited as allowed.
   it('a password field is refused as denied, without using up the rate limit', async () => {
     const g = handlerGuard({ auditLog: true, maxActionsPerMinute: 10 });

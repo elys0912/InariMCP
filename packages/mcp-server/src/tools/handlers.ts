@@ -379,7 +379,8 @@ function safetyDenialToCallResult(
   }
 
   // URLs and browser error text in a denial come from the page; the extra
-  // details are the server's own and are not sanitized.
+  // details are the server's own and are not sanitized (the page URL in
+  // details.approval is sanitized where it is built: openApprovalRequest).
   const sanitized = sanitizeResult(details);
   return {
     content: [
@@ -469,7 +470,9 @@ function openApprovalRequest(label: CallLabel, denial: SafetyDenial): ApprovalOu
     requestId: request.id,
     toolName,
     host: target.host,
-    url: shownUrl,
+    // The page's URL, bound for the MCP client: sanitized like the URLs of
+    // the result. The popup shows the request's own `url`.
+    url: sanitizeString(shownUrl),
     matchedPattern,
     summary: request.summary,
     expiresAt: request.expiresAt,
