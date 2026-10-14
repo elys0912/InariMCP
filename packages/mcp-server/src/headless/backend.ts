@@ -272,11 +272,14 @@ export class HeadlessBrowser {
 
   /**
    * Run one action, without the approval floor: the tests drive the actions
-   * with it, the daemon runs every command through runCommand(). `ctx` is
+   * with it, the daemon runs every command through runCommand() (no other
+   * caller in src: headless-lifecycle.test.ts checks). `ctx` is
    * the deadline and cancellation of the command (connection/manager.ts);
    * by default the one of the command being sent. An action whose command
    * was given up while it waited for the lock is not run: the caller has
    * already been told it failed and may send it again.
+   *
+   * @internal
    */
   execute(
     action: string,
@@ -294,9 +297,7 @@ export class HeadlessBrowser {
     // Not serialised: it waits for a dialog that a queued action may be about to open.
     if (route.kind === 'unlocked') {
       const result = await this._run(action, async () => {
-        const id = tabId ?? this._activeTabId;
-        const pageUrl = id === null ? null : this._tabs.get(id)?.url() ?? null;
-        return this._floorRefusal(call, pageUrl, approval) ??
+        return this._floorRefusal(call, this._urlOfTab(tabId), approval) ??
           route.run({ tabId, args, signal: ctx?.signal, dialogs: this._dialogHost });
       });
       return this._finish(action, tabId ?? this._activeTabId, args, result);
@@ -320,15 +321,16 @@ export class HeadlessBrowser {
     approval: CommandApproval | null,
   ): Promise<Record<string, unknown>> {
     const { action, tabId, args, ctx } = call;
-    const bound = { deadline: ctx?.deadline ?? Infinity, signal: ctx?.signal };
-    if (bound.signal?.aborted === true || Date.now() >= bound.deadline) {
+    // The deadline and the cancellation of the command.
+    const limits = { deadline: ctx?.deadline ?? Infinity, signal: ctx?.signal };
+    if (limits.signal?.aborted === true || Date.now() >= limits.deadline) {
       return { success: false, error: NOT_RUN_ERROR };
     }
     // The tab this action targets, fixed before it can change the active tab.
     const target = tabId ?? this._activeTabId;
     const result = await this._run(action, async () => {
       const page = this._targetPage(tabId);
-      const base = { tabId, args, host: this._host, ...bound };
+      const base = { tabId, args, host: this._host, ...limits };
       if (route.kind === 'dispatch' && !route.needsPage) {
         return this._floorRefusal(call, page?.url() ?? null, approval) ?? route.run({ ...base, page });
       }
@@ -340,6 +342,13 @@ export class HeadlessBrowser {
     });
     if (route.kind === 'dispatch' && route.needsPage) this._reportTab(result, target);
     return this._finish(action, target, args, result);
+  }
+
+  /** The URL of the page of `tabId`, or of the active tab when undefined; null without one. */
+  private _urlOfTab(tabId: number | undefined): string | null {
+    const id = tabId ?? this._activeTabId;
+    const page = id === null ? undefined : this._tabs.get(id);
+    return page?.url() ?? null;
   }
 
   /** The approval floor's refusal of `call` on the page at `pageUrl`, or null (also without a floor). */

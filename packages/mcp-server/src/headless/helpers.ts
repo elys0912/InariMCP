@@ -124,20 +124,37 @@ function maskAriaLine(line: string, valueEndings: string[], selectedKeys: string
 }
 
 /**
+ * Shortest masked value also replaced wherever else it appears in the
+ * snapshot (in an accessible name, say). A shorter one would mask ordinary
+ * words and numbers of the page.
+ */
+const MIN_MASKED_ANYWHERE = 4;
+
+/** `text` with every occurrence of each of `values` replaced by MASKED_VALUE. */
+function maskEverywhere(text: string, values: string[]): string {
+  return values.filter((v) => v.length >= MIN_MASKED_ANYWHERE)
+    .reduce((masked, value) => masked.split(value).join(MASKED_VALUE), text);
+}
+
+/**
  * Mask what Playwright's ariaSnapshot() shows of masked fields (the rule of
  * shared/src/field-mask.ts): the value of an input or textarea, which it
  * renders after the node (`- textbox "Password": value`, or a `- text:`
  * line below it), becomes `[MASKED]`; the selected option of a select loses
- * its `[selected]`. The YAML has no link back to the elements, so every line
- * that shows such a value is masked, also one that belongs to another node:
- * it errs on the side of masking.
+ * its `[selected]`. Then a value of MIN_MASKED_ANYWHERE characters or more
+ * is replaced wherever else it is left, such as inside the name of a node
+ * that the field labels. The YAML has no link back to the elements, so every
+ * line that shows such a value is masked, also one that belongs to another
+ * node: it errs on the side of masking.
  */
 export function maskAriaSnapshot(yaml: string, masked: MaskedSnapshotTexts): string {
   const shown = (texts: string[]): string[] => texts.map(ariaText).filter((t) => t !== '');
-  const valueEndings = shown(masked.values).flatMap(valueLineEndings);
+  const values = shown(masked.values);
+  const valueEndings = values.flatMap(valueLineEndings);
   const selectedKeys = shown(masked.selectedOptions).map((t) => `option ${JSON.stringify(t)}`);
   if (valueEndings.length === 0 && selectedKeys.length === 0) return yaml;
-  return yaml.split('\n').map((line) => maskAriaLine(line, valueEndings, selectedKeys)).join('\n');
+  const byLine = yaml.split('\n').map((line) => maskAriaLine(line, valueEndings, selectedKeys)).join('\n');
+  return maskEverywhere(byLine, values);
 }
 
 export interface IgnoredParam {

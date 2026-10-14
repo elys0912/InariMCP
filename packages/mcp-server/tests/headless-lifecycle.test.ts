@@ -1,4 +1,5 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -25,6 +26,15 @@ describe('playwright stays optional at load time', () => {
   it.each(['headless/backend.ts', 'headless/actions.ts'])('%s only imports playwright types statically', (rel) => {
     const staticImports = src(rel).match(/^import .* from 'playwright';$/gm) ?? [];
     expect(staticImports.every((l) => l.startsWith('import type'))).toBe(true);
+  });
+
+  // execute() has no approval floor: the daemon must go through runCommand().
+  it('no source file calls execute() of the headless backend', () => {
+    const srcDir = fileURLToPath(new URL('../src/', import.meta.url));
+    const callers = readdirSync(srcDir, { recursive: true, encoding: 'utf-8' })
+      .filter((rel) => rel.endsWith('.ts'))
+      .filter((rel) => /\.execute\(/.test(readFileSync(path.join(srcDir, rel), 'utf-8')));
+    expect(callers).toEqual([]);
   });
 
   it('daemon/main.ts does not import the headless backend statically', () => {

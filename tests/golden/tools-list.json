@@ -492,14 +492,14 @@
           "minimum": 0,
           "maximum": 2000,
           "default": 500,
-          "description": "Delay between scrolls in ms (for scroll_capture scope; at most 2000)"
+          "description": "Delay between scrolls in ms (for scroll_capture scope; at most 2000, and the delays stop after 25 s in total)"
         },
         "maxScrolls": {
           "type": "integer",
           "exclusiveMinimum": 0,
           "maximum": 50,
           "default": 20,
-          "description": "Maximum number of scroll steps (for scroll_capture scope; at most 50)"
+          "description": "Maximum number of scroll steps (for scroll_capture scope; at most 50, fewer when the delays reach 25 s in total)"
         },
         "restore": {
           "type": "boolean",

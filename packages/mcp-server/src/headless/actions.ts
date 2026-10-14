@@ -1,5 +1,5 @@
 /**
- * Routing table of the headless backend: what HeadlessBrowser.execute() does
+ * Routing table of the headless backend: what HeadlessBrowser (runCommand, execute) does
  * with each BrowserCommand action, and the handlers of the actions it runs.
  *
  * Each handler reads its arguments through a schema of its own (parseArgs):
@@ -15,6 +15,7 @@ import { BrowserActionSchema, isMaskedField, MASKED_VALUE, type BrowserAction, t
 import { screenshotStem } from '@inari-mcp/shared/node';
 import { countOccurrences, filterAriaSnapshot, maskAriaSnapshot, parseArgs, type MaskedSnapshotTexts } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
+import { NEW_TAB_URL } from '../safety/approval.js';
 import { focusedIsPassword } from './focus.js';
 import { getScreenshotsDir } from '../utils/screenshot.js';
 import { errorMessage } from '../utils/errors.js';
@@ -328,7 +329,10 @@ const snapshotArgs = z.object({
 /** A form field whose value an aria snapshot can show, as snapshotFields() reads it. */
 interface SnapshotField {
   info: MaskFieldInfo;
-  /** The value of an input or textarea; the selected option's text of a select. */
+  /**
+   * The value of an input or textarea; the name of a select's selected
+   * option (HTMLOptionElement.label: its label attribute, else its text).
+   */
   text: string;
   isSelect: boolean;
 }
@@ -346,7 +350,7 @@ function snapshotFields(root: Element): SnapshotField[] {
       return shown ? { info: { ...info, type: el.type }, text: el.value, isSelect: false } : null;
     }
     if (el instanceof HTMLTextAreaElement) return { info, text: el.value, isSelect: false };
-    if (el instanceof HTMLSelectElement) return { info, text: el.selectedOptions[0]?.text ?? '', isSelect: true };
+    if (el instanceof HTMLSelectElement) return { info, text: el.selectedOptions[0]?.label ?? '', isSelect: true };
     return null;
   };
   const fields: SnapshotField[] = [];
@@ -637,13 +641,12 @@ const getTabs: TablessHandler = async ({ host }) => {
 };
 
 // --- create_tab ---
-const BLANK_URL = 'about:blank';
 const createTabArgs = z.object({ url: z.string() });
 
 const createTab: TablessHandler = async ({ args, host }) => {
   const { url } = parseArgs(createTabArgs, args, 'create_tab');
   const newPage = await host.context().newPage();
-  if (url !== BLANK_URL) {
+  if (url !== NEW_TAB_URL) {
     try {
       await newPage.goto(url, { timeout: NAVIGATE_TIMEOUT_MS });
     } catch (e) {

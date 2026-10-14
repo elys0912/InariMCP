@@ -107,6 +107,22 @@ describe('snapshot', () => {
     expect(text).toContain('Alice');
   });
 
+  // Values YAML quotes or escapes, and an option named by its label: they
+  // catch a change of Playwright's snapshot format.
+  real('masks values that the YAML quotes, and an option named by its label', async () => {
+    await load(
+      '<label>Card <input autocomplete="cc-number" value="  4111: 1111 "></label>' +
+      '<label>Code <input type="password" value="#x \'y\' &quot;z&quot;"></label>' +
+      '<label>Year <select autocomplete="cc-exp-year"><option>2030</option>' +
+      '<option label="Thirty-one" selected>2031</option></select></label>',
+    );
+    const r = await browser.execute('snapshot', undefined, { includeText: true });
+    const text = r['snapshot'] as string;
+    expect(text).not.toContain('4111');
+    expect(text).not.toContain("'y'");
+    expect(text).not.toMatch(/\[selected\]/);
+  });
+
   real('warns when the selector matches several elements', async () => {
     await load('<button>A</button><button>B</button>');
     const r = await browser.execute('snapshot', undefined, { selector: 'button', includeText: true });

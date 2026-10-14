@@ -3,7 +3,7 @@ import type { LoadedSafetyConfig } from './config.js';
 import { audit } from './audit.js';
 import type { AuditDecision } from './audit.js';
 import { checkHeadlessContainerScope } from './container.js';
-import { grantCoversDenial } from './approval.js';
+import { NEW_TAB_URL, grantCoversDenial } from './approval.js';
 import type { ApprovalGrant } from './approval.js';
 import { PATTERN_LIST_KEYS, compileUrlPatterns, normalizeUrl } from './url-pattern.js';
 import type { PatternListName, UrlPattern } from './url-pattern.js';
@@ -18,9 +18,6 @@ import { isRecord } from '@inari-mcp/shared';
 
 // Derived from the tool schemas; re-exported for the existing importers.
 export { ACTING_TOOLS, PAGE_READ_TOOLS, TAB_INDEPENDENT_TOOLS };
-
-/** The page a new tab opened without a URL shows (the Extension opens the same). */
-const NEW_TAB_URL = 'about:blank';
 
 /**
  * The URL a call goes to or opens, or null when it acts on (or reads) a tab
@@ -566,8 +563,9 @@ export class SafetyGuard {
     shown: string,
   ): SafetyDenial | null {
     const call: CheckedCall = { toolName, args, shown, targetUrl, currentUrl };
-    const common = this._checkContainerScope() ?? this._checkUrlRules(call);
-    if (common !== null) return common;
+    // The layers that apply to every call.
+    const earlyDenial = this._checkContainerScope() ?? this._checkUrlRules(call);
+    if (earlyDenial !== null) return earlyDenial;
     if (!isOperationIn(ACTING_TOOLS, toolName)) return this._checkReading(call);
 
     return this._checkActing(call);

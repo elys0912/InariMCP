@@ -123,6 +123,13 @@ describe('maskAriaSnapshot (the masked fields of fox_snapshot)', () => {
     expect(maskAriaSnapshot(yaml, { values: ['', ' '], selectedOptions: [''] })).toBe(yaml);
   });
 
+  it('masks a value of 4 characters or more left elsewhere, such as in a name', () => {
+    expect(maskAriaSnapshot('- group "Code 123456":', { values: ['123456'], selectedOptions: [] }))
+      .toBe('- group "Code [MASKED]":');
+    expect(maskAriaSnapshot('- listitem: page 12 of 30', { values: ['12'], selectedOptions: [] }))
+      .toBe('- listitem: page 12 of 30');
+  });
+
   it('does not mask a line whose value only ends with the masked one', () => {
     expect(maskAriaSnapshot('- textbox "A": xab', { values: ['ab'], selectedOptions: [] })).toBe('- textbox "A": xab');
   });

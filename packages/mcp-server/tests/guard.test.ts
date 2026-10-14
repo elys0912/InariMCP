@@ -331,10 +331,14 @@ describe('per-tab URL tracking (2.B4): the page an approval is asked for', () =>
   });
 
   // Only goto opens a new tab: back / forward / refresh act on the tab as it is.
-  it.each(['back', 'forward', 'refresh'])('fox_navigate %s with newTab: true is approved for the tab and records it', (action) => {
+  it.each(['back', 'forward', 'refresh'])('fox_navigate %s with newTab: true is approved for the page of the tab', (action) => {
     const g = guard();
     g.noteUrl({ url: 'https://a.test/' }, { tabId: 1 }, 'fox_get_text');
     expect(approvalUrl(g, 'fox_navigate', { tabId: 1, action, newTab: true })).toBe('https://a.test/');
+  });
+
+  it.each(['back', 'forward', 'refresh'])('fox_navigate %s with newTab: true records the URL for the tab it named', (action) => {
+    const g = guard();
     g.noteUrl({ url: 'https://a.test/prev' }, { tabId: 1, action, newTab: true }, 'fox_navigate');
     expect(g.urlFor(1)).toBe('https://a.test/prev');
   });

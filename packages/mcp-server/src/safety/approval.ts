@@ -99,6 +99,9 @@ interface StoredToken extends ApprovalGrant {
 // Target helpers
 // ---------------------------------------------------------------------------
 
+/** The page a new tab opened without a URL shows (the Extension and the headless backend open the same). */
+export const NEW_TAB_URL = 'about:blank';
+
 /**
  * The site an approval is bound to: the lower-case hostname of an absolute
  * URL, or its scheme (`file:`, `about:`) when it has no hostname, so that a

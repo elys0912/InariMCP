@@ -21,7 +21,7 @@
  */
 
 import { BrowserActionSchema, type BrowserAction, type BrowserCommand } from '@inari-mcp/shared';
-import { approvalSiteOf } from '../safety/approval.js';
+import { NEW_TAB_URL, approvalSiteOf } from '../safety/approval.js';
 import { compileUrlPatterns, type UrlPattern } from '../safety/url-pattern.js';
 
 /** What the floor checks before an action (the approval column of the Extension's action table). */
@@ -31,7 +31,10 @@ export type FloorCheck = 'act' | 'actOnUrl' | 'read' | 'none';
  * The check of each action the headless backend runs, where it is not
  * 'act': an action left out gets the strictest check, as on the Extension
  * (UNKNOWN_ACTION). Actions the backend does not support are refused before
- * the floor.
+ * the floor. The keys are BrowserAction (shared/src/action-names.ts), so an
+ * action removed there fails the type check here; tests/contract/
+ * headless-approval-floor.test.ts compares the checks with the Extension's
+ * action table. hover is 'act': the page's own hover handlers run.
  */
 const FLOOR_CHECKS: Readonly<Partial<Record<BrowserAction, Exclude<FloorCheck, 'act'>>>> = {
   navigate: 'actOnUrl',
@@ -41,13 +44,11 @@ const FLOOR_CHECKS: Readonly<Partial<Record<BrowserAction, Exclude<FloorCheck, '
   snapshot: 'read',
   get_page_info: 'read',
   get_elements: 'read',
-  get_value: 'read',
   get_text: 'read',
   find_text: 'read',
 
   scroll: 'none',
   highlight: 'none',
-  hover: 'none',
   focus_tab: 'none',
   get_tabs: 'none',
   wait_for_element: 'none',
@@ -64,7 +65,8 @@ const FLOOR_CHECKS: Readonly<Partial<Record<BrowserAction, Exclude<FloorCheck, '
 /** The floor check of `action` ('act' for a name that is no BrowserAction). */
 export function floorCheckOf(action: string): FloorCheck {
   const known = BrowserActionSchema.safeParse(action);
-  return known.success ? FLOOR_CHECKS[known.data] ?? 'act' : 'act';
+  if (!known.success) return 'act';
+  return FLOOR_CHECKS[known.data] ?? 'act';
 }
 
 /** What a command carries for the floor. */
@@ -88,9 +90,6 @@ export function commandApprovalOf(command: BrowserCommand): CommandApproval {
 }
 
 type Refusal = Record<string, unknown>;
-
-/** The page a new tab opened without a URL shows (actions.ts create_tab, the Extension). */
-const NEW_TAB_URL = 'about:blank';
 
 /** The URL an opening action opens: `url`, else a blank tab. */
 function urlToOpen(args: Record<string, unknown>): string {
@@ -154,14 +153,19 @@ export function floorRefusal(
       error: `Refused: ${approval.unusableRules} confirm_read_sites rule(s) of the command could not be used`,
     };
   }
-  switch (floorCheckOf(action)) {
+  const check = floorCheckOf(action);
+  switch (check) {
     case 'act':
       return checkApprovedUrl(pageUrl, approval.approvedHost);
     case 'actOnUrl':
       return checkApprovedUrl(urlToOpen(args), approval.approvedHost);
     case 'read':
       return checkReadSite(pageUrl, approval);
-    default:
+    case 'none':
       return null;
+    default: {
+      const unhandled: never = check;
+      throw new Error(`Unknown floor check: ${String(unhandled)}`);
+    }
   }
 }
