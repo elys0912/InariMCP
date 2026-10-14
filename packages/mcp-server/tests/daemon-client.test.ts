@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DaemonClient } from '../src/relay/daemon-client.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { startHttpBridge } from '../src/transport/http-bridge.js';
-import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION } from '@kitsune-mcp/shared/node';
+import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION } from '@inari-mcp/shared/node';
 import { effectiveDaemonSettings, snapshotDaemonSettings } from '../src/utils/endpoint.js';
 import { TOKEN, waitFor } from './helpers/ws.js';
 
@@ -42,7 +42,7 @@ async function impostor(protocol: number | 'omit' = DAEMON_PROTOCOL_VERSION): Pr
     req.on('end', () => {
       const body =
         req.url === '/health'
-          ? JSON.stringify({ status: 'ok', service: 'kitsune-mcp', ...(protocol === 'omit' ? {} : { protocol }) })
+          ? JSON.stringify({ status: 'ok', service: 'inari-mcp', ...(protocol === 'omit' ? {} : { protocol }) })
           : JSON.stringify({ success: true, result: { content: [{ type: 'text', text: 'forged' }] } });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(body);
@@ -110,7 +110,7 @@ describe('DaemonClient against an impostor', () => {
     servers.push(s);
     const result = await client(portOf(s)).callTool('fox_safety_status', {});
     expect(result.isError).toBe(true);
-    expect(JSON.stringify(result.content)).toMatch(/is not the KitsuneMCP daemon/);
+    expect(JSON.stringify(result.content)).toMatch(/is not the InariMCP daemon/);
     expect(seen.every((line) => line === 'GET /health')).toBe(true);
   });
 

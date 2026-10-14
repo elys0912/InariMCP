@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runChecks, type CheckResult, type DoctorDeps, type HttpReply, type RunResult } from '../src/doctor/checks.js';
 import { formatResults, runDoctor } from '../src/doctor/run.js';
-import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, responseMac } from '@kitsune-mcp/shared/node';
+import { AUTH_HEADER, DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, responseMac } from '@inari-mcp/shared/node';
 import { PACKAGE_VERSION } from '../src/version.js';
 
 const TOKEN = 'a'.repeat(64);
@@ -19,10 +19,10 @@ const geckoId = (JSON.parse(fs.readFileSync(path.join(repoRoot, 'packages', 'ext
   browser_specific_settings: { gecko: { id: string } };
 }).browser_specific_settings.gecko.id;
 
-const NM_HOST_NAME = 'kitsune_mcp';
+const NM_HOST_NAME = 'inari_mcp';
 const posix = process.platform !== 'win32';
 
-// Keep the doctor away from the real ~/.kitsune-mcp and ~/.claude.json.
+// Keep the doctor away from the real ~/.inari-mcp and ~/.claude.json.
 let home: string;
 let cwd: string;
 const savedEnv = { ...process.env };
@@ -43,8 +43,8 @@ function clearDoctorEnv(): void {
 }
 
 beforeAll(() => {
-  home = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-doctor-'));
-  cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-doctor-cwd-'));
+  home = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-doctor-'));
+  cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-doctor-cwd-'));
   process.env['HOME'] = home;
   process.env['USERPROFILE'] = home;
   clearDoctorEnv();
@@ -56,7 +56,7 @@ afterAll(() => {
   for (const dir of temps) fs.rmSync(dir, { recursive: true, force: true });
 });
 beforeEach(() => {
-  fs.rmSync(path.join(home, '.kitsune-mcp'), { recursive: true, force: true });
+  fs.rmSync(path.join(home, '.inari-mcp'), { recursive: true, force: true });
   fs.rmSync(path.join(home, '.claude.json'), { force: true });
   fs.rmSync(path.join(home, '.mozilla'), { recursive: true, force: true });
   fs.rmSync(path.join(cwd, '.mcp.json'), { force: true });
@@ -83,7 +83,7 @@ function deps(daemon: FakeDaemon | undefined, extra: Partial<DoctorDeps> = {}): 
       if (urlPath === '/health') {
         const body = {
           status: 'ok',
-          service: 'kitsune-mcp',
+          service: 'inari-mcp',
           version: PACKAGE_VERSION,
           protocol: DAEMON_PROTOCOL_VERSION,
           ready: true,
@@ -108,8 +108,8 @@ function byId(results: CheckResult[], id: string): CheckResult {
 }
 
 function writeToken(token: string): void {
-  fs.mkdirSync(path.join(home, '.kitsune-mcp'), { recursive: true });
-  fs.writeFileSync(path.join(home, '.kitsune-mcp', 'api_token'), token, { mode: 0o600 });
+  fs.mkdirSync(path.join(home, '.inari-mcp'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.inari-mcp', 'api_token'), token, { mode: 0o600 });
 }
 
 // ---------------------------------------------------------------------------
@@ -154,15 +154,15 @@ interface ManifestOptions {
 
 /** A host manifest (and its wrapper) in a fresh directory. */
 function writeNmManifest(opts: ManifestOptions = {}): { dir: string; manifestPath: string; wrapperPath: string } {
-  const dir = tempDir('kitsune-doctor-nm-');
-  const wrapperPath = path.join(dir, opts.wrapperName ?? 'kitsune_mcp.bat');
+  const dir = tempDir('inari-doctor-nm-');
+  const wrapperPath = path.join(dir, opts.wrapperName ?? 'inari_mcp.bat');
   if (opts.noWrapper !== true) fs.writeFileSync(wrapperPath, opts.wrapper ?? `node "${hostEntry}" %*\r\n`);
   const manifestPath = path.join(dir, `${NM_HOST_NAME}.json`);
   fs.writeFileSync(
     manifestPath,
     JSON.stringify({
       name: NM_HOST_NAME,
-      description: 'KitsuneMCP Native Host',
+      description: 'InariMCP Native Host',
       path: wrapperPath,
       type: 'stdio',
       allowed_extensions: [geckoId],
@@ -181,8 +181,8 @@ function winDeps(manifestPath: string, daemon?: FakeDaemon, opts: RegOptions = {
 function writeLinuxNmManifest(opts: ManifestOptions = {}): { manifestPath: string; wrapperPath: string } {
   const dir = path.join(home, '.mozilla', 'native-messaging-hosts');
   fs.mkdirSync(dir, { recursive: true });
-  const wrapperDir = tempDir('kitsune-doctor-wrap-');
-  const wrapperPath = path.join(wrapperDir, opts.wrapperName ?? 'kitsune_mcp.sh');
+  const wrapperDir = tempDir('inari-doctor-wrap-');
+  const wrapperPath = path.join(wrapperDir, opts.wrapperName ?? 'inari_mcp.sh');
   if (opts.noWrapper !== true) fs.writeFileSync(wrapperPath, opts.wrapper ?? `exec node '${hostEntry}' "$@"\n`);
   const manifestPath = path.join(dir, `${NM_HOST_NAME}.json`);
   fs.writeFileSync(
@@ -200,7 +200,7 @@ function writeClaudeConfig(value: unknown, dir = home): string {
 
 /** A repository with the four packages, each with a src/ and (optionally) a dist/. */
 function fakeRepo(opts: { dist?: 'fresh' | 'stale' | 'missing' } = {}): string {
-  const root = tempDir('kitsune-doctor-repo-');
+  const root = tempDir('inari-doctor-repo-');
   const now = Date.now();
   for (const name of ['shared', 'mcp-server', 'native-host', 'extension']) {
     const pkg = path.join(root, 'packages', name);
@@ -224,7 +224,7 @@ describe('doctor', () => {
     expect(byId(results, 'token')).toMatchObject({ status: 'FAIL' });
     expect(byId(results, 'token').detail).toContain('daemon is running');
     expect(byId(results, 'daemon')).toMatchObject({ status: 'WARN' });
-    // read-only: no ~/.kitsune-mcp, no token, no safety.json
+    // read-only: no ~/.inari-mcp, no token, no safety.json
     expect(fs.readdirSync(home)).toEqual([]);
   });
 
@@ -243,7 +243,7 @@ describe('doctor', () => {
 
   it('a daemon that cannot prove the token → FAIL; broken safety.json → FAIL', async () => {
     writeToken(TOKEN);
-    fs.writeFileSync(path.join(home, '.kitsune-mcp', 'safety.json'), '{ "read_only": tru');
+    fs.writeFileSync(path.join(home, '.inari-mcp', 'safety.json'), '{ "read_only": tru');
     const results = await runChecks(deps({ token: 'b'.repeat(64) }));
     expect(byId(results, 'daemon')).toMatchObject({ status: 'FAIL' });
     expect(byId(results, 'safety-config')).toMatchObject({ status: 'FAIL' });
@@ -261,7 +261,7 @@ describe('doctor: native-messaging', () => {
     const nm = byId(results, 'native-messaging');
     expect(nm.status).toBe('OK');
     expect(nm.detail).toContain(first.manifestPath);
-    expect(nm.detail).toContain('HKCU\\Software\\Mozilla\\NativeMessagingHosts\\kitsune_mcp');
+    expect(nm.detail).toContain('HKCU\\Software\\Mozilla\\NativeMessagingHosts\\inari_mcp');
     expect(nm.detail).toContain(`also registered: ${second.manifestPath}`);
   });
 
@@ -270,14 +270,14 @@ describe('doctor: native-messaging', () => {
     const results = await runChecks(deps(undefined, { platform: 'win32', run: fakeRun({ HKLM: manifestPath }) }));
     const nm = byId(results, 'native-messaging');
     expect(nm.status).toBe('OK');
-    expect(nm.detail).toContain('HKLM\\Software\\Mozilla\\NativeMessagingHosts\\kitsune_mcp');
+    expect(nm.detail).toContain('HKLM\\Software\\Mozilla\\NativeMessagingHosts\\inari_mcp');
   });
 
   it('parses a localized (cp932) reg query and expands %USERPROFILE% in REG_EXPAND_SZ', async () => {
     // The decoded cp932 output names the default value "(既定)"; the path is a REG_EXPAND_SZ.
     const dir = path.join(home, 'nm');
     fs.mkdirSync(dir, { recursive: true });
-    const wrapperPath = path.join(dir, 'kitsune_mcp.bat');
+    const wrapperPath = path.join(dir, 'inari_mcp.bat');
     fs.writeFileSync(wrapperPath, `node "${hostEntry}" %*\r\n`);
     const manifestPath = path.join(dir, `${NM_HOST_NAME}.json`);
     fs.writeFileSync(manifestPath, JSON.stringify({
@@ -299,7 +299,7 @@ describe('doctor: native-messaging', () => {
     }));
     const nm = byId(results, 'native-messaging');
     expect(nm.status).toBe('WARN');
-    expect(nm.detail).toContain('kitsune_mcp is not registered');
+    expect(nm.detail).toContain('inari_mcp is not registered');
     expect(nm.detail).toContain('reg query failed: spawn reg ENOENT');
     expect(nm.fix).toContain('npm run setup');
     expect(nm.fix).toContain('headless');
@@ -309,11 +309,11 @@ describe('doctor: native-messaging', () => {
 
   it('manifest with a wrong name / type / allowed_extensions → FAIL listing every problem', async () => {
     const { manifestPath } = writeNmManifest({
-      manifest: { name: 'kitsune_mcp_old', type: 'pipe', allowed_extensions: ['someone-else@example.com'] },
+      manifest: { name: 'inari_mcp_old', type: 'pipe', allowed_extensions: ['someone-else@example.com'] },
     });
     const nm = byId(await runChecks(winDeps(manifestPath)), 'native-messaging');
     expect(nm.status).toBe('FAIL');
-    expect(nm.detail).toContain("name is 'kitsune_mcp_old'");
+    expect(nm.detail).toContain("name is 'inari_mcp_old'");
     expect(nm.detail).toContain("type is 'pipe'");
     expect(nm.detail).toContain(`allowed_extensions lacks ${geckoId}`);
   });
@@ -324,10 +324,10 @@ describe('doctor: native-messaging', () => {
     expect(gone.status).toBe('FAIL');
     expect(gone.detail).toContain(`wrapper ${missing.wrapperPath} does not exist`);
 
-    const relative = writeNmManifest({ manifest: { path: 'kitsune_mcp.bat' } });
+    const relative = writeNmManifest({ manifest: { path: 'inari_mcp.bat' } });
     const rel = byId(await runChecks(winDeps(relative.manifestPath)), 'native-messaging');
     expect(rel.status).toBe('FAIL');
-    expect(rel.detail).toContain("path 'kitsune_mcp.bat' is not absolute");
+    expect(rel.detail).toContain("path 'inari_mcp.bat' is not absolute");
   });
 
   it('a manifest that is not JSON → FAIL naming the registry key', async () => {
@@ -353,7 +353,7 @@ describe('doctor: nm-wrapper', () => {
   });
 
   it('the node pinned in a .bat wrapper is gone → WARN about the PATH fallback', async () => {
-    const pinned = path.join(os.tmpdir(), 'kitsune-doctor-no-such-node', 'node.exe');
+    const pinned = path.join(os.tmpdir(), 'inari-doctor-no-such-node', 'node.exe');
     const wrapper = [
       '@echo off',
       `if not exist "${pinned}" goto pathnode`,
@@ -370,7 +370,7 @@ describe('doctor: nm-wrapper', () => {
   });
 
   it('a .bat wrapper with a node that exists → OK', async () => {
-    const dir = tempDir('kitsune-doctor-node-');
+    const dir = tempDir('inari-doctor-node-');
     const pinned = path.join(dir, 'node.exe');
     fs.writeFileSync(pinned, '');
     const wrapper = `@echo off\r\nif not exist "${pinned}" goto pathnode\r\n"${pinned}" "${hostEntry}" %*\r\n`;
@@ -381,7 +381,7 @@ describe('doctor: nm-wrapper', () => {
   });
 
   it(".sh wrapper: the node path is read through the shell's '\\'' quoting", async () => {
-    const dir = tempDir("kitsune-doctor-q-");
+    const dir = tempDir("inari-doctor-q-");
     // A directory whose name contains a single quote: the installer writes it as '\''.
     const nodeDir = path.join(dir, "no'de");
     fs.mkdirSync(nodeDir);
@@ -398,7 +398,7 @@ describe('doctor: nm-wrapper', () => {
   });
 
   it('.sh wrapper whose quoted node is gone → WARN with the unquoted path', async () => {
-    const nodeDir = path.join(tempDir('kitsune-doctor-q-'), "no'de");
+    const nodeDir = path.join(tempDir('inari-doctor-q-'), "no'de");
     const pinned = path.join(nodeDir, 'node');
     const quoted = pinned.replace(/'/g, "'\\''");
     const wrapper = ['#!/bin/sh', `if [ -x '${quoted}' ]; then`, `  exec '${quoted}' '${hostEntry}' "$@"`, 'fi', ''].join('\n');
@@ -414,23 +414,23 @@ describe('doctor: claude registrations', () => {
   const entryFor = (script: string): Record<string, unknown> => ({ command: 'node', args: [script] });
 
   it('reads the user scope from ~/.claude.json', async () => {
-    writeClaudeConfig({ mcpServers: { 'kitsune-mcp': entryFor(serverEntry) } });
+    writeClaudeConfig({ mcpServers: { 'inari-mcp': entryFor(serverEntry) } });
     const c = byId(await runChecks(deps(undefined)), 'claude');
     expect(c.status).toBe('OK');
-    expect(c.detail).toContain('kitsune-mcp (user): node ');
+    expect(c.detail).toContain('inari-mcp (user): node ');
     expect(c.detail).toContain('claude mcp get is not run');
   });
 
   it('reads the local scope from projects[cwd] and ignores other projects', async () => {
     writeClaudeConfig({
       projects: {
-        [cwd]: { mcpServers: { 'kitsune-mcp': entryFor(serverEntry) } },
-        [path.join(os.tmpdir(), 'another-project')]: { mcpServers: { 'kitsune-mcp': entryFor('C:\\elsewhere\\index.js') } },
+        [cwd]: { mcpServers: { 'inari-mcp': entryFor(serverEntry) } },
+        [path.join(os.tmpdir(), 'another-project')]: { mcpServers: { 'inari-mcp': entryFor('C:\\elsewhere\\index.js') } },
       },
     });
     const c = byId(await runChecks(deps(undefined)), 'claude');
     expect(c.status).toBe('OK');
-    expect(c.detail).toContain('kitsune-mcp (local)');
+    expect(c.detail).toContain('inari-mcp (local)');
     expect(c.detail).not.toContain('elsewhere');
   });
 
@@ -443,12 +443,12 @@ describe('doctor: claude registrations', () => {
 
   it('an entry of another checkout → WARN with the re-registration commands', async () => {
     const other = path.join(os.tmpdir(), 'other', 'packages', 'mcp-server', 'dist', 'index.js');
-    writeClaudeConfig({ mcpServers: { 'kitsune-mcp': entryFor(other) } });
+    writeClaudeConfig({ mcpServers: { 'inari-mcp': entryFor(other) } });
     const c = byId(await runChecks(deps(undefined)), 'claude');
     expect(c.status).toBe('WARN');
     expect(c.detail).toContain(`not this checkout's ${serverEntry}`);
-    expect(c.fix).toContain('claude mcp remove kitsune-mcp -s user');
-    expect(c.fix).toContain(`claude mcp add --scope user kitsune-mcp -- node "${serverEntry}"`);
+    expect(c.fix).toContain('claude mcp remove inari-mcp -s user');
+    expect(c.fix).toContain(`claude mcp add --scope user inari-mcp -- node "${serverEntry}"`);
   });
 
   it('no entry anywhere → WARN naming the config file that was read', async () => {
@@ -459,10 +459,10 @@ describe('doctor: claude registrations', () => {
   });
 
   it('CLAUDE_CONFIG_DIR moves the config file', async () => {
-    const dir = tempDir('kitsune-doctor-claude-');
+    const dir = tempDir('inari-doctor-claude-');
     // The home file would be wrong; CLAUDE_CONFIG_DIR wins.
-    writeClaudeConfig({ mcpServers: { 'kitsune-mcp': entryFor('C:\\home\\index.js') } });
-    writeClaudeConfig({ mcpServers: { 'kitsune-mcp': entryFor(serverEntry) } }, dir);
+    writeClaudeConfig({ mcpServers: { 'inari-mcp': entryFor('C:\\home\\index.js') } });
+    writeClaudeConfig({ mcpServers: { 'inari-mcp': entryFor(serverEntry) } }, dir);
     process.env['CLAUDE_CONFIG_DIR'] = dir;
     const c = byId(await runChecks(deps(undefined)), 'claude');
     expect(c.status).toBe('OK');
@@ -479,7 +479,7 @@ describe('doctor: claude registrations', () => {
   it("the registration's env is the session for the settings comparison", async () => {
     writeToken(TOKEN);
     writeClaudeConfig({
-      projects: { [cwd]: { mcpServers: { 'kitsune-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: '1' } } } } },
+      projects: { [cwd]: { mcpServers: { 'inari-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: '1' } } } } },
     });
     const results = await runChecks(deps({ token: TOKEN, info: { settings: { FOX_READ_ONLY: '1' } } }));
     expect(byId(results, 'settings')).toMatchObject({ status: 'OK' });
@@ -492,7 +492,7 @@ describe('doctor: claude registrations', () => {
       projects: {
         [cwd]: {
           mcpServers: {
-            'kitsune-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: 'true', CLAUDE_BROWSER_ALLOW_SCRIPTS: '0' } },
+            'inari-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: 'true', CLAUDE_BROWSER_ALLOW_SCRIPTS: '0' } },
           },
         },
       },
@@ -510,7 +510,7 @@ describe('doctor: claude registrations', () => {
   it('R-2: an effective difference is still a WARN', async () => {
     writeToken(TOKEN);
     writeClaudeConfig({
-      projects: { [cwd]: { mcpServers: { 'kitsune-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: 'true' } } } } },
+      projects: { [cwd]: { mcpServers: { 'inari-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: 'true' } } } } },
     });
     const results = await runChecks(deps({ token: TOKEN, info: { effectiveSettings: { FOX_READ_ONLY: 'off' } } }));
     expect(byId(results, 'settings')).toMatchObject({ status: 'WARN' });
@@ -569,7 +569,7 @@ describe('doctor: browsers and build', () => {
 });
 
 describe('doctor: safety-config (the daemon\'s own validator)', () => {
-  function writeSafety(content: string, dir = path.join(home, '.kitsune-mcp')): string {
+  function writeSafety(content: string, dir = path.join(home, '.inari-mcp')): string {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, 'safety.json');
     fs.writeFileSync(file, content);
@@ -593,7 +593,7 @@ describe('doctor: safety-config (the daemon\'s own validator)', () => {
   });
 
   it('a blank FOX_SAFETY_CONFIG falls through to CLAUDE_BROWSER_SAFETY_CONFIG, as in the daemon', async () => {
-    const file = writeSafety('{ "read_only": true }', tempDir('kitsune-doctor-safety-'));
+    const file = writeSafety('{ "read_only": true }', tempDir('inari-doctor-safety-'));
     process.env['FOX_SAFETY_CONFIG'] = ' ';
     process.env['CLAUDE_BROWSER_SAFETY_CONFIG'] = file;
     const s = byId(await runChecks(deps(undefined)), 'safety-config');
@@ -603,7 +603,7 @@ describe('doctor: safety-config (the daemon\'s own validator)', () => {
 
   it("the running daemon's path wins; its blank FOX_ value falls through to the legacy one", async () => {
     writeToken(TOKEN);
-    const file = writeSafety('{ "audit_log": "yes" }', tempDir('kitsune-doctor-safety-'));
+    const file = writeSafety('{ "audit_log": "yes" }', tempDir('inari-doctor-safety-'));
     const s = byId(await runChecks(deps({
       token: TOKEN,
       info: { settings: { FOX_SAFETY_CONFIG: '', CLAUDE_BROWSER_SAFETY_CONFIG: file } },
@@ -618,7 +618,7 @@ describe('doctor: screenshots and logs', () => {
   it('no FOX_SCREENSHOTS_DIR → OK with the default directory', async () => {
     const s = byId(await runChecks(deps(undefined)), 'screenshots');
     expect(s.status).toBe('OK');
-    expect(s.detail).toContain(path.join(home, '.kitsune-mcp', 'screenshots'));
+    expect(s.detail).toContain(path.join(home, '.inari-mcp', 'screenshots'));
     expect(s.detail).toContain('not created yet');
   });
 
@@ -631,7 +631,7 @@ describe('doctor: screenshots and logs', () => {
   });
 
   it('an absolute, non-default FOX_SCREENSHOTS_DIR → WARN: Firefox may use another one', async () => {
-    const dir = path.join(os.tmpdir(), 'kitsune-shots');
+    const dir = path.join(os.tmpdir(), 'inari-shots');
     process.env['FOX_SCREENSHOTS_DIR'] = dir;
     const s = byId(await runChecks(deps(undefined)), 'screenshots');
     expect(s.status).toBe('WARN');
@@ -644,13 +644,13 @@ describe('doctor: screenshots and logs', () => {
     process.env['FOX_SCREENSHOTS_DIR'] = '  ';
     const s = byId(await runChecks(deps(undefined)), 'screenshots');
     expect(s.status).toBe('OK');
-    expect(s.detail).toContain(path.join(home, '.kitsune-mcp', 'screenshots'));
+    expect(s.detail).toContain(path.join(home, '.inari-mcp', 'screenshots'));
   });
 
   it("the running daemon's FOX_SCREENSHOTS_DIR wins over the session's", async () => {
     writeToken(TOKEN);
-    const mine = path.join(os.tmpdir(), 'kitsune-shots-session');
-    const theirs = path.join(os.tmpdir(), 'kitsune-shots-daemon');
+    const mine = path.join(os.tmpdir(), 'inari-shots-session');
+    const theirs = path.join(os.tmpdir(), 'inari-shots-daemon');
     process.env['FOX_SCREENSHOTS_DIR'] = mine;
     const s = byId(await runChecks(deps({ token: TOKEN, info: { settings: { FOX_SCREENSHOTS_DIR: theirs } } })), 'screenshots');
     expect(s.status).toBe('WARN');
@@ -659,7 +659,7 @@ describe('doctor: screenshots and logs', () => {
   });
 
   it('"max start attempts" after the last host start → WARN that it gave up', async () => {
-    const logs = path.join(home, '.kitsune-mcp', 'logs');
+    const logs = path.join(home, '.inari-mcp', 'logs');
     fs.mkdirSync(logs, { recursive: true });
     fs.writeFileSync(path.join(logs, 'native-host.log'), [
       '2026-10-01T09:00:00.000Z Native Host v0.1.4',
@@ -675,11 +675,11 @@ describe('doctor: screenshots and logs', () => {
   });
 
   it('a host start after "max start attempts" → OK again', async () => {
-    const logs = path.join(home, '.kitsune-mcp', 'logs');
+    const logs = path.join(home, '.inari-mcp', 'logs');
     fs.mkdirSync(logs, { recursive: true });
     fs.writeFileSync(path.join(logs, 'native-host.log'), [
       '2026-10-01T09:00:30.000Z giving up: max start attempts (10) reached',
-      '2026-10-01T09:10:00.000Z KitsuneMCP Native Host v0.1.4 starting (PID 1)',
+      '2026-10-01T09:10:00.000Z InariMCP Native Host v0.1.4 starting (PID 1)',
       '',
     ].join('\n'));
     const l = byId(await runChecks(deps(undefined)), 'logs');
@@ -697,17 +697,17 @@ describe('doctor: screenshots and logs', () => {
 describe('doctor: token, powershell, foreign daemons', () => {
   it('a token readable by other users → WARN with the chmod commands (POSIX only)', async () => {
     writeToken(TOKEN);
-    fs.chmodSync(path.join(home, '.kitsune-mcp', 'api_token'), 0o644);
+    fs.chmodSync(path.join(home, '.inari-mcp', 'api_token'), 0o644);
     const t = byId(await runChecks(deps(undefined, { platform: 'linux' })), 'token');
     expect(t.status).toBe('WARN');
     expect(t.detail).toContain('readable by other users');
-    expect(t.fix).toContain(`chmod 600 ${path.join(home, '.kitsune-mcp', 'api_token')}`);
+    expect(t.fix).toContain(`chmod 600 ${path.join(home, '.inari-mcp', 'api_token')}`);
   });
 
   it.runIf(posix)('a token with mode 600 in a 700 directory → OK with the mode', async () => {
     writeToken(TOKEN);
-    fs.chmodSync(path.join(home, '.kitsune-mcp'), 0o700);
-    fs.chmodSync(path.join(home, '.kitsune-mcp', 'api_token'), 0o600);
+    fs.chmodSync(path.join(home, '.inari-mcp'), 0o700);
+    fs.chmodSync(path.join(home, '.inari-mcp', 'api_token'), 0o600);
     const t = byId(await runChecks(deps(undefined, { platform: 'linux' })), 'token');
     expect(t.status).toBe('OK');
     expect(t.detail).toContain('mode 600');
@@ -721,8 +721,8 @@ describe('doctor: token, powershell, foreign daemons', () => {
   });
 
   it('an empty api_token → FAIL', async () => {
-    fs.mkdirSync(path.join(home, '.kitsune-mcp'), { recursive: true });
-    fs.writeFileSync(path.join(home, '.kitsune-mcp', 'api_token'), '   ');
+    fs.mkdirSync(path.join(home, '.inari-mcp'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.inari-mcp', 'api_token'), '   ');
     const t = byId(await runChecks(deps(undefined)), 'token');
     expect(t.status).toBe('FAIL');
     expect(t.detail).toContain('is empty');
@@ -769,7 +769,7 @@ describe('doctor: token, powershell, foreign daemons', () => {
     }));
     const d = byId(results, 'daemon');
     expect(d.status).toBe('FAIL');
-    expect(d.detail).toContain('does not answer as KitsuneMCP');
+    expect(d.detail).toContain('does not answer as InariMCP');
     expect(d.fix).toContain('FOX_HTTP_PORT');
     expect(byId(results, 'browsers')).toMatchObject({ status: 'SKIP' });
     expect(byId(results, 'token')).toMatchObject({ status: 'OK' });
@@ -812,7 +812,7 @@ describe('doctor: runDoctor', () => {
     const code = await runDoctor(deps({ token: TOKEN }, { platform: 'linux' }));
     expect(code).toBe(1);
     const out = written.join('');
-    expect(out).toContain(`KitsuneMCP doctor v${PACKAGE_VERSION} (linux, node v${process.versions.node})`);
+    expect(out).toContain(`InariMCP doctor v${PACKAGE_VERSION} (linux, node v${process.versions.node})`);
     // Ids are padded to the longest one ('native-messaging'), fix lines line up with the details.
     expect(out).toMatch(/^FAIL {2}token {13}the daemon is running/m);
     expect(out).toMatch(/^ {24}fix: end the process listening on port /m);
@@ -833,7 +833,7 @@ describe('doctor: runDoctor', () => {
       run: fakeRun({}, { powershell: { status: 0, stdout: 'FullLanguage' } }),
     }));
     const out = written.join('');
-    expect(out).toMatch(/^WARN {2}native-messaging {2}kitsune_mcp is not registered/m);
+    expect(out).toMatch(/^WARN {2}native-messaging {2}inari_mcp is not registered/m);
     expect(out).not.toContain('FAIL  ');
     expect(code).toBe(0);
   });

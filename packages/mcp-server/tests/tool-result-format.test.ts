@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { BrowserResponse } from '@kitsune-mcp/shared';
+import type { BrowserResponse } from '@inari-mcp/shared';
 import { BROWSER_ERROR_PREFIX, createToolHandler, toolResultToCallResult } from '../src/tools/handlers.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 import { findApprovalRequest } from '../src/relay/approval.js';

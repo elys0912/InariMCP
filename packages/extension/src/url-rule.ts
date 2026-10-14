@@ -1,4 +1,4 @@
-// KitsuneMCP URL rules (shared by the background and content scripts)
+// InariMCP URL rules (shared by the background and content scripts)
 //
 // Matches the safety.json URL patterns the MCP Server attaches to a command
 // (BrowserCommand protectedUrlRules / blockedUrlRules / allowedUrlRules,

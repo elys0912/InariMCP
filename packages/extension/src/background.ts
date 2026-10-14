@@ -1,4 +1,4 @@
-// KitsuneMCP Background Script
+// InariMCP Background Script
 // Handles native messaging, tab management, and coordination with content scripts
 //
 // Based on ClaudeCodeBrowser by Andre Watson (nanogenomic), Ligandal Inc.
@@ -41,4 +41,4 @@ browser.browserAction.setBadgeBackgroundColor({ color: BADGE_COLOR }).catch(() =
 connectNativeHost();
 // Session count changes without any event reaching the Extension.
 setInterval(() => { void refreshSetupState(); }, SETUP_REFRESH_MS);
-console.log("[KitsuneMCP] Background script initialized");
+console.log("[InariMCP] Background script initialized");

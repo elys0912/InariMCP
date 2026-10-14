@@ -16,7 +16,7 @@ vi.mock('node:fs', async (importOriginal) => {
   };
 });
 
-import { nativeHostLogPath } from '@kitsune-mcp/shared/node';
+import { nativeHostLogPath } from '@inari-mcp/shared/node';
 import { MAX_LOG_BYTES, log, resetLoggerForTests, resolveLogPath, rotateIfLarge } from '../src/logger.js';
 
 describe('logger rotation', () => {
@@ -30,7 +30,7 @@ describe('logger rotation', () => {
     stderrWrite.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('log rotation skipped'));
 
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-log-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-log-'));
     file = path.join(dir, 'test.log');
     process.env['FOX_NATIVE_HOST_LOG'] = file;
     state.renameFails = false;
@@ -102,12 +102,12 @@ describe('logger rotation', () => {
 
   it('prefixes every file line with a timestamp and pid', () => {
     log('hello');
-    expect(fs.readFileSync(file, 'utf-8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z \[\d+\] \[KitsuneMCP:NativeHost\] hello\n$/);
+    expect(fs.readFileSync(file, 'utf-8')).toMatch(/^\d{4}-\d\d-\d\dT[\d:.]+Z \[\d+\] \[InariMCP:NativeHost\] hello\n$/);
   });
 });
 
 describe('resolveLogPath (FOX_NATIVE_HOST_LOG)', () => {
-  it('unset, empty or blank: the default ~/.kitsune-mcp/logs/native-host.log', () => {
+  it('unset, empty or blank: the default ~/.inari-mcp/logs/native-host.log', () => {
     for (const env of [{}, { FOX_NATIVE_HOST_LOG: '' }, { FOX_NATIVE_HOST_LOG: '  ' }]) {
       expect(resolveLogPath(env), JSON.stringify(env)).toBe(nativeHostLogPath());
     }
@@ -118,7 +118,7 @@ describe('resolveLogPath (FOX_NATIVE_HOST_LOG)', () => {
   });
 
   it('a path is resolved to an absolute one, without surrounding blanks', () => {
-    const absolute = path.join(os.tmpdir(), 'kitsune-host.log');
+    const absolute = path.join(os.tmpdir(), 'inari-host.log');
     expect(resolveLogPath({ FOX_NATIVE_HOST_LOG: ` ${absolute} ` })).toBe(path.resolve(absolute));
     expect(resolveLogPath({ FOX_NATIVE_HOST_LOG: 'relative.log' })).toBe(path.resolve('relative.log'));
   });

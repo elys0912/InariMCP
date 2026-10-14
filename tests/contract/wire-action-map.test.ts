@@ -5,7 +5,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { BROWSER_ACTIONS } from '@kitsune-mcp/shared';
+import { BROWSER_ACTIONS } from '@inari-mcp/shared';
 import { WIRE_ACTION_MAP as wireMap } from '../../packages/extension/src/action-map.ts';
 import {
   ACTION_TABLE,

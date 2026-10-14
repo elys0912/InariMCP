@@ -2,11 +2,11 @@
 
 [English](./development.md) | **日本語**
 
-パッケージのビルドと確認の方法。KitsuneMCPの使い方は[README](../README.ja.md)を参照。
+パッケージのビルドと確認の方法。InariMCPの使い方は[README](../README.ja.md)を参照。
 
 ## 必要なもの
 
-- 開発にはNode.js 22.12以上（または24）。Vitestの要件。KitsuneMCPの実行だけならNode.js 18で足りる。
+- 開発にはNode.js 22.12以上（または24）。Vitestの要件。InariMCPの実行だけならNode.js 18で足りる。
 - `playwright`（`packages/mcp-server`の任意の依存。`--omit=optional`を付けなければ`npm ci`で入る）。`npm run build`に必要（ヘッドレスバックエンドがその型をimportする）。`npm run test:e2e`と`npm run e2e:extension`には、そのFirefox（`npx playwright install firefox`）も必要。
 
 ## 作業の流れ
@@ -50,32 +50,32 @@ npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefo
 
 - 最初に`dist/`を消すので、古いファイルがパッケージに入ることはない。
 - ターゲットは`firefox<strict_min_versionのメジャー番号>`。出力は縮小しない（AMOの審査で読めるように）。
-- `npm run build:dev -w @kitsune-mcp/extension`はリンク付きのソースマップ（`dist/**/*.js.map`）も書く（`web-ext-config.mjs`でパッケージから除く）。
+- `npm run build:dev -w @inari-mcp/extension`はリンク付きのソースマップ（`dist/**/*.js.map`）も書く（`web-ext-config.mjs`でパッケージから除く）。
 - esbuildは型検査をしない。型検査は拡張機能の`typecheck`スクリプト（`tsc -p tsconfig.json --noEmit`。拡張機能の`build`とルートの`npm run typecheck`が実行する）が行う。ソースはES module（`moduleResolution: bundler`、`isolatedModules`、`verbatimModuleSyntax`、`noUnusedLocals`、`noUnusedParameters`、`@types/node`なし）。
 - バンドルにzodか`packages/shared/src/node`が入る、バンドルが`"use strict";`で始まらない、`manifest.json`が読み込むファイルがない、のどれかでビルドは失敗する。
 - スクリプトを`packages/extension`の外に置いているのは、web-extが`web-ext-config.mjs`で除外していないファイルをすべてパッケージに入れるため。
 
 `npm run lint:ext`はリポジトリのルートで`web-ext lint`を実行する。ルートの`web-ext-config.mjs`が`sourceDir: 'packages/extension'`と除外するファイル（`src`、`package.json`、`tsconfig.json`、ソースマップなど）を決めている。
 
-## `@kitsune-mcp/shared`
+## `@inari-mcp/shared`
 
 | import | 内容 | 使う側 |
 |---|---|---|
-| `@kitsune-mcp/shared` | zodスキーマ（プロトコル、アクション、Native Hostのメッセージ）、アクション名、定数（`ENV`など）、小さなユーティリティ。Node.jsのAPIは使わない（`packages/shared/tests/browser-safe.test.ts`で確認） | daemon、中継、Native Host。拡張機能はzodを引き込まないexportだけ |
-| `@kitsune-mcp/shared/action-names` | ブラウザコマンドのアクション名。zodなし | 拡張機能 |
-| `@kitsune-mcp/shared/node` | Node.jsのプロセス用の共通処理（下表） | daemon、中継、Native Host、doctor |
+| `@inari-mcp/shared` | zodスキーマ（プロトコル、アクション、Native Hostのメッセージ）、アクション名、定数（`ENV`など）、小さなユーティリティ。Node.jsのAPIは使わない（`packages/shared/tests/browser-safe.test.ts`で確認） | daemon、中継、Native Host。拡張機能はzodを引き込まないexportだけ |
+| `@inari-mcp/shared/action-names` | ブラウザコマンドのアクション名。zodなし | 拡張機能 |
+| `@inari-mcp/shared/node` | Node.jsのプロセス用の共通処理（下表） | daemon、中継、Native Host、doctor |
 
-拡張機能は`@kitsune-mcp/shared`を`dist/`ではなくソース（`packages/shared/src`）からバンドルする。解決できるのは`@kitsune-mcp/shared`と`@kitsune-mcp/shared/action-names`だけで、それ以外のサブパス（`/node`を含む）はビルドエラーになる。拡張機能の`tsconfig.json`も同じ2つの名前をソースに対応させている。Vitestも3つのimportをすべてソースに解決するので、テストにビルドは要らない。
+拡張機能は`@inari-mcp/shared`を`dist/`ではなくソース（`packages/shared/src`）からバンドルする。解決できるのは`@inari-mcp/shared`と`@inari-mcp/shared/action-names`だけで、それ以外のサブパス（`/node`を含む）はビルドエラーになる。拡張機能の`tsconfig.json`も同じ2つの名前をソースに対応させている。Vitestも3つのimportをすべてソースに解決するので、テストにビルドは要らない。
 
-`@kitsune-mcp/shared/node`のモジュール（`packages/shared/src/node/`）:
+`@inari-mcp/shared/node`のモジュール（`packages/shared/src/node/`）:
 
 | モジュール | 内容 |
 |---|---|
-| `paths` | `~/.kitsune-mcp/`の下のファイル（データとログのディレクトリ、APIトークン、`daemon.log`、`native-host.log`、監査ログ、既定の`safety.json`とスクリーンショットのディレクトリ）。呼び出し時に解決する |
+| `paths` | `~/.inari-mcp/`の下のファイル（データとログのディレクトリ、APIトークン、`daemon.log`、`native-host.log`、監査ログ、既定の`safety.json`とスクリーンショットのディレクトリ）。呼び出し時に解決する |
 | `endpoint` | `FOX_HOST` / `FOX_HTTP_PORT` / `FOX_WS_PORT`（と旧名）、ループバックの判定 |
 | `token` | APIトークンの読み込みと作成（作成はdaemonだけ） |
 | `health` | `GET /health`の応答の判定（daemonの多重起動確認、中継、Native Host、doctor） |
-| `log` | 5 MBでの`<file>.old`へのローテーション（名前の変更、またはcopy-truncate）、行頭の`<ISO時刻> [<pid>] `、`[KitsuneMCP:<role>]`のstderrロガー |
+| `log` | 5 MBでの`<file>.old`へのローテーション（名前の変更、またはcopy-truncate）、行頭の`<ISO時刻> [<pid>] `、`[InariMCP:<role>]`のstderrロガー |
 | `spawn` | daemonを切り離したプロセスとして起動する。stderrは`daemon.log`に追記（先にcopy-truncateでローテーション） |
 | `version` | `package.json`の`version` |
 | `auth` | daemonとクライアントの間のHMACチャレンジ応答、プロトコルの版 |
@@ -84,9 +84,9 @@ npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefo
 
 ## テスト
 
-`vitest.config.mts`のプロジェクトは`shared`、`mcp-server`、`native-host`（`packages/<pkg>/tests/`）、`contract`（`tests/contract/`）、`scripts`（`tests/scripts/`）、`e2e`（`tests/e2e/`。`npm run test:e2e`のときだけ）。実際のヘッドレスFirefoxを動かすテストファイルは別のプロジェクト`mcp-server-firefox`と`contract-firefox`（それぞれ再試行1回）に分けてあるので、`npx vitest run --project=mcp-server`だけでは実行されない。`--project=mcp-server-firefox`も付ける。Firefoxを起動できないとき、これらのテストはスキップになる。ただしCIでは（`CI`が空・`0`・`false`以外に設定されていると）スキップせずに失敗する。`KITSUNE_REQUIRE_FIREFOX`（値の扱いは同じ）を設定すると、`CI`がなくても同じになる。`npm run test:firefox`はこの2つのプロジェクトだけを`KITSUNE_REQUIRE_FIREFOX=1`で動かし、スキップしたテストが1件でもあれば失敗する。実際のブラウザーのテストが動いたことを確かめるには、Firefoxのある環境（CIも）でこれを実行する。拡張機能はプロジェクトにしていない。`background.ts`と`content.ts`はトップレベルでブラウザのリスナーを登録するので、契約テストはそのソースを読むか、副作用のないモジュール（`action-map.ts`、`approval.ts`、`url-rule.ts`）をimportする。テストファイルはどれも一時的なホームディレクトリで動く。
+`vitest.config.mts`のプロジェクトは`shared`、`mcp-server`、`native-host`（`packages/<pkg>/tests/`）、`contract`（`tests/contract/`）、`scripts`（`tests/scripts/`）、`e2e`（`tests/e2e/`。`npm run test:e2e`のときだけ）。実際のヘッドレスFirefoxを動かすテストファイルは別のプロジェクト`mcp-server-firefox`と`contract-firefox`（それぞれ再試行1回）に分けてあるので、`npx vitest run --project=mcp-server`だけでは実行されない。`--project=mcp-server-firefox`も付ける。Firefoxを起動できないとき、これらのテストはスキップになる。ただしCIでは（`CI`が空・`0`・`false`以外に設定されていると）スキップせずに失敗する。`INARI_REQUIRE_FIREFOX`（値の扱いは同じ）を設定すると、`CI`がなくても同じになる。`npm run test:firefox`はこの2つのプロジェクトだけを`INARI_REQUIRE_FIREFOX=1`で動かし、スキップしたテストが1件でもあれば失敗する。実際のブラウザーのテストが動いたことを確かめるには、Firefoxのある環境（CIも）でこれを実行する。拡張機能はプロジェクトにしていない。`background.ts`と`content.ts`はトップレベルでブラウザのリスナーを登録するので、契約テストはそのソースを読むか、副作用のないモジュール（`action-map.ts`、`approval.ts`、`url-rule.ts`）をimportする。テストファイルはどれも一時的なホームディレクトリで動く。
 
-`npm run typecheck:tests`（`npm run typecheck`の後半）は、`tsconfig.test.json`でテストを型検査する。対象は`packages/*/tests`、`tests/contract`、`tests/e2e`、`tests/scripts`、`tests/setup`。`bundler`の解決方法と、`vitest.config.mts`と同じ`@kitsune-mcp/shared`のパスを使うので、ビルドは要らない。
+`npm run typecheck:tests`（`npm run typecheck`の後半）は、`tsconfig.test.json`でテストを型検査する。対象は`packages/*/tests`、`tests/contract`、`tests/e2e`、`tests/scripts`、`tests/setup`。`bundler`の解決方法と、`vitest.config.mts`と同じ`@inari-mcp/shared`のパスを使うので、ビルドは要らない。
 
 ゴールデンファイル（`tests/golden/`）は、うっかり変えてはならない動作を記録している。ツール呼び出しごとのBrowserCommandと安全ガードの判定（`tests/contract/tool-golden.test.ts`）と、セッションの`tools/list`（`tests/contract/tools-list.test.ts`）である。意図して変更したときは`UPDATE_GOLDEN=1 npx vitest run <test file>`で作り直し、差分を確認する。`node scripts/tools-list-size.mjs`は両方のツール一覧のサイズを表示する。
 

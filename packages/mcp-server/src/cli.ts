@@ -1,7 +1,7 @@
 /**
  * Command line of dist/index.js. Parsed before anything else runs, so
  * `--help`, `--version` and a mistyped argument never start a relay (which
- * would spawn the daemon, create ~/.kitsune-mcp/api_token and write logs).
+ * would spawn the daemon, create ~/.inari-mcp/api_token and write logs).
  */
 
 import { PACKAGE_VERSION } from './version.js';
@@ -54,19 +54,19 @@ export function parseArgs(argv: readonly string[]): CliCommand {
 }
 
 export function helpText(): string {
-  return `KitsuneMCP v${PACKAGE_VERSION} — MCP server for Firefox browser automation
+  return `InariMCP v${PACKAGE_VERSION} — MCP server for Firefox browser automation
 
 Usage: node packages/mcp-server/dist/index.js [option]
 
   (no option)    stdio MCP relay. This is what Claude Code starts
-                 (claude mcp add kitsune-mcp -- node <path>/dist/index.js).
+                 (claude mcp add inari-mcp -- node <path>/dist/index.js).
                  Starts the shared daemon when none is running.
   --daemon       shared daemon (HTTP/WebSocket ports). Normally started
                  automatically by a relay or by the Native Host.
   --doctor       check the installation and the running daemon; prints
                  OK / WARN / FAIL / SKIP per item with a fix. Read-only:
                  creates no token, starts no daemon. Exit code 1 when an
-                 item FAILs. ("doctor" works too: kitsune-mcp doctor)
+                 item FAILs. ("doctor" works too: inari-mcp doctor)
   --stop-daemon  stop the running daemon gracefully (signed POST
                  /daemon/shutdown: running tool calls may finish, up to
                  ${SHUTDOWN_DRAIN_MS / 1000} s; headless Firefox is closed). Every Claude Code
@@ -76,7 +76,7 @@ Usage: node packages/mcp-server/dist/index.js [option]
   -h, --help     show this help
   -v, --version  print the version
 
-Files: ~/.kitsune-mcp/ (api_token, safety.json, logs/, screenshots/)
+Files: ~/.inari-mcp/ (api_token, safety.json, logs/, screenshots/)
 Settings: FOX_* environment variables (see README).
 `;
 }

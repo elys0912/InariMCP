@@ -1,10 +1,10 @@
 /**
  * Helpers for tests that talk to the ws-bridge as a client, implementing
- * the challenge-response handshake by hand (@kitsune-mcp/shared/node auth.ts).
+ * the challenge-response handshake by hand (@inari-mcp/shared/node auth.ts).
  */
 
 import WebSocket from 'ws';
-import { AUTH_PROTOCOL, MAC_LABEL, computeMac, newNonce } from '@kitsune-mcp/shared/node';
+import { AUTH_PROTOCOL, MAC_LABEL, computeMac, newNonce } from '@inari-mcp/shared/node';
 
 export const TOKEN = 'f'.repeat(64);
 

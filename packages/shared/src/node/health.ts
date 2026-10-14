@@ -2,21 +2,21 @@
  * Judging a GET /health answer — the same rules for the daemon (singleton
  * check), the relays, the Native Host and `doctor`.
  *
- * A KitsuneMCP daemon answers 200 with JSON `{ status: 'ok', service:
- * 'kitsune-mcp', protocol, version, … }`, plus `proof` (MAC over the
- * x-kitsune-nonce header, auth.ts) when asked.
+ * A InariMCP daemon answers 200 with JSON `{ status: 'ok', service:
+ * 'inari-mcp', protocol, version, … }`, plus `proof` (MAC over the
+ * x-inari-nonce header, auth.ts) when asked.
  */
 
 import { isRecord } from '../util.js';
 import { DAEMON_PROTOCOL_VERSION, MAC_LABEL, computeMac, macMatches } from './auth.js';
 
-export const HEALTH_SERVICE = 'kitsune-mcp';
+export const HEALTH_SERVICE = 'inari-mcp';
 
 /**
  * What answered GET /health:
  *  down         nothing (connection refused, timeout) — decided by the caller
- *  foreign      something that is not a KitsuneMCP daemon
- *  incompatible a KitsuneMCP daemon of another protocol (an older build)
+ *  foreign      something that is not a InariMCP daemon
+ *  incompatible a InariMCP daemon of another protocol (an older build)
  *  impostor     claims to be the daemon but cannot prove it holds the token
  *  unverified   a compatible daemon; no token yet to check its proof
  *  ok           a compatible daemon that proved it holds our token
@@ -41,10 +41,10 @@ function parse(body: unknown): unknown {
 }
 
 /**
- * The /health body when it comes from a KitsuneMCP daemon (any protocol),
+ * The /health body when it comes from a InariMCP daemon (any protocol),
  * else undefined. `body` may be raw text / bytes or already parsed JSON.
  */
-export function kitsuneHealth(statusCode: number | undefined, body: unknown): Record<string, unknown> | undefined {
+export function inariHealth(statusCode: number | undefined, body: unknown): Record<string, unknown> | undefined {
   if (statusCode !== 200) return undefined;
   const health = parse(body);
   if (!isRecord(health) || health['status'] !== 'ok' || health['service'] !== HEALTH_SERVICE) return undefined;
@@ -58,7 +58,7 @@ export function evaluateHealth(
   token: string | undefined,
   nonce: string,
 ): HealthVerdict {
-  const health = kitsuneHealth(statusCode, body);
+  const health = inariHealth(statusCode, body);
   if (health === undefined) return { kind: 'foreign' };
 
   const version = typeof health['version'] === 'string' ? health['version'] : undefined;

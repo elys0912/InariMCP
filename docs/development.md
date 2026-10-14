@@ -2,11 +2,11 @@
 
 **English** | [日本語](./development.ja.md)
 
-How the packages are built and checked. For using KitsuneMCP, see the [README](../README.md).
+How the packages are built and checked. For using InariMCP, see the [README](../README.md).
 
 ## Requirements
 
-- Node.js 22.12 or later (or 24) for development: a requirement of Vitest. Running KitsuneMCP needs only Node.js 18.
+- Node.js 22.12 or later (or 24) for development: a requirement of Vitest. Running InariMCP needs only Node.js 18.
 - `playwright` (an optional dependency of `packages/mcp-server`, installed by `npm ci` unless `--omit=optional` is given). `npm run build` needs it: the headless backend imports its types. `npm run test:e2e` and `npm run e2e:extension` also need its Firefox (`npx playwright install firefox`).
 
 ## Workflow
@@ -50,32 +50,32 @@ npm run e2e:extension   # the Extension loads into Firefox as a temporary add-on
 
 - `dist/` is deleted first, so no old file ends up in the package.
 - The target is `firefox<major of strict_min_version>`; the output is not minified (readable for AMO review).
-- `npm run build:dev -w @kitsune-mcp/extension` also writes linked source maps (`dist/**/*.js.map`; `web-ext-config.mjs` keeps them out of the package).
+- `npm run build:dev -w @inari-mcp/extension` also writes linked source maps (`dist/**/*.js.map`; `web-ext-config.mjs` keeps them out of the package).
 - esbuild does not type-check. The Extension's `typecheck` script (`tsc -p tsconfig.json --noEmit`, run by its `build` and by the root `npm run typecheck`) does. The sources are ES modules (`moduleResolution: bundler`, `isolatedModules`, `verbatimModuleSyntax`, `noUnusedLocals`, `noUnusedParameters`, no `@types/node`).
 - The build fails when a bundle contains zod or `packages/shared/src/node`, when a bundle does not start with `"use strict";`, or when a file that `manifest.json` loads is missing.
 - The script lives outside `packages/extension` because web-ext packs every file there that `web-ext-config.mjs` does not ignore.
 
 `npm run lint:ext` runs `web-ext lint` from the repository root, where `web-ext-config.mjs` sets `sourceDir: 'packages/extension'` and the files to leave out (`src`, `package.json`, `tsconfig.json`, source maps, …).
 
-## `@kitsune-mcp/shared`
+## `@inari-mcp/shared`
 
 | Import | Contents | Used by |
 |---|---|---|
-| `@kitsune-mcp/shared` | zod schemas (protocol, actions, Native Host messages), action names, constants (`ENV`, …), small utilities. No Node.js APIs (`packages/shared/tests/browser-safe.test.ts` checks this) | daemon, relay, Native Host; the Extension only for exports that do not pull in zod |
-| `@kitsune-mcp/shared/action-names` | the browser command action names, zod-free | the Extension |
-| `@kitsune-mcp/shared/node` | helpers of the Node.js processes (below) | daemon, relay, Native Host, doctor |
+| `@inari-mcp/shared` | zod schemas (protocol, actions, Native Host messages), action names, constants (`ENV`, …), small utilities. No Node.js APIs (`packages/shared/tests/browser-safe.test.ts` checks this) | daemon, relay, Native Host; the Extension only for exports that do not pull in zod |
+| `@inari-mcp/shared/action-names` | the browser command action names, zod-free | the Extension |
+| `@inari-mcp/shared/node` | helpers of the Node.js processes (below) | daemon, relay, Native Host, doctor |
 
-The Extension bundles `@kitsune-mcp/shared` from its sources (`packages/shared/src`), not from `dist/`. Only `@kitsune-mcp/shared` and `@kitsune-mcp/shared/action-names` resolve; any other subpath, `/node` included, is a build error. The Extension's `tsconfig.json` maps the same two names to the sources. Vitest also resolves all three imports to the sources, so tests need no build.
+The Extension bundles `@inari-mcp/shared` from its sources (`packages/shared/src`), not from `dist/`. Only `@inari-mcp/shared` and `@inari-mcp/shared/action-names` resolve; any other subpath, `/node` included, is a build error. The Extension's `tsconfig.json` maps the same two names to the sources. Vitest also resolves all three imports to the sources, so tests need no build.
 
-Modules of `@kitsune-mcp/shared/node` (`packages/shared/src/node/`):
+Modules of `@inari-mcp/shared/node` (`packages/shared/src/node/`):
 
 | Module | Contents |
 |---|---|
-| `paths` | files under `~/.kitsune-mcp/` (data and logs directories, API token, `daemon.log`, `native-host.log`, audit log, default `safety.json` and screenshots directory), resolved at call time |
+| `paths` | files under `~/.inari-mcp/` (data and logs directories, API token, `daemon.log`, `native-host.log`, audit log, default `safety.json` and screenshots directory), resolved at call time |
 | `endpoint` | `FOX_HOST` / `FOX_HTTP_PORT` / `FOX_WS_PORT` (and the legacy names), loopback check |
 | `token` | reading the API token; creating it (daemon only) |
 | `health` | judging a `GET /health` answer (daemon singleton check, relay, Native Host, doctor) |
-| `log` | 5 MB rotation to `<file>.old` (rename, or copy-truncate), line stamps `<ISO time> [<pid>] `, the `[KitsuneMCP:<role>]` stderr logger |
+| `log` | 5 MB rotation to `<file>.old` (rename, or copy-truncate), line stamps `<ISO time> [<pid>] `, the `[InariMCP:<role>]` stderr logger |
 | `spawn` | starting the daemon as a detached process, stderr appended to `daemon.log` (rotated first with copy-truncate) |
 | `version` | `version` of a `package.json` |
 | `auth` | HMAC challenge–response between the daemon and its clients, protocol version |
@@ -84,9 +84,9 @@ Modules of `@kitsune-mcp/shared/node` (`packages/shared/src/node/`):
 
 ## Tests
 
-`vitest.config.mts` defines the projects `shared`, `mcp-server`, `native-host` (`packages/<pkg>/tests/`), `contract` (`tests/contract/`), `scripts` (`tests/scripts/`) and `e2e` (`tests/e2e/`, only with `npm run test:e2e`). The test files that drive a real headless Firefox are in projects of their own, `mcp-server-firefox` and `contract-firefox` (one retry each), so `npx vitest run --project=mcp-server` alone does not run them; add `--project=mcp-server-firefox`. When Firefox cannot be launched, their tests are skipped, except on CI: with `CI` set (to anything but empty, `0` or `false`) the run fails instead. `KITSUNE_REQUIRE_FIREFOX` (same values) does the same without `CI`. `npm run test:firefox` runs only these two projects with `KITSUNE_REQUIRE_FIREFOX=1`, and also fails when any of their tests was skipped; run it where Firefox is installed (on CI as well) to make sure the real-browser tests ran. The Extension is not a project: `background.ts` and `content.ts` register browser listeners at their top level, so contract tests read their sources or import the modules without side effects (`action-map.ts`, `approval.ts`, `url-rule.ts`). Every test file runs with a temporary home directory.
+`vitest.config.mts` defines the projects `shared`, `mcp-server`, `native-host` (`packages/<pkg>/tests/`), `contract` (`tests/contract/`), `scripts` (`tests/scripts/`) and `e2e` (`tests/e2e/`, only with `npm run test:e2e`). The test files that drive a real headless Firefox are in projects of their own, `mcp-server-firefox` and `contract-firefox` (one retry each), so `npx vitest run --project=mcp-server` alone does not run them; add `--project=mcp-server-firefox`. When Firefox cannot be launched, their tests are skipped, except on CI: with `CI` set (to anything but empty, `0` or `false`) the run fails instead. `INARI_REQUIRE_FIREFOX` (same values) does the same without `CI`. `npm run test:firefox` runs only these two projects with `INARI_REQUIRE_FIREFOX=1`, and also fails when any of their tests was skipped; run it where Firefox is installed (on CI as well) to make sure the real-browser tests ran. The Extension is not a project: `background.ts` and `content.ts` register browser listeners at their top level, so contract tests read their sources or import the modules without side effects (`action-map.ts`, `approval.ts`, `url-rule.ts`). Every test file runs with a temporary home directory.
 
-`npm run typecheck:tests` (the second half of `npm run typecheck`) type-checks the tests with `tsconfig.test.json`: `packages/*/tests`, `tests/contract`, `tests/e2e`, `tests/scripts` and `tests/setup`. It uses `bundler` resolution and the same `@kitsune-mcp/shared` paths as `vitest.config.mts`, so no build is needed.
+`npm run typecheck:tests` (the second half of `npm run typecheck`) type-checks the tests with `tsconfig.test.json`: `packages/*/tests`, `tests/contract`, `tests/e2e`, `tests/scripts` and `tests/setup`. It uses `bundler` resolution and the same `@inari-mcp/shared` paths as `vitest.config.mts`, so no build is needed.
 
 Golden files (`tests/golden/`) record behaviour that must not change by accident: the BrowserCommand and safety-guard decision of each tool call (`tests/contract/tool-golden.test.ts`) and the `tools/list` of a session (`tests/contract/tools-list.test.ts`). When a change is intended, regenerate them with `UPDATE_GOLDEN=1 npx vitest run <test file>` and review the diff. `node scripts/tools-list-size.mjs` prints the size of both tool lists.
 

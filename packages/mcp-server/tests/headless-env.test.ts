@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS } from '@inari-mcp/shared';
 import {
   headlessStartupTimeoutMs,
   isHeadlessEnabled,
@@ -112,7 +112,7 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
   });
 
   it('fox_safety_status still works, so the refusal can be diagnosed', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-scope-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-scope-'));
     try {
       const file = path.join(dir, 'safety.json');
       fs.writeFileSync(file, JSON.stringify({ container_scope: { enabled: true, container_name: 'agent' } }));
@@ -156,7 +156,7 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
   });
 
   it('records the refusal in the audit log', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-scope-audit-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-scope-audit-'));
     try {
       vi.stubEnv('HOME', dir);
       vi.stubEnv('USERPROFILE', dir);
@@ -164,7 +164,7 @@ describe('checkHeadlessContainerScope follows the same flag parsing', () => {
       expect(scopedGuard({ auditLog: true }).check('fox_get_text', { selector: '#a' }, 'stdio'))
         .not.toBeNull();
 
-      const logFile = path.join(dir, '.kitsune-mcp', 'logs', 'audit.jsonl');
+      const logFile = path.join(dir, '.inari-mcp', 'logs', 'audit.jsonl');
       const entries = fs.readFileSync(logFile, 'utf-8').trim().split('\n').map((l) => JSON.parse(l));
       expect(entries).toHaveLength(1);
       expect(entries[0]).toMatchObject({

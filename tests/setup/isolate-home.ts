@@ -2,7 +2,7 @@
  * Per test file: point the home directory at a fresh temporary directory.
  *
  * The daemon, the relay and the Native Host keep their state under
- * ~/.kitsune-mcp (api_token, safety.json, logs/audit.jsonl, screenshots),
+ * ~/.inari-mcp (api_token, safety.json, logs/audit.jsonl, screenshots),
  * resolved with os.homedir() at call time. Without this, a test that runs
  * the SafetyGuard or the token code writes to the developer's real home.
  *
@@ -17,7 +17,7 @@ import * as path from 'node:path';
 import { afterAll } from 'vitest';
 
 const realHome = os.homedir();
-const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-home-'));
+const home = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-home-'));
 process.env['HOME'] = home;
 process.env['USERPROFILE'] = home;
 

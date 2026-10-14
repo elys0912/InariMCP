@@ -27,7 +27,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { BrowserCommand } from '@kitsune-mcp/shared';
+import type { BrowserCommand } from '@inari-mcp/shared';
 import { TOOL_SCHEMAS } from '../../packages/mcp-server/src/tools/schemas.js';
 import { createToolHandler } from '../../packages/mcp-server/src/tools/handlers.js';
 import { getConnectionManager, resolveCommandTimeout } from '../../packages/mcp-server/src/connection/manager.js';
@@ -277,7 +277,7 @@ const sent: BrowserCommand[] = [];
 let tmpDir: string;
 
 beforeAll(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-golden-'));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-golden-'));
   const configPath = path.join(tmpDir, 'safety.json');
   fs.writeFileSync(configPath, JSON.stringify({
     audit_log: false,

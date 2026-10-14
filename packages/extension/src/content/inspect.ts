@@ -145,7 +145,7 @@ export function highlightElement(
   const rect = element.getBoundingClientRect();
 
   highlightOverlay = document.createElement("div");
-  highlightOverlay.className = "kitsune-highlight-overlay";
+  highlightOverlay.className = "inari-highlight-overlay";
   highlightOverlay.style.cssText = `
       position: fixed;
       left: ${rect.left}px;

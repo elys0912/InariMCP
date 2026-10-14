@@ -8,7 +8,7 @@
  *            tool arguments (canonical JSON, SHA-256)
  *
  * A human decision obtained outside the page — MCP elicitation answered in
- * the MCP client, or the KitsuneMCP toolbar popup in Firefox — turns that
+ * the MCP client, or the InariMCP toolbar popup in Firefox — turns that
  * request into a one-time *token*. The retried tool call presents the token
  * (out of band: `approvalToken` in the POST /mcp/call body, never a tool
  * argument), the handler consumes it, and the guard lets exactly that call
@@ -26,7 +26,7 @@
  */
 
 import * as crypto from 'node:crypto';
-import { ENV, ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV, ENV_DEFAULTS } from '@inari-mcp/shared';
 import { isFalsyEnv } from '../utils/headless-env.js';
 import type { SafetyDenial } from './guard.js';
 import { revealInvisible } from './sanitizer.js';

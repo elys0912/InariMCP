@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BrowserAction, BrowserCommand } from '@kitsune-mcp/shared';
+import type { BrowserAction, BrowserCommand } from '@inari-mcp/shared';
 import { maxCommandTimeoutMs, resolveCommandTimeout } from '../src/connection/manager.js';
 
 function command(action: BrowserAction, data?: Record<string, unknown>): BrowserCommand {

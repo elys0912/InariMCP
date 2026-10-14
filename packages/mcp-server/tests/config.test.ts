@@ -13,7 +13,7 @@ describe('loadConfig (2.B2)', () => {
   let stderr: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-guard-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-guard-'));
     stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   });
   afterEach(() => {
@@ -25,7 +25,7 @@ describe('loadConfig (2.B2)', () => {
   function load(content: string | null): LoadedSafetyConfig {
     const file = path.join(dir, 'safety.json');
     if (content !== null) fs.writeFileSync(file, content);
-    // Keep ~/.kitsune-mcp of the real home out of reach.
+    // Keep ~/.inari-mcp of the real home out of reach.
     vi.stubEnv('HOME', dir);
     vi.stubEnv('USERPROFILE', dir);
     vi.stubEnv('FOX_SAFETY_CONFIG', file);
@@ -135,7 +135,7 @@ describe('loadConfig (2.B2)', () => {
     vi.stubEnv('FOX_SAFETY_CONFIG', ' ');
     vi.stubEnv('CLAUDE_BROWSER_SAFETY_CONFIG', '');
     expect(new SafetyGuard({ ...DEFAULT_CONFIG }).status().configFile)
-      .toBe(path.join(dir, '.kitsune-mcp', 'safety.json'));
+      .toBe(path.join(dir, '.inari-mcp', 'safety.json'));
   });
 
   // Windows ignores the mode bits (see the WP2 note on 0o600 / 0o700).

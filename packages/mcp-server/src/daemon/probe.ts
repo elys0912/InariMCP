@@ -3,12 +3,12 @@
  *
  * The /health answer is checked like the relays and the Native Host check
  * it: only a daemon that proves it holds our API token (the nonce proof)
- * counts as "another KitsuneMCP daemon". Anything else on the port is
+ * counts as "another InariMCP daemon". Anything else on the port is
  * reported for what it is, not as a healthy daemon.
  */
 
 import * as http from 'node:http';
-import { AUTH_HEADER, evaluateHealth, newNonce, type HealthVerdict } from '@kitsune-mcp/shared/node';
+import { AUTH_HEADER, evaluateHealth, newNonce, type HealthVerdict } from '@inari-mcp/shared/node';
 
 /** How long a check of a running daemon waits for its answer (this probe; the doctor's /health and /daemon/info). */
 export const HEALTH_PROBE_TIMEOUT_MS = 2_000;

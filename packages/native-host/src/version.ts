@@ -8,7 +8,7 @@
  */
 
 import * as path from 'node:path';
-import { UNKNOWN_VERSION, readPackageVersion } from '@kitsune-mcp/shared/node';
+import { UNKNOWN_VERSION, readPackageVersion } from '@inari-mcp/shared/node';
 
 export const HOST_VERSION: string =
   readPackageVersion(path.resolve(__dirname, '..', 'package.json')) ?? UNKNOWN_VERSION;

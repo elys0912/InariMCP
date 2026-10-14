@@ -15,7 +15,7 @@ import {
   newNonce,
   signRequest,
   verifyResponse,
-} from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
 import { TOKEN, waitFor } from './helpers/ws.js';
 
 // HOME / USERPROFILE point at a temporary directory: tests/setup/isolate-home.ts
@@ -196,7 +196,7 @@ describe('startup log', () => {
     } finally {
       write.mockRestore();
     }
-    expect(lines).toContain(`[KitsuneMCP] HTTP bridge listening on http://127.0.0.1:${port}
+    expect(lines).toContain(`[InariMCP] HTTP bridge listening on http://127.0.0.1:${port}
 `);
     expect(port).not.toBe(0);
   });
@@ -207,7 +207,7 @@ describe('/health', () => {
     await start();
     const nonce = newNonce();
     const r = await request('GET', '/health', { [AUTH_HEADER.nonce]: nonce });
-    expect(r.json).toMatchObject({ status: 'ok', service: 'kitsune-mcp', protocol: DAEMON_PROTOCOL_VERSION });
+    expect(r.json).toMatchObject({ status: 'ok', service: 'inari-mcp', protocol: DAEMON_PROTOCOL_VERSION });
     expect(r.json['proof']).toBe(computeMac(TOKEN, MAC_LABEL.health, nonce));
   });
 
@@ -496,7 +496,7 @@ describe('daemon state seen by tool calls', () => {
     fail(new Error('Firefox did not launch'));
     for (const r of [await call, await approval]) {
       expect(r.status).toBe(500);
-      expect(r.json['error']).toBe('KitsuneMCP daemon could not start: Firefox did not launch');
+      expect(r.json['error']).toBe('InariMCP daemon could not start: Firefox did not launch');
     }
     // Later calls too, and /health keeps saying not ready.
     expect((await request('POST', '/mcp/call', headers, callBody)).json['error']).toContain('could not start');

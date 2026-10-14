@@ -7,7 +7,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { WireUrlRuleSchema } from '@kitsune-mcp/shared';
+import { WireUrlRuleSchema } from '@inari-mcp/shared';
 import { compileUrlPatterns, type PatternListName } from '../../packages/mcp-server/src/safety/url-pattern.js';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG } from '../../packages/mcp-server/src/safety/config.js';

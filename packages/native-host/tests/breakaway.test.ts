@@ -59,8 +59,8 @@ function decodedScript(): string {
   return Buffer.from(args[args.indexOf('-EncodedCommand') + 1]!, 'base64').toString('utf16le');
 }
 
-const ENTRY = 'C:\\Program Files\\Kitsune "x"\\dist\\index.js';
-const LOG = 'C:\\Users\\someone\\.kitsune-mcp\\logs\\daemon.log';
+const ENTRY = 'C:\\Program Files\\Inari "x"\\dist\\index.js';
+const LOG = 'C:\\Users\\someone\\.inari-mcp\\logs\\daemon.log';
 
 describe('spawnDaemonBreakaway', () => {
   it('runs a non-interactive PowerShell and passes the paths through the environment only', async () => {
@@ -73,14 +73,14 @@ describe('spawnDaemonBreakaway', () => {
     expect(command).toBe('powershell.exe');
     expect(args.slice(0, -1)).toEqual(['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand']);
     // no path (with its quotes) ever reaches the command line or the script
-    expect(args.join(' ')).not.toContain('Kitsune');
-    expect(decodedScript()).not.toContain('Kitsune "x"');
-    expect(decodedScript()).toContain('$env:KITSUNE_DAEMON_ENTRY');
+    expect(args.join(' ')).not.toContain('Inari');
+    expect(decodedScript()).not.toContain('Inari "x"');
+    expect(decodedScript()).toContain('$env:INARI_DAEMON_ENTRY');
     expect(decodedScript()).toContain('CREATE_BREAKAWAY_FROM_JOB');
     const env = options['env'] as Record<string, string>;
-    expect(env['KITSUNE_DAEMON_ENTRY']).toBe(ENTRY);
-    expect(env['KITSUNE_DAEMON_LOG']).toBe(LOG);
-    expect(env['KITSUNE_DAEMON_NODE']).toBe(process.execPath);
+    expect(env['INARI_DAEMON_ENTRY']).toBe(ENTRY);
+    expect(env['INARI_DAEMON_LOG']).toBe(LOG);
+    expect(env['INARI_DAEMON_NODE']).toBe(process.execPath);
     expect(options).toMatchObject({ windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     expect(options).not.toHaveProperty('cwd');
   });

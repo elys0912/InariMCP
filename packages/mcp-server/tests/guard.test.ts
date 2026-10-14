@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { BROWSER_ACTIONS, type BrowserCommand, type BrowserResponse } from '@kitsune-mcp/shared';
+import { BROWSER_ACTIONS, type BrowserCommand, type BrowserResponse } from '@inari-mcp/shared';
 import { SafetyGuard, targetUrlOf, type DenialDecision } from '../src/safety/guard.js';
 import { DEFAULT_CONFIG, getAuditLogPath, type LoadedSafetyConfig } from '../src/safety/config.js';
 import { createToolHandler } from '../src/tools/handlers.js';

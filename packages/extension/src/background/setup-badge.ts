@@ -112,7 +112,7 @@ function renderBadge(): void {
   browser.browserAction.setBadgeBackgroundColor({ color: BADGE_COLOR }).catch(() => {});
   browser.browserAction.setBadgeText({ text: attention ? "!" : "" }).catch(() => {});
   browser.browserAction
-    .setTitle({ title: titleKey === null ? "KitsuneMCP" : t(titleKey) })
+    .setTitle({ title: titleKey === null ? "InariMCP" : t(titleKey) })
     .catch(() => {});
 }
 

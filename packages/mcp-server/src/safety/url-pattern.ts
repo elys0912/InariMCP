@@ -43,7 +43,7 @@
  *     folded (/admin covers /ADMIN, //admin, /%61dmin, /admin;x, /administrator).
  */
 
-import type { WireUrlRule } from '@kitsune-mcp/shared';
+import type { WireUrlRule } from '@inari-mcp/shared';
 
 export type PatternListName = 'blocked' | 'allowed' | 'protected';
 

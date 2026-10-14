@@ -1,4 +1,4 @@
-// KitsuneMCP Content Script
+// InariMCP Content Script
 // Runs in web pages to handle DOM interactions, clicks, typing, and element inspection
 //
 // Based on ClaudeCodeBrowser by Andre Watson (nanogenomic), Ligandal Inc.
@@ -58,5 +58,5 @@ import type { ContentMessage } from "./content/types";
     // Send what is pending before the document goes away (best effort).
     window.addEventListener("pagehide", sendLogBatch);
   }
-  console.log("[KitsuneMCP] Content script loaded");
+  console.log("[InariMCP] Content script loaded");
 })();

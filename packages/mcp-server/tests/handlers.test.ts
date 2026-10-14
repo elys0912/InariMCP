@@ -8,7 +8,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { BrowserResponse } from '@kitsune-mcp/shared';
+import type { BrowserResponse } from '@inari-mcp/shared';
 import { createToolHandler } from '../src/tools/handlers.js';
 import { getConnectionManager } from '../src/connection/manager.js';
 
@@ -38,7 +38,7 @@ describe('a call by a deprecated name', () => {
     expect(texts(second).some((t) => t.startsWith('Note: '))).toBe(false);
 
     const lines = stderr.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('deprecated'));
-    expect(lines).toEqual([`[KitsuneMCP] ${note}\n`]);
+    expect(lines).toEqual([`[InariMCP] ${note}\n`]);
   });
 
   it('a current name gets no note', async () => {

@@ -16,7 +16,7 @@
  * reason? }`. The relay then retries the tool call with the token.
  */
 
-import type { ApprovalPrompt, BrowserResponse } from '@kitsune-mcp/shared';
+import type { ApprovalPrompt, BrowserResponse } from '@inari-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
 import { getApprovalStore, isElicitationApprovalEnabled } from '../safety/approval.js';
 import type { ApprovalChannel, ApprovalRequest, ApprovalStore } from '../safety/approval.js';
@@ -154,7 +154,7 @@ export async function askBrowser(
       approved: false,
       reason: 'no_browser',
       error:
-        'No Firefox with the KitsuneMCP extension is connected, so nobody can be asked ' +
+        'No Firefox with the InariMCP extension is connected, so nobody can be asked ' +
         'in the browser (headless mode has no human).',
     };
   }

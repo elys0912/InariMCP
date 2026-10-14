@@ -1,6 +1,6 @@
 import type { Browser, BrowserContext, Page, Dialog } from 'playwright';
 import { z } from 'zod';
-import { ENV, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { ENV, LEGACY_ENV } from '@inari-mcp/shared';
 import { headlessStartupTimeoutMs, resolveFoxEnv } from '../utils/headless-env.js';
 import { ignoredParamWarnings, parseArgs } from './helpers.js';
 import { headlessRoute, NO_TAB_ERROR, type DialogHost, type TabHost } from './actions.js';
@@ -10,7 +10,7 @@ import {
   DIALOG_MESSAGE_PREVIEW_CHARS,
   VIEWPORT,
 } from './limits.js';
-import { stderrLogger } from '@kitsune-mcp/shared/node';
+import { stderrLogger } from '@inari-mcp/shared/node';
 import { currentCommandContext, type CommandContext } from '../connection/manager.js';
 
 // ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ import {
   evaluateHealth,
   isUsable,
   newNonce,
-} from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
 
 const TOKEN = 'c'.repeat(64);
 
@@ -15,7 +15,7 @@ describe('evaluateHealth (4.A4)', () => {
   const good = (extra: Record<string, unknown> = {}): string =>
     JSON.stringify({
       status: 'ok',
-      service: 'kitsune-mcp',
+      service: 'inari-mcp',
       version: '0.1.0',
       protocol: DAEMON_PROTOCOL_VERSION,
       proof: computeMac(TOKEN, MAC_LABEL.health, nonce),
@@ -38,7 +38,7 @@ describe('evaluateHealth (4.A4)', () => {
   });
 
   it('incompatible: an older daemon without (or with another) protocol', () => {
-    const old = JSON.stringify({ status: 'ok', service: 'kitsune-mcp', version: '0.0.9' });
+    const old = JSON.stringify({ status: 'ok', service: 'inari-mcp', version: '0.0.9' });
     expect(evaluateHealth(200, old, TOKEN, nonce)).toEqual({ kind: 'incompatible', protocol: undefined, version: '0.0.9' });
     expect(evaluateHealth(200, good({ protocol: 99 }), TOKEN, nonce).kind).toBe('incompatible');
   });

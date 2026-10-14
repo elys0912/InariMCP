@@ -1,10 +1,10 @@
 /**
  * Where the shared daemon listens, the API token, and the daemon settings a
  * relay compares with the running daemon. Host / port / token resolution
- * lives in @kitsune-mcp/shared/node (also used by the Native Host).
+ * lives in @inari-mcp/shared/node (also used by the Native Host).
  */
 
-import { ENV, ENV_DEFAULTS, isRecord, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { ENV, ENV_DEFAULTS, isRecord, LEGACY_ENV } from '@inari-mcp/shared';
 import { isElicitationApprovalEnabled } from '../safety/approval.js';
 import {
   headlessStartupTimeoutMs,
@@ -14,7 +14,7 @@ import {
   resolveFoxEnv,
 } from './headless-env.js';
 
-// Host / ports, the API token: shared with the Native Host (@kitsune-mcp/shared/node).
+// Host / ports, the API token: shared with the Native Host (@inari-mcp/shared/node).
 export {
   isLoopbackHost,
   loadOrCreateApiToken,
@@ -22,10 +22,10 @@ export {
   resolveHost,
   resolveHttpPort,
   resolveWsPort,
-} from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
 
 /** HTTP header a relay uses to identify itself to the daemon (audit log, idle tracking). */
-export const RELAY_ID_HEADER = 'x-kitsune-relay';
+export const RELAY_ID_HEADER = 'x-inari-relay';
 
 /**
  * Largest request body the daemon reads (1 MiB, generous for any JSON

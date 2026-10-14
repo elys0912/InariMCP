@@ -3,7 +3,7 @@
     "message": "Firefox MCP addon for Claude Code — browser automation via extension + native messaging"
   },
 
-  "popupFooter": { "message": "KitsuneMCP — Firefox MCP Addon" },
+  "popupFooter": { "message": "InariMCP — Firefox MCP Addon" },
   "popupQuickActions": { "message": "Quick Actions" },
   "popupScreenshot": { "message": "Screenshot" },
   "popupPageInfo": { "message": "Page Info" },
@@ -28,7 +28,7 @@
 
   "setupHostMissingTitle": { "message": "Setup needed" },
   "setupHostMissingText": {
-    "message": "Firefox cannot find the KitsuneMCP native host. Build KitsuneMCP and run its installer in your KitsuneMCP folder (a clone of the repository):"
+    "message": "Firefox cannot find the InariMCP native host. Build InariMCP and run its installer in your InariMCP folder (a clone of the repository):"
   },
   "setupHostMissingNote": { "message": "Then press Recheck. Flatpak Firefox: see the installation guide (re-running the installer alone does not help there)." },
   "setupHostErrorTitle": { "message": "Native host failed" },
@@ -38,7 +38,7 @@
   },
   "setupHostOutdatedTitle": { "message": "Native host is out of date" },
   "setupHostOutdatedText": {
-    "message": "Browser tools still work, but your KitsuneMCP folder is older than this extension. Pull the latest version there, rebuild it and re-run the installer (it updates the native host):"
+    "message": "Browser tools still work, but your InariMCP folder is older than this extension. Pull the latest version there, rebuild it and re-run the installer (it updates the native host):"
   },
   "setupHostOutdatedNote": { "message": "Then restart Firefox." },
   "setupDetails": {
@@ -46,14 +46,14 @@
     "description": "$1 = log file path"
   },
   "setupDaemonDownTitle": { "message": "MCP server not responding" },
-  "setupDaemonDownText": { "message": "The native host runs, but the KitsuneMCP server does not answer." },
+  "setupDaemonDownText": { "message": "The native host runs, but the InariMCP server does not answer." },
   "setupDaemonDownTextAt": {
-    "message": "The native host runs, but the KitsuneMCP server does not answer at $1.",
+    "message": "The native host runs, but the InariMCP server does not answer at $1.",
     "description": "$1 = server URL"
   },
   "setupNoSessionTitle": { "message": "Claude Code is not connected" },
   "setupNoSessionText": {
-    "message": "Firefox is ready. Either KitsuneMCP is not registered with Claude Code, or no Claude Code session is running. To register it:"
+    "message": "Firefox is ready. Either InariMCP is not registered with Claude Code, or no Claude Code session is running. To register it:"
   },
   "setupNoSessionNote": {
     "message": "After registering, restart Claude Code. A running session shows up here within about 30 seconds."
@@ -70,27 +70,27 @@
   "toastCopyFailed": { "message": "Copy failed: select the command and copy it by hand" },
   "toastUnknownError": { "message": "Unknown error" },
 
-  "badgeSetupNeeded": { "message": "KitsuneMCP: setup needed" },
-  "badgeHostError": { "message": "KitsuneMCP: native host failed" },
-  "badgeHostOutdated": { "message": "KitsuneMCP: native host is out of date" },
-  "badgeDaemonDown": { "message": "KitsuneMCP: MCP server not responding" },
-  "badgeNoSession": { "message": "KitsuneMCP: no Claude Code session" },
+  "badgeSetupNeeded": { "message": "InariMCP: setup needed" },
+  "badgeHostError": { "message": "InariMCP: native host failed" },
+  "badgeHostOutdated": { "message": "InariMCP: native host is out of date" },
+  "badgeDaemonDown": { "message": "InariMCP: MCP server not responding" },
+  "badgeNoSession": { "message": "InariMCP: no Claude Code session" },
   "badgeApprovalPending": {
-    "message": "KitsuneMCP: $1 approval request(s) waiting for you",
+    "message": "InariMCP: $1 approval request(s) waiting for you",
     "description": "$1 = number of pending requests"
   },
 
-  "menuScreenshot": { "message": "Take Screenshot for KitsuneMCP" },
-  "menuInspect": { "message": "Inspect Element for KitsuneMCP" },
+  "menuScreenshot": { "message": "Take Screenshot for InariMCP" },
+  "menuInspect": { "message": "Inspect Element for InariMCP" },
 
   "notifyApprovalTitle": { "message": "Claude requests approval" },
   "notifyApprovalDefault": { "message": "Claude wants to perform an action" },
   "notifyApprovalProtected": {
-    "message": "$1 on $2 needs your approval. Click the KitsuneMCP toolbar button to approve or deny.",
+    "message": "$1 on $2 needs your approval. Click the InariMCP toolbar button to approve or deny.",
     "description": "$1 = tool name, $2 = site hostname"
   },
   "notifyApprovalQuestion": {
-    "message": "$1 — answer with the KitsuneMCP toolbar button.",
+    "message": "$1 — answer with the InariMCP toolbar button.",
     "description": "$1 = question written by Claude (not translated)"
   },
   "notifyCaptchaTitle": { "message": "Captcha needs solving" },
@@ -101,7 +101,7 @@
     "description": "$1 = captcha types, e.g. recaptcha, hcaptcha"
   },
   "bannerCaptchaDetail": {
-    "message": "KitsuneMCP paused and is waiting for you. Click Done if it does not continue on its own."
+    "message": "InariMCP paused and is waiting for you. Click Done if it does not continue on its own."
   },
   "bannerDone": { "message": "Done" },
   "bannerCancel": { "message": "Cancel" },

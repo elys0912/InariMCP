@@ -20,7 +20,7 @@ import * as path from 'node:path';
 import type * as http from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { ApprovalPromptSchema, parseBrowserResponse, type BrowserCommand } from '@kitsune-mcp/shared';
+import { ApprovalPromptSchema, parseBrowserResponse, type BrowserCommand } from '@inari-mcp/shared';
 import { createToolHandler } from '../../packages/mcp-server/src/tools/handlers.js';
 import {
   answerFromElicitation,
@@ -111,7 +111,7 @@ beforeAll(async () => {
   toWireResponse = (await import('../../packages/extension/src/background/wire.ts')).toWireResponse as unknown as ToWireResponse;
 
   // The guard singleton reads this config (no audit log, no rate limit).
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-approval-'));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-approval-'));
   const configPath = path.join(tmpDir, 'safety.json');
   fs.writeFileSync(configPath, JSON.stringify({
     audit_log: false,
@@ -525,7 +525,7 @@ describe('extension: approval UI is outside the page', () => {
   it('the popup uses the shared message types, not its own literals', () => {
     expect(popup).toContain('APPROVAL_MESSAGE.LIST');
     expect(popup).toContain('APPROVAL_MESSAGE.DECIDE');
-    expect(popup).not.toContain('kitsune:approvals:');
+    expect(popup).not.toContain('inari:approvals:');
   });
 
   it('popup.html loads only the popup bundle', () => {

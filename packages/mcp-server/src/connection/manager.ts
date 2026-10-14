@@ -13,7 +13,7 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { shortId, type BrowserAction, type BrowserCommand, type BrowserResponse } from '@kitsune-mcp/shared';
+import { shortId, type BrowserAction, type BrowserCommand, type BrowserResponse } from '@inari-mcp/shared';
 import { errorMessage } from '../utils/errors.js';
 
 // ---------------------------------------------------------------------------
@@ -228,7 +228,7 @@ export class BrowserConnectionManager {
   /** Register a new browser connection. */
   registerBrowser(id: string, sendFn: SendFn, kind: BrowserKind): void {
     this.connections.set(id, { id, kind, send: sendFn, registeredAt: Date.now() });
-    process.stderr.write(`[KitsuneMCP] Browser registered: ${id} (${kind})\n`);
+    process.stderr.write(`[InariMCP] Browser registered: ${id} (${kind})\n`);
   }
 
   /**
@@ -237,7 +237,7 @@ export class BrowserConnectionManager {
    */
   unregisterBrowser(id: string): void {
     if (!this.connections.delete(id)) return;
-    process.stderr.write(`[KitsuneMCP] Browser unregistered: ${id}\n`);
+    process.stderr.write(`[InariMCP] Browser unregistered: ${id}\n`);
 
     for (const [requestId, entry] of this.pending) {
       if (entry.connectionId === id) this.failPending(requestId, entry, 'Browser disconnected before responding');
@@ -323,7 +323,7 @@ export class BrowserConnectionManager {
         requestId: command.requestId,
         success: false,
         error:
-          'No browser connected. Start Firefox with the KitsuneMCP extension ' +
+          'No browser connected. Start Firefox with the InariMCP extension ' +
           '(its Native Host connects to this server over WebSocket), or set FOX_HEADLESS=1.',
       };
     }

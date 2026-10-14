@@ -5,7 +5,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ENV } from '@kitsune-mcp/shared';
+import { ENV } from '@inari-mcp/shared';
 import { DaemonActivity, RELAY_TTL_MS, resolveIdleTimeoutMs } from '../src/daemon/activity.js';
 
 let activity: DaemonActivity | undefined;

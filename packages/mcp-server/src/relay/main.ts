@@ -1,5 +1,5 @@
 /**
- * KitsuneMCP stdio relay — what `claude mcp add ... node dist/index.js`
+ * InariMCP stdio relay — what `claude mcp add ... node dist/index.js`
  * starts, once per Claude Code session.
  *
  * Speaks MCP JSON-RPC on stdio and binds no port. tools/list is answered
@@ -16,7 +16,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import { ENV, shortId } from '@kitsune-mcp/shared';
+import { ENV, shortId } from '@inari-mcp/shared';
 import { registerTools } from '../tools/registry.js';
 import { DaemonClient } from './daemon-client.js';
 import { callWithApproval, canElicit } from './approval.js';
@@ -24,9 +24,9 @@ import { isElicitationApprovalEnabled } from '../safety/approval.js';
 import type { ApprovalDeps } from './approval.js';
 import { createRelayHandlers } from './handler.js';
 import { PACKAGE_VERSION } from '../version.js';
-import { stderrLogger } from '@kitsune-mcp/shared/node';
+import { stderrLogger } from '@inari-mcp/shared/node';
 
-const SERVER_NAME = 'kitsune-mcp';
+const SERVER_NAME = 'inari-mcp';
 /** Cap of each precheck request (GET /health, then GET /daemon/info). */
 const PRECHECK_TIMEOUT_MS = 400;
 /**

@@ -10,10 +10,10 @@
 // every injection, before its __fox_injected guard.
 
 /** content → background: `{ type, console?: entry[], network?: entry[] }`. */
-export const LOG_RECORD_MESSAGE = "kitsune:logRecords";
+export const LOG_RECORD_MESSAGE = "inari:logRecords";
 
 /** content → background: "is logging on for my tab?" (reply `{ enabled, ... }`). */
-export const LOGGING_STATE_QUERY = "kitsune:loggingState";
+export const LOGGING_STATE_QUERY = "inari:loggingState";
 
 /**
  * Console entries and network entries kept per tab, each (oldest dropped):

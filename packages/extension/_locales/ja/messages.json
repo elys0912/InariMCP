@@ -3,7 +3,7 @@
     "message": "Claude Code から Firefox を操作する MCP アドオン（拡張機能 + Native Messaging）"
   },
 
-  "popupFooter": { "message": "KitsuneMCP — Firefox 用 MCP アドオン" },
+  "popupFooter": { "message": "InariMCP — Firefox 用 MCP アドオン" },
   "popupQuickActions": { "message": "クイック操作" },
   "popupScreenshot": { "message": "スクリーンショット" },
   "popupPageInfo": { "message": "ページ情報" },
@@ -25,7 +25,7 @@
 
   "setupHostMissingTitle": { "message": "セットアップが必要" },
   "setupHostMissingText": {
-    "message": "Firefox が KitsuneMCP の Native Host を見つけられません。KitsuneMCP のフォルダ（リポジトリを clone したもの）でビルドしてインストーラを実行してください:"
+    "message": "Firefox が InariMCP の Native Host を見つけられません。InariMCP のフォルダ（リポジトリを clone したもの）でビルドしてインストーラを実行してください:"
   },
   "setupHostMissingNote": { "message": "実行したら「再確認」を押してください。Flatpak 版の Firefox はインストール手順を見てください（インストーラの再実行だけでは直りません）。" },
   "setupHostErrorTitle": { "message": "Native Host が動いていません" },
@@ -34,16 +34,16 @@
   },
   "setupHostOutdatedTitle": { "message": "Native Host が古くなっています" },
   "setupHostOutdatedText": {
-    "message": "ブラウザ操作はそのまま使えますが、KitsuneMCP のフォルダがこの拡張より古い版です。そのフォルダで最新版を取得してビルドし、インストーラを実行し直してください（Native Host を更新します）:"
+    "message": "ブラウザ操作はそのまま使えますが、InariMCP のフォルダがこの拡張より古い版です。そのフォルダで最新版を取得してビルドし、インストーラを実行し直してください（Native Host を更新します）:"
   },
   "setupHostOutdatedNote": { "message": "更新したら Firefox を再起動してください。" },
   "setupDetails": { "message": "詳細: $1" },
   "setupDaemonDownTitle": { "message": "MCP サーバーが応答しません" },
-  "setupDaemonDownText": { "message": "Native Host は動いていますが、KitsuneMCP のサーバーが応答しません。" },
-  "setupDaemonDownTextAt": { "message": "Native Host は動いていますが、KitsuneMCP のサーバー（$1）が応答しません。" },
+  "setupDaemonDownText": { "message": "Native Host は動いていますが、InariMCP のサーバーが応答しません。" },
+  "setupDaemonDownTextAt": { "message": "Native Host は動いていますが、InariMCP のサーバー（$1）が応答しません。" },
   "setupNoSessionTitle": { "message": "Claude Code とつながっていません" },
   "setupNoSessionText": {
-    "message": "Firefox 側の準備はできています。KitsuneMCP が Claude Code に登録されていないか、Claude Code のセッションが起動していません。登録するには:"
+    "message": "Firefox 側の準備はできています。InariMCP が Claude Code に登録されていないか、Claude Code のセッションが起動していません。登録するには:"
   },
   "setupNoSessionNote": {
     "message": "登録したら Claude Code を起動し直してください。起動中のセッションは 30 秒ほどでここに反映されます。"
@@ -57,26 +57,26 @@
   "toastCopyFailed": { "message": "コピーできませんでした。コマンドを選択して手動でコピーしてください" },
   "toastUnknownError": { "message": "不明なエラー" },
 
-  "badgeSetupNeeded": { "message": "KitsuneMCP: セットアップが必要" },
-  "badgeHostError": { "message": "KitsuneMCP: Native Host が動いていません" },
-  "badgeHostOutdated": { "message": "KitsuneMCP: Native Host が古くなっています" },
-  "badgeDaemonDown": { "message": "KitsuneMCP: MCP サーバーが応答しません" },
-  "badgeNoSession": { "message": "KitsuneMCP: Claude Code とつながっていません" },
-  "badgeApprovalPending": { "message": "KitsuneMCP: 承認待ちのリクエストが $1 件あります" },
+  "badgeSetupNeeded": { "message": "InariMCP: セットアップが必要" },
+  "badgeHostError": { "message": "InariMCP: Native Host が動いていません" },
+  "badgeHostOutdated": { "message": "InariMCP: Native Host が古くなっています" },
+  "badgeDaemonDown": { "message": "InariMCP: MCP サーバーが応答しません" },
+  "badgeNoSession": { "message": "InariMCP: Claude Code とつながっていません" },
+  "badgeApprovalPending": { "message": "InariMCP: 承認待ちのリクエストが $1 件あります" },
 
-  "menuScreenshot": { "message": "KitsuneMCP でスクリーンショットを撮る" },
-  "menuInspect": { "message": "KitsuneMCP で要素を調べる" },
+  "menuScreenshot": { "message": "InariMCP でスクリーンショットを撮る" },
+  "menuInspect": { "message": "InariMCP で要素を調べる" },
 
   "notifyApprovalTitle": { "message": "Claude が承認を求めています" },
   "notifyApprovalDefault": { "message": "Claude が操作の実行を求めています" },
-  "notifyApprovalProtected": { "message": "$2 での $1 に承認が必要です。ツールバーの KitsuneMCP ボタンから承認または拒否してください。" },
-  "notifyApprovalQuestion": { "message": "$1 — ツールバーの KitsuneMCP ボタンから回答してください。" },
+  "notifyApprovalProtected": { "message": "$2 での $1 に承認が必要です。ツールバーの InariMCP ボタンから承認または拒否してください。" },
+  "notifyApprovalQuestion": { "message": "$1 — ツールバーの InariMCP ボタンから回答してください。" },
   "notifyCaptchaTitle": { "message": "CAPTCHA の解決が必要です" },
   "notifyCaptchaMessage": { "message": "Claude が CAPTCHA で止まっています。解いてください。" },
 
   "bannerCaptchaTitle": { "message": "🧩 CAPTCHA（$1）を解いてください。解けたら自動で続きます。" },
   "bannerCaptchaDetail": {
-    "message": "KitsuneMCP は一時停止して待っています。自動で続かないときは「完了」を押してください。"
+    "message": "InariMCP は一時停止して待っています。自動で続かないときは「完了」を押してください。"
   },
   "bannerDone": { "message": "完了" },
   "bannerCancel": { "message": "キャンセル" },

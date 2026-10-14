@@ -1,5 +1,5 @@
 /**
- * `node dist/index.js --doctor` (or `kitsune-mcp doctor`): run the checks of
+ * `node dist/index.js --doctor` (or `inari-mcp doctor`): run the checks of
  * checks.ts with the real environment and print one line per item.
  *
  *   OK    node            v24.16.0 (engines >=18.0.0)
@@ -83,7 +83,7 @@ export function formatResults(results: readonly CheckResult[]): string {
 /** Print the report; resolves with the exit code. */
 export async function runDoctor(deps: DoctorDeps = defaultDoctorDeps()): Promise<number> {
   const results = await runChecks(deps);
-  process.stdout.write(`KitsuneMCP doctor v${PACKAGE_VERSION} (${deps.platform}, node v${deps.nodeVersion})\n\n`);
+  process.stdout.write(`InariMCP doctor v${PACKAGE_VERSION} (${deps.platform}, node v${deps.nodeVersion})\n\n`);
   process.stdout.write(formatResults(results));
   return results.some((r) => r.status === 'FAIL') ? 1 : 0;
 }

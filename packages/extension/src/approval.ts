@@ -1,4 +1,4 @@
-// KitsuneMCP approval requests (shared by background and popup)
+// InariMCP approval requests (shared by background and popup)
 //
 // Human approval is asked in the toolbar popup, never in the page: content
 // scripts, page JavaScript and the LLM's own tools (fox_click,
@@ -22,9 +22,9 @@ import { clipText } from "./text-clip";
 /** runtime.sendMessage types between the popup and the background. */
 export const APPROVAL_MESSAGE = {
   /** popup → background: list pending requests → { success, approvals } */
-  LIST: "kitsune:approvals:list",
+  LIST: "inari:approvals:list",
   /** popup → background: { id, approved } → { success, error? } */
-  DECIDE: "kitsune:approvals:decide",
+  DECIDE: "inari:approvals:decide",
 } as const;
 
 export type ApprovalKind = "protected_action" | "message";

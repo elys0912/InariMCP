@@ -67,7 +67,7 @@ export function audit(
     fs.appendFileSync(logPath, JSON.stringify(entry) + '\n', { mode: 0o600 });
   } catch (e) {
     process.stderr.write(
-      `[KitsuneMCP] Failed to write audit log: ${e instanceof Error ? e.message : String(e)}\n`,
+      `[InariMCP] Failed to write audit log: ${e instanceof Error ? e.message : String(e)}\n`,
     );
   }
 }

@@ -21,7 +21,7 @@
 
 import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
-import { isRecord } from '@kitsune-mcp/shared';
+import { isRecord } from '@inari-mcp/shared';
 import { MAX_TIMEOUT_ARG_MS, TOOL_SCHEMAS, callSchemaOf } from './schemas.js';
 import type { OperationName } from './schemas.js';
 import { toolAnnotations } from './classification.js';

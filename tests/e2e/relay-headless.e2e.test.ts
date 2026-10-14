@@ -30,11 +30,11 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { AUTH_HEADER, signRequest, verifyResponse } from '@kitsune-mcp/shared/node';
+import { AUTH_HEADER, signRequest, verifyResponse } from '@inari-mcp/shared/node';
 
 const ENTRY = fileURLToPath(new URL('../../packages/mcp-server/dist/index.js', import.meta.url));
-const MARKER = 'kitsune-e2e-marker-7f3a';
-const PAGE = `<!doctype html><html><head><title>Kitsune E2E</title></head>
+const MARKER = 'inari-e2e-marker-7f3a';
+const PAGE = `<!doctype html><html><head><title>Inari E2E</title></head>
 <body><h1>${MARKER}</h1><p>Plain page for the relay/headless smoke test.</p>
 <button id="go">Go</button></body></html>`;
 
@@ -88,7 +88,7 @@ let daemonPid: number | undefined;
 
 function readToken(): string | undefined {
   try {
-    return fs.readFileSync(path.join(os.homedir(), '.kitsune-mcp', 'api_token'), 'utf-8').trim() || undefined;
+    return fs.readFileSync(path.join(os.homedir(), '.inari-mcp', 'api_token'), 'utf-8').trim() || undefined;
   } catch {
     return undefined;
   }
@@ -181,7 +181,7 @@ beforeAll(async () => {
   httpPort = await freePort();
   const wsPort = await freePort();
 
-  client = new Client({ name: 'kitsune-e2e', version: '0.0.0' });
+  client = new Client({ name: 'inari-e2e', version: '0.0.0' });
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [ENTRY],
@@ -222,7 +222,7 @@ describe('relay → daemon → headless Firefox', () => {
     expect(nav.isError, text(nav)).not.toBe(true);
 
     // The daemon is up now: learn its PID for the cleanup.
-    const token = fs.readFileSync(path.join(os.homedir(), '.kitsune-mcp', 'api_token'), 'utf-8').trim();
+    const token = fs.readFileSync(path.join(os.homedir(), '.inari-mcp', 'api_token'), 'utf-8').trim();
     const info = await fetch(`http://127.0.0.1:${httpPort}/daemon/info`, { headers: { 'X-API-Key': token } })
       .then((r) => r.json() as Promise<{ pid?: number; headless?: boolean }>);
     daemonPid = info.pid;
@@ -248,17 +248,17 @@ describe('relay → daemon → headless Firefox', () => {
   it('saves the screenshot under the isolated screenshots directory', () => {
     // tests/setup/isolate-home.ts points HOME / USERPROFILE at a temporary
     // directory and clears FOX_SCREENSHOTS_DIR, so the daemon's
-    // defaultScreenshotsDir() is ~/.kitsune-mcp/screenshots inside it.
+    // defaultScreenshotsDir() is ~/.inari-mcp/screenshots inside it.
     const home = os.homedir();
     expect(home.startsWith(os.tmpdir())).toBe(true);
-    const dir = path.join(home, '.kitsune-mcp', 'screenshots');
+    const dir = path.join(home, '.inari-mcp', 'screenshots');
     const shots = fs.readdirSync(dir).filter((f) => f.endsWith('.png'));
     expect(shots.length).toBeGreaterThan(0);
     expect(fs.statSync(path.join(dir, shots[0] as string)).size).toBeGreaterThan(0);
   });
 
   it('writes the audit log in the temporary home', () => {
-    const logPath = path.join(os.homedir(), '.kitsune-mcp', 'logs', 'audit.jsonl');
+    const logPath = path.join(os.homedir(), '.inari-mcp', 'logs', 'audit.jsonl');
     const lines = fs.readFileSync(logPath, 'utf-8').split('\n').filter((l) => l.trim() !== '');
     expect(lines.length).toBeGreaterThan(0);
     const entries = lines.map((l) => JSON.parse(l) as { tool: string; decision: string; url: string | null });
@@ -285,7 +285,7 @@ describe('relay → daemon → headless Firefox', () => {
     const nav = await client.callTool({ name: 'fox_navigate', arguments: { url: pageUrl } }, undefined, { timeout: 120_000 });
     expect(nav.isError, text(nav)).not.toBe(true);
 
-    const token = fs.readFileSync(path.join(os.homedir(), '.kitsune-mcp', 'api_token'), 'utf-8').trim();
+    const token = fs.readFileSync(path.join(os.homedir(), '.inari-mcp', 'api_token'), 'utf-8').trim();
     const info = await fetch(`http://127.0.0.1:${httpPort}/daemon/info`, { headers: { 'X-API-Key': token } })
       .then((r) => r.json() as Promise<{ pid?: number; headless?: boolean }>);
     daemonPid = info.pid;

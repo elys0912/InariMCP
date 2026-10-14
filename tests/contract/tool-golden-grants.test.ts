@@ -23,7 +23,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { BrowserCommand } from '@kitsune-mcp/shared';
+import type { BrowserCommand } from '@inari-mcp/shared';
 import { createToolHandler } from '../../packages/mcp-server/src/tools/handlers.js';
 import { callSchemaFor } from '../../packages/mcp-server/src/tools/operations.js';
 import { getConnectionManager } from '../../packages/mcp-server/src/connection/manager.js';
@@ -98,7 +98,7 @@ function answer(command: BrowserCommand): Record<string, unknown> {
 let tmpDir: string;
 
 beforeAll(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-golden-grants-'));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-golden-grants-'));
   const configPath = path.join(tmpDir, 'safety.json');
   fs.writeFileSync(configPath, JSON.stringify({
     audit_log: false,

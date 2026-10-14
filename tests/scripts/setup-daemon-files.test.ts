@@ -10,8 +10,8 @@ import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import * as serverAuth from '@kitsune-mcp/shared/node';
-import { MAX_PORT as SHARED_MAX_PORT } from '@kitsune-mcp/shared';
+import * as serverAuth from '@inari-mcp/shared/node';
+import { MAX_PORT as SHARED_MAX_PORT } from '@inari-mcp/shared';
 import {
   AUTH_HEADER, httpEndpoint, isLoopbackHost, MAX_PORT, computeMac, signPost,
 } from '../../scripts/lib/core.mjs';
@@ -61,7 +61,7 @@ describe('probeDaemon', () => {
       if (req.url === '/health') {
         const nonce = String(req.headers[AUTH_HEADER.nonce] ?? '');
         const body: Record<string, unknown> = {
-          status: 'ok', service: 'kitsune-mcp', version: '9.9.9', browsers_connected: 1,
+          status: 'ok', service: 'inari-mcp', version: '9.9.9', browsers_connected: 1,
         };
         if (tweak.proof !== null) body.proof = tweak.proof ?? computeMac(token, 'health', nonce);
         res.writeHead(200, { 'content-type': 'application/json' });
@@ -95,7 +95,7 @@ describe('probeDaemon', () => {
     expect(await probeDaemon(deps, closed, token)).toEqual({ kind: 'none' });
   });
 
-  it('kind "foreign" for a server that is not a KitsuneMCP daemon', async () => {
+  it('kind "foreign" for a server that is not a InariMCP daemon', async () => {
     await serve((_req, res) => res.end('<html>hello</html>'));
     expect(await probeDaemon(deps, endpoint, token)).toEqual({ kind: 'foreign' });
   });
@@ -110,16 +110,16 @@ describe('probeDaemon', () => {
 
     await serve((_req, res) => {
       res.writeHead(503, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', service: 'kitsune-mcp' }));
+      res.end(JSON.stringify({ status: 'ok', service: 'inari-mcp' }));
     });
     expect(await probeDaemon(deps, endpoint, token)).toEqual({ kind: 'foreign' });
   });
 
-  it('kind "foreign" for a 200 KitsuneMCP answer whose status is not "ok", like kitsuneHealth (R3 N-11)', async () => {
+  it('kind "foreign" for a 200 InariMCP answer whose status is not "ok", like inariHealth (R3 N-11)', async () => {
     for (const status of ['starting', '', undefined]) {
       const server = await serve((_req, res) => {
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ status, service: 'kitsune-mcp', version: '1.2.3' }));
+        res.end(JSON.stringify({ status, service: 'inari-mcp', version: '1.2.3' }));
       });
       expect(await probeDaemon(deps, endpoint, token), String(status)).toEqual({ kind: 'foreign' });
       await close(server);
@@ -131,10 +131,10 @@ describe('probeDaemon', () => {
     await serve((req, res) => {
       urls.push(String(req.url));
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ status: 'ok', service: 'kitsune-mcp', version: '1.2.3', browsers_connected: 0 }));
+      res.end(JSON.stringify({ status: 'ok', service: 'inari-mcp', version: '1.2.3', browsers_connected: 0 }));
     });
     expect(await probeDaemon(deps, endpoint, undefined)).toEqual({
-      kind: 'kitsune', verified: false, pid: undefined, version: '1.2.3', browsers: 0,
+      kind: 'inari', verified: false, pid: undefined, version: '1.2.3', browsers: 0,
     });
     expect(urls).toEqual(['/health']);
   });
@@ -144,21 +144,21 @@ describe('probeDaemon', () => {
     const server = await serveDaemon({ proof: 'd'.repeat(64) });
     server.on('request', (req) => urls.push(String(req.url)));
     const info = await probeDaemon(deps, endpoint, token);
-    expect(info).toMatchObject({ kind: 'kitsune', verified: false, pid: undefined });
+    expect(info).toMatchObject({ kind: 'inari', verified: false, pid: undefined });
     expect(urls).toEqual(['/health']); // the token is never sent to an unverified daemon
   });
 
   it('verified with a pid when both answers are signed correctly', async () => {
     await serveDaemon();
     expect(await probeDaemon(deps, endpoint, token)).toEqual({
-      kind: 'kitsune', verified: true, pid: 4242, version: '9.9.9', browsers: 1,
+      kind: 'inari', verified: true, pid: 4242, version: '9.9.9', browsers: 1,
     });
   });
 
   it('verified but without a pid when the /daemon/info signature is wrong or missing', async () => {
     for (const signature of ['e'.repeat(64), 'not-hex', null]) {
       const server = await serveDaemon({ signature });
-      expect(await probeDaemon(deps, endpoint, token)).toMatchObject({ kind: 'kitsune', verified: true, pid: undefined });
+      expect(await probeDaemon(deps, endpoint, token)).toMatchObject({ kind: 'inari', verified: true, pid: undefined });
       await close(server);
     }
   });
@@ -297,15 +297,15 @@ describe('writeFileAtomic', () => {
   }
 
   it('replaces the file and leaves no temporary file behind', () => {
-    const target = path.join(tmp(), 'kitsune_mcp.json');
+    const target = path.join(tmp(), 'inari_mcp.json');
     fs.writeFileSync(target, 'old');
     writeFileAtomic(target, 'new');
     expect(fs.readFileSync(target, 'utf8')).toBe('new');
-    expect(fs.readdirSync(tmp())).toEqual(['kitsune_mcp.json']);
+    expect(fs.readdirSync(tmp())).toEqual(['inari_mcp.json']);
   });
 
   it('creates a file that is not there yet', () => {
-    const target = path.join(tmp(), 'kitsune_mcp.json');
+    const target = path.join(tmp(), 'inari_mcp.json');
     writeFileAtomic(target, 'fresh');
     expect(fs.readFileSync(target, 'utf8')).toBe('fresh');
   });
@@ -341,7 +341,7 @@ describe('writeFileAtomic', () => {
   });
 
   it('removes the temporary file and keeps the old content when the write fails', () => {
-    const target = path.join(tmp(), 'kitsune_mcp.json');
+    const target = path.join(tmp(), 'inari_mcp.json');
     fs.writeFileSync(target, 'old');
     const fsApi = {
       openSync: fs.openSync,
@@ -358,7 +358,7 @@ describe('writeFileAtomic', () => {
     };
     expect(() => writeFileAtomic(target, 'new', {}, asFsApi(fsApi))).toThrow(/ENOSPC/);
     expect(fs.readFileSync(target, 'utf8')).toBe('old');
-    expect(fs.readdirSync(tmp())).toEqual(['kitsune_mcp.json']);
+    expect(fs.readdirSync(tmp())).toEqual(['inari_mcp.json']);
   });
 
   it.skipIf(isWin)('applies the POSIX mode (the wrapper is 0700, the manifest 0644)', () => {
@@ -366,7 +366,7 @@ describe('writeFileAtomic', () => {
     writeFileAtomic(wrapper, '#!/bin/sh\n', { mode: 0o700 });
     expect(fs.statSync(wrapper).mode & 0o777).toBe(0o700);
 
-    const manifest = path.join(tmp(), 'kitsune_mcp.json');
+    const manifest = path.join(tmp(), 'inari_mcp.json');
     writeFileAtomic(manifest, '{}', { mode: 0o644 });
     expect(fs.statSync(manifest).mode & 0o777).toBe(0o644);
 
@@ -378,7 +378,7 @@ describe('writeFileAtomic', () => {
 
 /** Can this machine / account create a symlink or a junction? (Windows needs a privilege.) */
 const canLink = (() => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-link-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-link-'));
   try {
     fs.mkdirSync(path.join(dir, 'real'));
     fs.symlinkSync(path.join(dir, 'real'), path.join(dir, 'link'), 'junction');
@@ -397,7 +397,7 @@ describe('removeTreeSafe', () => {
     const root = path.join(tmp(), 'native-host');
     fs.mkdirSync(path.join(root, 'sub'), { recursive: true });
     fs.writeFileSync(path.join(root, 'run-host.cmd'), '');
-    fs.writeFileSync(path.join(root, 'sub', 'kitsune_mcp.json'), '{}');
+    fs.writeFileSync(path.join(root, 'sub', 'inari_mcp.json'), '{}');
     expect(removeTreeSafe(root)).toEqual({ status: 'removed' });
     expect(fs.existsSync(root)).toBe(false);
   });
@@ -452,7 +452,7 @@ describe('removeTreeSafe', () => {
 // ---------------------------------------------------------------------------
 
 describe('daemon authentication copy', () => {
-  it('computes the same MACs as @kitsune-mcp/shared/node (auth.ts)', () => {
+  it('computes the same MACs as @inari-mcp/shared/node (auth.ts)', () => {
     const token = 'a'.repeat(64);
     expect(computeMac(token, 'health', 'b'.repeat(32))).toBe(serverAuth.computeMac(token, 'health', 'b'.repeat(32)));
   });
@@ -468,7 +468,7 @@ describe('daemon authentication copy', () => {
     ));
   });
 
-  it('isLoopbackHost and MAX_PORT agree with @kitsune-mcp/shared (R2-A V-6, S12)', () => {
+  it('isLoopbackHost and MAX_PORT agree with @inari-mcp/shared (R2-A V-6, S12)', () => {
     const hosts = [
       'localhost', 'LOCALHOST', ' localhost ', '127.0.0.1', '127.1.2.3', '[::1]', '::1', '::ffff:127.0.0.1',
       '[::FFFF:127.0.0.1]', ' 127.0.0.1	', '0.0.0.0', '', '::', '128.0.0.1', '127.0.0', '10.0.0.1',
@@ -483,7 +483,7 @@ describe('daemon authentication copy', () => {
     expect(httpEndpoint({ FOX_HTTP_PORT: String(MAX_PORT + 1) }).port).toBe(8765);
   });
 
-  it('httpEndpoint treats an empty or blank variable as unset like @kitsune-mcp/shared (R2-A R-2, R3 N-1)', () => {
+  it('httpEndpoint treats an empty or blank variable as unset like @inari-mcp/shared (R2-A R-2, R3 N-1)', () => {
     const legacyPort = 9001;
     const legacyHost = '127.0.0.2';
     const legacyPortEnv = { FOX_HTTP_PORT: '', CLAUDE_BROWSER_HTTP_PORT: String(legacyPort) };

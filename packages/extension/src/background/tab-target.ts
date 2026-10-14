@@ -67,7 +67,7 @@ export function contentScriptFailure(error: unknown): CommandResult {
 const NO_CONTENT_SCRIPT = /Receiving end does not exist/i;
 
 const NO_CONTENT_SCRIPT_MESSAGE =
-  "KitsuneMCP cannot reach this page: Firefox does not let extensions into it " +
+  "InariMCP cannot reach this page: Firefox does not let extensions into it " +
   "(JSON viewer, about: pages, addons.mozilla.org, other extensions' pages), " +
-  "or it was opened before KitsuneMCP was installed or updated (reload the tab). " +
+  "or it was opened before InariMCP was installed or updated (reload the tab). " +
   "Tab-level tools such as fox_screenshot and fox_tabs still work.";

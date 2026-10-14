@@ -22,10 +22,10 @@ packages/extension/.amo-upload-uuid
 coverage/
 
 # local native-messaging manifests with real paths;
-# the tracked template is packages/native-host/kitsune_mcp.json
-packages/native-host/kitsune_mcp.*.json
-packages/native-host/kitsune-mcp.*.json
-# host wrappers belong in ~/.kitsune-mcp/native-host (scripts/install.mjs)
+# the tracked template is packages/native-host/inari_mcp.json
+packages/native-host/inari_mcp.*.json
+packages/native-host/inari-mcp.*.json
+# host wrappers belong in ~/.inari-mcp/native-host (scripts/install.mjs)
 packages/native-host/run-host*
 
 # local environment / secrets

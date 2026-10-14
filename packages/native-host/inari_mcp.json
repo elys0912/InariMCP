@@ -1,0 +1,7 @@
+{
+  "name": "inari_mcp",
+  "description": "InariMCP Native Messaging Host (reference template for a manual setup: scripts/install.mjs generates the real manifest outside the repository)",
+  "path": "<absolute path of ~/.inari-mcp/native-host/run-host.cmd (Windows) or run-host.sh>",
+  "type": "stdio",
+  "allowed_extensions": ["inari-mcp@elys0912.github.io"]
+}

@@ -1,4 +1,4 @@
-// KitsuneMCP UI strings
+// InariMCP UI strings
 //
 // Looks up _locales/<lang>/messages.json in Firefox's UI language (English
 // by default). Only text people read in the browser is localized; errors

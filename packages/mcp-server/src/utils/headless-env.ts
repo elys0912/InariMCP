@@ -1,4 +1,4 @@
-import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { ENV, ENV_DEFAULTS, LEGACY_ENV } from '@inari-mcp/shared';
 
 const TRUTHY_VALUES: readonly string[] = ['1', 'true', 'yes'];
 const FALSY_VALUES: readonly string[] = ['0', 'false', 'no', 'off'];

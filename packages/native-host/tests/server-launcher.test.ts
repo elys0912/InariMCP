@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS } from '@inari-mcp/shared';
 import { ServerLauncher, daemonEnvNote } from '../src/server-launcher.js';
 import {
   AUTH_HEADER,
@@ -12,7 +12,7 @@ import {
   MAC_LABEL,
   computeMac,
   responseMac,
-} from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
 
 function listen(): Promise<net.Server> {
   return new Promise((resolve) => {
@@ -93,7 +93,7 @@ function daemonLike(serverToken: string): http.RequestListener {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
-        service: 'kitsune-mcp',
+        service: 'inari-mcp',
         protocol: DAEMON_PROTOCOL_VERSION,
         ...(typeof nonce === 'string' ? { proof: computeMac(serverToken, MAC_LABEL.health, nonce) } : {}),
       }));
@@ -194,7 +194,7 @@ describe('ServerLauncher start counter (H-B1)', () => {
   it('gives up at once when the server entry point is missing', async () => {
     const launcher = new ServerLauncher({
       host: '127.0.0.1', httpPort: 1, wsPort: 1, readToken: () => TOKEN,
-      serverEntry: path.join(os.tmpdir(), 'kitsune-no-such-entry', 'index.js'),
+      serverEntry: path.join(os.tmpdir(), 'inari-no-such-entry', 'index.js'),
     });
     expect(await launcher.start()).toBe(false);
     expect(launcher.getRestartAttempts()).toBe(ENV_DEFAULTS.MAX_RESTART_ATTEMPTS);

@@ -23,7 +23,7 @@ function touch(name: string, ageDays: number): string {
 }
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-ret-'));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-ret-'));
   vi.stubEnv('FOX_SCREENSHOTS_DIR', dir);
 });
 afterEach(() => {
@@ -86,7 +86,7 @@ describe('screenshotsDirNeedsAclCheck', () => {
   });
 
   it('flags a directory outside the home directory on Windows, not one inside', () => {
-    vi.stubEnv('FOX_SCREENSHOTS_DIR', path.join(os.homedir(), '.kitsune-mcp', 'screenshots'));
+    vi.stubEnv('FOX_SCREENSHOTS_DIR', path.join(os.homedir(), '.inari-mcp', 'screenshots'));
     expect(screenshotsDirNeedsAclCheck('win32')).toBe(false);
     vi.stubEnv('FOX_SCREENSHOTS_DIR', path.parse(os.homedir()).root + 'shared-shots');
     expect(screenshotsDirNeedsAclCheck('win32')).toBe(true);

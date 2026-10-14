@@ -2,7 +2,7 @@
 
 [English](./known-issues.md) | **日本語**
 
-KitsuneMCPの現行版（v0.1.x）で分かっている制約と注意点。
+InariMCPの現行版（v0.1.x）で分かっている制約と注意点。
 
 ## 安全ガード
 
@@ -11,13 +11,13 @@ KitsuneMCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **`safety.json`が壊れているとすべてのツールが拒否される**: ファイルが読めない、JSONとして正しくない、知らないキーがある（`readonly`のような綴りの誤り）、値の型が違う、使えないURLパターンがある場合、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。編集したら`fox_safety_status`で結果を確認すること
 - **URLパターンはパスと比べ、クエリやフラグメントとは比べない**: パスに`?`や`#`（`%3F`、`%23`も）を含むホストパターンは、決して一致しないので設定エラーになる。クエリ文字列で一致させたいときは、`re:`（URL全体に対する正規表現）で書くこと
 - **拡張機能とMCP Serverの版が違うと、コマンドが`config_error`で拒否されることがある**: MCP Serverがコマンドに付けたコンテナスコープやURLルールを拡張機能が使えないとき、拡張機能はその検査を飛ばして実行せず、コマンドを拒否する。拡張機能とMCP Serverは一緒に更新すること（READMEの「更新」を参照）
-- **共有daemonは、起動したプロセスの環境変数を使う**: `FOX_READ_ONLY`などの環境変数は、実際にdaemonを起動したプロセスのものだけが読まれる。Firefox（Native Host）が起動したdaemonはFirefoxの環境変数を引き継ぎ、`claude mcp add --env`の値は使われない。確実に効かせたい設定は`~/.kitsune-mcp/safety.json`に書くこと（READMEを参照）。セッションとdaemonで設定が食い違うと、セッション開始時と`fox_safety_status`の結果に警告が出る
+- **共有daemonは、起動したプロセスの環境変数を使う**: `FOX_READ_ONLY`などの環境変数は、実際にdaemonを起動したプロセスのものだけが読まれる。Firefox（Native Host）が起動したdaemonはFirefoxの環境変数を引き継ぎ、`claude mcp add --env`の値は使われない。確実に効かせたい設定は`~/.inari-mcp/safety.json`に書くこと（READMEを参照）。セッションとdaemonで設定が食い違うと、セッション開始時と`fox_safety_status`の結果に警告が出る
 - **スクリプトの実行は、URLのリスト・保護対象サイトの承認・パスワードのマスクの対象外**: スクリプト系ツール（`fox_evaluate`、`fox_observer`）は既定で有効（`allow_script_execution: true`）で、ガードはスクリプトを実行するタブのURLだけを確認し、スクリプト自身が何をするかは確認しない。拡張機能経路ではスクリプトはコンテンツスクリプトの中で動くので、パスワード欄の値（`fox_read` / `fox_find`では`[MASKED]`になるもの）を読めるし、拡張機能のホスト権限（`<all_urls>`）で`fetch` / XHRの要求を、保護対象サイトにも`allowed_url_patterns`の外のサイトにも承認なしで送れる。エージェントにそれを許したくないときは、`safety.json`の`allow_script_execution`を`false`にする（または`FOX_ALLOW_SCRIPTS=0`）
 - **`blocked_url_patterns` / `allowed_url_patterns`はhttp(s)のタブにだけ効く**: ユーザーが開いた`file://`のページやブラウザ内部のページ（`about:`、`moz-extension://`）はサイトではないので、リストの対象にならない。許可リストのモードでも、そのようなタブは読み取り・操作の対象になる。`fox_navigate`ではそこへ行けない（http(s)と`about:blank`以外は`blocked_scheme`で拒否する）
 
 ## 人による承認
 
-- **ローカルのプロセスはMCP elicitationで自分の要求を承認できる**: 保護対象サイトでの操作の承認は、使えればClaude Codeの確認ダイアログ（MCP elicitation）で、そうでなければFirefoxのツールバーのポップアップで尋ねる。elicitationの回答はローカルのHTTPでdaemonに届くので、`~/.kitsune-mcp/api_token`を読めるプロセスは自分の要求を自分で承認できる（受け入れているリスク）。ポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する
+- **ローカルのプロセスはMCP elicitationで自分の要求を承認できる**: 保護対象サイトでの操作の承認は、使えればClaude Codeの確認ダイアログ（MCP elicitation）で、そうでなければFirefoxのツールバーのポップアップで尋ねる。elicitationの回答はローカルのHTTPでdaemonに届くので、`~/.inari-mcp/api_token`を読めるプロセスは自分の要求を自分で承認できる（受け入れているリスク）。ポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する
 - **承認はホスト名に結び付き、パスやポートには結び付かない**（仕様）: 承認した呼び出しは、承認したホスト名のどのパス・ポート・スキームでも動く。ツールと引数の完全一致と1回限りであることは変わらない
 - **UIだけを変えるツールは保護対象サイトの確認を通らない**（仕様）: `fox_interact`と、`action: "switch"`の`fox_tab`（分類`interact`）はページのデータを変えないので、観察系のツールと同じく、保護対象サイトでも承認なしで動く（読み取り専用モードでも使える）
 - **ヘッドレスモードでは承認できない場合がある**: ヘッドレスには尋ねるためのポップアップがない。クライアントがelicitationに対応していないか、`FOX_APPROVAL_ELICITATION=0`が設定されていると、保護対象サイトでの操作は承認できずに拒否される。ヘッドレスモードの`fox_request_approval`は常に失敗する
@@ -33,7 +33,7 @@ KitsuneMCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **`fox_screenshot`の引数には思いどおりに動かないものがある**: 画像はクライアントに保存したファイル（パスと`resource_link`）としてだけ届き、base64では返らない。そのため`saveToFile: false`では何も撮らずタブの情報だけを返し、`includeData`は効かない。既存の`filename`で保存するとファイルを上書きする（結果に`imageOverwritten`と警告が付く）。背景タブは切り替えずに撮るが、破棄済み（discarded）のタブは撮れず、そのタブに切り替える（`action: "switch"`の`fox_tab`）までエラーになる。`scope: "scroll_capture"`は画像を撮らず、スクロール位置ごとの要素の情報を返す
 - **`kind: "input"`の`fox_set_value`は何も変わらなくても成功を返す**: 入力欄・textarea・select・contenteditableのどれでもない要素や、その値のoptionがないselectに対しても成功になる
 - **ネイティブのダイアログ（alert / confirm / prompt）が開いている間、そのタブへのコマンドはタイムアウトする**: 拡張機能経路ではダイアログを見ることも操作することもできない
-- **コンテンツスクリプトが入れないページでは、読み取り・操作のツールが使えない**: FirefoxのJSONビューアー、`about:`のページ、addons.mozilla.org、ほかの拡張機能のページなど。KitsuneMCPをインストール・更新する前に開いたタブにもコンテンツスクリプトがないので、再読み込みする。`fox_screenshot`や`fox_tabs`のように、tabs APIだけを使うツールは動く
+- **コンテンツスクリプトが入れないページでは、読み取り・操作のツールが使えない**: FirefoxのJSONビューアー、`about:`のページ、addons.mozilla.org、ほかの拡張機能のページなど。InariMCPをインストール・更新する前に開いたタブにもコンテンツスクリプトがないので、再読み込みする。`fox_screenshot`や`fox_tabs`のように、tabs APIだけを使うツールは動く
 - **`mode: "script"`の`fox_evaluate`はコンテンツスクリプトの隔離された環境で動く**:
   - ページのDOMは見えるが、ページ自身のスクリプトが定義した変数や関数（`window.myApp`など）は見えない
   - スクリプト内の`console.log`はログに残らない。結果は戻り値（JSONにできる値）で返すこと
@@ -74,16 +74,16 @@ KitsuneMCPの現行版（v0.1.x）で分かっている制約と注意点。
 
 ## インストールと運用
 
-- **Node.jsを変えたらインストーラを実行し直す**: Native Hostのラッパー（`~/.kitsune-mcp/native-host/run-host.cmd` / `run-host.sh`）には、インストーラを実行したnodeの絶対パスが埋め込まれている。そのパスが無くなると`PATH`上の`node`で起動しようとするが、Firefoxを起動した環境の`PATH`にnodeがなければ失敗する。Node.jsを更新・切り替えたら`npm run setup`を実行し直す（または`--node`で変わらないパスを指定する）
+- **Node.jsを変えたらインストーラを実行し直す**: Native Hostのラッパー（`~/.inari-mcp/native-host/run-host.cmd` / `run-host.sh`）には、インストーラを実行したnodeの絶対パスが埋め込まれている。そのパスが無くなると`PATH`上の`node`で起動しようとするが、Firefoxを起動した環境の`PATH`にnodeがなければ失敗する。Node.jsを更新・切り替えたら`npm run setup`を実行し直す（または`--node`で変わらないパスを指定する）
 - **更新したら古いdaemonを止める**: daemon、Native Host、中継は互いの署名を確かめ、プロトコルの版を確認する。更新後も古い版のdaemonが動いていると、中継やNative Hostは「another version」/「speaks protocol」と報告し、そのdaemonを使えない。そのdaemonのプロセスを止める（Native Hostが起動したものならFirefoxも再起動する）。次のツール呼び出しで新しいdaemonが起動する。`node packages/mcp-server/dist/index.js --stop-daemon`で止められるのはそれに対応したdaemonだけで、対応していない古いものはPIDで終了する（ポートは`--doctor`が表示する）
 - **UbuntuのSnap版FirefoxではNative Messagingが動かないことがある**: `apt install firefox`で入るのはSnap版で、xdg-desktop-portalを通してhostを起動する。インストーラはそのためのマニフェストも書くが、ポータルがhostを起動できるかはシステムによる。動かなければMozillaのAPTリポジトリからdeb版を入れる
 - **Flatpak版FirefoxのNative Messagingにはポータルが必要**: サンドボックスの中からホストのnodeは実行できない。インストーラはFlatpakの置き場にもマニフェストを書くが、Firefoxがhostに届くのは`about:config`で`widget.use-xdg-desktop-portal.native-messaging`を`1`にし、WebExtensionsに対応したxdg-desktop-portalがあるときだけ。そうでなければポップアップに「Setup needed」と出て、インストーラを実行し直しても直らない。この経路は未検証で、Flatpak以外のFirefoxが確実
 - **macOSは未検証**: インストーラとアンインストーラのmacOS用の経路（`~/Library/Application Support/...`）は、実機のMacで一度も動かしていない
 - **WindowsでPowerShellが使えないと、Firefoxと一緒にdaemonが止まることがある**: Native Hostは、daemonをFirefoxのジョブオブジェクトの外で起動するためにPowerShellを使い、だめならWMI（`cscript`）、タスク スケジューラ（`schtasks`）を試す。すべて失敗するとdaemonをジョブの中で起動して`native-host.log`に警告を出し、そのときはFirefoxを閉じるとdaemonと、それを使うClaude Codeのセッションが止まる。インストーラとアンインストーラ自体にはPowerShellは要らない
-- **WSLのClaude CodeからWindowsのFirefoxは使えない**: それぞれが自分の`~/.kitsune-mcp/`（とAPIトークン）でdaemonを起動するので、WSLのセッションはWindowsのFirefoxに届かない。Claude CodeとFirefoxは同じ側で動かす
+- **WSLのClaude CodeからWindowsのFirefoxは使えない**: それぞれが自分の`~/.inari-mcp/`（とAPIトークン）でdaemonを起動するので、WSLのセッションはWindowsのFirefoxに届かない。Claude CodeとFirefoxは同じ側で動かす
 - **Firefoxのプロファイルを複数同時に開くと、先に接続した1つだけが使われる**: どれが使われているかはどこにも表示されない
-- **アンインストールの後にdaemonが戻ってくることがある**: アンインストーラは最初にFirefoxへの登録を外し、daemonより先にこのリポジトリのNative Hostを止めるが、KitsuneMCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す（APIトークンも作り直す）。それらのセッションを再起動すること（アンインストーラが一覧を出す）。プロセスの一覧を取れない場合（`ps` / WMIがない）は、拡張機能を外すかFirefoxも終了する
-- **空のAPIトークンファイルがあるとdaemonが起動しない**: `~/.kitsune-mcp/api_token`があって中身が空のとき（書き込み中に異常終了した場合など）、ほかのプロセスが書き込み中かもしれないので上書きせず、削除を求めるメッセージを出してdaemonが終了する。ファイルを削除してからやり直す（次のツール呼び出しで新しいトークンを作る）。読めないトークンファイルもエラーになる
-- **Windowsではファイルのモード（0o600 / 0o700）が効かない**: `~/.kitsune-mcp/`のAPIトークン、ログ、スクリーンショットは、ユーザープロファイルのフォルダのアクセス権で守られる。プロファイルの外の`FOX_SCREENSHOTS_DIR`を指定すると、Native Hostが警告をログに出す
-- **ログファイルは5 MBで切り替わる**: `~/.kitsune-mcp/logs/`のログは5 MBを超えると`<名前>.old`に退避される（1世代だけ残る）。`daemon.log`は動いているdaemonが開いたままなので、複製してから中身を空にする（copy-truncate。その間に書かれた行は失われる）。`native-host.log`と監査ログは書き込みのたびに確認する。`daemon.log`はdaemonの起動時と、Native Hostが動いている間は1時間ごとに確認する。FirefoxなしでClaude Codeだけから使っていると、daemonが再起動するまで5 MBを超えて大きくなる
-- **開発にはNode.js 22.12以上（または24）が必要**: `npm test` / `npm run test:e2e`（Vitest）の要件。KitsuneMCP自体はNode.js 18以上で動く
+- **アンインストールの後にdaemonが戻ってくることがある**: アンインストーラは最初にFirefoxへの登録を外し、daemonより先にこのリポジトリのNative Hostを止めるが、InariMCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す（APIトークンも作り直す）。それらのセッションを再起動すること（アンインストーラが一覧を出す）。プロセスの一覧を取れない場合（`ps` / WMIがない）は、拡張機能を外すかFirefoxも終了する
+- **空のAPIトークンファイルがあるとdaemonが起動しない**: `~/.inari-mcp/api_token`があって中身が空のとき（書き込み中に異常終了した場合など）、ほかのプロセスが書き込み中かもしれないので上書きせず、削除を求めるメッセージを出してdaemonが終了する。ファイルを削除してからやり直す（次のツール呼び出しで新しいトークンを作る）。読めないトークンファイルもエラーになる
+- **Windowsではファイルのモード（0o600 / 0o700）が効かない**: `~/.inari-mcp/`のAPIトークン、ログ、スクリーンショットは、ユーザープロファイルのフォルダのアクセス権で守られる。プロファイルの外の`FOX_SCREENSHOTS_DIR`を指定すると、Native Hostが警告をログに出す
+- **ログファイルは5 MBで切り替わる**: `~/.inari-mcp/logs/`のログは5 MBを超えると`<名前>.old`に退避される（1世代だけ残る）。`daemon.log`は動いているdaemonが開いたままなので、複製してから中身を空にする（copy-truncate。その間に書かれた行は失われる）。`native-host.log`と監査ログは書き込みのたびに確認する。`daemon.log`はdaemonの起動時と、Native Hostが動いている間は1時間ごとに確認する。FirefoxなしでClaude Codeだけから使っていると、daemonが再起動するまで5 MBを超えて大きくなる
+- **開発にはNode.js 22.12以上（または24）が必要**: `npm test` / `npm run test:e2e`（Vitest）の要件。InariMCP自体はNode.js 18以上で動く

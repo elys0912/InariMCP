@@ -28,7 +28,7 @@ interface PendingApproval {
 
 /** Pending requests by ApprovalView.id, in arrival order. */
 const pendingApprovals = new Map<string, PendingApproval>();
-export const APPROVAL_NOTIFICATION_PREFIX = "kitsune-approval-";
+export const APPROVAL_NOTIFICATION_PREFIX = "inari-approval-";
 
 export function requestApproval(
   requestId: number | string | undefined,

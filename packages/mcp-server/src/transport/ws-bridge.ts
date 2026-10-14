@@ -48,9 +48,9 @@
 
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
-import { ENV_DEFAULTS, isRecord, parseBrowserResponse, shortId } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord, parseBrowserResponse, shortId } from '@inari-mcp/shared';
 import type { BrowserConnectionManager } from '../connection/manager.js';
-import { AUTH_PROTOCOL, computeMac, isNonce, MAC_LABEL, macMatches, newNonce, stderrLogger } from '@kitsune-mcp/shared/node';
+import { AUTH_PROTOCOL, computeMac, isNonce, MAC_LABEL, macMatches, newNonce, stderrLogger } from '@inari-mcp/shared/node';
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -20,7 +20,7 @@ const CLEANUP_RETRY_DELAY_MS = 100;
  * afterEach can delete it at once.
  */
 let dir: string;
-beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-tramp-')); });
+beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-tramp-')); });
 afterEach(() => { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
 
 /**
@@ -32,7 +32,7 @@ afterEach(() => { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10,
  */
 let daemonRoot: string;
 const daemonPids: number[] = [];
-beforeAll(() => { daemonRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-tramp-daemon-')); });
+beforeAll(() => { daemonRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-tramp-daemon-')); });
 afterAll(async () => {
   for (const pid of daemonPids) await waitForExit(pid, DAEMON_EXIT_WAIT_MS);
   try {

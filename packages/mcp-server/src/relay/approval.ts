@@ -26,7 +26,7 @@ import type {
   ElicitRequestFormParams,
   ElicitResult,
 } from '@modelcontextprotocol/sdk/types.js';
-import { isRecord } from '@kitsune-mcp/shared';
+import { isRecord } from '@inari-mcp/shared';
 import { errorMessage } from '../utils/errors.js';
 import type { ApprovalReason } from '../tools/approval-flow.js';
 
@@ -131,7 +131,7 @@ export function canElicit(caps: ClientCapabilities | undefined): boolean {
 
 export function elicitationParams(info: ApprovalInfo): ElicitRequestFormParams {
   const lines = [
-    'KitsuneMCP: approve an action on a protected site?',
+    'InariMCP: approve an action on a protected site?',
     '',
     `Tool: ${info.toolName}`,
     `Site: ${info.host}` + (info.matchedPattern ? ` (safety.json pattern '${info.matchedPattern}')` : ''),
@@ -225,13 +225,13 @@ export async function obtainApproval(info: ApprovalInfo, deps: ApprovalDeps): Pr
 
 export function describeOutcome(outcome: ApprovalOutcome): string {
   const where = (via: 'elicitation' | 'browser'): string =>
-    via === 'elicitation' ? "in the MCP client's confirmation dialog" : 'in the KitsuneMCP popup in Firefox';
+    via === 'elicitation' ? "in the MCP client's confirmation dialog" : 'in the InariMCP popup in Firefox';
   switch (outcome.kind) {
     case 'approved':
       return `The human approved this call ${where(outcome.via)}.`;
     case 'not_approved':
       if (outcome.reason === 'timeout') {
-        return `KitsuneMCP asked the human ${where(outcome.via)}, but got no answer in time. ` +
+        return `InariMCP asked the human ${where(outcome.via)}, but got no answer in time. ` +
           'Tell the user what you want to do and call the tool again when they are ready.';
       }
       if (outcome.reason === 'cancelled') {
@@ -239,7 +239,7 @@ export function describeOutcome(outcome: ApprovalOutcome): string {
       }
       return `The human declined this call ${where(outcome.via)}. Do not retry it unless the user asks you to.`;
     case 'unavailable':
-      return `KitsuneMCP could not ask the human: ${outcome.detail}.`;
+      return `InariMCP could not ask the human: ${outcome.detail}.`;
     default: {
       const unhandled: never = outcome;
       return String(unhandled);

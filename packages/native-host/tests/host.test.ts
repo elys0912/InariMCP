@@ -141,7 +141,7 @@ describe('server command → Extension → response to the server', () => {
 
   beforeEach(() => {
     out = captureStdout();
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-host-shots-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-host-shots-'));
     vi.stubEnv('FOX_SCREENSHOTS_DIR', dir);
     toServer = [];
     server = {

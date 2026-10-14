@@ -33,8 +33,8 @@ import type {
   BrowserResponse,
   BrowserSafetyDecision,
   ToolResult,
-} from '@kitsune-mcp/shared';
-import { BROWSER_ACTIONS, BROWSER_SAFETY_DECISIONS, ErrorCode, isRecord } from '@kitsune-mcp/shared';
+} from '@inari-mcp/shared';
+import { BROWSER_ACTIONS, BROWSER_SAFETY_DECISIONS, ErrorCode, isRecord } from '@inari-mcp/shared';
 import { LAYER_OF, OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS, getSafetyGuard, targetUrlOf } from '../safety/guard.js';
 import type { CallLabel, SafetyDenial, SafetyGuard } from '../safety/guard.js';
 import {
@@ -482,9 +482,9 @@ function confirmationToCallResult(
       expiresAt: request.expiresAt,
     };
     notes.push(
-      'How approval works: KitsuneMCP asks the human itself, in the MCP client\'s ' +
+      'How approval works: InariMCP asks the human itself, in the MCP client\'s ' +
       'confirmation dialog (MCP elicitation) when the client supports it, otherwise in ' +
-      'Firefox, where the KitsuneMCP toolbar button shows a badge and the human approves ' +
+      'Firefox, where the InariMCP toolbar button shows a badge and the human approves ' +
       'or denies in its popup. An approval covers one call of this tool with exactly these ' +
       `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
       'Nothing in the page (buttons, fox_click, fox_evaluate) can approve it. ' +
@@ -543,7 +543,7 @@ function screenshotResourceLinks(paths: string[]): CallToolResult['content'] {
     uri: pathToFileURL(p).href,
     name: path.basename(p),
     mimeType: mimeTypeFor(p),
-    description: 'Screenshot saved by KitsuneMCP',
+    description: 'Screenshot saved by InariMCP',
   }));
 }
 
@@ -591,7 +591,7 @@ function withDeprecationNote(calledName: string, result: CallToolResult): CallTo
   const note = deprecationNote(calledName);
   if (note === null) return result;
   reportedDeprecations.add(calledName);
-  process.stderr.write(`[KitsuneMCP] ${note}\n`);
+  process.stderr.write(`[InariMCP] ${note}\n`);
   result.content.push({ type: 'text' as const, text: `Note: ${note}` });
   return result;
 }
@@ -773,7 +773,7 @@ function browserRefusalToResult(
 
   if (!isOneOf(BROWSER_SAFETY_DECISIONS, decision)) {
     process.stderr.write(
-      `[KitsuneMCP] The browser refused ${label.tool} with an unknown safetyDecision ` +
+      `[InariMCP] The browser refused ${label.tool} with an unknown safetyDecision ` +
       `${JSON.stringify(decision)}; treated as denied.\n`,
     );
     guard.recordAudit(toolName, args, 'denied', transport, label, refusedUrl ?? undefined);

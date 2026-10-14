@@ -22,7 +22,7 @@ describe('process handlers (4.A8)', () => {
       const h = harness(role);
       h.handlers.uncaughtException(new Error('boom'));
       expect(h.exits).toEqual([1]);
-      expect(h.lines[0]).toMatch(new RegExp(`\\[KitsuneMCP:${role}\\] FATAL uncaughtException: boom`));
+      expect(h.lines[0]).toMatch(new RegExp(`\\[InariMCP:${role}\\] FATAL uncaughtException: boom`));
     }
   });
 

@@ -1,9 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
-import { ENV, isRecord, LEGACY_ENV } from '@kitsune-mcp/shared';
+import { ENV, isRecord, LEGACY_ENV } from '@inari-mcp/shared';
 import { isFalsyEnv, isTruthyEnv, resolveFoxEnv } from '../utils/headless-env.js';
-import { auditLogPath, defaultSafetyConfigPath } from '@kitsune-mcp/shared/node';
+import { auditLogPath, defaultSafetyConfigPath } from '@inari-mcp/shared/node';
 
 // `.strict()` on both objects: an unknown key (a typo such as `readonly` for
 // `read_only`) is a config error, not silently dropped, since the setting
@@ -65,7 +65,7 @@ export const DEFAULT_CONFIG: SafetyConfig = {
   ],
   containerScope: {
     enabled: false,
-    containerName: 'KitsuneMCP Agent',
+    containerName: 'InariMCP Agent',
   },
 } as const;
 
@@ -167,7 +167,7 @@ export function parseSafetyConfigText(text: string): SafetyConfigResult {
   return parseSafetyConfig(raw);
 }
 
-/** FOX_SAFETY_CONFIG (or the legacy name) when set and not blank, else ~/.kitsune-mcp/safety.json. */
+/** FOX_SAFETY_CONFIG (or the legacy name) when set and not blank, else ~/.inari-mcp/safety.json. */
 export function safetyConfigPath(env: NodeJS.ProcessEnv = process.env): string {
   return resolveFoxEnv(env, ENV.FOX_SAFETY_CONFIG, LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG) ?? defaultSafetyConfigPath();
 }
@@ -200,7 +200,7 @@ export function loadConfig(): LoadedSafetyConfig {
     }
     if (!result.ok) {
       process.stderr.write(
-        `[KitsuneMCP] WARNING: cannot use ${configPath} (${result.error}). ` +
+        `[InariMCP] WARNING: cannot use ${configPath} (${result.error}). ` +
         'The safety guard refuses every tool until the file is fixed and the daemon restarted.\n',
       );
       return { ...DEFAULT_CONFIG, configError: `${configPath}: ${result.error}` };
@@ -212,10 +212,10 @@ export function loadConfig(): LoadedSafetyConfig {
     try {
       fs.mkdirSync(path.dirname(configPath), { recursive: true, mode: PRIVATE_DIR_MODE });
       fs.writeFileSync(configPath, JSON.stringify(toFileKeys(DEFAULT_CONFIG), null, 2) + '\n');
-      process.stderr.write(`[KitsuneMCP] Wrote default safety config to ${configPath}\n`);
+      process.stderr.write(`[InariMCP] Wrote default safety config to ${configPath}\n`);
     } catch (e) {
       process.stderr.write(
-        `[KitsuneMCP] Failed to write default ${configPath}, using defaults: ` +
+        `[InariMCP] Failed to write default ${configPath}, using defaults: ` +
         `${e instanceof Error ? e.message : String(e)}\n`,
       );
     }

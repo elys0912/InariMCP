@@ -11,8 +11,8 @@
 
 import type { BrowserContext, ConsoleMessage, ElementHandle, Page } from 'playwright';
 import { z } from 'zod';
-import { BrowserActionSchema, isRecord, type BrowserAction } from '@kitsune-mcp/shared';
-import { screenshotStem } from '@kitsune-mcp/shared/node';
+import { BrowserActionSchema, isRecord, type BrowserAction } from '@inari-mcp/shared';
+import { screenshotStem } from '@inari-mcp/shared/node';
 import { countOccurrences, filterAriaSnapshot, parseArgs } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
 import { focusedIsPassword } from './focus.js';

@@ -1,5 +1,5 @@
 // Minimal type declarations for Firefox WebExtension `browser.*` APIs
-// used by KitsuneMCP background script.
+// used by InariMCP background script.
 
 declare namespace browser {
   namespace runtime {

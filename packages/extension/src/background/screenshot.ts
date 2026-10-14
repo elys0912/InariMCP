@@ -11,7 +11,7 @@ import type { ScreenshotOptions, CommandResult, ScopeFilter, UrlLists } from "./
 import { NO_URL_LISTS, violatesUrlLists } from "./url-policy";
 
 const NO_IMAGE_NOTE =
-  "saveToFile is false: no image was captured. KitsuneMCP returns screenshots only " +
+  "saveToFile is false: no image was captured. InariMCP returns screenshots only " +
   "as saved files (resource_link), never inline.";
 
 export async function takeScreenshot(
@@ -115,7 +115,7 @@ async function captureFullPageImage(
       };
     }
   } catch (error) {
-    console.warn("[KitsuneMCP] Full-page capture failed, using visible area:", error);
+    console.warn("[InariMCP] Full-page capture failed, using visible area:", error);
   }
   return {
     success: true,

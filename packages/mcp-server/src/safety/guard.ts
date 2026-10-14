@@ -14,7 +14,7 @@ import {
   isOperationIn,
 } from '../tools/classification.js';
 import { SAFETY_STATUS_TOOL, navigateGoesToUrl } from '../tools/schemas.js';
-import { isRecord } from '@kitsune-mcp/shared';
+import { isRecord } from '@inari-mcp/shared';
 
 // Derived from the tool schemas; re-exported for the existing importers.
 export { OBSERVE_TOOLS, SCRIPT_TOOLS, TAB_INDEPENDENT_TOOLS };
@@ -213,7 +213,7 @@ export class SafetyGuard {
       return this._deny(
         'config_error',
         `${shown} refused: the safety config cannot be used (${this._configError}). ` +
-        'Every tool is refused until it is fixed and the KitsuneMCP daemon restarted. ' +
+        'Every tool is refused until it is fixed and the InariMCP daemon restarted. ' +
         'fox_safety_status shows the error.',
       );
     }
@@ -723,7 +723,7 @@ export class SafetyGuard {
           errors.push(line);
         } else {
           this._patternWarnings.push(line);
-          process.stderr.write(`[KitsuneMCP] safety.json ${line}\n`);
+          process.stderr.write(`[InariMCP] safety.json ${line}\n`);
         }
       }
       return patterns;
@@ -737,7 +737,7 @@ export class SafetyGuard {
     if (errors.length > 0 && this._configError === null) {
       this._configError = `invalid URL patterns: ${errors.join('; ')}`;
       process.stderr.write(
-        `[KitsuneMCP] WARNING: ${this._configError}. The safety guard refuses every tool.\n`,
+        `[InariMCP] WARNING: ${this._configError}. The safety guard refuses every tool.\n`,
       );
     }
   }

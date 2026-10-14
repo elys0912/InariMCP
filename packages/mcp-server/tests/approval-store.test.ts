@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS } from '@inari-mcp/shared';
 import { answerFromElicitation } from '../src/tools/approval-flow.js';
 import { DAEMON_SETTING_KEYS } from '../src/utils/endpoint.js';
 import {
@@ -199,10 +199,10 @@ describe('ApprovalStore: requests', () => {
 
 describe('FOX_APPROVAL_ELICITATION', () => {
   // answerFromElicitation audits through the guard singleton: keep it off
-  // the real ~/.kitsune-mcp (no audit log, temp safety.json).
+  // the real ~/.inari-mcp (no audit log, temp safety.json).
   let dir: string;
   beforeAll(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-elicit-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-elicit-'));
     const file = path.join(dir, 'safety.json');
     fs.writeFileSync(file, JSON.stringify({ audit_log: false }));
     process.env['FOX_SAFETY_CONFIG'] = file;

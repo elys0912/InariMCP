@@ -3,7 +3,7 @@
  * command channel (replaces the old HTTP /browser/poll loop).
  *
  * Handshake (mirrors packages/mcp-server/src/transport/ws-bridge.ts; MACs
- * from auth.ts, keyed with ~/.kitsune-mcp/api_token):
+ * from auth.ts, keyed with ~/.inari-mcp/api_token):
  *  1. Connect to ws://{FOX_HOST}:{FOX_WS_PORT}. No Origin header is sent
  *     (non-browser client); the bridge allows that, but only together with
  *     the challenge-response below.
@@ -31,10 +31,10 @@
  */
 
 import WebSocket from 'ws';
-import { ENV_DEFAULTS, MS_PER_SECOND, isRecord } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, MS_PER_SECOND, isRecord } from '@inari-mcp/shared';
 import type { ServerLauncher } from './server-launcher.js';
 import { log } from './logger.js';
-import { AUTH_PROTOCOL, MAC_LABEL, computeMac, isNonce, macMatches, newNonce } from '@kitsune-mcp/shared/node';
+import { AUTH_PROTOCOL, MAC_LABEL, computeMac, isNonce, macMatches, newNonce } from '@inari-mcp/shared/node';
 
 const AUTH_TIMEOUT_MS = 10_000;
 /** 2.5 × the ws-bridge heartbeat interval (30 s). */
@@ -148,7 +148,7 @@ export class ServerConnection {
 
     const token = this.launcher.getApiToken();
     if (token === undefined) {
-      log('API token not available yet (~/.kitsune-mcp/api_token) — will retry');
+      log('API token not available yet (~/.inari-mcp/api_token) — will retry');
       this.scheduleReconnect();
       return;
     }
@@ -173,7 +173,7 @@ export class ServerConnection {
         log(
           handshake.step === 'await-challenge'
             ? 'WS auth timed out: the server sent no auth_challenge — it is probably an older ' +
-              'KitsuneMCP daemon (stop it; a matching one is started automatically)'
+              'InariMCP daemon (stop it; a matching one is started automatically)'
             : 'WS auth timed out (no auth_ok)',
         );
         ws.terminate();

@@ -102,19 +102,19 @@ describe('buildPosixWrapper', () => {
 
 describe('parseRegDefaultValue', () => {
   const answer = (label: string, type: string, value?: string) =>
-    ['', 'HKEY_CURRENT_USER\\Software\\Mozilla\\NativeMessagingHosts\\kitsune_mcp',
+    ['', 'HKEY_CURRENT_USER\\Software\\Mozilla\\NativeMessagingHosts\\inari_mcp',
       `    ${label}    ${type}${value === undefined ? '' : `    ${value}`}`, ''].join('\r\n');
 
   it('reads the value whatever the "(Default)" label is called', () => {
     for (const label of ['(Default)', '(既定)', '(标准)', '(Standard)', '(Par défaut)']) {
-      expect(parseRegDefaultValue(answer(label, 'REG_SZ', 'C:\\Users\\u\\.kitsune-mcp\\native-host\\kitsune_mcp.json')))
-        .toBe('C:\\Users\\u\\.kitsune-mcp\\native-host\\kitsune_mcp.json');
+      expect(parseRegDefaultValue(answer(label, 'REG_SZ', 'C:\\Users\\u\\.inari-mcp\\native-host\\inari_mcp.json')))
+        .toBe('C:\\Users\\u\\.inari-mcp\\native-host\\inari_mcp.json');
     }
   });
 
   it('reads REG_EXPAND_SZ as well', () => {
-    expect(parseRegDefaultValue(answer('(Default)', 'REG_EXPAND_SZ', '%USERPROFILE%\\.kitsune-mcp\\native-host\\kitsune_mcp.json')))
-      .toBe('%USERPROFILE%\\.kitsune-mcp\\native-host\\kitsune_mcp.json');
+    expect(parseRegDefaultValue(answer('(Default)', 'REG_EXPAND_SZ', '%USERPROFILE%\\.inari-mcp\\native-host\\inari_mcp.json')))
+      .toBe('%USERPROFILE%\\.inari-mcp\\native-host\\inari_mcp.json');
   });
 
   it('returns "" for a value that is set but empty', () => {
@@ -123,8 +123,8 @@ describe('parseRegDefaultValue', () => {
   });
 
   it('keeps spaces inside the value', () => {
-    expect(parseRegDefaultValue(answer('(Default)', 'REG_SZ', 'C:\\Program Files\\x\\kitsune_mcp.json')))
-      .toBe('C:\\Program Files\\x\\kitsune_mcp.json');
+    expect(parseRegDefaultValue(answer('(Default)', 'REG_SZ', 'C:\\Program Files\\x\\inari_mcp.json')))
+      .toBe('C:\\Program Files\\x\\inari_mcp.json');
   });
 
   it('returns null when the key is missing or the answer holds no value line', () => {
@@ -134,7 +134,7 @@ describe('parseRegDefaultValue', () => {
     expect(parseRegDefaultValue('ERROR: The system was unable to find the specified registry key or value.')).toBeNull();
     expect(parseRegDefaultValue('HKEY_CURRENT_USER\\Software\\Mozilla\r\n')).toBeNull();
     // only the default value has a type on the same line; a sub key alone is not one
-    expect(parseRegDefaultValue('HKEY_CURRENT_USER\\Software\\Mozilla\\NativeMessagingHosts\\kitsune_mcp\r\n')).toBeNull();
+    expect(parseRegDefaultValue('HKEY_CURRENT_USER\\Software\\Mozilla\\NativeMessagingHosts\\inari_mcp\r\n')).toBeNull();
   });
 
   it('takes the first value line (LF line endings too)', () => {
@@ -148,10 +148,10 @@ describe('parseRegDefaultValue', () => {
 // ---------------------------------------------------------------------------
 
 describe('already registered? (paths are compared)', () => {
-  const expected = buildManifest({ wrapperPath: 'C:\\Users\\u\\.kitsune-mcp\\native-host\\run-host.cmd', geckoId: 'id@example' });
+  const expected = buildManifest({ wrapperPath: 'C:\\Users\\u\\.inari-mcp\\native-host\\run-host.cmd', geckoId: 'id@example' });
 
   it('treats the same wrapper path (other case / slashes) as unchanged and another path as different', () => {
-    const same = JSON.stringify({ ...expected, path: 'c:/users/u/.kitsune-mcp/native-host/run-host.cmd' });
+    const same = JSON.stringify({ ...expected, path: 'c:/users/u/.inari-mcp/native-host/run-host.cmd' });
     expect(manifestState(expected, same, 'win32').state).toBe('same');
     const other = JSON.stringify({ ...expected, path: 'D:\\old\\run-host.cmd' });
     expect(manifestState(expected, other, 'win32')).toEqual({ state: 'different', path: 'D:\\old\\run-host.cmd' });
@@ -222,7 +222,7 @@ describe('findClaudeEntries', () => {
           '/r': { mcpServers: { [CLAUDE_NAME]: entry('l') } },
           '/other/clone': { mcpServers: { [CLAUDE_NAME]: entry('o') } },
           '/third': { mcpServers: { [CLAUDE_NAME]: entry('t') } },
-          '/no-kitsune': { mcpServers: { something: {} } },
+          '/no-inari': { mcpServers: { something: {} } },
         },
       },
       projectMcp: null,
@@ -235,16 +235,16 @@ describe('findClaudeEntries', () => {
 
   it('matches a Windows project key whatever the slashes and the case are', () => {
     for (const key of [
-      'C:\\repo\\Kitsune',
-      'C:/repo/Kitsune',
-      'c:\\REPO\\kitsune',
-      'C:\\repo\\Kitsune\\',
-      'C:\\repo\\sub\\..\\Kitsune',
+      'C:\\repo\\Inari',
+      'C:/repo/Inari',
+      'c:\\REPO\\inari',
+      'C:\\repo\\Inari\\',
+      'C:\\repo\\sub\\..\\Inari',
     ]) {
       const { found, otherLocal } = findClaudeEntries({
         config: { projects: { [key]: { mcpServers: { [CLAUDE_NAME]: entry('l') } } } },
         projectMcp: null,
-        repoRoot: 'C:\\repo\\kitsune',
+        repoRoot: 'C:\\repo\\inari',
         platform: 'win32',
       });
       expect([key, found.map((f: { scope: string }) => f.scope)]).toEqual([key, ['local']]);
@@ -252,13 +252,13 @@ describe('findClaudeEntries', () => {
     }
     // on linux the case matters
     const linux = findClaudeEntries({
-      config: { projects: { '/repo/Kitsune': { mcpServers: { [CLAUDE_NAME]: entry('l') } } } },
+      config: { projects: { '/repo/Inari': { mcpServers: { [CLAUDE_NAME]: entry('l') } } } },
       projectMcp: null,
-      repoRoot: '/repo/kitsune',
+      repoRoot: '/repo/inari',
       platform: 'linux',
     });
     expect(linux.found).toEqual([]);
-    expect(linux.otherLocal).toEqual(['/repo/Kitsune']);
+    expect(linux.otherLocal).toEqual(['/repo/Inari']);
   });
 
   it('finds nothing in an empty, broken or unrelated configuration', () => {

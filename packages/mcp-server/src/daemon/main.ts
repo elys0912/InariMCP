@@ -1,5 +1,5 @@
 /**
- * KitsuneMCP shared daemon (`node dist/index.js --daemon`).
+ * InariMCP shared daemon (`node dist/index.js --daemon`).
  *
  * The one process that owns the HTTP (FOX_HTTP_PORT, default 8765) and
  * WebSocket (FOX_WS_PORT, default 8766) ports, and with them the
@@ -24,7 +24,7 @@
 import * as http from 'node:http';
 import type { WebSocketServer } from 'ws';
 
-import { ENV } from '@kitsune-mcp/shared';
+import { ENV } from '@inari-mcp/shared';
 import { startHttpBridge } from '../transport/http-bridge.js';
 import { startWebSocketServer } from '../transport/ws-bridge.js';
 import { getConnectionManager, type BrowserConnectionManager } from '../connection/manager.js';
@@ -43,7 +43,7 @@ import {
 import { errorMessage } from '../utils/errors.js';
 import { DaemonActivity, SHUTDOWN_DRAIN_MS, resolveIdleTimeoutMs } from './activity.js';
 import { PACKAGE_VERSION } from '../version.js';
-import { stderrLogger, type HealthVerdict } from '@kitsune-mcp/shared/node';
+import { stderrLogger, type HealthVerdict } from '@inari-mcp/shared/node';
 import { probeExistingDaemon } from './probe.js';
 
 const log = stderrLogger('daemon');
@@ -233,7 +233,7 @@ async function startHeadless(): Promise<void> {
 
 /** How the daemon ends when the HTTP port (the singleton lock) is taken. */
 export interface OccupiedPortExit {
-  /** 0 when another healthy KitsuneMCP daemon of ours owns the port, 1 otherwise. */
+  /** 0 when another healthy InariMCP daemon of ours owns the port, 1 otherwise. */
   code: 0 | 1;
   /** Who owns the port (logged). */
   message: string;
@@ -244,12 +244,12 @@ export function occupiedPortExit(occupant: HealthVerdict, host: string, httpPort
   const freePorts = `${ENV.FOX_HTTP_PORT} (and ${ENV.FOX_WS_PORT}) to free ports`;
   switch (occupant.kind) {
     case 'ok':
-      return { code: 0, message: `another KitsuneMCP daemon already owns ${host}:${httpPort} — exiting` };
+      return { code: 0, message: `another InariMCP daemon already owns ${host}:${httpPort} — exiting` };
     case 'impostor':
       return {
         code: 1,
         message:
-          `port ${host}:${httpPort} answers as a KitsuneMCP daemon but cannot prove it holds ` +
+          `port ${host}:${httpPort} answers as a InariMCP daemon but cannot prove it holds ` +
           'this user\'s API token (a daemon started before the token file was replaced, ' +
           'another user\'s daemon, or a program impersonating it). ' +
           `Stop it, or set ${freePorts}.`,
@@ -258,7 +258,7 @@ export function occupiedPortExit(occupant: HealthVerdict, host: string, httpPort
       return {
         code: 1,
         message:
-          `port ${host}:${httpPort} is owned by a KitsuneMCP daemon of another protocol ` +
+          `port ${host}:${httpPort} is owned by a InariMCP daemon of another protocol ` +
           `(${String(occupant.protocol)}${occupant.version ? `, v${occupant.version}` : ''}): stop it and retry.`,
       };
     default:
@@ -310,7 +310,7 @@ function readyGate(): { ready: Promise<void>; markReady: () => void; failReady: 
 function logStartup(endpoint: DaemonEndpoint, idleMs: number): void {
   const { host, httpPort, wsPort, headlessMode } = endpoint;
   for (const line of [
-    `kitsune-mcp v${PACKAGE_VERSION} (PID ${process.pid})`,
+    `inari-mcp v${PACKAGE_VERSION} (PID ${process.pid})`,
     `HTTP  : ${host}:${httpPort}`,
     `WS    : ${host}:${wsPort}`,
     `Mode  : ${headlessMode ? 'headless' : 'extension'}`,

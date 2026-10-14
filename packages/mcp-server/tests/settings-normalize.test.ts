@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS } from '@inari-mcp/shared';
 import {
   daemonSettingsFromInfo,
   diffDaemonSettings,
@@ -172,11 +172,11 @@ describe('loadConfig reads the same accepted values', () => {
   });
 
   function load(env: Record<string, string>) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-settings-'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-settings-'));
     dirs.push(dir);
     const file = path.join(dir, 'safety.json');
     fs.writeFileSync(file, '{ "read_only": false, "allow_script_execution": true }');
-    // Keep ~/.kitsune-mcp of the real home out of reach.
+    // Keep ~/.inari-mcp of the real home out of reach.
     vi.stubEnv('HOME', dir);
     vi.stubEnv('USERPROFILE', dir);
     vi.stubEnv('FOX_SAFETY_CONFIG', file);

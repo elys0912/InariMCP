@@ -1,4 +1,4 @@
-// KitsuneMCP wire action map
+// InariMCP wire action map
 //
 // The MCP Server sends BrowserCommand.action in snake_case (the values of
 // BROWSER_ACTIONS in packages/shared/src/actions.ts). The background script's
@@ -23,7 +23,7 @@
 // this file adds nothing from packages/shared or background/ to the bundle
 // (and stays loadable on its own by the contract tests).
 
-import type { BrowserAction } from "@kitsune-mcp/shared/action-names";
+import type { BrowserAction } from "@inari-mcp/shared/action-names";
 import type { InternalAction } from "./background/action-table";
 
 const WIRE_ACTIONS = {

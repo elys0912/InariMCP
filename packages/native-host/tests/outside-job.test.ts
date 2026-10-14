@@ -86,7 +86,7 @@ describe('schtasksStrategy', () => {
     const h = harness({});
     await schtasksStrategy.start(spec, h.deps);
     expect(h.calls.map((c) => c.args[0])).toEqual(['/Create', '/Run', '/Delete']);
-    expect(h.calls[0]!.args).toEqual(expect.arrayContaining(['/F', '/TN', 'KitsuneMCP-daemon-T1', '/XML']));
+    expect(h.calls[0]!.args).toEqual(expect.arrayContaining(['/F', '/TN', 'InariMCP-daemon-T1', '/XML']));
     expect(h.files.size).toBe(0);
   });
 

@@ -1,5 +1,5 @@
 /**
- * The API token (~/.kitsune-mcp/api_token). Only the daemon creates it;
+ * The API token (~/.inari-mcp/api_token). Only the daemon creates it;
  * relays and the Native Host read it after the daemon has answered /health.
  * It never travels: both sides use it as the HMAC key (auth.ts).
  */
@@ -49,7 +49,7 @@ export function readApiTokenFile(tokenPath: string = apiTokenPath()): string | u
 /**
  * Load or generate the API token (daemon only).
  *
- * - Reads `~/.kitsune-mcp/api_token` if it exists.
+ * - Reads `~/.inari-mcp/api_token` if it exists.
  * - Otherwise generates a 64-char hex token (crypto.randomBytes(32)) and
  *   persists it with mode 0o600 in a 0o700 directory.
  * - Throws when the file exists but cannot be read (EACCES, EISDIR, ...) or
@@ -66,7 +66,7 @@ export function loadOrCreateApiToken(tokenPath: string = apiTokenPath()): string
   fs.mkdirSync(path.dirname(tokenPath), { recursive: true, mode: PRIVATE_DIR_MODE });
   try {
     fs.writeFileSync(tokenPath, token, { mode: PRIVATE_FILE_MODE, flag: 'wx' });
-    process.stderr.write(`[KitsuneMCP] Generated new API token at ${tokenPath}\n`);
+    process.stderr.write(`[InariMCP] Generated new API token at ${tokenPath}\n`);
     return token;
   } catch (err: unknown) {
     if (errnoCode(err) !== 'EEXIST') throw err;

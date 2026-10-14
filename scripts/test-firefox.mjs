@@ -2,7 +2,7 @@
 /**
  * Runs the tests that drive a real headless Firefox (the vitest projects
  * mcp-server-firefox and contract-firefox) and fails unless every one of
- * them ran: a launch failure fails instead of skipping (KITSUNE_REQUIRE_FIREFOX,
+ * them ran: a launch failure fails instead of skipping (INARI_REQUIRE_FIREFOX,
  * tests/contract/helpers/real-firefox.ts), and a test that was skipped all the
  * same fails the run here.
  *
@@ -39,7 +39,7 @@ export function testsNotRun(report) {
 
 function main() {
   const vitest = path.join(path.dirname(createRequire(import.meta.url).resolve('vitest/package.json')), 'vitest.mjs');
-  const reportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-test-firefox-'));
+  const reportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-test-firefox-'));
   const reportFile = path.join(reportDir, 'report.json');
   try {
     const run = spawnSync(
@@ -52,7 +52,7 @@ function main() {
         '--reporter=json',
         `--outputFile.json=${reportFile}`,
       ],
-      { stdio: 'inherit', env: { ...process.env, KITSUNE_REQUIRE_FIREFOX: '1' } },
+      { stdio: 'inherit', env: { ...process.env, INARI_REQUIRE_FIREFOX: '1' } },
     );
     if (run.status !== 0) return run.status ?? 1;
 

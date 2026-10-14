@@ -11,7 +11,7 @@
  * default 600; 0 disables the idle shutdown).
  */
 
-import { ENV } from '@kitsune-mcp/shared';
+import { ENV } from '@inari-mcp/shared';
 
 /** How often a relay pings the daemon. */
 export const RELAY_HEARTBEAT_MS = 30_000;

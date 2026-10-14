@@ -19,7 +19,7 @@
  * restrictions live in the SafetyGuard (safety.json / FOX_READ_ONLY /
  * FOX_ALLOW_SCRIPTS) and apply to every caller alike.
  *
- * A relay identifies itself with the `X-Kitsune-Relay: <id>` header; its
+ * A relay identifies itself with the `X-Inari-Relay: <id>` header; its
  * calls are audited with transport `relay:<id>` (other callers: `http`).
  * When the caller goes away before the answer (relay abort / timeout), the
  * browser commands of that call are cancelled (runWithCallSignal).
@@ -47,13 +47,13 @@
  *
  * Security:
  *  - Authenticated routes accept either
- *      a signed request (x-kitsune-timestamp / -nonce / -signature, see
+ *      a signed request (x-inari-timestamp / -nonce / -signature, see
  *      auth.ts) — what the relays and the Native Host send; the token never
  *      travels, and the response carries our own signature so the client
  *      can tell the daemon from a program squatting on the port; or
  *      X-API-Key: <token> — for manual debugging (curl). Compared with
  *      crypto.timingSafeEqual(); responses are not signed.
- *  - /health is unauthenticated (probe endpoint). With x-kitsune-nonce it
+ *  - /health is unauthenticated (probe endpoint). With x-inari-nonce it
  *    adds `proof`, a MAC over that nonce, so a client holding the token can
  *    check it is talking to the real daemon.
  *  - Host header must be `localhost`, an IP literal or the configured host
@@ -66,7 +66,7 @@
 import * as http from 'node:http';
 import * as crypto from 'node:crypto';
 import * as net from 'node:net';
-import { ENV_DEFAULTS, isRecord } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord } from '@inari-mcp/shared';
 import { runWithCallSignal, type BrowserConnectionManager } from '../connection/manager.js';
 import { listScreenshotEntries } from '../utils/screenshot.js';
 import { callSchemaFor, callableToolNames, describeTool } from '../tools/operations.js';
@@ -85,7 +85,7 @@ import {
   macMatches,
   responseMac,
   sha256Hex,
-} from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
 import { PACKAGE_VERSION } from '../version.js';
 
 // ---------------------------------------------------------------------------
@@ -105,7 +105,7 @@ const MAX_REMEMBERED_NONCES = 100_000;
 const BODY_TIMEOUT_MS = 30_000;
 /** How long a client has to send its request headers. */
 const HEADERS_TIMEOUT_MS = 10_000;
-/** x-kitsune-timestamp: milliseconds since the epoch, decimal (16 digits reach far past year 2100). */
+/** x-inari-timestamp: milliseconds since the epoch, decimal (16 digits reach far past year 2100). */
 const TIMESTAMP_PATTERN = /^\d{1,16}$/;
 
 // ---------------------------------------------------------------------------
@@ -374,7 +374,7 @@ export interface ShutdownHooks {
 }
 
 /** Answer to a tool call or an approval while the daemon stops (POST /daemon/shutdown, signal, idle). */
-const SHUTTING_DOWN_MESSAGE = 'KitsuneMCP daemon is shutting down';
+const SHUTTING_DOWN_MESSAGE = 'InariMCP daemon is shutting down';
 
 /** State shared by the request handlers of one server. */
 interface BridgeContext {
@@ -430,7 +430,7 @@ function shuttingDown(ctx: BridgeContext): boolean {
 
 /** The tool did not run: the daemon could not start (ready rejected). */
 function notStarted(err: unknown): string {
-  return `KitsuneMCP daemon could not start: ${errorMessage(err)}`;
+  return `InariMCP daemon could not start: ${errorMessage(err)}`;
 }
 
 interface Caller {
@@ -510,7 +510,7 @@ function healthAnswer(ctx: BridgeContext, req: http.IncomingMessage): Record<str
   const nonce = header(req, AUTH_HEADER.nonce);
   return {
     status: 'ok',
-    service: 'kitsune-mcp',
+    service: 'inari-mcp',
     version: PACKAGE_VERSION,
     protocol: DAEMON_PROTOCOL_VERSION,
     ready: ctx.isReady,
@@ -666,7 +666,7 @@ function sendAnswer<T>(res: http.ServerResponse, reply: Responder, answer: (resu
   try {
     answer(result);
   } catch (err: unknown) {
-    process.stderr.write(`[KitsuneMCP] HTTP answer could not be written: ${errorMessage(err)}\n`);
+    process.stderr.write(`[InariMCP] HTTP answer could not be written: ${errorMessage(err)}\n`);
     if (res.headersSent) {
       res.destroy();
       return;
@@ -926,7 +926,7 @@ export function startHttpBridge(options: HttpBridgeOptions): Promise<http.Server
       route(ctx, req, res, reply);
     } catch (err: unknown) {
       // A bug in a route must cost one request, not the daemon.
-      process.stderr.write(`[KitsuneMCP] HTTP handler error: ${errorMessage(err)}\n`);
+      process.stderr.write(`[InariMCP] HTTP handler error: ${errorMessage(err)}\n`);
       reply.error(500, 'Internal error');
     }
   });
@@ -952,13 +952,13 @@ function listen(server: http.Server, port: number, host: string): Promise<http.S
     server.listen(port, host, () => {
       server.removeListener('error', onStartupError);
       server.on('error', (err) => {
-        process.stderr.write(`[KitsuneMCP] HTTP server error: ${err.message}\n`);
+        process.stderr.write(`[InariMCP] HTTP server error: ${err.message}\n`);
       });
       // The port actually bound (port 0 picks a free one).
       const address = server.address();
       const boundPort = typeof address === 'object' && address !== null ? address.port : port;
       process.stderr.write(
-        `[KitsuneMCP] HTTP bridge listening on http://${host}:${boundPort}\n`,
+        `[InariMCP] HTTP bridge listening on http://${host}:${boundPort}\n`,
       );
       resolve(server);
     });

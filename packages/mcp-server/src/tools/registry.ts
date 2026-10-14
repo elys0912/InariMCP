@@ -22,7 +22,7 @@ import { PUBLIC_TOOLS, PUBLIC_TOOL_NAMES } from './public-tools.js';
 import type { PublicToolName } from './public-tools.js';
 import { deprecationNote } from './operations.js';
 import { isOneOf } from './one-of.js';
-import { ENV } from '@kitsune-mcp/shared';
+import { ENV } from '@inari-mcp/shared';
 
 /**
  * Callback that executes one tool call. In the stdio relay it forwards the
@@ -175,7 +175,7 @@ function namesOf<T extends string>(
     } else {
       // Unknown profile name: warn but don't crash
       process.stderr.write(
-        `[KitsuneMCP] Unknown FOX_CAPS profile: '${segment}' (ignored)\n`,
+        `[InariMCP] Unknown FOX_CAPS profile: '${segment}' (ignored)\n`,
       );
     }
   }
@@ -265,7 +265,7 @@ export function registerTools(
   }
 
   process.stderr.write(
-    `[KitsuneMCP] Registered ${count} tools` +
+    `[InariMCP] Registered ${count} tools` +
     (capsEnv ? ` (FOX_CAPS=${capsEnv})` : ' (all)') +
     '\n',
   );

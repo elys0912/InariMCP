@@ -10,13 +10,13 @@ import { takeScreenshot } from "./screenshot";
 
 export function registerContextMenus(): void {
   browser.contextMenus.create({
-    id: "kitsune-screenshot",
+    id: "inari-screenshot",
     title: t("menuScreenshot"),
     contexts: ["page"],
   });
 
   browser.contextMenus.create({
-    id: "kitsune-inspect",
+    id: "inari-inspect",
     title: t("menuInspect"),
     contexts: ["all"],
   });
@@ -26,7 +26,7 @@ export function registerContextMenus(): void {
       info: { menuItemId: string; frameId?: number },
       tab: browser.tabs.Tab,
     ): void => {
-      if (info.menuItemId === "kitsune-screenshot") {
+      if (info.menuItemId === "inari-screenshot") {
         void takeScreenshot(tab.id).then((result) => {
           if (!result.success) return;
           try {
@@ -36,10 +36,10 @@ export function registerContextMenus(): void {
               tab: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" },
             });
           } catch (error) {
-            console.warn("[KitsuneMCP] Could not hand the screenshot to the native host:", errorMessage(error));
+            console.warn("[InariMCP] Could not hand the screenshot to the native host:", errorMessage(error));
           }
         });
-      } else if (info.menuItemId === "kitsune-inspect") {
+      } else if (info.menuItemId === "inari-inspect") {
         // The frame the menu was opened in. Its content script inspects the
         // element it saw the contextmenu event on: OnClickData has no
         // pageX / pageY in Firefox.
@@ -51,7 +51,7 @@ export function registerContextMenus(): void {
           )
           .catch((error: unknown) => {
             // No content script in that frame (e.g. a page extensions cannot enter)
-            console.warn("[KitsuneMCP] Inspect element failed:", errorMessage(error));
+            console.warn("[InariMCP] Inspect element failed:", errorMessage(error));
           });
       }
     },

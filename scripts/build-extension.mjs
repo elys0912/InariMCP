@@ -8,10 +8,10 @@
 //   src/popup/popup.ts    -> dist/popup/popup.js    (popup.html)
 // plus the static files popup.html / popup.css / content.css.
 //
-// esbuild does not type-check: `npm run typecheck -w @kitsune-mcp/extension`
+// esbuild does not type-check: `npm run typecheck -w @inari-mcp/extension`
 // (tsc --noEmit) does, and `npm run build` of the extension runs it first.
 //
-// @kitsune-mcp/shared is bundled from its sources (packages/shared/src), not
+// @inari-mcp/shared is bundled from its sources (packages/shared/src), not
 // from its CommonJS dist/. Only the browser-safe entry points are allowed
 // (SHARED_ENTRIES); the bundles must not contain zod (about +110 KB, see
 // shared/src/action-names.ts) nor shared/src/node (Node APIs). The build
@@ -35,17 +35,17 @@ const dist = path.join(ext, 'dist');
 const dev = process.argv.includes('--dev');
 const sharedSrc = path.join(root, 'packages', 'shared', 'src');
 
-/** Import specifiers of @kitsune-mcp/shared the Extension may use. */
+/** Import specifiers of @inari-mcp/shared the Extension may use. */
 const SHARED_ENTRIES = new Map([
-  ['@kitsune-mcp/shared', path.join(sharedSrc, 'index.ts')],
-  ['@kitsune-mcp/shared/action-names', path.join(sharedSrc, 'action-names.ts')],
+  ['@inari-mcp/shared', path.join(sharedSrc, 'index.ts')],
+  ['@inari-mcp/shared/action-names', path.join(sharedSrc, 'action-names.ts')],
 ]);
 
-/** Resolve @kitsune-mcp/shared[/...] to SHARED_ENTRIES, refuse the rest. */
+/** Resolve @inari-mcp/shared[/...] to SHARED_ENTRIES, refuse the rest. */
 const sharedPlugin = {
-  name: 'kitsune-shared',
+  name: 'inari-shared',
   setup(b) {
-    b.onResolve({ filter: /^@kitsune-mcp\/shared(\/|$)/ }, (args) => {
+    b.onResolve({ filter: /^@inari-mcp\/shared(\/|$)/ }, (args) => {
       const file = SHARED_ENTRIES.get(args.path);
       if (file !== undefined) return { path: file };
       return { errors: [{ text: `${args.path} is not available to the Extension (allowed: ${[...SHARED_ENTRIES.keys()].join(', ')})` }] };

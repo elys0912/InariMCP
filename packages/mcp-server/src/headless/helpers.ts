@@ -4,7 +4,7 @@
  */
 
 import type { z } from 'zod';
-import { BrowserActionSchema, formatZodIssues, type BrowserAction } from '@kitsune-mcp/shared';
+import { BrowserActionSchema, formatZodIssues, type BrowserAction } from '@inari-mcp/shared';
 import { GET_ELEMENTS_MAX } from './limits.js';
 
 /**

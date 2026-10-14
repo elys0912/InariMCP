@@ -19,8 +19,8 @@
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ENV_PREFIX, LEGACY_ENV, shortId } from '@kitsune-mcp/shared';
-import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from '@kitsune-mcp/shared/node';
+import { ENV_PREFIX, LEGACY_ENV, shortId } from '@inari-mcp/shared';
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from '@inari-mcp/shared/node';
 import { spawnDaemonBreakaway } from './breakaway.js';
 
 /** What to start outside the job. */
@@ -176,7 +176,7 @@ export const schtasksStrategy: Strategy = {
   async start(spec, deps) {
     const { tramp, specPath } = prepare(spec, deps);
     const xml = path.join(deps.dir, `task-${deps.id}.xml`);
-    const name = `KitsuneMCP-daemon-${deps.id}`;
+    const name = `InariMCP-daemon-${deps.id}`;
     // schtasks wants UTF-16LE with a BOM
     deps.fs.writeFileSync(xml, Buffer.concat([
       Buffer.from([0xff, 0xfe]),

@@ -20,8 +20,8 @@
  *    instead of waiting out its current backoff delay.
  */
 
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
-import { isUsable } from '@kitsune-mcp/shared/node';
+import { ENV_DEFAULTS } from '@inari-mcp/shared';
+import { isUsable } from '@inari-mcp/shared/node';
 import type { ServerLauncher } from './server-launcher.js';
 import { log } from './logger.js';
 

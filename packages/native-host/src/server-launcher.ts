@@ -1,5 +1,5 @@
 /**
- * Locating and starting the shared KitsuneMCP daemon.
+ * Locating and starting the shared InariMCP daemon.
  *
  * The daemon (`node packages/mcp-server/dist/index.js --daemon`) owns the
  * HTTP / WebSocket ports and serves every Claude Code session (through their
@@ -12,7 +12,7 @@
  * depend on it. (The fork source killed whatever held the port.)
  *
  * /health is judged strictly (evaluateHealth): valid JSON from service
- * 'kitsune-mcp', the same protocol version, and — once we have the token —
+ * 'inari-mcp', the same protocol version, and — once we have the token —
  * a proof over our nonce, so a program squatting on the port is reported
  * instead of being trusted. The token never travels (auth.ts).
  */
@@ -21,7 +21,7 @@ import * as net from 'node:net';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ENV, ENV_DEFAULTS, isRecord, MAX_PORT } from '@kitsune-mcp/shared';
+import { ENV, ENV_DEFAULTS, isRecord, MAX_PORT } from '@inari-mcp/shared';
 import {
   AUTH_HEADER,
   DAEMON_PROTOCOL_VERSION,
@@ -42,7 +42,7 @@ import {
   verifyResponse,
   type HealthVerdict,
   type InvalidPortHandler,
-} from '@kitsune-mcp/shared/node';
+} from '@inari-mcp/shared/node';
 import { log, rotateIfLarge } from './logger.js';
 import { daemonEnvFrom, defaultDeps, startOutsideJob, sweepRunDir } from './outside-job.js';
 
@@ -187,7 +187,7 @@ export class ServerLauncher {
 
   /**
    * Spawn a daemon (detached, stdio cut off, stderr appended to
-   * ~/.kitsune-mcp/logs/daemon.log) and wait for it to answer /health.
+   * ~/.inari-mcp/logs/daemon.log) and wait for it to answer /health.
    * Callers must only do this when nothing listens on the port.
    */
   async start(): Promise<boolean> {
@@ -384,11 +384,11 @@ export class ServerLauncher {
         break;
       case 'impostor':
         line =
-          `the program on ${this.host}:${this.httpPort} claims to be the KitsuneMCP daemon but cannot ` +
+          `the program on ${this.host}:${this.httpPort} claims to be the InariMCP daemon but cannot ` +
           'prove it holds the API token — not connecting to it. Check which process owns the port.';
         break;
       case 'foreign':
-        line = `port ${this.host}:${this.httpPort} answers, but not as a KitsuneMCP daemon`;
+        line = `port ${this.host}:${this.httpPort} answers, but not as a InariMCP daemon`;
         break;
       case 'ok':
       case 'unverified':
@@ -535,7 +535,7 @@ export class ServerLauncher {
   /**
    * Drop the cached token so the next getApiToken() re-reads the file.
    * Called when the server rejects our token (WS close 1008), e.g. after
-   * ~/.kitsune-mcp/api_token was regenerated.
+   * ~/.inari-mcp/api_token was regenerated.
    */
   reloadApiToken(): void {
     this.cachedApiToken = undefined;

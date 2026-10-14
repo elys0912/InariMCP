@@ -15,7 +15,7 @@
  * NOT confused with EOF, so the host process keeps running.
  */
 
-import { ENV_DEFAULTS, isRecord } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS, isRecord } from '@inari-mcp/shared';
 import { log } from './logger.js';
 
 const MAX_OUTGOING_SIZE = ENV_DEFAULTS.NATIVE_MSG_MAX_SIZE;

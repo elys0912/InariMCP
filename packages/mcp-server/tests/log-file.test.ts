@@ -17,10 +17,10 @@ describe('daemon.log timestamps', () => {
       write(chunk: Buffer, _enc, done) { written.push(chunk.toString()); done(); },
     }) as unknown as NodeJS.WriteStream;
     installStderrTimestamps(sink, () => '2026-01-01T00:00:00.000Z [1] ');
-    sink.write('[KitsuneMCP:daemon] up\n');
+    sink.write('[InariMCP:daemon] up\n');
     sink.write(Buffer.from('two\nlines\n'));
     expect(written.join('')).toBe(
-      '2026-01-01T00:00:00.000Z [1] [KitsuneMCP:daemon] up\n' +
+      '2026-01-01T00:00:00.000Z [1] [InariMCP:daemon] up\n' +
       '2026-01-01T00:00:00.000Z [1] two\n2026-01-01T00:00:00.000Z [1] lines\n',
     );
   });

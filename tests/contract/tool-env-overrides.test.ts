@@ -19,7 +19,7 @@ const KEYS = ['FOX_SAFETY_CONFIG', 'FOX_READ_ONLY', 'FOX_ALLOW_SCRIPTS'];
 
 beforeEach(() => {
   for (const k of KEYS) saved[k] = process.env[k];
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-env-'));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-env-'));
   const configPath = path.join(tmpDir, 'safety.json');
   // safety.json allows everything; only the environment restricts.
   fs.writeFileSync(configPath, JSON.stringify({

@@ -10,7 +10,7 @@
  */
 
 import type { z } from 'zod';
-import { isRecord } from '@kitsune-mcp/shared';
+import { isRecord } from '@inari-mcp/shared';
 import type { CallLabel } from '../safety/guard.js';
 import { TOOL_SCHEMAS, callSchemaOf, isOperationName } from './schemas.js';
 import type { OperationName, ToolClassification } from './schemas.js';

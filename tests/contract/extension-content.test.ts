@@ -9,7 +9,7 @@
  * bundle is injected into a page served over HTTP, and `browser.*`,
  * `wrappedJSObject` and `exportFunction` (the Firefox content-script
  * sandbox) are stubbed in the page first. Skipped when Firefox cannot be
- * launched, except on CI or with KITSUNE_REQUIRE_FIREFOX (npm run test:firefox),
+ * launched, except on CI or with INARI_REQUIRE_FIREFOX (npm run test:firefox),
  * where that fails the run (helpers/real-firefox.ts).
  */
 
@@ -156,7 +156,7 @@ async function run<T>(body: string): Promise<T> {
     `(async () => {
        const f = window.__fox;
        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-       const records = () => window.__sent.filter((m) => m.type === 'kitsune:logRecords');
+       const records = () => window.__sent.filter((m) => m.type === 'inari:logRecords');
        ${body}
      })()`,
   )) as T;
@@ -643,7 +643,7 @@ describe('WP44 highlight and overlay banner timers (E-05, E-06, A-07)', () => {
   real('E-05 the timer of an earlier highlight does not remove the next one', async () => {
     await load('<div id="a">A</div><div id="b">B</div>');
     const r = await run<Record<string, number>>(
-      `const count = () => document.querySelectorAll('.kitsune-highlight-overlay').length;
+      `const count = () => document.querySelectorAll('.inari-highlight-overlay').length;
        f.inspect.highlightElement({ selector: '#a', duration: 400 });
        await sleep(100);
        f.inspect.highlightElement({ selector: '#b', duration: 10000 });

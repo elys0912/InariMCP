@@ -22,8 +22,8 @@ describe('E-09 shared message types and log limits', () => {
   });
 
   it('keeps the values on the wire', () => {
-    expect(wire.LOG_RECORD_MESSAGE).toBe('kitsune:logRecords');
-    expect(wire.LOGGING_STATE_QUERY).toBe('kitsune:loggingState');
+    expect(wire.LOG_RECORD_MESSAGE).toBe('inari:logRecords');
+    expect(wire.LOGGING_STATE_QUERY).toBe('inari:loggingState');
     expect(wire.LOG_ENTRY_LIMIT).toBe(500);
     expect(wire.LOG_TEXT_LIMIT).toBe(5000);
   });

@@ -45,9 +45,9 @@ const FIREFOX_CONTRACT = ['tests/contract/extension-content.test.ts'];
 export default defineConfig({
   resolve: {
     alias: [
-      { find: /^@kitsune-mcp\/shared\/node$/, replacement: sharedNodeSrc },
-      { find: /^@kitsune-mcp\/shared\/action-names$/, replacement: sharedActionNamesSrc },
-      { find: /^@kitsune-mcp\/shared$/, replacement: sharedSrc },
+      { find: /^@inari-mcp\/shared\/node$/, replacement: sharedNodeSrc },
+      { find: /^@inari-mcp\/shared\/action-names$/, replacement: sharedActionNamesSrc },
+      { find: /^@inari-mcp\/shared$/, replacement: sharedSrc },
     ],
   },
   test: {
@@ -62,7 +62,7 @@ export default defineConfig({
     setupFiles: ['./tests/setup/isolate-home.ts'],
     globalSetup: ['./tests/setup/real-home-watch.ts'],
     env: {
-      // Keep the Native Host logger away from ~/.kitsune-mcp/logs.
+      // Keep the Native Host logger away from ~/.inari-mcp/logs.
       FOX_NATIVE_HOST_LOG: 'off',
     },
     projects: [

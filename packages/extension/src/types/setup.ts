@@ -1,4 +1,4 @@
-// KitsuneMCP setup state (type only)
+// InariMCP setup state (type only)
 //
 // Computed by background/setup-badge.ts (getSetupState) and sent to the popup in the
 // `getStatus` reply. Kept in its own file so that the popup does not depend

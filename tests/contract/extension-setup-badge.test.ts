@@ -47,9 +47,9 @@ describe('background/setup-badge.ts', () => {
     host.status = { confirmed: false, portOpen: false, lastError: null };
     expect(await refreshSetupState()).toEqual({ kind: 'connecting' });
     expect(badge.text.at(-1)).toBe('');
-    expect(badge.title.at(-1)).toBe('KitsuneMCP');
+    expect(badge.title.at(-1)).toBe('InariMCP');
 
-    host.status.lastError = 'No such native application kitsune_mcp';
+    host.status.lastError = 'No such native application inari_mcp';
     expect(await refreshSetupState()).toMatchObject({ kind: 'hostMissing' });
     expect(badge.text.at(-1)).toBe('!');
     expect(badge.title.at(-1)).toBe('msg:badgeSetupNeeded');

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isRecord } from '@kitsune-mcp/shared';
+import { isRecord } from '@inari-mcp/shared';
 import { externalizeScreenshots, getScreenshotsDir } from '../src/screenshot-store.js';
 
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
@@ -45,7 +45,7 @@ function shotAt(response: Record<string, unknown>, i: number): Record<string, un
 }
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-shots-'));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-shots-'));
   vi.stubEnv('FOX_SCREENSHOTS_DIR', dir);
 });
 
@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 describe('getScreenshotsDir', () => {
-  const LEGACY_DIR = path.join(os.tmpdir(), 'kitsune-shots-legacy');
+  const LEGACY_DIR = path.join(os.tmpdir(), 'inari-shots-legacy');
 
   it('uses FOX_SCREENSHOTS_DIR when set', () => {
     expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: dir })).toBe(path.resolve(dir));

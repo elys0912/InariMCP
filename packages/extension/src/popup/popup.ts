@@ -1,5 +1,5 @@
 /**
- * KitsuneMCP - Popup Script
+ * InariMCP - Popup Script
  */
 
 import { t } from '../i18n';
@@ -58,7 +58,7 @@ interface SetupGuide {
   notice?: boolean;
 }
 
-const LOG_DIR = '~/.kitsune-mcp/logs';
+const LOG_DIR = '~/.inari-mcp/logs';
 
 function installerCommand(os: string): string {
   return os === 'win'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePort, resolveHost, resolveHttpPort, resolveWsPort } from '@kitsune-mcp/shared/node';
+import { parsePort, resolveHost, resolveHttpPort, resolveWsPort } from '@inari-mcp/shared/node';
 
 describe('parsePort (4.A3)', () => {
   it.each([

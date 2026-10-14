@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { BrowserCommandSchema } from '@kitsune-mcp/shared';
+import { BrowserCommandSchema } from '@inari-mcp/shared';
 import { handleCommand } from '../../packages/extension/src/background/dispatch.ts';
 import { resolveWireAction } from '../../packages/extension/src/background/wire.ts';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';

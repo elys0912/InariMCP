@@ -8,7 +8,7 @@
  * `imagePath`.
  *
  * Directory: FOX_SCREENSHOTS_DIR → CLAUDE_BROWSER_SCREENSHOTS_DIR (legacy)
- * → ~/.kitsune-mcp/screenshots — the same resolution as the MCP Server's
+ * → ~/.inari-mcp/screenshots — the same resolution as the MCP Server's
  * utils/screenshot.ts getScreenshotsDir(), so GET /screenshots lists these
  * files too (as long as both processes see the same environment).
  *
@@ -27,8 +27,8 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { ENV, LEGACY_ENV, isRecord, shortId } from '@kitsune-mcp/shared';
-import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, defaultScreenshotsDir, screenshotStem } from '@kitsune-mcp/shared/node';
+import { ENV, LEGACY_ENV, isRecord, shortId } from '@inari-mcp/shared';
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE, defaultScreenshotsDir, screenshotStem } from '@inari-mcp/shared/node';
 
 /** Image types accepted in a screenshot data URL. */
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/webp'] as const;

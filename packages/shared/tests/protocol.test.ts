@@ -7,7 +7,7 @@ import {
   formatZodIssues,
   parseBrowserResponse,
   shortId,
-} from '@kitsune-mcp/shared';
+} from '@inari-mcp/shared';
 
 describe('BROWSER_ACTIONS', () => {
   it('has no duplicate entries', () => {

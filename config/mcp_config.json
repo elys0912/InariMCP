@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "kitsune-mcp": {
+    "inari-mcp": {
       "command": "node",
       "args": ["<INSTALL_PATH>/packages/mcp-server/dist/index.js"],
       "env": {

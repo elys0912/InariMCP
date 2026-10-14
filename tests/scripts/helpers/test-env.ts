@@ -17,7 +17,7 @@ export const isWin = process.platform === 'win32';
 export function useTempDir(): () => string {
   let dir: string | undefined;
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-setup-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-setup-'));
   });
   afterEach(() => {
     // Windows: a file just written may still be open (AV scan, indexer) for a moment.

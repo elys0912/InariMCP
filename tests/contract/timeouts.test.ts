@@ -37,7 +37,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { ZodTypeAny } from 'zod';
-import { BROWSER_ACTIONS, ENV_DEFAULTS, type BrowserAction } from '@kitsune-mcp/shared';
+import { BROWSER_ACTIONS, ENV_DEFAULTS, type BrowserAction } from '@inari-mcp/shared';
 import {
   maxCommandTimeoutMs,
   resolveCommandTimeout,

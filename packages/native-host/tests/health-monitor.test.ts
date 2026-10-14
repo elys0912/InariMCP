@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ENV_DEFAULTS } from '@kitsune-mcp/shared';
+import { ENV_DEFAULTS } from '@inari-mcp/shared';
 import { HealthMonitor, type MonitoredLauncher } from '../src/health-monitor.js';
-import type { HealthVerdict } from '@kitsune-mcp/shared/node';
+import type { HealthVerdict } from '@inari-mcp/shared/node';
 
 function fakeLauncher(verdict: HealthVerdict | Error, portInUse = false): MonitoredLauncher & { starts: number } {
   const fake = {

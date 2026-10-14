@@ -4,7 +4,7 @@
  * starting the daemon or the WebSocket connection).
  */
 
-import { MS_PER_SECOND, isRecord, parseHostMessage, type HostLocalAction, type HostLocalMessage } from '@kitsune-mcp/shared';
+import { MS_PER_SECOND, isRecord, parseHostMessage, type HostLocalAction, type HostLocalMessage } from '@inari-mcp/shared';
 import { readMessage, sendMessage } from './protocol.js';
 import { serverEntryPath, type DaemonInfo, type ServerLauncher } from './server-launcher.js';
 import type { ServerCommand, ServerConnection } from './ws-client.js';
@@ -88,7 +88,7 @@ function claudeRegisterCommand(): string {
   const quoted = process.platform === 'win32'
     ? `"${entry}"`
     : `'${entry.replace(/'/g, `'\\''`)}'`;
-  return `claude mcp add --scope user kitsune-mcp -- node ${quoted}`;
+  return `claude mcp add --scope user inari-mcp -- node ${quoted}`;
 }
 
 function replyToExtension(

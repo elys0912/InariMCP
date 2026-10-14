@@ -18,13 +18,13 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 const { getScreenshotsDir, listScreenshots } = await import('../src/utils/screenshot.js');
-const { defaultScreenshotsDir } = await import('@kitsune-mcp/shared/node');
+const { defaultScreenshotsDir } = await import('@inari-mcp/shared/node');
 
 let dir: string;
 const saved = process.env['FOX_SCREENSHOTS_DIR'];
 
 beforeEach(() => {
-  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-shots-'));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-shots-'));
   process.env['FOX_SCREENSHOTS_DIR'] = dir;
   vanished.clear();
 });

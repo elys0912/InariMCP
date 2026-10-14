@@ -32,18 +32,18 @@ export function registerListeners(): void {
   browser.webNavigation.onCommitted.addListener((details) => {
     if (details.frameId !== TOP_FRAME_ID) return;
     if (!wantsEarlyInjection(details.tabId, details.url)) return;
-    console.log(`[KitsuneMCP] Early logging injection requested (tab ${details.tabId})`);
+    console.log(`[InariMCP] Early logging injection requested (tab ${details.tabId})`);
     // dist/content.js is self-contained (url-rule.ts is bundled into it).
     browser.tabs
       .executeScript(details.tabId, { file: "/dist/content.js", runAt: "document_start", frameId: TOP_FRAME_ID })
       .then(() => {
-        console.log(`[KitsuneMCP] Early logging injection done (tab ${details.tabId})`);
+        console.log(`[InariMCP] Early logging injection done (tab ${details.tabId})`);
       })
       .catch((error: unknown) => {
         // Page where extensions cannot inject (e.g. addons.mozilla.org, or
         // a non-web URL). Nothing to resume there.
         console.warn(
-          `[KitsuneMCP] Early logging injection failed (tab ${details.tabId}):`,
+          `[InariMCP] Early logging injection failed (tab ${details.tabId}):`,
           errorMessage(error),
         );
       });
@@ -64,7 +64,7 @@ export function registerListeners(): void {
   // command injection through runtime.sendMessage from another extension)
   browser.runtime.onMessageExternal.addListener(
     (_message: unknown, sender: MessageSender, sendResponse: SendResponse): boolean => {
-      console.error("[KitsuneMCP] Refused external message from", sender?.id);
+      console.error("[InariMCP] Refused external message from", sender?.id);
       sendResponse({ success: false, error: "External messages are not accepted" });
       return false;
     },
@@ -102,8 +102,8 @@ function onRuntimeMessage(message: unknown, sender: MessageSender, sendResponse:
  */
 function answerApprovalMessage(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): void {
   if (!isExtensionPage(sender) || (msg.type === APPROVAL_MESSAGE.DECIDE && sender.tab)) {
-    console.error("[KitsuneMCP] Refused approval message from", sender.url);
-    sendResponse({ success: false, error: "Approval requests are answered in the KitsuneMCP toolbar popup" });
+    console.error("[InariMCP] Refused approval message from", sender.url);
+    sendResponse({ success: false, error: "Approval requests are answered in the InariMCP toolbar popup" });
     return;
   }
   sendResponse(
@@ -143,7 +143,7 @@ function answerLogRecords(
  */
 function runPageCommand(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): boolean {
   if (!isExtensionPage(sender)) {
-    console.error("[KitsuneMCP] Refused background command from", sender.url);
+    console.error("[InariMCP] Refused background command from", sender.url);
     sendResponse({ success: false, error: "Background commands are only accepted from extension pages" });
     return false;
   }

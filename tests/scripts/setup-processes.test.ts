@@ -1,5 +1,5 @@
 /**
- * Finding and stopping the Kitsune processes (scripts/lib/core.mjs /
+ * Finding and stopping the Inari processes (scripts/lib/core.mjs /
  * scripts/lib/system.mjs). Processes are stubbed or started by the test itself.
  */
 

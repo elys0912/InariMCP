@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import type { BrowserAction, BrowserCommand, BrowserResponse } from '@kitsune-mcp/shared';
+import type { BrowserAction, BrowserCommand, BrowserResponse } from '@inari-mcp/shared';
 import { attachSafetyMetadata, createToolHandler } from '../src/tools/handlers.js';
 import { DEFAULT_CONFIG, type SafetyConfig } from '../src/safety/config.js';
 import { SafetyGuard } from '../src/safety/guard.js';

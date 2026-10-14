@@ -320,7 +320,7 @@ describe('E-21 get_page_info fails like the other content script tools', () => {
     useFakeBrowser(failingSend('Could not establish connection. Receiving end does not exist.'));
     const { getPageInfo } = await import('../../packages/extension/src/background/page-actions.ts');
     const pageInfo = await getPageInfo(undefined);
-    expect(pageInfo).toMatchObject({ success: false, error: expect.stringMatching(/^KitsuneMCP cannot reach this page/) });
+    expect(pageInfo).toMatchObject({ success: false, error: expect.stringMatching(/^InariMCP cannot reach this page/) });
     expect(pageInfo).toEqual(await handleCommand({ action: 'get_elements' }, 'host'));
   });
 
@@ -613,8 +613,8 @@ describe('5.2 log buffers across a navigation', () => {
     let onRemoved: ((tabId: number) => void) | undefined;
     useFakeBrowser({
       runtime: {
-        id: 'kitsune@test',
-        getURL: (path: string) => `moz-extension://kitsune${path}`,
+        id: 'inari@test',
+        getURL: (path: string) => `moz-extension://inari${path}`,
         onMessage: { addListener: (fn: MessageListener) => { onMessage = fn; } },
         onMessageExternal: { addListener: () => {} },
       },
@@ -638,7 +638,7 @@ describe('5.2 log buffers across a navigation', () => {
   }
 
   const sender = (tab: browser.tabs.Tab, frameId: number): browser.runtime.MessageSender =>
-    ({ tab, frameId, id: 'kitsune@test', url: tab.url });
+    ({ tab, frameId, id: 'inari@test', url: tab.url });
 
   it('takes batches from the top frame of a logging tab only, across navigations', async () => {
     const { post } = loggingBrowser();
@@ -700,8 +700,8 @@ describe('5.2 log buffers across a navigation', () => {
 });
 
 describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
-  const EXTENSION_ID = 'kitsune@test';
-  const POPUP_URL = 'moz-extension://kitsune/popup/popup.html';
+  const EXTENSION_ID = 'inari@test';
+  const POPUP_URL = 'moz-extension://inari/popup/popup.html';
   type Listener = (message: unknown, sender: browser.runtime.MessageSender, sendResponse: (r: unknown) => void) => boolean | void;
 
   /** registerListeners() on a fake browser; `send` / `sendExternal` call its two message listeners. */
@@ -716,7 +716,7 @@ describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
     useFakeBrowser({
       runtime: {
         id: EXTENSION_ID,
-        getURL: (p: string) => `moz-extension://kitsune${p}`,
+        getURL: (p: string) => `moz-extension://inari${p}`,
         onMessage: { addListener: (fn: Listener) => { onMessage = fn; } },
         onMessageExternal: { addListener: (fn: Listener) => { onExternal = fn; } },
       },
@@ -747,13 +747,13 @@ describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
   /** The popup page opened in a tab. */
   const popupInTab: browser.runtime.MessageSender = { ...popup, tab: fakeTab({ id: 9, url: POPUP_URL }) };
 
-  const APPROVALS_REFUSED = { success: false, error: 'Approval requests are answered in the KitsuneMCP toolbar popup' };
+  const APPROVALS_REFUSED = { success: false, error: 'Approval requests are answered in the InariMCP toolbar popup' };
   const COMMAND_REFUSED = { success: false, error: 'Background commands are only accepted from extension pages' };
 
   it('a content script can neither list nor decide approvals, nor drive the dispatcher', async () => {
     const { send, tabQueries } = listenersBrowser();
-    expect(await send({ type: 'kitsune:approvals:list' }, contentScript)).toEqual(APPROVALS_REFUSED);
-    expect(await send({ type: 'kitsune:approvals:decide', id: 'a', approved: true }, contentScript)).toEqual(APPROVALS_REFUSED);
+    expect(await send({ type: 'inari:approvals:list' }, contentScript)).toEqual(APPROVALS_REFUSED);
+    expect(await send({ type: 'inari:approvals:decide', id: 'a', approved: true }, contentScript)).toEqual(APPROVALS_REFUSED);
     expect(await send({ target: 'background', action: 'noSuchAction' }, contentScript)).toEqual(COMMAND_REFUSED);
     // The dispatcher never ran: it would have looked for the target tab.
     expect(tabQueries()).toBe(0);
@@ -761,13 +761,13 @@ describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
 
   it('an extension page in a tab may list approvals but not decide one', async () => {
     const { send } = listenersBrowser();
-    expect(await send({ type: 'kitsune:approvals:list' }, popupInTab)).toEqual({ success: true, approvals: [] });
-    expect(await send({ type: 'kitsune:approvals:decide', id: 'a', approved: true }, popupInTab)).toEqual(APPROVALS_REFUSED);
+    expect(await send({ type: 'inari:approvals:list' }, popupInTab)).toEqual({ success: true, approvals: [] });
+    expect(await send({ type: 'inari:approvals:decide', id: 'a', approved: true }, popupInTab)).toEqual(APPROVALS_REFUSED);
   });
 
   it('the toolbar popup decides approvals and drives the dispatcher', async () => {
     const { send, tabQueries } = listenersBrowser();
-    expect(await send({ type: 'kitsune:approvals:decide', id: 'a', approved: true }, popup))
+    expect(await send({ type: 'inari:approvals:decide', id: 'a', approved: true }, popup))
       .toEqual({ success: false, error: 'This request is no longer pending' });
     expect(await send({ target: 'background', action: 'noSuchAction' }, popup))
       .toEqual({ success: false, error: 'Unknown action: noSuchAction' });
@@ -776,7 +776,7 @@ describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
 
   it('a page with another extension id is not an extension page of ours', async () => {
     const { send } = listenersBrowser();
-    expect(await send({ type: 'kitsune:approvals:list' }, { ...popup, id: 'other@test' })).toEqual(APPROVALS_REFUSED);
+    expect(await send({ type: 'inari:approvals:list' }, { ...popup, id: 'other@test' })).toEqual(APPROVALS_REFUSED);
   });
 
   it('every external message is refused', async () => {

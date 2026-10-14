@@ -21,10 +21,10 @@
     "declarationMap": false,
     "sourceMap": false,
     // The shared sources, as scripts/build-extension.mjs resolves them. Only
-    // the browser-safe entry points (the build refuses @kitsune-mcp/shared/node).
+    // the browser-safe entry points (the build refuses @inari-mcp/shared/node).
     "paths": {
-      "@kitsune-mcp/shared": ["../shared/src/index.ts"],
-      "@kitsune-mcp/shared/action-names": ["../shared/src/action-names.ts"]
+      "@inari-mcp/shared": ["../shared/src/index.ts"],
+      "@inari-mcp/shared/action-names": ["../shared/src/action-names.ts"]
     }
   },
   "include": ["src"]

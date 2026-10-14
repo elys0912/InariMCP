@@ -1,10 +1,10 @@
-/* KitsuneMCP - Content Script Styles (fox_highlight overlay) */
+/* InariMCP - Content Script Styles (fox_highlight overlay) */
 
-.kitsune-highlight-overlay {
-  animation: kitsune-pulse 1.5s ease-in-out infinite;
+.inari-highlight-overlay {
+  animation: inari-pulse 1.5s ease-in-out infinite;
 }
 
-@keyframes kitsune-pulse {
+@keyframes inari-pulse {
   0%, 100% {
     box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
   }

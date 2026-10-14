@@ -1,7 +1,7 @@
 /**
  * Headless backend actions against a real headless Firefox (Playwright).
  * Skipped as a whole when Firefox cannot be launched, except on CI or with
- * KITSUNE_REQUIRE_FIREFOX (npm run test:firefox), where that fails the run
+ * INARI_REQUIRE_FIREFOX (npm run test:firefox), where that fails the run
  * (tests/contract/helpers/real-firefox.ts).
  */
 import * as fs from 'node:fs';
@@ -370,7 +370,7 @@ describe('other page actions', () => {
 describe('screenshot', () => {
   let dir = '';
   beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kitsune-headless-shot-'));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'inari-headless-shot-'));
     vi.stubEnv('FOX_SCREENSHOTS_DIR', dir);
   });
   afterEach(() => {
