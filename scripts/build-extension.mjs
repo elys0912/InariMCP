@@ -8,7 +8,9 @@
 //   src/consent/consent.ts  -> dist/consent/consent.js  (consent.html, opened
 //                                                        by the background)
 // plus the static files popup.html / popup.css / consent.html / consent.css /
-// content.css.
+// content.css, and dist/LICENSE: a copy of the repository's LICENSE (the MIT
+// notice of this project and of the project it is based on), which the
+// license asks to ship with every copy, the xpi included.
 //
 // esbuild does not type-check: `npm run typecheck -w @inari-mcp/extension`
 // (tsc --noEmit) does, and `npm run build` of the extension runs it first.
@@ -130,6 +132,7 @@ for (const [from, to] of [
   mkdirSync(path.dirname(path.join(dist, to)), { recursive: true });
   copyFileSync(path.join(src, from), path.join(dist, to));
 }
+copyFileSync(path.join(root, 'LICENSE'), path.join(dist, 'LICENSE'));
 
 // ESM sources are strict, but an IIFE bundle is a classic script: esbuild
 // keeps strict mode by emitting "use strict" (from the tsconfig's strict /

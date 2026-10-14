@@ -36,6 +36,7 @@ describe('scripts/pack-extension.mjs', () => {
     expect(files).toEqual([...files].sort());
     expect(files).toEqual(expect.arrayContaining([
       'manifest.json', 'dist/background.js', 'dist/content.js', 'dist/popup/popup.js', 'dist/popup/popup.html',
+      'dist/consent/consent.js', 'dist/LICENSE',
     ]));
     expect(files.filter((f) => f.startsWith('src/') || f.endsWith('.map') || f.endsWith('.ts'))).toEqual([]);
   }, 150_000);

@@ -51,6 +51,8 @@ In `web-ext-artifacts/`:
 
 `<version>` is the `version` of `packages/extension/manifest.json`. The files in the zip are `manifest.json`, `_locales/`, `icons/` and `dist/` (three JavaScript bundles, the HTML and the CSS files).
 
+`dist/LICENSE` in the zip is a copy of the repository's `LICENSE` (MIT, with the copyright notice of the project this add-on is based on); `scripts/build-extension.mjs` copies it.
+
 ## Check the result
 
 A zip file records the modification time of each file, so two zips built at different times differ as files even when their contents are the same. Compare the hashes of the contents instead:
