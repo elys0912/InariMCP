@@ -16,7 +16,8 @@ export function registerListeners(): void {
   browser.runtime.onMessage.addListener(onRuntimeMessage);
 
   // First install only (not updates): ask for consent before anything
-  // connects (user-control.ts).
+  // connects (user-control.ts; control-state.ts holds the answer, and
+  // native-connection.ts setConnectionAllowed opens no port without it).
   browser.runtime.onInstalled.addListener((details) => {
     if (details.reason !== "install") return;
     openConsentPage().catch((error: unknown) => {
@@ -42,6 +43,8 @@ export function registerListeners(): void {
   );
 }
 
+const CONTROL_MESSAGE_TYPES: readonly unknown[] = Object.values(CONTROL_MESSAGE);
+
 /**
  * runtime.onMessage: messages of the popup and the content scripts, by type.
  * True when the answer is sent later (sendResponse after an await).
@@ -54,19 +57,17 @@ function onRuntimeMessage(message: unknown, sender: MessageSender, sendResponse:
     answerApprovalMessage(msg, sender, sendResponse);
     return;
   }
-  if (msg.type === CONTROL_MESSAGE.GET || msg.type === CONTROL_MESSAGE.SET_CONSENT || msg.type === CONTROL_MESSAGE.SET_PAUSED) {
-    return answerControlMessage(msg, sender, sendResponse);
-  }
+  if (CONTROL_MESSAGE_TYPES.includes(msg.type)) return answerControlMessage(msg, sender, sendResponse);
   if (msg.target === "background") return runPageCommand(msg, sender, sendResponse);
 }
 
 /**
  * Approval LIST / DECIDE. Only the toolbar popup may see or answer approval
- * requests: never a content script (or page JS), and for a
- * decision not even an extension page loaded in a tab.
+ * requests: never a content script (or page JS), and for a decision not even
+ * an extension page loaded in a tab.
  */
 function answerApprovalMessage(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): void {
-  if (!isExtensionPage(sender) || (msg.type === APPROVAL_MESSAGE.DECIDE && sender.tab)) {
+  if (!isExtensionPage(sender) || (msg.type === APPROVAL_MESSAGE.DECIDE && !isToolbarPopup(sender))) {
     console.error("[InariMCP] Refused approval message from", sender.url);
     sendResponse({ success: false, error: "Approval requests are answered in the InariMCP toolbar popup" });
     return;
@@ -79,29 +80,35 @@ function answerApprovalMessage(msg: Record<string, unknown>, sender: MessageSend
 }
 
 /**
- * The consent and the pause switch (user-control.ts). Content scripts get
- * nothing. The consent is answered only from the consent page, the pause
- * switch only from the toolbar popup (not the popup page opened in a tab),
- * like an approval decision. True when the answer is sent later.
+ * The answer to a control message (user-control.ts), or null when this
+ * sender may not send it or it is malformed. Content scripts get nothing.
+ * The consent is changed only from the consent page, the pause switch only
+ * from the toolbar popup (not the popup page opened in a tab), like an
+ * approval decision.
  */
-function answerControlMessage(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): boolean {
-  const fromConsentPage = isExtensionPage(sender) && sender.url === browser.runtime.getURL(CONSENT_PAGE_PATH);
-  const fromToolbarPopup = isExtensionPage(sender) && sender.tab === undefined;
-  let change: Promise<ControlView> | null;
-  if (msg.type === CONTROL_MESSAGE.GET) {
-    change = isExtensionPage(sender) ? Promise.resolve(controlView()) : null;
-  } else if (msg.type === CONTROL_MESSAGE.SET_CONSENT) {
-    change = fromConsentPage && typeof msg.granted === "boolean" ? setConsent(msg.granted) : null;
-  } else {
-    change = fromToolbarPopup && typeof msg.paused === "boolean" ? setPaused(msg.paused) : null;
+function controlReply(msg: Record<string, unknown>, sender: MessageSender): Promise<ControlView> | null {
+  switch (msg.type) {
+    case CONTROL_MESSAGE.GET:
+      return isExtensionPage(sender) ? Promise.resolve(controlView()) : null;
+    case CONTROL_MESSAGE.SET_CONSENT:
+      return isConsentPage(sender) && typeof msg.granted === "boolean" ? setConsent(msg.granted) : null;
+    case CONTROL_MESSAGE.SET_PAUSED:
+      return isToolbarPopup(sender) && typeof msg.paused === "boolean" ? setPaused(msg.paused) : null;
+    default:
+      return null;
   }
-  if (change === null) {
+}
+
+/** The consent and the pause switch. True when the answer is sent later. */
+function answerControlMessage(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): boolean {
+  const reply = controlReply(msg, sender);
+  if (reply === null) {
     console.error("[InariMCP] Refused control message from", sender.url);
     sendResponse({ success: false, error: "Refused: not allowed from this page, or a malformed message" });
     return false;
   }
 
-  change.then(sendResponse, (error: unknown) => {
+  reply.then(sendResponse, (error: unknown) => {
     sendResponse({ success: false, error: errorMessage(error) });
   });
   return true;
@@ -115,8 +122,8 @@ function openConsentPage(): Promise<browser.tabs.Tab> {
 /**
  * A command for the dispatcher (`target: "background"`). Only the
  * Extension's own pages (the popup) may drive it directly. Content scripts
- * could otherwise call every handler without the containerScope and URL rules the MCP Server
- * attaches (Layer 0 bypass).
+ * could otherwise call every handler without the containerScope and URL
+ * rules the MCP Server attaches (Layer 0 bypass).
  */
 function runPageCommand(msg: Record<string, unknown>, sender: MessageSender, sendResponse: SendResponse): boolean {
   if (!isExtensionPage(sender)) {
@@ -147,4 +154,14 @@ function isExtensionPage(sender: MessageSender): boolean {
     typeof sender.url === "string" &&
     sender.url.startsWith(browser.runtime.getURL("/"))
   );
+}
+
+/** The toolbar popup itself, not the popup page opened in a tab. */
+function isToolbarPopup(sender: MessageSender): boolean {
+  return isExtensionPage(sender) && sender.tab === undefined;
+}
+
+/** The consent page (an extension page, never the web page of a tab). */
+function isConsentPage(sender: MessageSender): boolean {
+  return isExtensionPage(sender) && sender.url === browser.runtime.getURL(CONSENT_PAGE_PATH);
 }
