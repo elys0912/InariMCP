@@ -55,7 +55,7 @@ import { sanitizeResult, sanitizeString } from '../safety/sanitizer.js';
 import { compileUrlPatterns } from '../safety/url-pattern.js';
 import { applyPasswordPolicy, passwordSelectorRefusal } from '../safety/password-guard.js';
 import { getConnectionManager } from '../connection/manager.js';
-import { deprecationNote, resolveOperation } from './operations.js';
+import { resolveOperation } from './operations.js';
 import { NAVIGATE_ACTIONS, SAFETY_STATUS_TOOL, SCREENSHOT_SCOPES } from './schemas.js';
 import type { NavigateAction, OperationName, ScreenshotScope } from './schemas.js';
 import { isOneOf } from './one-of.js';
@@ -184,9 +184,8 @@ function buildCommandData(
 /**
  * Arguments the backends compile with `new RegExp()`, always without flags
  * (case-sensitive) on both backends: fox_get_tabs, fox_screenshot all_tabs,
- * fox_wait_for_url, fox_wait_for_navigation (and the Extension's
- * reload_by_url / find_tabs). A case-insensitive part needs a
- * character class such as `[Ee]xample`. Each must also pass the limits of
+ * fox_wait_for_url, fox_wait_for_navigation. A case-insensitive part needs
+ * a character class such as `[Ee]xample`. Each must also pass the limits of
  * shared/src/url-pattern-limit.ts (length, no repeated group containing a
  * repeat), which the Extension checks again.
  */
@@ -393,7 +392,10 @@ function safetyDenialToCallResult(
 export interface ApprovalRequestDetails {
   requestId: string;
   toolName: string;
-  /** The site the approval is bound to (safety/approval.ts approvalSiteOf). */
+  /**
+   * The site the approval is bound to (approvalSiteOf of @inari-mcp/shared).
+   * The field keeps its name `host` (relay/approval.ts reads it).
+   */
   host: string;
   url: string;
   /** The confirm_read_sites entry of a read; null for an acting tool. */
@@ -455,7 +457,7 @@ function confirmationToCallResult(
     const approval: ApprovalRequestDetails = {
       requestId: request.id,
       toolName,
-      host: target.host,
+      host: target.site,
       url: shownUrl,
       matchedPattern,
       summary: request.summary,
@@ -466,7 +468,7 @@ function confirmationToCallResult(
       'confirmation dialog (MCP elicitation) when the client supports it, otherwise in ' +
       'Firefox, where the InariMCP toolbar button shows a badge and the human approves ' +
       'or denies in its popup. An approval covers one call of this tool with exactly these ' +
-      `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
+      `arguments on ${target.site}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
       'Nothing in the page (buttons, fox_click) can approve it. ' +
       `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
       'Every acting call is asked for separately. ' +
@@ -555,26 +557,7 @@ export function createToolHandler(
   calledName: string,
   transport: string = 'stdio',
 ): (args: Record<string, unknown>, options?: ToolCallOptions) => Promise<CallToolResult> {
-  const run = toolCall(calledName, transport);
-  return async (args, options) => withDeprecationNote(calledName, await run(args, options));
-}
-
-/** Deprecated names already reported in this process. */
-const reportedDeprecations = new Set<string>();
-
-/**
- * A call by a deprecated name: once per name and process, a note at the end
- * of the result and a line on stderr (daemon.log). Not on every call, to
- * keep results short.
- */
-function withDeprecationNote(calledName: string, result: CallToolResult): CallToolResult {
-  if (reportedDeprecations.has(calledName)) return result;
-  const note = deprecationNote(calledName);
-  if (note === null) return result;
-  reportedDeprecations.add(calledName);
-  process.stderr.write(`[InariMCP] ${note}\n`);
-  result.content.push({ type: 'text' as const, text: `Note: ${note}` });
-  return result;
+  return toolCall(calledName, transport);
 }
 
 /** One operation call on its way through the pipeline. */
@@ -710,7 +693,8 @@ function buildCommand({ guard, toolName, args }: CallContext, grant: ApprovalGra
   // The human approved this call for one site: the Extension runs an acting
   // command (or a read of a confirm_read_sites site) only on that site.
   if (grant !== null) {
-    command.approvedHost = grant.target.host;
+    // The wire field keeps its name `approvedHost`; its value is a site (approvalSiteOf).
+    command.approvedHost = grant.target.site;
   }
   return command;
 }

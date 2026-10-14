@@ -55,23 +55,18 @@ afterEach(() => {
 });
 
 describe('getScreenshotsDir', () => {
-  const LEGACY_DIR = path.join(os.tmpdir(), 'inari-shots-legacy');
+  const OLD_NAME_DIR = path.join(os.tmpdir(), 'inari-shots-old-name');
 
   it('uses FOX_SCREENSHOTS_DIR when set', () => {
     expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: dir })).toBe(path.resolve(dir));
   });
 
-  it('falls through a blank FOX_SCREENSHOTS_DIR to the legacy name', () => {
+  it('uses the default when FOX_SCREENSHOTS_DIR is blank; the old CLAUDE_BROWSER_* name is not read', () => {
     for (const blank of ['', '   ']) {
-      expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: blank, CLAUDE_BROWSER_SCREENSHOTS_DIR: LEGACY_DIR }))
-        .toBe(path.resolve(LEGACY_DIR));
+      const fromBlank = getScreenshotsDir({ FOX_SCREENSHOTS_DIR: blank, CLAUDE_BROWSER_SCREENSHOTS_DIR: OLD_NAME_DIR });
+      expect(fromBlank).toBe(getScreenshotsDir({}));
+      expect(fromBlank).not.toBe(path.resolve(blank));
     }
-  });
-
-  it('uses the default when both names are blank', () => {
-    const fromBlank = getScreenshotsDir({ FOX_SCREENSHOTS_DIR: ' ', CLAUDE_BROWSER_SCREENSHOTS_DIR: '' });
-    expect(fromBlank).toBe(getScreenshotsDir({}));
-    expect(fromBlank).not.toBe(path.resolve(' '));
   });
 });
 

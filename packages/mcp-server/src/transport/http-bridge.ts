@@ -391,7 +391,7 @@ interface BridgeContext {
   readonly startTime: number;
   /** Set by POST /daemon/shutdown: new tool calls are refused (503) from then on. */
   stopping: Promise<Record<string, unknown>> | undefined;
-  /** Every tool, deprecated names included (see header comment: FOX_CAPS is applied by each relay). */
+  /** Every public tool (see header comment: FOX_CAPS is applied by each relay). */
   readonly registeredTools: ReadonlySet<string>;
   /** HttpBridgeOptions.isShuttingDown (signal, idle). */
   readonly isShuttingDown: () => boolean;

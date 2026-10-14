@@ -56,12 +56,11 @@ async function status(): Promise<Record<string, unknown>> {
 }
 
 describe('environment overrides through the handler path', () => {
-  it('FOX_READ_ONLY=1 refuses acting tools, public and earlier names alike', async () => {
+  it('FOX_READ_ONLY=1 refuses acting tools', async () => {
     process.env['FOX_READ_ONLY'] = '1';
     expect(await status()).toMatchObject({ readOnly: true });
     expect((await call('fox_click', { selector: '#a' })).decision).toBe('read_only');
     expect((await call('fox_tab', { action: 'close', tabId: 1 })).decision).toBe('read_only');
-    expect((await call('fox_close_tab', { tabId: 1 })).decision).toBe('read_only');
     expect((await call('fox_set_value', { selector: '#a', value: 'v' })).text).toMatch(/^fox_set_value refused: safety guard is in read-only mode/);
   });
 
@@ -72,7 +71,7 @@ describe('environment overrides through the handler path', () => {
     expect(policy).toMatchObject({ readOnly: false, configError: null });
     expect(policy).not.toHaveProperty('allowScriptExecution');
     // Not refused by the guard (no browser is connected: it fails later).
-    expect((await call('fox_get_text', {})).decision).toBeNull();
+    expect((await call('fox_read', { mode: 'text' })).decision).toBeNull();
     // An acting tool still asks the human, as without the variable.
     expect((await call('fox_click', { selector: '#a' })).decision).toBe('confirmation_required');
   });

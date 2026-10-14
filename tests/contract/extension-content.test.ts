@@ -449,28 +449,26 @@ describe('password fields on the extension path', () => {
   const MASKED_VIEW = { p: '[MASKED]', c: '[MASKED]', t: '[MASKED]', u: 'user-1' };
   type View = Record<string, unknown>;
 
-  real('fox_read info, fox_find and get_value show [MASKED] for every password field', async () => {
+  real('fox_read info and fox_find show [MASKED] for every password field', async () => {
     await load(FORM);
-    const r = await run<{ interactive: View; forms: View; found: View; values: View }>(
+    const r = await run<{ interactive: View; forms: View; found: View }>(
       `const byId = (list) => Object.fromEntries(list.map((e) => [e.id, e.value]));
        const info = f.inspect.getPageInfo();
        return {
          interactive: byId(info.interactiveElements),
          forms: byId(info.forms[0].fields),
          found: byId(f.inspect.getElements({ selector: 'input' }).elements),
-         values: Object.fromEntries(['p', 'c', 't', 'u'].map((id) => [id, f.inspect.getValue({ id }).value])),
        };`,
     );
     expect(r.interactive).toEqual(MASKED_VIEW);
     expect(r.forms).toEqual(MASKED_VIEW);
     expect(r.found).toEqual(MASKED_VIEW);
-    expect(r.values).toEqual(MASKED_VIEW);
     expect(JSON.stringify(r)).not.toContain('pw-secret');
   });
 
   // Decision #4 / Fo-03: hidden, one-time code and payment card fields too
   // (rule: shared/src/field-mask.ts).
-  real('fox_read info, fox_find and get_value mask hidden, one-time code and card fields', async () => {
+  real('fox_read info and fox_find mask hidden, one-time code and card fields', async () => {
     await load(
       '<form id="g">' +
       '<input id="h" type="hidden" value="secret-1">' +
@@ -481,18 +479,15 @@ describe('password fields on the extension path', () => {
       '<input id="u" type="text" autocomplete="name" value="user-1">' +
       '</form>',
     );
-    const r = await run<{ forms: View; values: View; found: View }>(
+    const r = await run<{ forms: View; found: View }>(
       `const byId = (list) => Object.fromEntries(list.map((e) => [e.id, e.value]));
-       const ids = ['h', 'o', 'n', 'v', 'm', 'u'];
        return {
          forms: byId(f.inspect.getPageInfo().forms[0].fields),
-         values: Object.fromEntries(ids.map((id) => [id, f.inspect.getValue({ id }).value])),
          found: byId(f.inspect.getElements({ selector: 'input, select' }).elements),
        };`,
     );
     const masked = { h: '[MASKED]', o: '[MASKED]', n: '[MASKED]', v: '[MASKED]', m: '[MASKED]', u: 'user-1' };
     expect(r.forms).toEqual(masked);
-    expect(r.values).toEqual(masked);
     expect(r.found).toEqual(masked);
     expect(JSON.stringify(r)).not.toContain('secret');
   });
@@ -685,31 +680,5 @@ describe('WP44 content input checks and truncation (E-12, E-13, E-17)', () => {
     // top / bottom report the measured position like every other direction (E-3).
     expect((r.bottom.position as { y: number }).y).toBeGreaterThan(0);
     expect(r.top).toEqual({ scrolled: true, position: { x: 0, y: 0 } });
-  });
-
-  real('E-11 waitForChange changeType "text" sees a text change', async () => {
-    await load('<p id="t">before</p>');
-    const r = await run<Record<string, unknown>>(
-      `const node = document.getElementById('t').firstChild;
-       const p = f.wait.waitForChange({ selector: '#t', changeType: 'text', timeout: 2000 });
-       setTimeout(() => { node.data = 'after'; }, 50);
-       return await p;`,
-    );
-    expect(r).toMatchObject({ changed: true, changes: [{ type: 'characterData' }] });
-  });
-
-  real('E-13 waitForChange fails for a selector that matches nothing and for an unknown changeType', async () => {
-    await load('<div id="t"></div>');
-    const r = await run<[string, string, Record<string, unknown>]>(
-      `const missing = await f.wait.waitForChange({ selector: '#nope', timeout: 500 }).catch((e) => e.message);
-       const badType = await f.wait.waitForChange({ selector: '#t', changeType: 'bogus', timeout: 500 })
-         .catch((e) => e.message);
-       const p = f.wait.waitForChange({ selector: '#t', changeType: 'childList', timeout: 2000 });
-       setTimeout(() => document.getElementById('t').appendChild(document.createElement('i')), 50);
-       return [missing, badType, await p];`,
-    );
-    expect(r[0]).toBe('Element not found: #nope');
-    expect(r[1]).toBe('Unknown changeType: "bogus" (expected childList, attributes or text)');
-    expect(r[2]).toMatchObject({ changed: true });
   });
 });

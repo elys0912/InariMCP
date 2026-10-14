@@ -8,13 +8,10 @@ import { OPERATION_NAMES, TOOL_SCHEMAS, isOperationName } from './schemas.js';
 import type { OperationName, ToolClassification, ToolDefinition } from './schemas.js';
 
 /**
- * Classes that change page or browser state (input, navigation, tabs): the
- * guard asks the human for every call of them, on every site.
+ * The class that changes page or browser state (input, navigation, tabs):
+ * the guard asks the human for every call of it, on every site.
  */
-const ACTING_CLASSES: ReadonlySet<ToolClassification> = new Set<ToolClassification>([
-  'act',
-  'workflow',
-]);
+const ACTING_CLASS: ToolClassification = 'act';
 
 function namesWhere(pred: (def: ToolDefinition) => boolean): ReadonlySet<OperationName> {
   return new Set(OPERATION_NAMES.filter((name) => pred(TOOL_SCHEMAS[name])));
@@ -29,12 +26,12 @@ export function isOperationIn(set: ReadonlySet<OperationName>, name: string): bo
 }
 
 /**
- * Tools that change page or browser state (ACTING_CLASSES): human approval
+ * Tools that change page or browser state (ACTING_CLASS): human approval
  * for every call, and refused in read-only mode. Every other class (observe,
  * interact, wait, human) changes no page data and runs without approval.
  */
 export const ACTING_TOOLS: ReadonlySet<OperationName> = namesWhere((def) =>
-  ACTING_CLASSES.has(def.classification),
+  def.classification === ACTING_CLASS,
 );
 
 /**
@@ -67,7 +64,6 @@ const ANNOTATIONS_BY_CLASS: Record<ToolClassification, ToolAnnotations> = {
   interact: { readOnlyHint: false, destructiveHint: false },
   human: { readOnlyHint: false, destructiveHint: false },
   act: { readOnlyHint: false, destructiveHint: true },
-  workflow: { readOnlyHint: false, destructiveHint: true },
 };
 
 /** MCP annotations: the class defaults plus the tool's own exceptions. */

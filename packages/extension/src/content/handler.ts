@@ -17,17 +17,11 @@ import {
   highlightElement,
   scrollAndCapture,
   captureFullPage,
-  getValue,
   getText,
 } from "./inspect";
 import { cancelHumanWait } from "./overlay";
 import type { ContentMessage } from "./types";
-import {
-  waitForElement,
-  waitForChange,
-  waitForNetworkIdle,
-  clickAndWait,
-} from "./wait";
+import { waitForElement, waitForNetworkIdle } from "./wait";
 
 export async function handleMessage(
   message: ContentMessage,
@@ -47,18 +41,12 @@ export async function handleMessage(
       return highlightElement(message);
     case "waitForElement":
       return waitForElement(message);
-    case "waitForChange":
-      return waitForChange(message);
     case "waitForNetworkIdle":
       return waitForNetworkIdle(message);
     case "scrollAndCapture":
       return scrollAndCapture(message);
-    case "clickAndWait":
-      return clickAndWait(message);
     case "captureFullPage":
       return captureFullPage();
-    case "getValue":
-      return getValue(message);
     case "setValue":
       return setValue(message);
     case "hover":

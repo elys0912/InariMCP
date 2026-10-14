@@ -8,11 +8,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
 import { checkListedTarget } from '../../packages/extension/src/background/url-policy.ts';
-import {
-  reloadMatchingTabs,
-  reloadAllTabs,
-  reloadTabsByUrl,
-} from '../../packages/extension/src/background/reload.ts';
 import { navigateHistory } from '../../packages/extension/src/background/navigation.ts';
 import {
   captureTabsWithin,
@@ -23,14 +18,11 @@ import {
   describeNativeMessage,
   nextReconnectAttempts,
 } from '../../packages/extension/src/background/native-connection.ts';
-import { ACTION_TABLE } from '../../packages/extension/src/background/action-table.ts';
 import { handleCommand } from '../../packages/extension/src/background/dispatch.ts';
 import { registerListeners } from '../../packages/extension/src/background/listeners.ts';
 import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
 
 const background = readExtensionTree('background');
-
-const NO_LISTS = { blocked: [], allowed: [], allowlistActive: false };
 
 /** A tab with only the fields a test needs. */
 const fakeTab = (fields: { id: number; url?: string; cookieStoreId?: string }): browser.tabs.Tab =>
@@ -397,35 +389,6 @@ describe('WP30 screenshot of a background tab keeps the active tab', () => {
   //   (same / other window) returns that tab's image, not a blank one.
 });
 
-describe('3.A8 reload_all / reload_by_url act only on the approved site', () => {
-  it('reloads only in-scope tabs on the approved site and reports the excluded count', async () => {
-    const reloaded: number[] = [];
-    (globalThis as { browser?: unknown }).browser = {
-      tabs: {
-        query: async () => [
-          { id: 1, url: 'https://news.example.test/' },
-          { id: 2, url: 'https://bank.example.test/' },
-        ],
-        reload: async (id: number) => { reloaded.push(id); },
-      },
-    };
-    try {
-      const result = await reloadMatchingTabs(() => true, false, null, 'news.example.test', NO_LISTS);
-      expect(reloaded).toEqual([1]);
-      expect(result).toMatchObject({ success: true, reloadedCount: 1, excludedUnapproved: 1, excludedBlocked: 0 });
-      // Without an approval nothing is reloaded.
-      reloaded.length = 0;
-      expect(await reloadMatchingTabs(() => true, false, null, undefined, NO_LISTS))
-        .toMatchObject({ reloadedCount: 0, excludedUnapproved: 2 });
-      expect(reloaded).toEqual([]);
-    } finally {
-      delete (globalThis as { browser?: unknown }).browser;
-    }
-    expect(ACTION_TABLE.get('reloadAll')?.approval).toBe('actPerTab');
-    expect(ACTION_TABLE.get('reloadByUrl')?.approval).toBe('actPerTab');
-  });
-});
-
 describe('WP5b URL rules and urlPattern arguments', () => {
   it('refuses a target tab on a blocked or not allowlisted site, fails closed without a tab', async () => {
     const host = (h: string, pathMatch: string) =>
@@ -512,27 +475,22 @@ describe('WP5b URL rules and urlPattern arguments', () => {
     expect(result).toMatchObject({ success: false, safetyDecision: 'blocked_url' });
   });
 
-  it('screenshot all_tabs and reload_all skip list-violating tabs (excludedBlocked)', async () => {
+  it('screenshot all_tabs skips list-violating tabs (excludedBlocked)', async () => {
     const tabs = [
       fakeTab({ id: 1, url: 'https://ok.test/' }),
       fakeTab({ id: 2, url: 'https://blocked.test/' }),
     ];
     const captured: number[] = [];
-    const reloaded: number[] = [];
     useFakeBrowser({
       tabs: {
         query: async () => tabs,
         captureTab: async (id: number) => { captured.push(id); return `data:${id}`; },
-        reload: async (id: number) => { reloaded.push(id); },
       },
     });
     const blockedUrlRules = [hostRule('blocked.test')];
     expect(await handleCommand({ action: 'screenshot_all_tabs', blockedUrlRules }, 'host'))
       .toMatchObject({ success: true, count: 1, failed: 0, excludedBlocked: 1, excludedReadSites: 0 });
     expect(captured).toEqual([1]);
-    expect(await handleCommand({ action: 'reload_all', blockedUrlRules, approvedHost: 'ok.test' }, 'host'))
-      .toMatchObject({ success: true, reloadedCount: 1, excludedBlocked: 1, excludedUnapproved: 0 });
-    expect(reloaded).toEqual([1]);
   });
 
   it('WP38 both excluded counts are always there, 0 included', async () => {
@@ -541,15 +499,36 @@ describe('WP5b URL rules and urlPattern arguments', () => {
       tabs: {
         query: async () => tabs,
         captureTab: async (id: number) => `data:${id}`,
-        reload: async () => {},
       },
     });
-    for (const [action, excluded] of [['screenshot_all_tabs', 'excludedReadSites'], ['reload_all', 'excludedUnapproved']]) {
-      const result = await handleCommand({ action, approvedHost: 'ok.test' }, 'host');
-      expect(result, action).toMatchObject({ success: true, excludedBlocked: 0, [excluded!]: 0 });
-      expect(result, action).not.toHaveProperty('excludedBlockedReason');
-      expect(result, action).not.toHaveProperty('excludedReason');
-    }
+    const result = await handleCommand({ action: 'screenshot_all_tabs' }, 'host');
+    expect(result).toMatchObject({ success: true, excludedBlocked: 0, excludedReadSites: 0 });
+    expect(result).not.toHaveProperty('excludedBlockedReason');
+    expect(result).not.toHaveProperty('excludedReadSitesReason');
+  });
+
+  it('screenshot all_tabs skips confirm_read_sites tabs with excludedReadSitesReason', async () => {
+    const tabs = [
+      fakeTab({ id: 1, url: 'https://ok.test/' }),
+      fakeTab({ id: 2, url: 'https://bank.test/' }),
+    ];
+    const captured: number[] = [];
+    useFakeBrowser({
+      tabs: {
+        query: async () => tabs,
+        captureTab: async (id: number) => { captured.push(id); return `data:${id}`; },
+      },
+    });
+    const result = await handleCommand({ action: 'screenshot_all_tabs', confirmReadUrlRules: [hostRule('bank.test')] }, 'host');
+    expect(result).toMatchObject({
+      success: true,
+      count: 1,
+      excludedBlocked: 0,
+      excludedReadSites: 1,
+      excludedReadSitesReason: expect.stringContaining('confirm_read_sites'),
+    });
+    expect(result).not.toHaveProperty('excludedReason');
+    expect(captured).toEqual([1]);
   });
 });
 
@@ -716,65 +695,6 @@ describe('5.7 screenshot all_tabs', () => {
 
     useFakeBrowser({ tabs: { query: async () => [], captureTab: async () => 'data:x' } });
     expect(await screenshotAllTabs({})).toMatchObject({ success: true, count: 0, failed: 0 });
-  });
-});
-
-describe('WP5 reload_all / reload_by_url arguments', () => {
-  /** A fake browser.tabs; the returned array records every reload call. */
-  function reloadBrowser(tabs: browser.tabs.Tab[]): { id: number; bypassCache: boolean }[] {
-    const calls: { id: number; bypassCache: boolean }[] = [];
-    useFakeBrowser({
-      tabs: {
-        query: async () => tabs,
-        reload: async (id: number, o: { bypassCache: boolean }) => { calls.push({ id, bypassCache: o.bypassCache }); },
-      },
-    });
-    return calls;
-  }
-
-  const tabs = [
-    fakeTab({ id: 1, url: 'https://a.test/app/x' }),
-    fakeTab({ id: 2, url: 'https://a.test/other' }),
-    fakeTab({ id: 3, url: 'https://A.test/app/y' }),
-  ];
-
-  it('`url` is a prefix of the whole URL, urlPattern a case-sensitive regex', async () => {
-    let calls = reloadBrowser(tabs);
-    expect(await reloadTabsByUrl({ url: 'https://a.test/app' }, null, 'a.test')).toMatchObject({ success: true, reloadedCount: 1 });
-    expect(calls.map((c) => c.id)).toEqual([1]);
-
-    calls = reloadBrowser(tabs);
-    expect(await reloadTabsByUrl({ urlPattern: '^https://a\\.test/' }, null, 'a.test')).toMatchObject({ reloadedCount: 2 });
-    expect(calls.map((c) => c.id)).toEqual([1, 2]);
-
-    // `url` wins: the urlPattern is not even compiled.
-    calls = reloadBrowser(tabs);
-    expect(await reloadTabsByUrl({ url: 'https://a.test/other', urlPattern: '(' }, null, 'a.test')).toMatchObject({ reloadedCount: 1 });
-    expect(calls.map((c) => c.id)).toEqual([2]);
-
-    expect(await reloadTabsByUrl({ urlPattern: '(' }))
-      .toMatchObject({ success: false, error: expect.stringMatching(/^Invalid urlPattern/) });
-    expect(await reloadTabsByUrl({}, null, 'a.test'))
-      .toMatchObject({ success: false, error: 'Must provide url or urlPattern' });
-  });
-
-  it('bypassCache defaults: reload_all false, reload_by_url true', async () => {
-    const one = [fakeTab({ id: 1, url: 'https://a.test/' })];
-    let calls = reloadBrowser(one);
-    expect(await reloadAllTabs({}, null, 'a.test')).toMatchObject({ bypassCache: false });
-    expect(calls).toEqual([{ id: 1, bypassCache: false }]);
-
-    calls = reloadBrowser(one);
-    expect(await reloadAllTabs({ bypassCache: true }, null, 'a.test')).toMatchObject({ bypassCache: true });
-    expect(calls).toEqual([{ id: 1, bypassCache: true }]);
-
-    calls = reloadBrowser(one);
-    expect(await reloadTabsByUrl({ url: 'https://a.test/' }, null, 'a.test')).toMatchObject({ bypassCache: true });
-    expect(calls).toEqual([{ id: 1, bypassCache: true }]);
-
-    calls = reloadBrowser(one);
-    expect(await reloadTabsByUrl({ url: 'https://a.test/', bypassCache: false }, null, 'a.test')).toMatchObject({ bypassCache: false });
-    expect(calls).toEqual([{ id: 1, bypassCache: false }]);
   });
 });
 

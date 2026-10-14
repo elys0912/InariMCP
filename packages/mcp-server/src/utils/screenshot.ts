@@ -5,12 +5,12 @@
  * /screenshots, headless backend). Files are written by the Native Host
  * (screenshot-store.ts) or the headless backend. The directory defaults to
  * `~/.inari-mcp/screenshots/` but can be overridden via
- * FOX_SCREENSHOTS_DIR (or legacy CLAUDE_BROWSER_SCREENSHOTS_DIR).
+ * FOX_SCREENSHOTS_DIR.
  */
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { ENV, LEGACY_ENV } from '@inari-mcp/shared';
+import { ENV } from '@inari-mcp/shared';
 import { defaultScreenshotsDir } from '@inari-mcp/shared/node';
 import { resolveFoxEnv } from './headless-env.js';
 
@@ -23,15 +23,14 @@ import { resolveFoxEnv } from './headless-env.js';
  *
  * Priority:
  *  1. FOX_SCREENSHOTS_DIR env
- *  2. CLAUDE_BROWSER_SCREENSHOTS_DIR env (legacy)
- *  3. ~/.inari-mcp/screenshots/
+ *  2. ~/.inari-mcp/screenshots/
  *
  * A blank value counts as unset (resolveFoxEnv). A relative path is made
  * absolute against the working directory, as the Native Host does
  * (screenshot-store.ts).
  */
 export function getScreenshotsDir(env: NodeJS.ProcessEnv = process.env): string {
-  const envDir = resolveFoxEnv(env, ENV.FOX_SCREENSHOTS_DIR, LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR);
+  const envDir = resolveFoxEnv(env, ENV.FOX_SCREENSHOTS_DIR);
   return envDir === undefined ? defaultScreenshotsDir() : path.resolve(envDir);
 }
 

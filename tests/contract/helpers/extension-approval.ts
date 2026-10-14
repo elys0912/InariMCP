@@ -25,6 +25,6 @@ export function extensionApprovalRefusal(
   const approval = describeAction(action).approval;
   if (approval !== 'act' && approval !== 'actOnUrl' && approval !== 'read') return null;
   const tab = { id: 1, url: tabUrl } as Tab;
-  const readRules = compileUrlRules(command.confirmReadUrlRules ?? []).rules;
-  return checkApproval(approval, tab, command.data, readRules, command.approvedHost);
+  const confirmReadRules = compileUrlRules(command.confirmReadUrlRules ?? []).rules;
+  return checkApproval(approval, tab, command.data, confirmReadRules, command.approvedHost);
 }

@@ -69,9 +69,9 @@ describe('listScreenshots (2.A3)', () => {
 // R2-B C-3: a blank value was taken as a directory named ' ', and a relative
 // one was left relative (unlike the Native Host's screenshot-store.ts).
 describe('getScreenshotsDir', () => {
-  it('a blank FOX_SCREENSHOTS_DIR is unset: the legacy name, then the default', () => {
+  it('a blank FOX_SCREENSHOTS_DIR is unset: the default (the old CLAUDE_BROWSER_* name is not read)', () => {
     expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: '  ' })).toBe(defaultScreenshotsDir());
-    expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: '', CLAUDE_BROWSER_SCREENSHOTS_DIR: dir })).toBe(dir);
+    expect(getScreenshotsDir({ FOX_SCREENSHOTS_DIR: '', CLAUDE_BROWSER_SCREENSHOTS_DIR: dir })).toBe(defaultScreenshotsDir());
     expect(getScreenshotsDir({})).toBe(defaultScreenshotsDir());
   });
 

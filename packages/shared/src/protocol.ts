@@ -237,19 +237,6 @@ export function parseBrowserResponse(raw: unknown): ParsedBrowserResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Safety block detail  (attached to ToolResult when code === SAFETY_BLOCKED)
-// ---------------------------------------------------------------------------
-
-export const SafetyBlockDetailSchema = z.object({
-  layer: z.number().int(),
-  decision: z.string(),
-  url: z.string().optional(),
-  resolution: z.string().optional(),
-});
-
-export type SafetyBlockDetail = z.infer<typeof SafetyBlockDetailSchema>;
-
-// ---------------------------------------------------------------------------
 // Elicitation payload  (what the human is asked to approve)
 // ---------------------------------------------------------------------------
 
@@ -269,7 +256,7 @@ export type ElicitationPayload = z.infer<typeof ElicitationPayloadSchema>;
 // Unified envelope for all tool responses. On success, `data` carries the
 // result payload. On failure, `error` is a human-readable message, `code`
 // is a machine-readable error code, and `details` may carry structured
-// context (e.g. SafetyBlockDetail).
+// context (for SAFETY_BLOCKED: the decision, the layer and the URL).
 //
 // When confirmationRequired is true, the MCP Server has opened a one-time
 // human-approval request (details.approval); the stdio relay asks the human

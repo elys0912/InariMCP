@@ -2,16 +2,17 @@
  * Where the shared daemon listens. The daemon (to bind), the relays and the
  * Native Host (to reach it) resolve the same env vars the same way:
  *
- *   FOX_HOST      / CLAUDE_BROWSER_HOST       default 127.0.0.1
- *   FOX_HTTP_PORT / CLAUDE_BROWSER_HTTP_PORT  default 8785
- *   FOX_WS_PORT   / CLAUDE_BROWSER_WS_PORT    default 8786
+ *   FOX_HOST       default 127.0.0.1
+ *   FOX_HTTP_PORT  default 8785
+ *   FOX_WS_PORT    default 8786
  *
- * An empty or blank value counts as unset (the legacy name, then the default,
- * apply); a set value is used without its surrounding blanks. A port must be an integer in 1..65535; anything else falls back to the
- * default (reported through `onInvalid` when given).
+ * An empty or blank value counts as unset (the default applies); a set value
+ * is used without its surrounding blanks. A port must be an integer in
+ * 1..65535; anything else falls back to the default (reported through
+ * `onInvalid` when given).
  */
 
-import { ENV, ENV_DEFAULTS, LEGACY_ENV, MAX_PORT } from '../constants.js';
+import { ENV, ENV_DEFAULTS, MAX_PORT } from '../constants.js';
 
 type Env = Record<string, string | undefined>;
 
@@ -35,44 +36,34 @@ export function parsePort(raw: string | undefined, fallback: number): number {
   return portOf(value) ?? fallback;
 }
 
-/**
- * The first of `names` that is set to a non-blank value, trimmed. An empty or
- * blank value counts as unset, so `FOX_HOST=` (or `FOX_HOST=' '`) falls
- * through to the legacy name and then to the default (it must not become
- * `''`, which binds every interface, nor `' '`, which no socket accepts).
- */
-function pick(env: Env, ...names: string[]): { name: string; raw: string } | undefined {
-  for (const name of names) {
-    const raw = nonBlank(env[name]);
-    if (raw !== undefined) return { name, raw };
-  }
-  return undefined;
-}
-
 function resolvePortVar(
-  fox: string,
-  legacy: string,
+  name: string,
   fallback: number,
   env: Env,
   onInvalid: InvalidPortHandler | undefined,
 ): number {
-  const found = pick(env, fox, legacy);
-  if (found === undefined) return fallback;
-  const port = portOf(found.raw);
-  if (port === undefined) onInvalid?.(found.name, found.raw, fallback);
+  const raw = nonBlank(env[name]);
+  if (raw === undefined) return fallback;
+  const port = portOf(raw);
+  if (port === undefined) onInvalid?.(name, raw, fallback);
   return port ?? fallback;
 }
 
+/**
+ * FOX_HOST, trimmed. An empty or blank value counts as unset, so `FOX_HOST=`
+ * (or `FOX_HOST=' '`) is the default: it must not become `''`, which binds
+ * every interface, nor `' '`, which no socket accepts.
+ */
 export function resolveHost(env: Env = process.env): string {
-  return pick(env, ENV.FOX_HOST, LEGACY_ENV.CLAUDE_BROWSER_HOST)?.raw ?? ENV_DEFAULTS.FOX_HOST;
+  return nonBlank(env[ENV.FOX_HOST]) ?? ENV_DEFAULTS.FOX_HOST;
 }
 
 export function resolveHttpPort(onInvalid?: InvalidPortHandler, env: Env = process.env): number {
-  return resolvePortVar(ENV.FOX_HTTP_PORT, LEGACY_ENV.CLAUDE_BROWSER_HTTP_PORT, ENV_DEFAULTS.FOX_HTTP_PORT, env, onInvalid);
+  return resolvePortVar(ENV.FOX_HTTP_PORT, ENV_DEFAULTS.FOX_HTTP_PORT, env, onInvalid);
 }
 
 export function resolveWsPort(onInvalid?: InvalidPortHandler, env: Env = process.env): number {
-  return resolvePortVar(ENV.FOX_WS_PORT, LEGACY_ENV.CLAUDE_BROWSER_WS_PORT, ENV_DEFAULTS.FOX_WS_PORT, env, onInvalid);
+  return resolvePortVar(ENV.FOX_WS_PORT, ENV_DEFAULTS.FOX_WS_PORT, env, onInvalid);
 }
 
 /**

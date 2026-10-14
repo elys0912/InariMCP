@@ -17,8 +17,7 @@
  * for the old site, refused by the browser, asked again for the real one),
  * a call that goes to or opens a URL (`target`), and a read of a
  * confirm_read_sites site the server knows (`read`) or only the browser
- * knows (`readBrowser`). Public tool calls must give the same command as the
- * operation they run.
+ * knows (`readBrowser`).
  */
 
 import * as fs from 'node:fs';
@@ -51,35 +50,21 @@ const CASES: Case[] = [
   ['known/type', 'known', 'fox_type', { text: 'abc', selector: '#q' }],
   ['known/press_key', 'known', 'fox_press_key', { key: 'Enter' }],
   ['known/set_value', 'known', 'fox_set_value', { selector: '#v', value: '1' }],
-  ['known/select_option', 'known', 'fox_select_option', { selector: 'select', value: 'a' }],
+  ['known/select_option', 'known', 'fox_set_value', { kind: 'select', selector: 'select', option: { value: 'a' } }],
   ['known/handle_dialog', 'known', 'fox_handle_dialog', { action: 'accept' }],
   ['known/back', 'known', 'fox_navigate', { action: 'back' }],
-  ['known/close_tab', 'known', 'fox_close_tab', { tabId: 1 }],
-  ['known/public_select', 'known', 'fox_set_value', { kind: 'select', selector: 'select', option: { value: 'a' } }],
+  ['known/close_tab', 'known', 'fox_tab', { action: 'close', tabId: 1 }],
   ['stale/click', 'stale', 'fox_click', { selector: '#send' }],
-  ['stale/select_option', 'stale', 'fox_select_option', { selector: 'select', value: 'a' }],
-  ['stale/public_select', 'stale', 'fox_set_value', { kind: 'select', selector: 'select', option: { value: 'a' } }],
+  ['stale/select_option', 'stale', 'fox_set_value', { kind: 'select', selector: 'select', option: { value: 'a' } }],
   ['target/navigate', 'target', 'fox_navigate', { url: SITE_URL }],
-  ['target/create_tab', 'target', 'fox_create_tab', { url: SITE_URL }],
-  ['target/create_blank_tab', 'target', 'fox_create_tab', {}],
-  ['target/open_in_container', 'target', 'fox_open_in_container', { url: SITE_URL, containerName: 'Work' }],
-  ['target/public_create', 'target', 'fox_tab', { action: 'create', url: SITE_URL }],
-  ['target/public_container', 'target', 'fox_tab', { action: 'create', url: SITE_URL, container: { name: 'Work' } }],
+  ['target/create_tab', 'target', 'fox_tab', { action: 'create', url: SITE_URL }],
+  ['target/create_blank_tab', 'target', 'fox_tab', { action: 'create' }],
+  ['target/open_in_container', 'target', 'fox_tab', { action: 'create', url: SITE_URL, container: { name: 'Work' } }],
   ['read/screenshot', 'read', 'fox_screenshot', {}],
-  ['read/get_text', 'read', 'fox_get_text', {}],
-  ['read/public_read', 'read', 'fox_read', { mode: 'text' }],
+  ['read/get_text', 'read', 'fox_read', { mode: 'text' }],
   ['readBrowser/screenshot', 'readBrowser', 'fox_screenshot', {}],
-  ['readBrowser/public_read', 'readBrowser', 'fox_read', { mode: 'text' }],
+  ['readBrowser/get_text', 'readBrowser', 'fox_read', { mode: 'text' }],
 ];
-
-/** Public-tool cases and the operation case whose command they must repeat. */
-const SAME_COMMAND: Record<string, string> = {
-  'known/public_select': 'known/select_option',
-  'stale/public_select': 'stale/select_option',
-  'target/public_create': 'target/create_tab',
-  'target/public_container': 'target/open_in_container',
-  'read/public_read': 'read/get_text',
-};
 
 // ---------------------------------------------------------------------------
 // Fake Firefox: the Extension's own approval check on one tab (id 1) whose
@@ -207,13 +192,6 @@ describe('approved retries (tests/golden/tool-commands-grants.json)', () => {
         situation === 'stale' || situation === 'readBrowser' ? [e.command.action] : [],
       );
       expect(e.approvals, e.id).toHaveLength(situation === 'stale' ? 2 : 1);
-    }
-  });
-
-  it('a public tool call gives the command of the operation it runs', () => {
-    const byId = new Map(actual.map((e) => [e.id, e]));
-    for (const [publicId, opId] of Object.entries(SAME_COMMAND)) {
-      expect(byId.get(publicId)!.command, publicId).toEqual(byId.get(opId)!.command);
     }
   });
 });

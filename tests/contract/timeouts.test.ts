@@ -96,10 +96,9 @@ describe('2. relay margin covers the headless startup wait', () => {
     expect(relayTimeoutMarginMs({})).toBeGreaterThan(ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT);
   });
 
-  it('R-13: the margin follows a raised FOX_HEADLESS_STARTUP_TIMEOUT (and its legacy name)', () => {
+  it('R-13: the margin follows a raised FOX_HEADLESS_STARTUP_TIMEOUT', () => {
     const raised = 10 * ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT;
     expect(relayTimeoutMarginMs({ FOX_HEADLESS_STARTUP_TIMEOUT: String(raised) })).toBeGreaterThan(raised);
-    expect(relayTimeoutMarginMs({ CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT: String(raised) })).toBeGreaterThan(raised);
   });
 });
 
@@ -154,7 +153,6 @@ describe('5. daemon waits longer than the extension-side fallbacks', () => {
   it.each([
     ['solve_captcha', 'CAPTCHA'],
     ['wait_for_element', 'WAIT_ELEMENT'],
-    ['wait_for_change', 'DEFAULT'],
     ['wait_for_network_idle', 'NETWORK_IDLE'],
   ] as const)('%s: daemon base > content.ts TIMEOUTS.%s', (action, key) => {
     expect(content[key]).toBeTypeOf('number');

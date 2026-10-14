@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { z } from 'zod';
-import { ENV, isRecord, LEGACY_ENV } from '@inari-mcp/shared';
+import { ENV, isRecord } from '@inari-mcp/shared';
 import { isTruthyEnv, resolveFoxEnv } from '../utils/headless-env.js';
 import { auditLogPath, defaultSafetyConfigPath } from '@inari-mcp/shared/node';
 
@@ -143,9 +143,9 @@ export function parseSafetyConfigText(text: string): SafetyConfigResult {
   return parseSafetyConfig(raw);
 }
 
-/** FOX_SAFETY_CONFIG (or the legacy name) when set and not blank, else ~/.inari-mcp/safety.json. */
+/** FOX_SAFETY_CONFIG when set and not blank, else ~/.inari-mcp/safety.json. */
 export function safetyConfigPath(env: NodeJS.ProcessEnv = process.env): string {
-  return resolveFoxEnv(env, ENV.FOX_SAFETY_CONFIG, LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG) ?? defaultSafetyConfigPath();
+  return resolveFoxEnv(env, ENV.FOX_SAFETY_CONFIG) ?? defaultSafetyConfigPath();
 }
 
 /** Mode of a config directory the daemon creates: the owner only. */
@@ -198,7 +198,7 @@ export function loadConfig(): LoadedSafetyConfig {
   }
 
   // It only tightens the policy, so the values beyond 1 (true, yes) are safe to accept.
-  if (isTruthyEnv(resolveFoxEnv(process.env, ENV.FOX_READ_ONLY, LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY))) {
+  if (isTruthyEnv(resolveFoxEnv(process.env, ENV.FOX_READ_ONLY))) {
     config = { ...config, readOnly: true };
   }
 

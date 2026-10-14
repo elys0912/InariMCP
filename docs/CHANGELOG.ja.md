@@ -36,6 +36,8 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - Firefox の拡張機能も、タブ（または開く URL）のサイトについて承認されていない操作系のコマンドを、daemon が何を送ってきても拒否するようにした。
 - 承認の確認（MCP elicitation とツールバーのポップアップ）を、保護対象サイトの名前ではなく、ツール・サイト・引数を示して「この操作を許可しますか」と尋ねる形にした。
 - `fox_safety_status` は `confirmProtectedActions` と `protectedUrlPatterns` の代わりに、`approvalPolicy`（どの呼び出しで尋ねるか）と `confirmReadSites` を返す。
+- 一度だけ使える承認のトークンの接頭辞を `kat_` から `iat_`（Inari approval token）にした。
+- `scope: "all_tabs"` の `fox_screenshot` は、`confirm_read_sites` のサイトで除いたタブの理由を `excludedReason` ではなく `excludedReadSitesReason` で返す（`excludedReadSites`、`excludedBlockedReason` と並ぶ名前）。
 
 ### 削除
 
@@ -45,6 +47,10 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - `FOX_CAPS` のプロファイル `logs` と `script` を削除した（知らないプロファイル名は警告を出して無視する）。
 - コンテキストメニューの「InariMCP で要素を調べる」を削除した。結果をどこにも渡していなかった。
 - 保護対象サイトの一覧を削除した：`safety.json` の `protected_url_patterns`（既定の 16 件：銀行などの金融・決済のサービス、`.gov`、患者ポータル）と `confirm_protected_actions`。代わりに操作系ツールはどのサイトでも尋ねる。読み取りとスクリーンショットでも尋ねたいサイトは、新しい `confirm_read_sites`（既定は空）に書く。どちらかのキーが残った `safety.json` は、知らないキーとして、キーを消すまで使えない。
+- どのツールも送らないブラウザコマンド `get_tab_info`、`find_tabs`、`get_value`、`reload_all`、`reload_by_url`、`wait_for_change`、`click_and_wait` を削除した。拡張機能もヘッドレスのバックエンドもこれらを処理しない。
+- KitsuneMCP の以前のツール名の互換層を削除した：`FOX_CAPS=legacy`（説明が `[Deprecated: …]` で始まる一覧）、ツールでなくなった以前の 20 個の名前（`fox_get_text`、`fox_create_tab`、`fox_wait_for_url` など。`POST /mcp/call` でも知らないツールとして拒否する）、最初の呼び出しに付けた注記、監査ログの `legacyTool`。代わりに 17 個のツール（`fox_read`、`fox_tab`、`fox_wait` など）を呼ぶ。
+- 実装されなかった `fox_run_workflow` と `fox_audit_page`、`FOX_CAPS` の空のプロファイル `workflow` を削除した（知らないプロファイル名として、警告を出して無視する）。
+- フォーク元から引き継いだ環境変数 `CLAUDE_BROWSER_*`（`CLAUDE_BROWSER_HOST`、`CLAUDE_BROWSER_HTTP_PORT`、`CLAUDE_BROWSER_WS_PORT`、`CLAUDE_BROWSER_HEADLESS`、`CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT`、`CLAUDE_BROWSER_EXECUTABLE`、`CLAUDE_BROWSER_SCREENSHOTS_DIR`、`CLAUDE_BROWSER_READ_ONLY`、`CLAUDE_BROWSER_SAFETY_CONFIG`）を削除した。daemon、中継、Native Host、インストーラ、`--doctor` は `FOX_*` の名前だけを読む。どこからも読まれていなかった `FOX_PORT`、`FOX_DEBUG`、`FOX_CONTAINER` の定義も削除した。
 
 ### セキュリティ
 

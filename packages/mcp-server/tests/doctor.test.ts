@@ -38,7 +38,7 @@ function tempDir(prefix: string): string {
 /** Remove the environment the doctor reads, so each test starts from nothing. */
 function clearDoctorEnv(): void {
   for (const k of Object.keys(process.env)) {
-    if (k.startsWith('FOX_') || k.startsWith('CLAUDE_BROWSER_') || k === 'CLAUDE_CONFIG_DIR') delete process.env[k];
+    if (k.startsWith('FOX_') || k === 'CLAUDE_CONFIG_DIR') delete process.env[k];
   }
 }
 
@@ -493,13 +493,13 @@ describe('doctor: claude registrations', () => {
     expect(byId(results, 'settings').detail).toContain('the Claude Code registration env');
   });
 
-  it('R-2: compares effective values like the relay: true and 1, old and new names agree', async () => {
+  it('R-2: compares effective values like the relay: yes and 1 agree', async () => {
     writeToken(TOKEN);
     writeClaudeConfig({
       projects: {
         [cwd]: {
           mcpServers: {
-            'inari-mcp': { ...entryFor(serverEntry), env: { CLAUDE_BROWSER_READ_ONLY: 'yes' } },
+            'inari-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: 'yes' } },
           },
         },
       },
@@ -599,22 +599,33 @@ describe('doctor: safety-config (the daemon\'s own validator)', () => {
     expect(s.status).toBe('OK');
   });
 
-  it('a blank FOX_SAFETY_CONFIG falls through to CLAUDE_BROWSER_SAFETY_CONFIG, as in the daemon', async () => {
-    const file = writeSafety('{ "read_only": true }', tempDir('inari-doctor-safety-'));
+  it('a blank FOX_SAFETY_CONFIG is the default file, as in the daemon; CLAUDE_BROWSER_SAFETY_CONFIG is not read', async () => {
+    const file = writeSafety('{ "audit_log": "yes" }', tempDir('inari-doctor-safety-'));
     process.env['FOX_SAFETY_CONFIG'] = ' ';
     process.env['CLAUDE_BROWSER_SAFETY_CONFIG'] = file;
     const s = byId(await runChecks(deps(undefined)), 'safety-config');
     expect(s.status).toBe('OK');
-    expect(s.detail).toContain(file);
+    expect(s.detail).toContain(path.join(home, '.inari-mcp', 'safety.json'));
+    expect(s.detail).not.toContain(file);
   });
 
-  it("the running daemon's path wins; its blank FOX_ value falls through to the legacy one", async () => {
+  it("the running daemon's path wins; its blank FOX_ value is the default file", async () => {
     writeToken(TOKEN);
     const file = writeSafety('{ "audit_log": "yes" }', tempDir('inari-doctor-safety-'));
     const s = byId(await runChecks(deps({
       token: TOKEN,
       info: { settings: { FOX_SAFETY_CONFIG: '', CLAUDE_BROWSER_SAFETY_CONFIG: file } },
     })), 'safety-config');
+    expect(s.status).toBe('OK');
+    expect(s.detail).toContain(path.join(home, '.inari-mcp', 'safety.json'));
+    expect(s.detail).not.toContain(file);
+  });
+
+  it("the running daemon's path wins over the session's", async () => {
+    writeToken(TOKEN);
+    const file = writeSafety('{ "audit_log": "yes" }', tempDir('inari-doctor-safety-'));
+    process.env['FOX_SAFETY_CONFIG'] = path.join(home, 'session.json');
+    const s = byId(await runChecks(deps({ token: TOKEN, info: { settings: { FOX_SAFETY_CONFIG: file } } })), 'safety-config');
     expect(s.status).toBe('FAIL');
     expect(s.detail).toContain(file);
     expect(s.detail).toContain('audit_log: Expected boolean');

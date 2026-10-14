@@ -36,6 +36,8 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The Firefox extension itself refuses an acting command that was not approved for the site of its tab (or of the URL it opens), whatever the daemon sends.
 - The approval prompt (MCP elicitation and the toolbar popup) asks "Allow this operation?" with the tool, the site and the arguments, instead of naming a protected site.
 - `fox_safety_status` reports `approvalPolicy` (which calls ask) and `confirmReadSites`, instead of `confirmProtectedActions` and `protectedUrlPatterns`.
+- One-time human-approval tokens start with `iat_` (Inari approval token) instead of `kat_`.
+- `fox_screenshot` with `scope: "all_tabs"` gives the reason for the tabs it left out on `confirm_read_sites` sites in `excludedReadSitesReason` instead of `excludedReason`, next to `excludedReadSites` and `excludedBlockedReason`.
 
 ### Removed
 
@@ -45,6 +47,10 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The `logs` and `script` profiles of `FOX_CAPS` (an unknown profile name is ignored with a warning).
 - The "Inspect Element for InariMCP" context menu entry: it handed its result to nobody.
 - The protected-site list: `protected_url_patterns` (16 default sites: banks and other finance or payment services, `.gov`, patient portals) and `confirm_protected_actions` in `safety.json`. Acting tools ask on every site instead; list the sites where reads and screenshots should ask as well in the new `confirm_read_sites` (default empty). A `safety.json` that still has either key is refused as an unknown key until the key is deleted.
+- The browser commands that no tool sends: `get_tab_info`, `find_tabs`, `get_value`, `reload_all`, `reload_by_url`, `wait_for_change` and `click_and_wait`. Neither the extension nor the headless backend handles them any more.
+- The compatibility layer for the earlier tool names of KitsuneMCP: `FOX_CAPS=legacy` (the list with `[Deprecated: …]` descriptions), the 20 earlier names that are no tool any more (`fox_get_text`, `fox_create_tab`, `fox_wait_for_url`, …; refused as unknown tools, also over `POST /mcp/call`), the note on their first call and `legacyTool` in the audit log. Call the 17 tools instead (`fox_read`, `fox_tab`, `fox_wait`, …).
+- The never implemented `fox_run_workflow` and `fox_audit_page`, and the empty `workflow` profile of `FOX_CAPS` (now an unknown profile name, ignored with a warning).
+- The `CLAUDE_BROWSER_*` environment variables inherited from the fork (`CLAUDE_BROWSER_HOST`, `CLAUDE_BROWSER_HTTP_PORT`, `CLAUDE_BROWSER_WS_PORT`, `CLAUDE_BROWSER_HEADLESS`, `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT`, `CLAUDE_BROWSER_EXECUTABLE`, `CLAUDE_BROWSER_SCREENSHOTS_DIR`, `CLAUDE_BROWSER_READ_ONLY`, `CLAUDE_BROWSER_SAFETY_CONFIG`): the daemon, the relay, the Native Host, the installer and `--doctor` read only the `FOX_*` names. Also the names `FOX_PORT`, `FOX_DEBUG` and `FOX_CONTAINER`, which nothing read.
 
 ### Security
 

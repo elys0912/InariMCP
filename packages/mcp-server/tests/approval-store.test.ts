@@ -11,7 +11,6 @@ import {
   approvalTargetFor,
   canonicalJson,
   hashArgs,
-  approvalSiteOf,
   summarizeArgs,
   approvalDisplayUrl,
   SUMMARY_HIDDEN_CHARS_WARNING,
@@ -27,7 +26,7 @@ function clock(start = 1_000_000): { now: () => number; advance: (ms: number) =>
 }
 
 const ARGS = { selector: '#pay', tabId: 3 };
-const TARGET: ApprovalTarget = { toolName: 'fox_click', host: 'pay.example.test', argsHash: hashArgs(ARGS) };
+const TARGET: ApprovalTarget = { toolName: 'fox_click', site: 'pay.example.test', argsHash: hashArgs(ARGS) };
 const INFO = { url: 'https://pay.example.test/checkout', matchedPattern: null, summary: 's' };
 
 function issued(store: ApprovalStore, target = TARGET): string {
@@ -37,17 +36,8 @@ function issued(store: ApprovalStore, target = TARGET): string {
   return token!.token;
 }
 
+// approvalSiteOf itself: packages/shared/tests/approval-site.test.ts.
 describe('approval target helpers', () => {
-  it('approvalSiteOf: lower-case hostname, the scheme of a URL without one, null for non-URLs', () => {
-    expect(approvalSiteOf('https://Pay.Example.TEST:8443/x?y')).toBe('pay.example.test');
-    expect(approvalSiteOf('https://pay.example.test./x')).toBe('pay.example.test');
-    expect(approvalSiteOf('about:blank')).toBe('about:');
-    expect(approvalSiteOf('file:///tmp/page.html')).toBe('file:');
-    expect(approvalSiteOf('(target tab)')).toBeNull();
-    expect(approvalSiteOf('')).toBeNull();
-    expect(approvalSiteOf(null)).toBeNull();
-  });
-
   it('hashArgs does not depend on key order, but on every value', () => {
     expect(hashArgs({ a: 1, b: { c: 2, d: [1, 2] } })).toBe(hashArgs({ b: { d: [1, 2], c: 2 }, a: 1 }));
     expect(hashArgs({ a: 1 })).not.toBe(hashArgs({ a: 2 }));
@@ -55,7 +45,7 @@ describe('approval target helpers', () => {
     expect(canonicalJson({ b: 1, a: undefined, c: 'x' })).toBe('{"b":1,"c":"x"}');
   });
 
-  it('approvalTargetFor binds tool, host and argument hash', () => {
+  it('approvalTargetFor binds tool, site and argument hash', () => {
     expect(approvalTargetFor('fox_click', ARGS, 'https://pay.example.test/a')).toEqual(TARGET);
     expect(approvalTargetFor('fox_click', ARGS, '(target tab)')).toBeNull();
     expect(approvalTargetFor('fox_click', ARGS, null)).toBeNull();
@@ -128,7 +118,7 @@ describe('ApprovalStore: tokens', () => {
   it('a token is accepted once for its target, then never again (single use)', () => {
     const store = new ApprovalStore();
     const token = issued(store);
-    expect(token).toMatch(/^kat_[A-Za-z0-9_-]{43}$/);
+    expect(token).toMatch(/^iat_[A-Za-z0-9_-]{43}$/);
     const grant = store.consume(token, 'fox_click', TARGET.argsHash);
     expect(grant).toMatchObject({ target: TARGET, via: 'browser' });
     expect(store.consume(token, 'fox_click', TARGET.argsHash)).toBeNull();
@@ -157,7 +147,7 @@ describe('ApprovalStore: tokens', () => {
   it('unknown or malformed tokens are refused', () => {
     const store = new ApprovalStore();
     issued(store);
-    expect(store.consume('kat_' + 'A'.repeat(43), 'fox_click', TARGET.argsHash)).toBeNull();
+    expect(store.consume('iat_' + 'A'.repeat(43), 'fox_click', TARGET.argsHash)).toBeNull();
     expect(store.consume('', 'fox_click', TARGET.argsHash)).toBeNull();
     expect(store.consume('not-a-token', 'fox_click', TARGET.argsHash)).toBeNull();
   });

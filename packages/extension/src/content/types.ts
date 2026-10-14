@@ -76,20 +76,6 @@ export interface WaitOptions extends FindElementOptions {
   visible?: boolean;
 }
 
-/** waitForChange filter: "text" is characterData. */
-export type ChangeType = "childList" | "attributes" | "text";
-
-export interface WaitForChangeOptions {
-  selector?: string;
-  timeout?: number;
-  changeType?: ChangeType;
-  waitForAll?: boolean;
-  subtree?: boolean;
-  attributes?: boolean;
-  characterData?: boolean;
-  attributeOldValue?: boolean;
-}
-
 export interface NetworkIdleOptions {
   timeout?: number;
   idleTime?: number;
@@ -100,12 +86,6 @@ export interface ScrollCaptureOptions {
   delay?: number;
   maxScrolls?: number;
   restore?: boolean;
-}
-
-export interface ClickAndWaitOptions extends ClickOptions {
-  waitTimeout?: number;
-  waitForSelector?: string;
-  waitForChange?: boolean;
 }
 
 export interface SetValueOptions extends FindElementOptions {
@@ -156,12 +136,9 @@ export interface ContentOptionsByAction {
   getElements: GetElementsOptions;
   highlight: HighlightOptions;
   waitForElement: WaitOptions;
-  waitForChange: WaitForChangeOptions;
   waitForNetworkIdle: NetworkIdleOptions;
   scrollAndCapture: ScrollCaptureOptions;
-  clickAndWait: ClickAndWaitOptions;
   captureFullPage: NoOptions;
-  getValue: FindElementOptions;
   setValue: SetValueOptions;
   hover: FindElementOptions;
   selectOption: SelectOptionOptions;

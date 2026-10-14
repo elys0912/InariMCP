@@ -27,7 +27,7 @@ InariMCPの現行版（v0.1.x）で分かっている制約と注意点。
 
 ## ツール
 
-- **実装されていないツールがある**: 拡張機能経路では`fox_snapshot`と`fox_handle_dialog`が`Not implemented in extension: <action>`を返す（`<action>`はツール名ではなく内部のアクション名）。以前の`fox_run_workflow`と`fox_audit_page`（既定のツール一覧にはない。`FOX_CAPS=legacy`では`[Deprecated]`付きで一覧に出る）はどのバックエンドでも未実装。READMEの「ツールの対応状況」を参照
+- **実装されていないツールがある**: 拡張機能経路では`fox_snapshot`と`fox_handle_dialog`が`Not implemented in extension: <action>`を返す（`<action>`はツール名ではなく内部のアクション名）。READMEの「ツールの対応状況」を参照
 - **DOMを扱うツールはトップフレームでだけ動く**: 拡張機能経路の`fox_click`、`fox_type`、`by: "selector"`の`fox_find`、`fox_read`、`fox_wait`は、タブのトップの文書に対して動く。iframeやshadow DOMの中には届かない（`text`での要素の検索もそこは探さない）。`by: "text"`の`fox_find`（`browser.find`）はすべてのフレームを探す
 - **クリック・入力・キー・ホバーは合成イベント**: `fox_click`、`fox_type`、`fox_press_key`、`action: "hover"`の`fox_interact`はページ内でDOMイベントを発行する（`isTrusted`は`false`）。実際のユーザー操作を必要とするページ（ポップアップを開く、クリップボードにアクセスする、一部のフレームワーク）では無視されることがあり、キーに対するブラウザの既定の動作（Tabでのフォーカス移動、スクロール）も起きない。例外はフォーム内の入力欄でのEnterで、本物のEnterと同じようにフォームを送信する。`fox_type`は1文字ごとに`delay`ミリ秒待つが、待ち時間の合計が10秒に収まるよう短くする
 - **`for: "navigation"`の`fox_wait`は呼び出した後に終わったナビゲーションだけを待つ**: すでに終わったナビゲーション（クリックの直後など）は数えないので、速いナビゲーションはタイムアウトする。行き先が分かっているなら`for: "url"`を使う（すでにURLが一致していればすぐに返る）

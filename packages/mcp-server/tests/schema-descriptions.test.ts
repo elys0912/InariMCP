@@ -9,23 +9,23 @@ import type { ZodRawShape, ZodTypeAny } from 'zod';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
 import { PUBLIC_TOOLS } from '../src/tools/public-tools.js';
 
-function shapeOf(tool: string): ZodRawShape {
-  return TOOL_SCHEMAS[tool]!.inputSchema.shape;
+function shapeOf(tool: keyof typeof PUBLIC_TOOLS): ZodRawShape {
+  return PUBLIC_TOOLS[tool].listSchema.shape;
 }
 
 describe('tool descriptions', () => {
-  it('fox_get_tabs names its arguments as the schema does (camelCase)', () => {
-    const description = TOOL_SCHEMAS['fox_get_tabs']!.description;
+  it('fox_tabs names its arguments as the schema does (camelCase)', () => {
+    const description = PUBLIC_TOOLS.fox_tabs.description;
     expect(description).not.toMatch(/url_pattern|current_window_only/);
     for (const key of ['urlPattern', 'currentWindowOnly']) {
       expect(description).toContain(key);
-      expect(shapeOf('fox_get_tabs')).toHaveProperty(key);
+      expect(shapeOf('fox_tabs')).toHaveProperty(key);
     }
   });
 
   it('synthetic-event tools say so; fox_type accepts delay 0', () => {
-    for (const tool of ['fox_hover', 'fox_press_key']) {
-      expect(TOOL_SCHEMAS[tool]!.description).toContain('isTrusted=false');
+    for (const tool of ['fox_click', 'fox_type', 'fox_press_key', 'fox_interact'] as const) {
+      expect(PUBLIC_TOOLS[tool].description).toContain('isTrusted=false');
     }
     const type = TOOL_SCHEMAS['fox_type']!.inputSchema;
     expect(type.safeParse({ text: 'x', delay: 0 }).success).toBe(true);
@@ -66,10 +66,8 @@ function identifiers(description: string): string[] {
 }
 
 describe('arguments named in tool descriptions', () => {
-  const tools: Array<[string, string, ZodTypeAny]> = [
-    ...Object.entries(TOOL_SCHEMAS).map(([n, d]) => [`legacy ${n}`, d.description, d.inputSchema] as [string, string, ZodTypeAny]),
-    ...Object.entries(PUBLIC_TOOLS).map(([n, t]) => [`public ${n}`, t.description, t.listSchema] as [string, string, ZodTypeAny]),
-  ];
+  const tools: Array<[string, string, ZodTypeAny]> = Object.entries(PUBLIC_TOOLS)
+    .map(([n, t]) => [n, t.description, t.listSchema] as [string, string, ZodTypeAny]);
 
   it.each(tools)('%s: every camelCase or quoted identifier is an argument or a known non-argument', (_n, description, schema) => {
     const args = argumentNames(schema);

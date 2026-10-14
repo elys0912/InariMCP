@@ -313,6 +313,27 @@ function readyGate(): { ready: Promise<void>; markReady: () => void; failReady: 
   return { ready, markReady, failReady };
 }
 
+/**
+ * Boot headless Firefox, after the ports (no Firefox for a daemon that lost
+ * the port). On failure the tool calls already waiting for `ready` get the
+ * reason (500) instead of a dropped connection, then the error is rethrown
+ * and the daemon exits as before (index.ts).
+ */
+async function startHeadlessBackend(
+  httpServer: http.Server,
+  activity: DaemonActivity,
+  failReady: (err: Error) => void,
+): Promise<void> {
+  try {
+    await startHeadless();
+  } catch (err: unknown) {
+    failReady(err instanceof Error ? err : new Error(String(err)));
+    await activity.waitForIdle(STARTUP_FAILURE_ANSWER_MS);
+    await closeHttpServer(httpServer, STARTUP_FAILURE_ANSWER_MS);
+    throw err;
+  }
+}
+
 function logStartup(endpoint: DaemonEndpoint, idleMs: number): void {
   const { host, httpPort, wsPort, headlessMode } = endpoint;
   for (const line of [
@@ -403,18 +424,7 @@ export async function runDaemon(deps: RunDaemonDeps = {}): Promise<void> {
   }
 
   // --- Headless backend (after the ports: don't boot Firefox for a loser) ---
-  if (headlessMode) {
-    try {
-      await startHeadless();
-    } catch (err: unknown) {
-      // Tool calls already waiting for `ready` get the reason (500) instead
-      // of a dropped connection; then the daemon exits as before (index.ts).
-      failReady(err instanceof Error ? err : new Error(String(err)));
-      await activity.waitForIdle(STARTUP_FAILURE_ANSWER_MS);
-      await closeHttpServer(httpServer, STARTUP_FAILURE_ANSWER_MS);
-      throw err;
-    }
-  }
+  if (headlessMode) await startHeadlessBackend(httpServer, activity, failReady);
   markReady();
 
   const idleMs = resolveIdleTimeoutMs();

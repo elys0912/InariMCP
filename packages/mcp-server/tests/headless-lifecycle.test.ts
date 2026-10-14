@@ -80,20 +80,19 @@ describe('HeadlessBrowser lifecycle', () => {
     expect(launch).toHaveBeenCalledWith(expect.objectContaining({ headless: true, timeout: 4321 }));
   });
 
-  it('uses the Firefox of Playwright when FOX_EXECUTABLE is blank', async () => {
+  it('uses the Firefox of Playwright when FOX_EXECUTABLE is blank; the old CLAUDE_BROWSER_EXECUTABLE is not read', async () => {
     vi.stubEnv('FOX_EXECUTABLE', '  ');
-    vi.stubEnv('CLAUDE_BROWSER_EXECUTABLE', '');
+    vi.stubEnv('CLAUDE_BROWSER_EXECUTABLE', '/opt/old/firefox');
     fakeBrowser();
     await new HeadlessBrowser().start();
     expect(launch.mock.calls[0]?.[0]).not.toHaveProperty('executablePath');
   });
 
-  it('uses the legacy CLAUDE_BROWSER_EXECUTABLE when FOX_EXECUTABLE is blank, trimmed (H-16, H-22)', async () => {
-    vi.stubEnv('FOX_EXECUTABLE', '  ');
-    vi.stubEnv('CLAUDE_BROWSER_EXECUTABLE', ' /opt/legacy/firefox ');
+  it('uses FOX_EXECUTABLE trimmed (H-16, H-22)', async () => {
+    vi.stubEnv('FOX_EXECUTABLE', ' /opt/ff/firefox ');
     fakeBrowser();
     await new HeadlessBrowser().start();
-    expect(launch.mock.calls[0]?.[0]).toMatchObject({ executablePath: '/opt/legacy/firefox' });
+    expect(launch.mock.calls[0]?.[0]).toMatchObject({ executablePath: '/opt/ff/firefox' });
   });
 
   it('is ready after start() and not ready after stop()', async () => {

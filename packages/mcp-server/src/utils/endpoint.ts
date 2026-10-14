@@ -4,7 +4,7 @@
  * lives in @inari-mcp/shared/node (also used by the Native Host).
  */
 
-import { ENV, ENV_DEFAULTS, isRecord, LEGACY_ENV } from '@inari-mcp/shared';
+import { ENV, ENV_DEFAULTS, isRecord } from '@inari-mcp/shared';
 import { isElicitationApprovalEnabled } from '../safety/approval.js';
 import {
   headlessStartupTimeoutMs,
@@ -50,28 +50,14 @@ export const DAEMON_SETTINGS = [
 ] as const;
 export type DaemonSettingName = (typeof DAEMON_SETTINGS)[number];
 
-/** The legacy CLAUDE_BROWSER_* name of each setting, if it has one. */
-const LEGACY_SETTING_NAMES: { readonly [K in DaemonSettingName]: string | undefined } = {
-  FOX_HEADLESS: LEGACY_ENV.CLAUDE_BROWSER_HEADLESS,
-  FOX_HEADLESS_STARTUP_TIMEOUT: LEGACY_ENV.CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT,
-  FOX_EXECUTABLE: LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE,
-  FOX_SCREENSHOTS_DIR: LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR,
-  FOX_SAFETY_CONFIG: LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG,
-  FOX_READ_ONLY: LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY,
-  FOX_APPROVAL_ELICITATION: undefined,
-};
-
 /**
  * Environment variables that configure the daemon (safety policy, backend,
- * screenshot directory): every DAEMON_SETTINGS name, then the legacy names.
- * They are read by the daemon process only: a relay passes its own values on
- * when it spawns the daemon, and warns when an already-running daemon was
- * started with different values.
+ * screenshot directory): every DAEMON_SETTINGS name. They are read by the
+ * daemon process only: a relay passes its own values on when it spawns the
+ * daemon, and warns when an already-running daemon was started with
+ * different values.
  */
-export const DAEMON_SETTING_KEYS: readonly string[] = [
-  ...DAEMON_SETTINGS.map((name) => ENV[name]),
-  ...DAEMON_SETTINGS.flatMap((name) => LEGACY_SETTING_NAMES[name] ?? []),
-];
+export const DAEMON_SETTING_KEYS: readonly string[] = DAEMON_SETTINGS.map((name) => ENV[name]);
 /** What each setting amounts to, e.g. 'on' / 'off' or a resolved value; '' = default. */
 export type EffectiveDaemonSettings = Record<DaemonSettingName, string>;
 
@@ -79,19 +65,19 @@ type Env = Record<string, string | undefined>;
 
 /**
  * The effective value of every DAEMON_SETTINGS entry for `env`, so that
- * `FOX_HEADLESS=true`, `=1` and `CLAUDE_BROWSER_HEADLESS=yes` compare equal.
+ * `FOX_HEADLESS=true`, `=1` and `=yes` compare equal.
  * 'current' follows this version's parsing; 'legacy' follows how a daemon
- * without `effectiveSettings` in /daemon/info read its environment (FOX_ value
- * or else the old name; only `1` turns read-only on).
+ * without `effectiveSettings` in /daemon/info read its environment (only `1`
+ * turns read-only on).
  */
 export function effectiveDaemonSettings(
   env: Env,
   rules: 'current' | 'legacy' = 'current',
 ): EffectiveDaemonSettings {
   const cur = rules === 'current';
-  const pick = (fox: string, legacy: string): string | undefined =>
+  const pick = (key: string): string | undefined =>
     // legacy: a raw `settings` from an old daemon holds '' for unset keys, which is "unset" here
-    cur ? resolveFoxEnv(env, fox, legacy) : ((env[fox] || undefined) ?? (env[legacy] || undefined));
+    cur ? resolveFoxEnv(env, key) : (env[key] || undefined);
   const onOff = (v: boolean): string => (v ? 'on' : 'off');
   return {
     FOX_HEADLESS: onOff(cur ? isHeadlessEnabled(env) : Boolean(env[ENV.FOX_HEADLESS])),
@@ -100,14 +86,10 @@ export function effectiveDaemonSettings(
         ? headlessStartupTimeoutMs(env)
         : Number(env[ENV.FOX_HEADLESS_STARTUP_TIMEOUT]) || ENV_DEFAULTS.FOX_HEADLESS_STARTUP_TIMEOUT,
     ),
-    FOX_EXECUTABLE: pick(ENV.FOX_EXECUTABLE, LEGACY_ENV.CLAUDE_BROWSER_EXECUTABLE) ?? '',
-    FOX_SCREENSHOTS_DIR: pick(ENV.FOX_SCREENSHOTS_DIR, LEGACY_ENV.CLAUDE_BROWSER_SCREENSHOTS_DIR) ?? '',
-    FOX_SAFETY_CONFIG: pick(ENV.FOX_SAFETY_CONFIG, LEGACY_ENV.CLAUDE_BROWSER_SAFETY_CONFIG) ?? '',
-    FOX_READ_ONLY: onOff(
-      cur
-        ? isTruthyEnv(pick(ENV.FOX_READ_ONLY, LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY))
-        : pick(ENV.FOX_READ_ONLY, LEGACY_ENV.CLAUDE_BROWSER_READ_ONLY) === '1',
-    ),
+    FOX_EXECUTABLE: pick(ENV.FOX_EXECUTABLE) ?? '',
+    FOX_SCREENSHOTS_DIR: pick(ENV.FOX_SCREENSHOTS_DIR) ?? '',
+    FOX_SAFETY_CONFIG: pick(ENV.FOX_SAFETY_CONFIG) ?? '',
+    FOX_READ_ONLY: onOff(cur ? isTruthyEnv(pick(ENV.FOX_READ_ONLY)) : pick(ENV.FOX_READ_ONLY) === '1'),
     FOX_APPROVAL_ELICITATION: onOff(isElicitationApprovalEnabled(env)),
   };
 }
@@ -146,7 +128,7 @@ export function daemonSettingsFromInfo(body: Record<string, unknown>): Effective
 /**
  * How a session's settings compare with those of the running daemon, the one
  * rule shared by the relay (DaemonClient.checkSettings) and the doctor:
- * effective values, so `true` / `1` and old / new variable names agree.
+ * effective values, so `true` and `1` agree.
  *
  * @param sessionEnv the environment the session would start a daemon with
  * @param info       the body of the daemon's GET /daemon/info

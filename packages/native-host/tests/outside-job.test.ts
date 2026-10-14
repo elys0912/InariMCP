@@ -145,7 +145,7 @@ describe('startOutsideJob', () => {
 });
 
 describe('daemonEnvFrom', () => {
-  it('keeps FOX_* and legacy names, drops the rest', () => {
+  it('keeps FOX_* names, drops the rest (the old CLAUDE_BROWSER_* names too)', () => {
     const env = daemonEnvFrom({
       FOX_HTTP_PORT: '1',
       CLAUDE_BROWSER_HTTP_PORT: '2',
@@ -153,6 +153,6 @@ describe('daemonEnvFrom', () => {
       SECRET_TOKEN: 'y',
       FOX_EMPTY: undefined,
     });
-    expect(env).toEqual({ FOX_HTTP_PORT: '1', CLAUDE_BROWSER_HTTP_PORT: '2' });
+    expect(env).toEqual({ FOX_HTTP_PORT: '1' });
   });
 });

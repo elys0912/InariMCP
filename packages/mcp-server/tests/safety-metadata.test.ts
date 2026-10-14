@@ -130,7 +130,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
     testGuard.current = g;
     stubBrowser({ success: false, safetyDecision: decision, error: 'refused by the Extension', data: { url } });
 
-    const result = await createToolHandler('fox_get_text')({ tabId: 2, selector: '#a' });
+    const result = await createToolHandler('fox_read')({ mode: 'text', tabId: 2, selector: '#a' });
     expect(result.isError).toBe(true);
     expect(details(result)).toMatchObject({ code: 'SAFETY_BLOCKED', layer: 3, decision, url });
     // Noted, so the guard's own pre-check refuses the next call without asking the Extension.
@@ -146,7 +146,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
       data: { url: 'https://elsewhere.test/' },
     });
 
-    const result = await createToolHandler('fox_get_text')({ tabId: 3, selector: '#a' });
+    const result = await createToolHandler('fox_read')({ mode: 'text', tabId: 3, selector: '#a' });
     expect(result.isError).toBe(true);
     expect(details(result)).toMatchObject({ code: 'SAFETY_BLOCKED', layer: 0, decision: 'out_of_scope' });
     expect(details(result)['url']).toBeUndefined();
@@ -161,7 +161,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
     const audit = vi.spyOn(g, 'recordAudit');
     stubBrowser({ success: false, safetyDecision: 'config_error', error: 'Refused: versions may not match' });
 
-    const result = await createToolHandler('fox_get_text')({ tabId: 3, selector: '#a' });
+    const result = await createToolHandler('fox_read')({ mode: 'text', tabId: 3, selector: '#a' });
     expect(result.isError).toBe(true);
     expect(details(result)).toEqual({ code: 'SAFETY_BLOCKED', decision: 'config_error' });
     expect(audit.mock.calls.map((c) => c[2])).toEqual(['allowed', 'config_error']);
@@ -176,7 +176,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     stubBrowser({ success: false, safetyDecision: 'paused', error: 'paused: the user paused agent actions' });
 
-    const result = await createToolHandler('fox_get_text')({ tabId: 3, selector: '#a' });
+    const result = await createToolHandler('fox_read')({ mode: 'text', tabId: 3, selector: '#a' });
     expect(result.isError).toBe(true);
     const first = result.content[0];
     expect(first?.type === 'text' ? first.text : '').toMatch(/^paused: The user paused the agent in the toolbar popup\./);
@@ -193,7 +193,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     stubBrowser({ success: false, safetyDecision: 'new_layer_9', error: 'refused' });
 
-    const result = await createToolHandler('fox_get_text')({ tabId: 3, selector: '#a' });
+    const result = await createToolHandler('fox_read')({ mode: 'text', tabId: 3, selector: '#a' });
     expect(result.isError).toBe(true);
     expect(details(result)).toEqual({ code: 'SAFETY_BLOCKED', decision: 'denied' });
     expect(audit.mock.calls.map((c) => c[2])).toEqual(['allowed', 'denied']);
@@ -207,7 +207,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
     testGuard.current = g;
     stubBrowser({ success: false, safetyDecision: 'confirmation_required', error: 'approval required', data: {} });
 
-    const result = await createToolHandler('fox_get_text')({ selector: '#a' });
+    const result = await createToolHandler('fox_read')({ mode: 'text', selector: '#a' });
     expect(result.isError).toBe(true);
     const first = result.content[0];
     expect(first?.type === 'text' ? first.text : '').toContain('This call cannot be approved yet');
@@ -255,7 +255,6 @@ describe('attachSafetyMetadata: confirmReadUrlRules', () => {
     ['get_elements', 'fox_get_elements'],
     ['find_text', 'fox_find_text'],
     ['snapshot', 'fox_snapshot'],
-    ['audit_page', 'fox_audit_page'],
   ] as const)('is attached to the read %s (%s)', (action, tool) => {
     const cmd = command(action);
     attachSafetyMetadata(cmd, config(), tool, {});

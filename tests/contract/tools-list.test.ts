@@ -5,10 +5,8 @@
  * Regenerate (only when a change of the tool list is intended):
  *   UPDATE_GOLDEN=1 npx vitest run tests/contract/tools-list.test.ts
  *
- * tests/golden/tools-list.json: the default list, the 21 public tools
+ * tests/golden/tools-list.json: the default list, the 17 public tools
  * (tools/public-tools.ts).
- * tests/golden/tools-list-legacy.json: FOX_CAPS=legacy, the tools as they
- * were before the WP13 consolidation, deprecated ones marked as such.
  */
 
 import * as fs from 'node:fs';
@@ -20,7 +18,6 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { PROFILE_NAMES, registerTools } from '../../packages/mcp-server/src/tools/registry.js';
 import { PUBLIC_TOOLS } from '../../packages/mcp-server/src/tools/public-tools.js';
-import { TOOL_SCHEMAS } from '../../packages/mcp-server/src/tools/schemas.js';
 
 const UPDATE = process.env['UPDATE_GOLDEN'] === '1';
 const GOLDEN_DIR = fileURLToPath(new URL('../golden/', import.meta.url));
@@ -67,39 +64,19 @@ describe('tools/list', () => {
     const names = new Set((await listTools(PROFILE_NAMES.join(','))).map((t) => t.name));
     expect([...names].sort()).toEqual(Object.keys(PUBLIC_TOOLS).sort());
   });
-
-  it('FOX_CAPS=legacy lists the pre-consolidation tools, deprecated ones marked', async () => {
-    const actual = await listTools('legacy');
-    expect(actual).toHaveLength(31);
-    expect(actual.find((t) => t.name === 'fox_get_text')?.description)
-      .toMatch(/^\[Deprecated: fox_get_text is deprecated; use fox_read with mode='text'\.\] /);
-    expect(actual).toEqual(golden('tools-list-legacy.json', actual));
-  });
-
-  it('FOX_CAPS=legacy,<profile> uses the pre-consolidation profiles', async () => {
-    const names = (await listTools('legacy,wait')).map((t) => t.name);
-    expect(names).toEqual([
-      'fox_safety_status',
-      'fox_wait_for_element',
-      'fox_wait_for_navigation',
-      'fox_wait_for_network_idle',
-      'fox_wait_for_url',
-    ]);
-  });
 });
 
 describe('FOX_CAPS boundaries', () => {
   const names = async (caps: string) => (await listTools(caps)).map((t) => t.name);
 
-  it('legacy with all lists every earlier tool; all with a profile lists every public tool', async () => {
-    expect(await names('legacy,all')).toEqual(Object.keys(TOOL_SCHEMAS).sort());
+  it('all with a profile lists every public tool', async () => {
     expect(await names('all,core')).toEqual(Object.keys(PUBLIC_TOOLS).sort());
   });
 
-  it('an unknown profile is ignored with a warning, next to legacy too', async () => {
+  it('an unknown profile is ignored with a warning', async () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      expect(await names('legacy,nope')).toEqual(['fox_safety_status']);
+      expect(await names('nope')).toEqual(['fox_safety_status']);
       expect(await names('nope,human')).toEqual(['fox_detect_captcha', 'fox_request_approval', 'fox_safety_status']);
       const warnings = stderr.mock.calls.map(([chunk]) => String(chunk)).filter((t) => t.includes("Unknown FOX_CAPS profile: 'nope'"));
       expect(warnings).toHaveLength(2);
@@ -108,12 +85,13 @@ describe('FOX_CAPS boundaries', () => {
     }
   });
 
-  // InariMCP removed the script and logging tools, and their profiles with them.
-  it('logs and script are no profiles', async () => {
+  // InariMCP removed the script and logging tools, the earlier tool names
+  // (`legacy`) and the empty workflow profile, and their profiles with them.
+  it('logs, script, legacy and workflow are no profiles', async () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       expect(await names('logs,script')).toEqual(['fox_safety_status']);
-      expect(await names('legacy,logs,script')).toEqual(['fox_safety_status']);
+      expect(await names('legacy,workflow')).toEqual(['fox_safety_status']);
       const warnings = stderr.mock.calls.map(([chunk]) => String(chunk)).filter((t) => t.includes('Unknown FOX_CAPS profile'));
       expect(warnings).toHaveLength(4);
     } finally {
@@ -122,13 +100,12 @@ describe('FOX_CAPS boundaries', () => {
   });
 
   it('segments are trimmed and compared case-insensitively', async () => {
-    expect(await names(' Legacy , WAIT ')).toEqual(await names('legacy,wait'));
+    expect(await names(' Human , WAIT ')).toEqual(await names('human,wait'));
     expect(await names(' , ')).toEqual(Object.keys(PUBLIC_TOOLS).sort());
   });
 
-  it('fox_safety_status is marked as closed-world in the public list only', async () => {
-    const status = async (caps: string) => (await listTools(caps)).find((t) => t.name === 'fox_safety_status')!;
-    expect((await status('')).annotations).toMatchObject({ openWorldHint: false });
-    expect((await status('legacy')).annotations).not.toHaveProperty('openWorldHint');
+  it('fox_safety_status is marked as closed-world', async () => {
+    const status = (await listTools('')).find((t) => t.name === 'fox_safety_status');
+    expect(status?.annotations).toMatchObject({ openWorldHint: false });
   });
 });

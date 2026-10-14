@@ -67,7 +67,7 @@
   },
   {
     "id": "get_elements/default",
-    "tool": "fox_get_elements",
+    "tool": "fox_find",
     "default": null,
     "readOnly": null,
     "readSiteTab": "confirmation_required",
@@ -78,7 +78,7 @@
   },
   {
     "id": "get_elements/options",
-    "tool": "fox_get_elements",
+    "tool": "fox_find",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -89,7 +89,7 @@
   },
   {
     "id": "get_text/default",
-    "tool": "fox_get_text",
+    "tool": "fox_read",
     "default": null,
     "readOnly": null,
     "readSiteTab": "confirmation_required",
@@ -100,7 +100,7 @@
   },
   {
     "id": "get_text/options",
-    "tool": "fox_get_text",
+    "tool": "fox_read",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -111,7 +111,7 @@
   },
   {
     "id": "find_text/default",
-    "tool": "fox_find_text",
+    "tool": "fox_find",
     "default": null,
     "readOnly": null,
     "readSiteTab": "confirmation_required",
@@ -122,7 +122,7 @@
   },
   {
     "id": "find_text/options",
-    "tool": "fox_find_text",
+    "tool": "fox_find",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -133,7 +133,7 @@
   },
   {
     "id": "get_page_info/default",
-    "tool": "fox_get_page_info",
+    "tool": "fox_read",
     "default": null,
     "readOnly": null,
     "readSiteTab": "confirmation_required",
@@ -144,7 +144,7 @@
   },
   {
     "id": "get_page_info/tab",
-    "tool": "fox_get_page_info",
+    "tool": "fox_read",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -155,7 +155,7 @@
   },
   {
     "id": "get_tabs/default",
-    "tool": "fox_get_tabs",
+    "tool": "fox_tabs",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -166,7 +166,7 @@
   },
   {
     "id": "get_tabs/options",
-    "tool": "fox_get_tabs",
+    "tool": "fox_tabs",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -177,7 +177,7 @@
   },
   {
     "id": "get_tabs/invalid_regex",
-    "tool": "fox_get_tabs",
+    "tool": "fox_tabs",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -430,7 +430,7 @@
   },
   {
     "id": "select_option/value",
-    "tool": "fox_select_option",
+    "tool": "fox_set_value",
     "default": "confirmation_required",
     "readOnly": "read_only",
     "readSiteTab": "confirmation_required",
@@ -441,7 +441,7 @@
   },
   {
     "id": "select_option/text",
-    "tool": "fox_select_option",
+    "tool": "fox_set_value",
     "default": "confirmation_required",
     "readOnly": "read_only",
     "readSiteTab": "confirmation_required",
@@ -452,7 +452,7 @@
   },
   {
     "id": "select_option/index",
-    "tool": "fox_select_option",
+    "tool": "fox_set_value",
     "default": "confirmation_required",
     "readOnly": "read_only",
     "readSiteTab": "confirmation_required",
@@ -463,7 +463,7 @@
   },
   {
     "id": "hover/default",
-    "tool": "fox_hover",
+    "tool": "fox_interact",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -474,7 +474,7 @@
   },
   {
     "id": "scroll/default",
-    "tool": "fox_scroll",
+    "tool": "fox_interact",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -485,7 +485,7 @@
   },
   {
     "id": "scroll/direction",
-    "tool": "fox_scroll",
+    "tool": "fox_interact",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -496,7 +496,7 @@
   },
   {
     "id": "scroll/to_element",
-    "tool": "fox_scroll",
+    "tool": "fox_interact",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -507,7 +507,7 @@
   },
   {
     "id": "scroll/container",
-    "tool": "fox_scroll",
+    "tool": "fox_interact",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -518,7 +518,7 @@
   },
   {
     "id": "highlight/default",
-    "tool": "fox_highlight",
+    "tool": "fox_interact",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -529,7 +529,7 @@
   },
   {
     "id": "highlight/options",
-    "tool": "fox_highlight",
+    "tool": "fox_interact",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -540,7 +540,7 @@
   },
   {
     "id": "create_tab/default",
-    "tool": "fox_create_tab",
+    "tool": "fox_tab",
     "default": "confirmation_required",
     "readOnly": "read_only",
     "readSiteTab": "confirmation_required",
@@ -551,7 +551,7 @@
   },
   {
     "id": "create_tab/url",
-    "tool": "fox_create_tab",
+    "tool": "fox_tab",
     "default": "confirmation_required",
     "readOnly": "read_only",
     "readSiteTab": "confirmation_required",
@@ -562,7 +562,7 @@
   },
   {
     "id": "create_tab/read_site",
-    "tool": "fox_create_tab",
+    "tool": "fox_tab",
     "default": "confirmation_required",
     "readOnly": "read_only",
     "readSiteTab": "confirmation_required",
@@ -573,7 +573,7 @@
   },
   {
     "id": "close_tab/default",
-    "tool": "fox_close_tab",
+    "tool": "fox_tab",
     "default": "confirmation_required",
     "readOnly": "read_only",
     "readSiteTab": "confirmation_required",
@@ -584,7 +584,7 @@
   },
   {
     "id": "switch_tab/default",
-    "tool": "fox_switch_tab",
+    "tool": "fox_tab",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -595,7 +595,7 @@
   },
   {
     "id": "wait_for_element/default",
-    "tool": "fox_wait_for_element",
+    "tool": "fox_wait",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -606,7 +606,7 @@
   },
   {
     "id": "wait_for_element/options",
-    "tool": "fox_wait_for_element",
+    "tool": "fox_wait",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -617,7 +617,7 @@
   },
   {
     "id": "wait_for_network_idle/default",
-    "tool": "fox_wait_for_network_idle",
+    "tool": "fox_wait",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -628,7 +628,7 @@
   },
   {
     "id": "wait_for_network_idle/options",
-    "tool": "fox_wait_for_network_idle",
+    "tool": "fox_wait",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -639,7 +639,7 @@
   },
   {
     "id": "wait_for_navigation/default",
-    "tool": "fox_wait_for_navigation",
+    "tool": "fox_wait",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -650,7 +650,7 @@
   },
   {
     "id": "wait_for_navigation/options",
-    "tool": "fox_wait_for_navigation",
+    "tool": "fox_wait",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -661,7 +661,7 @@
   },
   {
     "id": "wait_for_url/url",
-    "tool": "fox_wait_for_url",
+    "tool": "fox_wait",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -672,7 +672,7 @@
   },
   {
     "id": "wait_for_url/pattern",
-    "tool": "fox_wait_for_url",
+    "tool": "fox_wait",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -683,46 +683,13 @@
   },
   {
     "id": "wait_for_url/read_site",
-    "tool": "fox_wait_for_url",
+    "tool": "fox_wait",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
     "localFileTab": null,
     "unknownTab": null,
     "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "run_workflow/default",
-    "tool": "fox_run_workflow",
-    "default": "confirmation_required",
-    "readOnly": "read_only",
-    "readSiteTab": "confirmation_required",
-    "localFileTab": "confirmation_required",
-    "unknownTab": "confirmation_required",
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "audit_page/default",
-    "tool": "fox_audit_page",
-    "default": null,
-    "readOnly": null,
-    "readSiteTab": "confirmation_required",
-    "localFileTab": null,
-    "unknownTab": null,
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "audit_page/options",
-    "tool": "fox_audit_page",
-    "default": null,
-    "readOnly": null,
-    "readSiteTab": null,
-    "localFileTab": null,
-    "unknownTab": null,
-    "blockedTab": null,
     "guardOff": null
   },
   {
@@ -804,7 +771,7 @@
   },
   {
     "id": "list_containers/default",
-    "tool": "fox_list_containers",
+    "tool": "fox_tabs",
     "default": null,
     "readOnly": null,
     "readSiteTab": null,
@@ -815,7 +782,7 @@
   },
   {
     "id": "open_in_container/name",
-    "tool": "fox_open_in_container",
+    "tool": "fox_tab",
     "default": "confirmation_required",
     "readOnly": "read_only",
     "readSiteTab": "confirmation_required",
@@ -826,7 +793,7 @@
   },
   {
     "id": "open_in_container/cookie_store",
-    "tool": "fox_open_in_container",
+    "tool": "fox_tab",
     "default": "confirmation_required",
     "readOnly": "read_only",
     "readSiteTab": "confirmation_required",
@@ -837,7 +804,7 @@
   },
   {
     "id": "open_in_container/blocked",
-    "tool": "fox_open_in_container",
+    "tool": "fox_tab",
     "default": "blocked_url",
     "readOnly": "blocked_url",
     "readSiteTab": "blocked_url",

@@ -149,10 +149,11 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
         "(Extension and MCP Server versions may not match).",
     });
   }
-  const readRules = policy.readRules;
+  const confirmReadRules = policy.confirmReadRules;
   const urlLists = policy.lists;
-  // Site a human approved for this one call (MCP Server approval token).
-  const approvedHost = typeof message.approvedHost === "string" ? message.approvedHost : undefined;
+  // Site a human approved for this one call (MCP Server approval token). The
+  // wire field keeps its name `approvedHost`; its value is a site (approvalSiteOf).
+  const approvedSite = typeof message.approvedHost === "string" ? message.approvedHost : undefined;
 
   // blocked / allowed lists against the real URL of the target tab (the
   // guard only knows the last URL it saw for the tab, if any). The server
@@ -167,13 +168,13 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
   // server's last-seen URL, which is shared by every session) or the URL the
   // command opens. Acting rows need it always: the MCP Server cannot switch
   // this off. Reading rows need it only on a tab matching the attached
-  // confirm_read_sites rules. The multi-tab rows (actPerTab, readPerTab)
-  // apply it in their handlers; "none" rows change no page data.
+  // confirm_read_sites rules. The multi-tab row (readPerTab) applies it in
+  // its handler; "none" rows change no page data.
   // A message without an action has no row: it is refused below
   // (UNKNOWN_ACTION) without reaching a handler that acts.
   const approval = entry?.approval;
   if (approval === "act" || approval === "actOnUrl" || approval === "read") {
-    const refusal = checkApproval(approval, target, data, readRules, approvedHost);
+    const refusal = checkApproval(approval, target, data, confirmReadRules, approvedSite);
     if (refusal) return refused(refusal);
   }
 
@@ -187,8 +188,8 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
       tabId,
       target,
       scope,
-      readRules,
-      approvedHost,
+      confirmReadRules,
+      approvedSite,
       urlLists,
       navigateInNewTab,
     },

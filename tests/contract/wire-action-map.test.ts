@@ -60,13 +60,12 @@ describe('BROWSER_ACTIONS ⇔ WIRE_ACTION_MAP', () => {
     const rows = (pred: (approval: string) => boolean): string[] =>
       [...ACTION_TABLE].filter(([, d]) => pred(d.approval)).map(([name]) => name).sort();
     expect(rows((a) => a === 'act')).toEqual([
-      'click', 'clickAndWait', 'closeTab', 'goBack', 'goForward', 'hardRefresh', 'pressKey', 'refresh',
-      'selectOption', 'setValue', 'type',
+      'click', 'closeTab', 'goBack', 'goForward', 'hardRefresh', 'pressKey', 'refresh', 'selectOption',
+      'setValue', 'type',
     ]);
     expect(rows((a) => a === 'actOnUrl')).toEqual(['createTab', 'navigate', 'open_in_container']);
-    expect(rows((a) => a === 'actPerTab')).toEqual(['reloadAll', 'reloadByUrl']);
     expect(rows((a) => a === 'read')).toEqual([
-      'find_text', 'getElements', 'getPageInfo', 'getText', 'getValue', 'screenshot', 'scrollAndCapture',
+      'find_text', 'getElements', 'getPageInfo', 'getText', 'screenshot', 'scrollAndCapture',
     ]);
     expect(rows((a) => a === 'readPerTab')).toEqual(['screenshotAllTabs']);
   });
@@ -84,6 +83,20 @@ describe('BROWSER_ACTIONS ⇔ WIRE_ACTION_MAP', () => {
       expect((BROWSER_ACTIONS as readonly string[]).includes(name), name).toBe(false);
     }
     for (const internal of ['executeScript', 'observeElement', 'stopObserving', 'startLogging', 'getConsoleLogs']) {
+      expect(describeAction(internal), internal).toBe(UNKNOWN_ACTION);
+    }
+  });
+
+  // No operation of the MCP Server sends these, so the Extension has no handler for them.
+  it('the actions no tool sends are gone', () => {
+    const removed = [
+      'get_tab_info', 'find_tabs', 'get_value', 'reload_all', 'reload_by_url', 'wait_for_change', 'click_and_wait',
+    ];
+    for (const name of removed) {
+      expect(wireMap.has(name), name).toBe(false);
+      expect((BROWSER_ACTIONS as readonly string[]).includes(name), name).toBe(false);
+    }
+    for (const internal of ['getTabInfo', 'findTabs', 'getValue', 'reloadAll', 'reloadByUrl', 'waitForChange', 'clickAndWait']) {
       expect(describeAction(internal), internal).toBe(UNKNOWN_ACTION);
     }
   });

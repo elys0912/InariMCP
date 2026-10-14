@@ -11,7 +11,7 @@
 
 import type { BrowserContext, ElementHandle, Page } from 'playwright';
 import { z } from 'zod';
-import { BrowserActionSchema, isMaskedField, MASKED_VALUE, type BrowserAction, type MaskFieldInfo } from '@inari-mcp/shared';
+import { BrowserActionSchema, type BrowserAction } from '@inari-mcp/shared';
 import { screenshotStem } from '@inari-mcp/shared/node';
 import { countOccurrences, filterAriaSnapshot, parseArgs } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
@@ -204,21 +204,8 @@ function boundedWait<T>(bound: Bound, timeout: number, what: string, wait: (ms: 
 }
 
 // ---------------------------------------------------------------------------
-// Masked values and the password guard
+// Password guard
 // ---------------------------------------------------------------------------
-
-/**
- * What the masked-value rule (shared/src/field-mask.ts) reads from an
- * element, as the Extension's content/dom.ts isMaskedField does. Runs in
- * the page.
- */
-function maskFieldInfo(el: Element): MaskFieldInfo {
-  return {
-    localName: el.localName,
-    type: el.localName === 'input' ? (el as HTMLInputElement).type : '',
-    autocomplete: el.getAttribute('autocomplete'),
-  };
-}
 
 /**
  * Password guard: refuse a password field unless the command carries
@@ -626,23 +613,6 @@ const focusTab: ActionHandler = async ({ page, tabId, host }) => {
   return { success: true };
 };
 
-// --- get_value ---
-const getValue: ActionHandler = async ({ page, args }) => {
-  const { selector } = parseArgs(selectorArgs, args, 'get_value');
-  const el = await page.$(selector);
-  if (el === null) return { success: false, error: `No element matches selector: ${selector}` };
-  // As on the Extension (content/inspect.ts getValue): a <label> is read as
-  // itself (its text), not as its control.
-  const label = await el.evaluate((e) => e instanceof HTMLLabelElement);
-  if (!label && isMaskedField(await el.evaluate(maskFieldInfo))) return { success: true, value: MASKED_VALUE };
-  const value = await el.evaluate((e): string | null => {
-    if (e instanceof HTMLInputElement || e instanceof HTMLTextAreaElement) return e.value;
-    if (e instanceof HTMLSelectElement) return e.options[e.selectedIndex]?.value ?? null;
-    return e.textContent;
-  });
-  return { success: true, value };
-};
-
 // --- set_value ---
 const setValueArgs = z.object({ selector: z.string(), value: z.string() });
 
@@ -915,15 +885,12 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
 
   // --- tab management ---
   get_tabs: tabless(getTabs),
-  get_tab_info: UNSUPPORTED,
-  find_tabs: UNSUPPORTED,
   screenshot_all_tabs: UNSUPPORTED,
   create_tab: tabless(createTab),
   close_tab: dispatch(closeTab),
   focus_tab: dispatch(focusTab),
 
   // --- form / input ---
-  get_value: dispatch(getValue),
   set_value: dispatch(setValue),
   select_option: dispatch(selectOption),
   hover: dispatch(hover),
@@ -931,27 +898,21 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   // --- reload / navigation ---
   refresh: dispatch(refresh),
   hard_refresh: UNSUPPORTED,
-  reload_all: UNSUPPORTED,
-  reload_by_url: UNSUPPORTED,
   go_back: dispatch(goBack),
   go_forward: dispatch(goForward),
 
   // --- wait ---
-  wait_for_change: UNSUPPORTED,
   wait_for_network_idle: dispatch(waitForNetworkIdle),
   scroll_and_capture: UNSUPPORTED,
-  click_and_wait: UNSUPPORTED,
 
   // --- keyboard / text ---
   press_key: dispatch(pressKey),
   get_text: dispatch(getText),
 
-  // --- approval / workflow ---
+  // --- approval ---
   request_approval: tabless(requestApproval),
-  run_workflow: UNSUPPORTED,
   solve_captcha: dispatch(solveCaptcha),
   cancel_human_wait: UNSUPPORTED,
-  audit_page: UNSUPPORTED,
 
   // --- P3-3 ---
   snapshot: dispatch(snapshot),
