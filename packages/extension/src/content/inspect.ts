@@ -132,6 +132,15 @@ function removeHighlight(): void {
   }
 }
 
+/** The overlay's glow grows and shrinks until the overlay is removed. */
+function pulseGlow(overlay: HTMLElement): void {
+  const glow = (blur: number, color: string) => ({ boxShadow: `0 0 ${blur}px ${color}` });
+  overlay.animate(
+    [glow(10, HIGHLIGHT_STYLE.GLOW), glow(20, HIGHLIGHT_STYLE.GLOW_PEAK), glow(10, HIGHLIGHT_STYLE.GLOW)],
+    { duration: HIGHLIGHT_STYLE.PULSE_MS, easing: "ease-in-out", iterations: Infinity },
+  );
+}
+
 export function highlightElement(
   options: HighlightOptions,
 ): Record<string, unknown> {
@@ -145,7 +154,6 @@ export function highlightElement(
   const rect = element.getBoundingClientRect();
 
   highlightOverlay = document.createElement("div");
-  highlightOverlay.className = "inari-highlight-overlay";
   highlightOverlay.style.cssText = `
       position: fixed;
       left: ${rect.left}px;
@@ -177,6 +185,7 @@ export function highlightElement(
   highlightOverlay.appendChild(label);
 
   document.body.appendChild(highlightOverlay);
+  pulseGlow(highlightOverlay);
 
   if (options.duration !== 0) {
     highlightTimer = setTimeout(removeHighlight, options.duration || TIMEOUTS.HIGHLIGHT);

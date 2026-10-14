@@ -525,7 +525,8 @@ describe('WP44 highlight and overlay banner timers (E-05, E-06, A-07)', () => {
   real('E-05 the timer of an earlier highlight does not remove the next one', async () => {
     await load('<div id="a">A</div><div id="b">B</div>');
     const r = await run<Record<string, number>>(
-      `const count = () => document.querySelectorAll('.inari-highlight-overlay').length;
+      // The overlay is the body's only child without an id; it carries no class.
+      `const count = () => document.querySelectorAll('body > div:not([id]):not([class])').length;
        f.inspect.highlightElement({ selector: '#a', duration: 400 });
        await sleep(100);
        f.inspect.highlightElement({ selector: '#b', duration: 10000 });

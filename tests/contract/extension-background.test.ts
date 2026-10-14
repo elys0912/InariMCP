@@ -799,6 +799,8 @@ describe('3.security native message logging', () => {
     expect(manifest.content_scripts).toHaveLength(1);
     expect(manifest.content_scripts[0]).toMatchObject({ all_frames: false });
     expect(manifest.content_scripts[0]).not.toHaveProperty('css');
+    // The highlight overlay is styled on the element itself (no class to probe for).
+    expect(readExtensionTree('content')).not.toMatch(/\.className\s*=(?!=)|classList\.add\(/);
   });
 
   it('manifest: declares every kind of data it sends, under the name of the UI', () => {

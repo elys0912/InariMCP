@@ -7,7 +7,8 @@
  *     own commands still run), and the badge while a command runs;
  *   - who may read or change the consent and the pause switch, and the
  *     consent page opened on the first install only;
- *   - the privacy policy link in the UI language.
+ *   - the screenshot entry of the page menu only while the consent is given,
+ *     and the privacy policy link in the UI language.
  * Modules with state are loaded afresh per test (vi.resetModules).
  */
 
@@ -49,6 +50,8 @@ interface FakeBrowser {
   storage: Record<string, unknown>;
   badgeText: string[];
   createdTabs: string[];
+  /** Ids of the context menu entries there are now. */
+  menus: string[];
   tabQueries: number;
   /** When set, tabs.query waits for this promise (a command that is still running). */
   tabQueryGate: Promise<void> | null;
@@ -62,6 +65,7 @@ function installFakeBrowser(stored: Record<string, unknown> = {}): FakeBrowser {
     storage: { ...stored },
     badgeText: [],
     createdTabs: [],
+    menus: [],
     tabQueries: 0,
     tabQueryGate: null,
     onMessage: fakeEvent(),
@@ -96,6 +100,17 @@ function installFakeBrowser(stored: Record<string, unknown> = {}): FakeBrowser {
       onRemoved: fakeEvent(),
     },
     windows: { getAll: async () => [] },
+    contextMenus: {
+      create: ({ id }: { id: string }) => {
+        if (fake.menus.includes(id)) throw new Error(`duplicate menu id ${id}`);
+        fake.menus.push(id);
+      },
+      remove: async (id: string) => {
+        if (!fake.menus.includes(id)) throw new Error(`no menu id ${id}`);
+        fake.menus.splice(fake.menus.indexOf(id), 1);
+      },
+      onClicked: fakeEvent(),
+    },
     i18n: { getMessage: (key: string) => `msg:${key}` },
     browserAction: {
       setBadgeText: async ({ text }: { text: string }) => { fake.badgeText.push(text); },
@@ -336,6 +351,27 @@ describe('listeners: consent page and pause switch messages', () => {
 });
 
 // ---------------------------------------------------------------------------
+// context-menu.ts: the screenshot entry follows the consent
+// ---------------------------------------------------------------------------
+
+describe('context menu: the screenshot entry', () => {
+  it('appears only while the consent is given, once, and goes when it is withdrawn', async () => {
+    const fake = installFakeBrowser();
+    const menu = await import('../../packages/extension/src/background/context-menu.ts');
+    menu.registerContextMenus();
+    expect(fake.menus).toEqual([]); // loading adds no entry
+
+    menu.setScreenshotMenu(false); // still undecided or denied: nothing to remove
+    menu.setScreenshotMenu(true);
+    menu.setScreenshotMenu(true); // granted again (startup, then the page): one entry
+    expect(fake.menus).toEqual(['inari-screenshot']);
+
+    menu.setScreenshotMenu(false);
+    await vi.waitFor(() => expect(fake.menus).toEqual([]));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // user-control.ts: the privacy policy linked from the consent page
 // ---------------------------------------------------------------------------
 
@@ -362,5 +398,10 @@ describe('background.ts startup', () => {
     expect(entry).not.toMatch(/^connectNativeHost\(\);$/m);
     expect(entry).toMatch(/^void loadControlState\(\)\.then\(/m);
     expect(entry).toContain('setConnectionAllowed(allowed);');
+  });
+
+  it('shows the screenshot menu entry through the consent, the same way', () => {
+    expect(entry).toContain('setScreenshotMenu(allowed);');
+    expect(entry).not.toMatch(/^setScreenshotMenu\(/m);
   });
 });
