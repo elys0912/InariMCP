@@ -19,7 +19,7 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - addons.mozilla.org の掲載用の素材（[docs/amo/listing.md](./amo/listing.md)）と、審査者向けのメモ（[docs/amo/reviewer-notes.md](./amo/reviewer-notes.md)）。
 - ツールバーのポップアップから常に許可の画面を開けるようにした。許可した後は、一時停止スイッチの下の「許可を取り消す」で開き、そこで「許可しない」を押すと、拡張機能はその場で接続を切る。
 - `npm run smoke:reviewer`（`scripts/e2e/reviewer-smoke.mjs`）と [docs/amo/reviewer-smoke.md](amo/reviewer-smoke.md)（英語）：127.0.0.1 のテストページで基本機能（タブ、タブを開く、マスク付きの読み取り、検索、スクリーンショット、クリック、タブを閉じる。操作はポップアップで 1 回ずつ承認する）を試す smoke テスト。Claude Code・アカウント・インターネット接続は要らない。`-- --headless` で拡張機能なしでも動くが、誰も承認できないので、動くのはタブの一覧だけ。`scripts/e2e/tools-smoke.mjs` も example.com の代わりに同じテストページを使う。
-- ESLint（複雑度のルールを含む。complexity、max-depth、max-params、max-nested-callbacks、max-lines-per-function は警告）：`npm run lint:install && npm run lint`。lint だけ `tools/lint` の TypeScript 6 で動く（typescript-eslint のピア依存のため）。ビルドは TypeScript 7 のまま。エラーがあると `npm run lint`、CI、`npm run pack:ext` は失敗する。
+- ESLint（推奨のルールと、警告にする複雑度のルール。complexity、max-depth、max-params、max-nested-callbacks、max-lines-per-function）。提出の前に `npm run lint:install` と `npm run lint` で実行する。lint だけ `tools/lint` の TypeScript 6 で動く（typescript-eslint のピア依存のため）。ビルドは TypeScript 7 のまま。エラーがあると `npm run lint` は失敗する。警告では失敗しない。
 - 拡張のパッケージに `dist/LICENSE` を入れた。リポジトリの `LICENSE`（Inari MCP for Firefox と、その元になったプロジェクトの MIT の表示）の写し。
 
 ### 変更

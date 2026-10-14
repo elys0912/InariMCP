@@ -21,7 +21,7 @@ npm run lint:install    # ESLint and TypeScript 6 into tools/lint/node_modules (
 npm run lint            # ESLint over the repository (see Lint)
 npm test                # Vitest, all projects except e2e
 npm run lint:ext        # web-ext lint of packages/extension
-npm run pack:ext        # ESLint, then the Extension package for AMO, its file hashes, then web-ext lint (see Release)
+npm run pack:ext        # the Extension package for AMO, its file hashes, then web-ext lint (see Release)
 npm run pack:source     # the source package for AMO (see Release)
 npm run e2e:extension   # the Extension loads into Firefox as a temporary add-on
 ```
@@ -72,7 +72,7 @@ npm run lint:install && npm run lint
 
 Only the lint runs on TypeScript 6; the build and `npm run typecheck` use TypeScript 7 from the root. typescript-eslint's peer dependency does not allow TypeScript 7 yet, so ESLint, typescript-eslint and TypeScript 6 live in `tools/lint` with their own `package.json` and lockfile; `npm run lint:install` installs them there (`npm ci --prefix tools/lint`). The configuration is `tools/lint/eslint.config.js`: the recommended rules everywhere, the type-aware ones on the files of the tsconfigs, and complexity, max-depth, max-params, max-nested-callbacks and max-lines-per-function as warnings. The tests turn off the type-aware rules that loosely typed mocks and fixtures trip (the reasons are in the configuration).
 
-An error fails `npm run lint`, CI and `npm run pack:ext`; a warning does not.
+An error fails `npm run lint`; a warning does not. CI and `npm run pack:ext` do not run ESLint: run `npm run lint:install` and `npm run lint` before a submission (step 3 of Release).
 
 ## Release
 
@@ -80,10 +80,10 @@ Steps for a new version, for example 0.1.1. The AMO submission is the listed cha
 
 1. **Version.** Set the same `version` in six files: `package.json`, `packages/shared/package.json`, `packages/mcp-server/package.json`, `packages/native-host/package.json`, `packages/extension/package.json` and `packages/extension/manifest.json`. `npm run build` and the test suite do not check this, `--doctor` does (its `versions` item). Edit by hand: `npm version` changes one `package.json` (the workspaces need `--workspaces` as well), never the `manifest.json`, and commits and tags on its own, before the changelog is final. Then run `npm install --package-lock-only` so `package-lock.json` carries the same version, and commit it. A version that has been submitted to AMO cannot be submitted again; the version in the manifest must be higher than the previous one.
 2. **Changelog.** In `docs/CHANGELOG.md` and `docs/CHANGELOG.ja.md`, rename "Unreleased" to the version and the date (`date` of the day), and check that every user-visible change is listed.
-3. **Checks.** `npm ci`, `npm run build`, `npm run typecheck`, `npm run lint:install`, `npm run lint`, `npm test`. CI runs the same on Ubuntu 24.04 ARM64 (`.github/workflows/ci.yml`).
+3. **Checks.** `npm ci`, `npm run build`, `npm run typecheck`, `npm run lint:install`, `npm run lint`, `npm test`. CI runs the same without the lint on Ubuntu 24.04 ARM64 (`.github/workflows/ci.yml`); the lint runs only here.
 4. **Commit and tag.** Commit with a clean working tree (`git status` prints nothing), then `git tag v<version>`. `npm run pack:source` refuses a working tree that is not clean.
 5. **Packages.** `npm run pack:ext` and `npm run pack:source`. Both write to `web-ext-artifacts/` (ignored by git):
-   - `inari_mcp_for_firefox-<version>.zip` and `.sha256.txt`: the add-on and the SHA-256 of each file in it. `pack:ext` runs ESLint first and fails on an ESLint error, and fails when `web-ext lint` reports any error or warning. Building twice gives the same hashes (`tests/scripts/pack-extension.test.ts`); a zip file itself differs by its file times, so compare the `.sha256.txt` files.
+   - `inari_mcp_for_firefox-<version>.zip` and `.sha256.txt`: the add-on and the SHA-256 of each file in it. `pack:ext` fails when `web-ext lint` reports any error or warning. Building twice gives the same hashes (`tests/scripts/pack-extension.test.ts`); a zip file itself differs by its file times, so compare the `.sha256.txt` files.
    - `inari-mcp-source-<version>.zip`: the tracked files of `HEAD` and `BUILD.md`.
 6. **Submit.** Merge the release commit into `main` and push `main` and the tag first: the permission page of the add-on links to `docs/PRIVACY.md` on `main`, and the listing and the Notes for Reviewers link to it at the tag (`blob/v<version>/docs/PRIVACY.md`), so both must be on GitHub before anyone opens them. Then make a GitHub release and attach the `.sha256.txt`. In the AMO Developer Hub, upload the add-on zip as a listed version, upload the source zip when asked whether the add-on uses bundled or minified code, and paste the text of `docs/amo/reviewer-notes.md` into Notes for Reviewers, with `<version>` replaced. Update the privacy policy URL of the listing to the new tag (`docs/amo/listing.md`).
 

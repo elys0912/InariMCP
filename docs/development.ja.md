@@ -21,7 +21,7 @@ npm run lint:install    # ESLintとTypeScript 6をtools/lint/node_modulesに入�
 npm run lint            # リポジトリ全体のESLint（「Lint」を参照）
 npm test                # Vitest。e2e以外の全プロジェクト
 npm run lint:ext        # packages/extensionのweb-ext lint
-npm run pack:ext        # ESLintのあと、AMOに出す拡張機能のパッケージとファイルごとのハッシュ、続けてweb-ext lint（「リリース」を参照）
+npm run pack:ext        # AMOに出す拡張機能のパッケージとファイルごとのハッシュ、続けてweb-ext lint（「リリース」を参照）
 npm run pack:source     # AMOに出すソースのパッケージ（「リリース」を参照）
 npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefoxに読み込まれるか
 ```
@@ -72,7 +72,7 @@ npm run lint:install && npm run lint
 
 lintだけTypeScript 6で動き、ビルドと`npm run typecheck`はルートのTypeScript 7を使う。typescript-eslintのピア依存がまだTypeScript 7を許さないため、ESLint、typescript-eslint、TypeScript 6は`tools/lint`に分離し、専用の`package.json`とlockfileを持つ。`npm run lint:install`（`npm ci --prefix tools/lint`）がそこに入れる。設定は`tools/lint/eslint.config.js`。推奨のルールを全体に、型情報付きのルールをtsconfigの対象のファイルに当て、complexity、max-depth、max-params、max-nested-callbacks、max-lines-per-functionは警告にする。テストでは、型の緩いモックやフィクスチャで引っかかる型情報付きのルールを切る（理由は設定に書いてある）。
 
-エラーがあると`npm run lint`、CI、`npm run pack:ext`は失敗する。警告では失敗しない。
+エラーがあると`npm run lint`は失敗する。警告では失敗しない。CIと`npm run pack:ext`はESLintを実行しないので、提出の前に`npm run lint:install`と`npm run lint`を実行する（「リリース」の手順3）。
 
 ## リリース
 
@@ -80,10 +80,10 @@ lintだけTypeScript 6で動き、ビルドと`npm run typecheck`はルートの
 
 1. **版。** 6つのファイルの`version`を同じ値にする: `package.json`、`packages/shared/package.json`、`packages/mcp-server/package.json`、`packages/native-host/package.json`、`packages/extension/package.json`、`packages/extension/manifest.json`。`npm run build`とテストは確認しないが、`--doctor`は確認する（`versions`の項目）。手で書き換える。`npm version`は`package.json`を1つだけ変え（workspaceには`--workspaces`も要る）、`manifest.json`は変えず、変更履歴が固まる前にコミットとタグを作ってしまうため。そのあと`npm install --package-lock-only`で`package-lock.json`の版もそろえ、コミットする。AMOに提出した版は再提出できず、manifestの版は前の版より大きくする。
 2. **変更履歴。** `docs/CHANGELOG.md`と`docs/CHANGELOG.ja.md`で「Unreleased」を版とその日の日付（`date`）に直し、利用者に見える変更がすべて載っているか確認する。
-3. **確認。** `npm ci`、`npm run build`、`npm run typecheck`、`npm run lint:install`、`npm run lint`、`npm test`。CIはUbuntu 24.04 ARM64で同じことを行う（`.github/workflows/ci.yml`）。
+3. **確認。** `npm ci`、`npm run build`、`npm run typecheck`、`npm run lint:install`、`npm run lint`、`npm test`。CIはUbuntu 24.04 ARM64でlint以外の同じことを行う（`.github/workflows/ci.yml`）。lintはここでだけ実行する。
 4. **コミットとタグ。** 作業ツリーがきれいな状態（`git status`が何も出さない）でコミットし、`git tag v<版>`。`npm run pack:source`は、きれいでない作業ツリーでは失敗する。
 5. **パッケージ。** `npm run pack:ext`と`npm run pack:source`。どちらも`web-ext-artifacts/`（gitの対象外）に書く。
-   - `inari_mcp_for_firefox-<版>.zip`と`.sha256.txt`: 拡張機能と、その中の各ファイルのSHA-256。`pack:ext`は最初にESLintを実行し、ESLintのエラーで失敗する。`web-ext lint`がエラーか警告を1件でも出しても失敗する。2回作ると同じハッシュになる（`tests/scripts/pack-extension.test.ts`）。zip自体はファイルの時刻が入って異なるので、`.sha256.txt`で比べる。
+   - `inari_mcp_for_firefox-<版>.zip`と`.sha256.txt`: 拡張機能と、その中の各ファイルのSHA-256。`pack:ext`は、`web-ext lint`がエラーか警告を1件でも出すと失敗する。2回作ると同じハッシュになる（`tests/scripts/pack-extension.test.ts`）。zip自体はファイルの時刻が入って異なるので、`.sha256.txt`で比べる。
    - `inari-mcp-source-<版>.zip`: `HEAD`の管理下のファイルと`BUILD.md`。
 6. **提出。** 先にリリースのコミットを`main`に取り込み、`main`とタグをpushする。拡張機能の許可の画面は`main`の`docs/PRIVACY.md`を、掲載ページとNotes for Reviewersはタグの`docs/PRIVACY.md`（`blob/v<版>/docs/PRIVACY.md`）を指すので、誰かが開く前に両方がGitHubに載っている必要がある。そのあとGitHubのreleaseを作って`.sha256.txt`を添付する。AMOのDeveloper Hubで、拡張機能のzipをlistedの版としてアップロードし、バンドルや縮小したコードを使うかと聞かれたらソースのzipをアップロードし、Notes for Reviewersに`docs/amo/reviewer-notes.md`の本文を`<version>`を置き換えて貼る。掲載ページのプライバシーポリシーのURLも新しいタグに直す（`docs/amo/listing.md`）。
 

@@ -151,7 +151,7 @@ Right after installation the extension opens a permission page in a new tab. It 
 
 ### Pausing the agent
 
-The toolbar popup has a **Pause agent actions** switch. While it is on, the extension refuses every command from the MCP client (the error starts with `paused`), withdraws the approval requests still waiting, and the badge shows `II`. A command still running when you turn it on gets the same answer at once, and its typing, waiting or scrolling in the page stops at the next step. Turn it off to let the agent work again. The switch is kept across restarts; if Firefox cannot save it, the popup says so, and after a restart the last saved state is back.
+The toolbar popup has a **Pause agent actions** switch. While it is on, the extension refuses every command from the MCP client (the error starts with `paused`), withdraws the approval requests still waiting, and the badge shows `II`. A command still running when you turn it on gets the same answer at once, and its typing, waiting or scrolling in the page stops at the next step; an operation done by the browser alone (a screenshot of all tabs, a wait for a tab to load) runs to its end and its result is dropped. Turn it off to let the agent work again. The switch is kept across restarts; if Firefox cannot save it, the popup says so, and after a restart the last saved state is back.
 
 ### Restart and check the connection
 
@@ -325,7 +325,7 @@ The extension does not run in private windows (`"incognito": "not_allowed"`), an
 
 - The extension reads your tabs only when the MCP client calls a tool, and sends the result to the native host on your computer. The MCP client you connected receives it and sends it to its AI provider; Inari MCP sends nothing to the developer.
 - Password, hidden, one-time-code and credit card (`cc-*`) fields, and the options of such a select, are masked in what the tools read, and the reading tools refuse selectors that could test them; screenshots are images and are not masked. Cookies are not read.
-- Every action on a page or the browser (clicking, typing, hovering, navigating, opening or closing tabs, …) waits for your approval; reading, waiting, scrolling, highlighting an element and switching tabs do not. The toolbar popup can pause every call (the running one is stopped) and reopen the permission page to withdraw it.
+- Every action on a page or the browser (clicking, typing, hovering, navigating, opening or closing tabs, …) waits for your approval; reading, waiting, scrolling, highlighting an element and switching tabs do not. The toolbar popup can pause every call (a running one is answered `paused` at once: its work in the page stops at the next step, an operation done by the browser alone runs to its end and its result is dropped) and reopen the permission page to withdraw it.
 - Screenshots taken through the extension stay in `~/.inari-mcp/screenshots/` for 30 days (those of headless mode until you delete them). `~/.inari-mcp/logs/audit.jsonl` records the time, tool name and URL of each call, not the page content. `npm run teardown -- --purge` deletes everything.
 - Private windows are not supported.
 
@@ -356,7 +356,7 @@ The names below are the ones the code reads. The daemon takes an empty or blank 
 
 | Variable | Default | Read by | Description |
 |---|---|---|---|
-| `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host, uninstaller | Address of the HTTP/WS server. Loopback addresses only (127.0.0.0/8, `::1`, `localhost`): with any other value the daemon logs an error and does not start. An empty or blank value counts as unset (the default applies) |
+| `FOX_HOST` | `127.0.0.1` | daemon, relay, Native Host, uninstaller | Address of the HTTP/WS server. Loopback addresses only (127.0.0.0/8, `::1`, `localhost`): with any other value the daemon, the relay and the Native Host all refuse it and each logs the reason (the daemon does not start). An empty or blank value counts as unset (the default applies) |
 | `FOX_HTTP_PORT` | `8785` | daemon, relay, Native Host, uninstaller | HTTP port (also the daemon's singleton lock). An empty or blank value counts as unset (the default applies) |
 | `FOX_WS_PORT` | `8786` | daemon, Native Host | WebSocket port the Native Host connects to. An empty or blank value counts as unset (the default applies) |
 | `FOX_CAPS` | unset (all tools) | relay | Tool profiles, comma-separated (see [below](#fox_caps-profiles)). **Not a safety boundary** — it only trims which tool schemas this session registers, to save context tokens. The daemon accepts every tool from every caller; actual restrictions (read-only, URL limits, container scope) come from `safety.json` / the safety guard |

@@ -40,7 +40,7 @@ describe('scripts/pack-extension.mjs', () => {
     files = lines.map((line) => SUM_LINE.exec(line)?.[1] ?? `(not a hash line: ${line})`);
   }, 150_000);
 
-  it('exits 0: ESLint reports no error and web-ext lint reports nothing', () => {
+  it('exits 0: web-ext lint reports nothing', () => {
     for (const run of runs) expect(run.status, run.output).toBe(0);
   });
 

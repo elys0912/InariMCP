@@ -1,6 +1,6 @@
 {
   "extDescription": {
-    "message": "Lets an MCP client such as Claude Code read and operate your tabs. Sends page content, URLs and screenshots to a local native host."
+    "message": "Lets an MCP client read and operate your tabs. Page text, URLs and screenshots go via a local native host to it and its AI provider."
   },
 
   "popupFooter": { "message": "Inari MCP for Firefox — page content goes through the native host on this computer to your MCP client" },

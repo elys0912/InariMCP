@@ -1,6 +1,6 @@
 {
   "extDescription": {
-    "message": "Claude Code などの MCP クライアントから Firefox のタブを読んで操作する。ページの内容・URL・スクリーンショットを手元のネイティブホストへ送る。"
+    "message": "Claude Code などの MCP クライアントから Firefox のタブを読んで操作する。ページの文字・URL・スクリーンショットは、手元のネイティブホストを経て MCP クライアントとその AI の提供元へ渡る。"
   },
 
   "popupFooter": { "message": "Inari MCP for Firefox — ページの内容はこの PC のネイティブホストを経て MCP クライアントへ渡る" },
