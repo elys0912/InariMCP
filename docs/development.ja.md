@@ -49,7 +49,7 @@ npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefo
 | `src/content.ts` | `dist/content.js` | `manifest.json`の`content_scripts` |
 | `src/popup/popup.ts` | `dist/popup/popup.js` | `dist/popup/popup.html`（`browser_action.default_popup`） |
 | `src/consent/consent.ts` | `dist/consent/consent.js` | `dist/consent/consent.html`（許可の画面。初回のインストール時にbackgroundが開く） |
-| `src/popup/popup.html`、`src/popup/popup.css`、`src/consent/consent.html`、`src/consent/consent.css`、`src/content.css` | `dist/`にコピー | |
+| `src/popup/popup.html`、`src/popup/popup.css`、`src/consent/consent.html`、`src/consent/consent.css` | `dist/`にコピー | |
 
 `manifest.json`が読み込むスクリプトは実行環境ごとに1本だけ。ビルドの詳細:
 
@@ -73,7 +73,7 @@ npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefo
 5. **パッケージ。** `npm run pack:ext`と`npm run pack:source`。どちらも`web-ext-artifacts/`（gitの対象外）に書く。
    - `inari_mcp_for_firefox-<版>.zip`と`.sha256.txt`: 拡張機能と、その中の各ファイルのSHA-256。`web-ext lint`がエラーか警告を1件でも出すと`pack:ext`は失敗する。2回作ると同じハッシュになる（`tests/scripts/pack-extension.test.ts`）。zip自体はファイルの時刻が入って異なるので、`.sha256.txt`で比べる。
    - `inari-mcp-source-<版>.zip`: `HEAD`の管理下のファイルと`BUILD.md`。
-6. **提出。** タグをpushし、GitHubのreleaseを作って`.sha256.txt`を添付する。AMOのDeveloper Hubで、拡張機能のzipをlistedの版としてアップロードし、バンドルや縮小したコードを使うかと聞かれたらソースのzipをアップロードし、Notes for Reviewersに`docs/amo/reviewer-notes.md`の本文を貼る。
+6. **提出。** 先にリリースのコミットを`main`に取り込み、`main`とタグをpushする。拡張機能の許可の画面は`main`の`docs/PRIVACY.md`を、掲載ページとNotes for Reviewersはタグの`docs/PRIVACY.md`（`blob/v<版>/docs/PRIVACY.md`）を指すので、誰かが開く前に両方がGitHubに載っている必要がある。そのあとGitHubのreleaseを作って`.sha256.txt`を添付する。AMOのDeveloper Hubで、拡張機能のzipをlistedの版としてアップロードし、バンドルや縮小したコードを使うかと聞かれたらソースのzipをアップロードし、Notes for Reviewersに`docs/amo/reviewer-notes.md`の本文を`<version>`を置き換えて貼る。掲載ページのプライバシーポリシーのURLも新しいタグに直す（`docs/amo/listing.md`）。
 
 CIはパッケージをアップロードしない（Actionsのストレージの節約）。手順5でローカルに作る。
 

@@ -42,7 +42,7 @@ Inari MCPは意図的に用途を絞っている。以下に当てはまる場�
 
 - **17個の`fox_*`ツール** — ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、読み取りと検索、タブ管理、待機をカバー。関連する操作は1つのツールにまとめ、モード引数で切り替える（`fox_wait`の`for: "url"`、`fox_tab`の`action: "close"`など）。以前のツール名も使える。[ツール名の移行](#ツール名の移行)を参照。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
 - **ツールプロファイル（`FOX_CAPS`）** — 全てのツールを登録すると実際にコンテキストトークンを消費する。プロファイル（`core`、`human`、`wait`など）を選んで必要な分だけ読み込める。[`FOX_CAPS`のプロファイル](#fox_capsのプロファイル)を参照。
-- **操作はすべてあなたが承認** — クリック・入力・送信・ページの移動・タブを開く/閉じる操作は、どのサイトでも1回ずつ、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのInari MCPツールバーのポップアップで、あなたが承認するまで待つ。ページの中からは承認できない。読み取りは承認を求めない（`confirm_read_sites`に書いたサイトを除く）。[人による承認](#人による承認)を参照。
+- **操作はすべてあなたが承認** — クリック・入力・キーの入力・入力欄の値の設定・hover・ページの移動・タブを開く/閉じる操作は、どのサイトでも1回ずつ、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのInari MCPツールバーのポップアップで、あなたが承認するまで待つ。ページの中からは承認できない。読み取り・待機・タブの切り替えは承認を求めない（`confirm_read_sites`に書いたサイトでは、ページの読み取りとスクリーンショットも承認を求める）。[人による承認](#人による承認)を参照。
 - **許可・一時停止・バッジ** — 拡張機能は初回の起動で許可を求め、許可するまでどこにも繋がない。ツールバーのポップアップに、すべての呼び出しを断る一時停止のスイッチがあり、ツールが動いている間はバッジが付く。
 - **安全ガード** — コンテナスコープ、レート制限、URLスキームの確認、ブロック/許可リスト、読み取り専用モードを、すべての呼び出しの前に通す。判定はすべて手元のPCのJSONLの監査ログに残る。
 - **コンテナ分離（オプトイン）** — Firefoxの`contextualIdentities`を使い、エージェントを専用コンテナに制限できる。これにより、他のタブで開いている銀行・メールのセッションをエージェントから見えなくできる。これはFirefox専用の機能で、Chromiumには同等のものが存在しない。
@@ -65,7 +65,7 @@ PowerShellは不要。インストーラとアンインストーラはNode.jsの
 ### AMOから拡張機能を入れる
 
 1. [addons.mozilla.orgのInari MCP for Firefox](https://addons.mozilla.org/firefox/addon/inari-mcp-for-firefox/)を開き、「Firefox へ追加」を押す。
-2. Firefoxが権限と、拡張機能が送るデータ（ウェブサイトのコンテンツと閲覧履歴の情報）を表示する。承諾するとインストールされる。
+2. Firefoxが権限と、拡張機能が送るデータ（ウェブサイトのコンテンツ、ウェブサイトでの操作、閲覧履歴の情報）を表示する。承諾するとインストールされる。
 3. 拡張機能が許可の画面を開く。読んで許可する。許可するまでネイティブホストに繋がず、拒否すれば繋がないままになる。
 
 ツールバーにInari MCPのボタンが出る。ポップアップに接続状態が表示される（[再起動と接続確認](#再起動と接続確認)を参照）。拡張機能はFirefoxが自動で更新する。ネイティブホストは同じ版に合わせる（[更新](#更新)を参照）。
@@ -147,17 +147,17 @@ claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server
 
 ### 初回の許可
 
-インストールの直後に、拡張機能が新しいタブで許可の画面を開く。アドオンが何をするか、何を送るか（ページの内容・スクリーンショット・URL・タブの一覧を、Native Host経由でMCPクライアントへ）、何が必要かを示し、[プライバシーポリシー](docs/PRIVACY.md)へのリンクがある。「許可する」を押すまで、拡張機能はNative Hostに接続せず、何もしない。「許可しない」を押した場合もそのままで、バッジに「未許可」が出る。あとから許可するときは、ツールバーのポップアップで「許可の画面を開く」を押す。更新のときには開かない。
+インストールの直後に、拡張機能が新しいタブで許可の画面を開く。アドオンが何をするか、何を送るか（ページの内容・スクリーンショット・URL・タブの一覧を、Native Host経由でMCPクライアントへ）、何が必要かを示し、[プライバシーポリシー](docs/PRIVACY.md)へのリンクがある。「許可する」を押すまで、拡張機能はNative Hostに接続せず、何もしない。「許可しない」を押した場合もそのままで、バッジに「未許可」が出る。あとから許可するときは、ツールバーのポップアップで「許可の画面を開く」を押す。取り消すときは、ポップアップの一時停止スイッチの下の「許可を取り消す」を押し、開いた画面で「許可しない」を押す。拡張機能はその場で接続を切る。更新のときには開かない。
 
 ### 一時停止
 
-ツールバーのポップアップに「エージェントの操作を一時停止」のスイッチがある。オンの間は、MCPクライアントからの命令をすべて拒否し（エラーは`paused`で始まる）、待っている承認の要求も取り下げ、バッジに「停止」が出る。オフに戻すとエージェントはまた動ける。スイッチの状態はFirefoxを再起動しても残る。
+ツールバーのポップアップに「エージェントの操作を一時停止」のスイッチがある。オンの間は、MCPクライアントからの命令をすべて拒否し（エラーは`paused`で始まる）、待っている承認の要求も取り下げ、実行中の命令も中断し、バッジに「停止」が出る。オフに戻すとエージェントはまた動ける。スイッチの状態はFirefoxを再起動しても残る。
 
 ### 再起動と接続確認
 
 1. **Claude Codeを再起動する**（実行中のセッションは新しいMCPサーバーを読み込まない）。
 2. `about:addons`で拡張機能が有効になっていること、許可の画面で許可したこと、ポップアップで一時停止していないことを確認する。
-3. InariMCPのツールバーボタンを見る。
+3. Inari MCPのツールバーボタンを見る。
 
 | バッジ / ポップアップ | 意味 | 対処 |
 |---|---|---|
@@ -311,22 +311,22 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `notifications` | ポップアップで承認要求が待っているとき、CAPTCHAに人の操作が要るとき（`fox_detect_captcha`）のOSの通知 | `background/approvals.ts`、`background/human-wait.ts`、`background/listeners.ts`（通知のクリックでポップアップを開く） |
 | `storage` | 許可の画面での答えと一時停止スイッチの状態を`storage.local`に保存する（[初回の許可](#初回の許可)、[一時停止](#一時停止)） | `background/control-state.ts` |
 | `<all_urls>` | すべてのページでのコンテンツスクリプト（ページの読み取りと操作）、スクリーンショットの`tabs.captureTab` | `manifest.json`の`content_scripts`、`background/screenshot.ts` |
-| `contextMenus` | ページのコンテキストメニューの1項目（スクリーンショットを撮る） | `background/context-menu.ts` |
+| `contextMenus` | ページのコンテキストメニューの1項目（スクリーンショットを撮る。接続を許可している間だけ出る） | `background/context-menu.ts` |
 | `contextualIdentities` | Firefoxのコンテナ。一覧（`what: "containers"`の`fox_tabs`）、`container_scope`のエージェント用コンテナの検索と作成、コンテナでタブを開く（`action: "create"`と`container`を指定した`fox_tab`） | `background/container-scope.ts` |
-| `cookies` | Cookieは読みも書きもしない（`browser.cookies`は使わない）。コンテナでタブを開く`tabs.create`の`cookieStoreId`に、Firefoxがこの権限を求める | `background/container-scope.ts`（`openInContainer`）、`background/tabs.ts`（`createNewTab`） |
+| `cookies` | Cookieは読みも書きもしない（`browser.cookies`は使わない）。タブがどのコンテナにあるかを読む（タブの`cookieStoreId`。`container_scope`とタブの一覧）ためと、コンテナでタブを開く（`tabs.create`の`cookieStoreId`）ために、Firefoxがこの権限を求める | `background/container-scope.ts`（`openInContainer`）、`background/tabs.ts`（`createNewTab`） |
 | `find` | ページ内の文字列検索の`browser.find.find`（`by: "text"`の`fox_find`） | `background/tabs.ts`（`findText`） |
 | `webNavigation` | タブの遷移が終わるのを待つ（`for: "navigation"`の`fox_wait`） | `background/tab-wait.ts` |
 
 エージェントはFirefoxのコンテナを作成できる。`action: "create"`の`fox_tab`に存在しない`container`の名前を渡すと作成する。`container_scope`が有効でエージェント用のコンテナがまだないときは、新しいタブを開くときに作成する。コンテナの作成は、それ自体では人に確認する操作になっていない。
 
-拡張機能はプライベートウィンドウでは動かない（`"incognito": "not_allowed"`）。送るデータ（ウェブサイトのコンテンツと閲覧履歴の情報）はインストール時の画面に出る。
+拡張機能はプライベートウィンドウでは動かない（`"incognito": "not_allowed"`）。送るデータ（ウェブサイトのコンテンツ、ウェブサイトでの操作、閲覧履歴の情報）はインストール時の画面に出る。
 
 ## プライバシー
 
 - 拡張機能がタブを読むのは、MCPクライアントがツールを呼んだときだけで、結果は手元のPCのネイティブホストへ送る。接続したMCPクライアントがそれを受け取り、自分のAIの提供元へ送る。Inari MCPは開発者には何も送らない。
-- パスワード・hidden・ワンタイムコード・クレジットカード（`cc-*`）の欄は伏せる。cookieは読まない。
-- クリック・入力・送信・ページの移動は、あなたの承認を待つ。ツールバーのポップアップで、すべての呼び出しを一時停止できる。
-- スクリーンショットは`~/.inari-mcp/screenshots/`に30日残る。`~/.inari-mcp/logs/audit.jsonl`には呼び出しごとの時刻・ツール名・URLを書き、ページの内容は書かない。`npm run teardown -- --purge`ですべて消せる。
+- パスワード・hidden・ワンタイムコード・クレジットカード（`cc-*`）の欄は、ツールが読む値では伏せる。スクリーンショットは画像なので伏せない。cookieは読まない。
+- ページやブラウザへの操作（クリック・入力・hover・ページの移動・タブを開く/閉じるなど）は、あなたの承認を待つ。ツールバーのポップアップで、すべての呼び出しを一時停止でき（実行中のものは中断する）、許可の画面を開き直して許可を取り消せる。
+- 拡張機能で撮ったスクリーンショットは`~/.inari-mcp/screenshots/`に30日残る（ヘッドレスモードのものは消すまで残る）。`~/.inari-mcp/logs/audit.jsonl`には呼び出しごとの時刻・ツール名・URLを書き、ページの内容は書かない。`npm run teardown -- --purge`ですべて消せる。
 - プライベートウィンドウには対応しない。
 
 全文は[プライバシーポリシー](docs/PRIVACY.ja.md)（[English](docs/PRIVACY.md)）。
@@ -340,7 +340,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `packages/shared` | 他の3パッケージで使われる共有のzodスキーマ、アクション名、定数。サブパス`@inari-mcp/shared/node`には、Node.jsのプロセス用の共通処理（パス、接続先、APIトークン、`/health`、ログ、daemonの起動、版、HMAC認証）がある。拡張機能はブラウザで使える部分だけをzod抜きでバンドルする（[開発](#開発)を参照）。 |
 | `packages/mcp-server` | 1つの実行ファイルで2つの役割を持つ。既定では薄いstdio中継で、Claude Codeがセッションごとに1つ起動し、`fox_*`ツールの一覧を返して、呼び出しを共有サーバーに転送する。`--daemon`を付けるとその共有サーバーになる。HTTP/WebSocketのポートを持つ唯一のプロセスで、安全ガードを実行し、Native HostへのWebSocket（優先）かヘッドレスPlaywrightバックエンド（上級者向け）にコマンドをディスパッチする。 |
 | `packages/native-host` | 共有サーバーとFirefox拡張機能の間のネイティブメッセージングブリッジ。共有サーバーが動いていなければ起動し、プロセスがいなくなったときだけ起動し直す（応答が遅いだけのサーバーは止めない）。起動に10回失敗すると、使えるサーバー（Claude Codeのセッションが起動したものなど）が現れるまで起動しない。 |
-| `packages/extension` | 実際にクリック・入力・DOM読み取りを行い、承認の要求をツールバーのポップアップに出すFirefox WebExtension（Manifest V2）。esbuildで3つのバンドル（`dist/background.js`、`dist/content.js`、`dist/popup/popup.js`）にビルドする。 |
+| `packages/extension` | 実際にクリック・入力・DOM読み取りを行い、承認の要求をツールバーのポップアップに出すFirefox WebExtension（Manifest V2）。esbuildで4つのバンドル（`dist/background.js`、`dist/content.js`、`dist/popup/popup.js`、`dist/consent/consent.js`）にビルドする。 |
 
 コマンドフロー: Claude Code → stdio中継 → HTTP → 共有サーバー → 安全ガード → WebSocket → Native Host → Native Messaging → 拡張機能バックグラウンドスクリプト → コンテンツスクリプト → ページDOM、結果は同じ経路を逆にたどって返ってくる。
 
@@ -449,12 +449,12 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 
 ### 人による承認
 
-ページやブラウザの状態を変えるツールは、どのサイトでも、実行の前にあなたに尋ねる。尋ねないサイトの一覧はない: `fox_click`、`fox_type`、`fox_press_key`、`fox_set_value`（入力と選択）、`fox_navigate`（すべてのaction）、`action: "create"`（コンテナの有無を問わない）か`"close"`の`fox_tab`、`fox_handle_dialog`。その呼び出しは実行されず、daemonが1回限りの承認要求を作り、Claude Codeのセッションが、この操作（ツール・サイト・引数）を許可するかをあなたに尋ねる。
+ページやブラウザの状態を変えるツールは、どのサイトでも、実行の前にあなたに尋ねる。尋ねないサイトの一覧はない: `fox_click`、`fox_type`、`fox_press_key`、`fox_set_value`（入力と選択）、`fox_navigate`（すべてのaction）、`action: "create"`（コンテナの有無を問わない）か`"close"`の`fox_tab`、`action: "hover"`の`fox_interact`、`fox_handle_dialog`。その呼び出しは実行されず、daemonが1回限りの承認要求を作り、Claude Codeのセッションが、この操作（ツール・サイト・引数）を許可するかをあなたに尋ねる。
 
 1. クライアントが対応していて、`FOX_APPROVAL_ELICITATION`が無効にされていなければ、Claude Code自身の確認ダイアログ（MCP elicitation）で
-2. そうでなければFirefoxで。InariMCPのツールバーボタンに黄色の件数が出て（OSの通知も出る）、ポップアップで承認か拒否をする。elicitationの要求が失敗した場合（クライアントがメソッドを知らない、通信エラー）もポップアップを使う。確認ダイアログがタイムアウトした場合は、承認されないまま終わる
+2. そうでなければFirefoxで。Inari MCPのツールバーボタンに黄色の件数が出て（OSの通知も出る）、ポップアップで承認か拒否をする。elicitationの要求が失敗した場合（クライアントがメソッドを知らない、通信エラー）もポップアップを使う。確認ダイアログがタイムアウトした場合は、承認されないまま終わる
 
-読み取り・待機・UIだけのツールは尋ねずに動く: `fox_read`、`fox_find`、`fox_screenshot`、`fox_snapshot`、`fox_tabs`、`fox_wait`、`fox_interact`、`action: "switch"`の`fox_tab`、`fox_detect_captcha`、`fox_safety_status`。`confirm_read_sites`に書いたサイトでは、ページを読むツール（`fox_read`、`fox_find`、`fox_screenshot`、`fox_snapshot`）も尋ねる。`scope: "all_tabs"`の`fox_screenshot`は、尋ねる代わりにそのタブを除いて撮る。同時に待てる承認要求は最大32件。
+読み取り・待機・UIだけのツールは尋ねずに動く: `fox_read`、`fox_find`、`fox_screenshot`、`fox_snapshot`、`fox_tabs`、`fox_wait`、`action: "scroll"`か`"highlight"`の`fox_interact`、`action: "switch"`の`fox_tab`、`fox_detect_captcha`、`fox_safety_status`。`confirm_read_sites`に書いたサイトでは、ページを読むツール（`fox_read`、`fox_find`、`fox_screenshot`、`fox_snapshot`）も尋ねる。`scope: "all_tabs"`の`fox_screenshot`は、尋ねる代わりにそのタブを除いて撮る。同時に待てる承認要求は最大32件。
 
 サイトとは、呼び出しが操作するページのホスト名のこと（`url`を付けた`fox_navigate`と`create`の`fox_tab`では、開くURLのホスト名。URLなしの新しいタブは`about:`、ローカルのファイルは`file:`）。対象のタブがどのページにあるかをdaemonがまだ知らないとき（起動した直後や、一覧で見たことのないタブ）は、その呼び出しはまだ承認できず、先に`fox_tabs`を呼ぶようモデルに返す。Firefoxの拡張機能はタブの実際のURLで承認をもう一度確かめ、daemonが何を送ってきても、そのタブのサイトに対して承認されていない操作は拒否する。その間にタブを別のサイトへ移していた場合は、そのサイトについて改めて尋ねる。
 
