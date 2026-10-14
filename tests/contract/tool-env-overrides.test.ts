@@ -71,7 +71,9 @@ describe('environment overrides through the handler path', () => {
     const policy = await status();
     expect(policy).toMatchObject({ readOnly: false, configError: null });
     expect(policy).not.toHaveProperty('allowScriptExecution');
-    // Refused later for another reason (no browser), not by the guard.
-    expect((await call('fox_click', { selector: '#a' })).decision).toBeNull();
+    // Not refused by the guard (no browser is connected: it fails later).
+    expect((await call('fox_get_text', {})).decision).toBeNull();
+    // An acting tool still asks the human, as without the variable.
+    expect((await call('fox_click', { selector: '#a' })).decision).toBe('confirmation_required');
   });
 });

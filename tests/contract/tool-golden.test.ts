@@ -6,6 +6,9 @@
  *   UPDATE_GOLDEN=1 npx vitest run tests/contract/tool-golden.test.ts
  *
  * tests/golden/tool-commands.json, one entry per case:
+ *   - approval: the site the human was asked about, for a call that needs
+ *     approval (acting tools); the call is then approved (MCP elicitation)
+ *     and retried with the token, as the relay does
  *   - command: the BrowserCommand handlers.ts sends (requestId dropped),
  *     after the arguments went through the tool's zod schema like
  *     transport/http-bridge.ts does; null when nothing is sent
@@ -36,19 +39,22 @@ import { DEFAULT_CONFIG, type LoadedSafetyConfig } from '../../packages/mcp-serv
 import { callSchemaFor, resolveOperation } from '../../packages/mcp-server/src/tools/operations.js';
 import { LEGACY_REPLACEMENTS, isLegacyOperationName } from '../../packages/mcp-server/src/tools/public-tools.js';
 import { headlessRoute } from '../../packages/mcp-server/src/headless/actions.js';
+import { getSafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
+import { answerFromElicitation } from '../../packages/mcp-server/src/tools/approval-flow.js';
+import { findApprovalRequest } from '../../packages/mcp-server/src/relay/approval.js';
 
 const UPDATE = process.env['UPDATE_GOLDEN'] === '1';
 const GOLDEN_DIR = fileURLToPath(new URL('../golden/', import.meta.url));
 
 const PLAIN_URL = 'https://plain.example.test/';
-const PROTECTED_URL = 'https://bank.example.test/transfer';
+const READ_SITE_URL = 'https://bank.example.test/transfer';
 const BLOCKED_URL = 'https://blocked.example.test/';
 
 /** The policy of both goldens: every list non-empty, container scope on. */
 const POLICY = {
   blockedUrlPatterns: ['blocked.example.test'],
   allowedUrlPatterns: ['example.test'],
-  protectedUrlPatterns: ['bank.example.test'],
+  confirmReadSites: ['bank.example.test'],
   containerScope: { enabled: true, containerName: 'Golden Agent' },
 };
 
@@ -82,7 +88,7 @@ const CASES: Case[] = [
   ['navigate/forward', 'fox_navigate', { action: 'forward', tabId: 2 }],
   ['navigate/refresh', 'fox_navigate', { action: 'refresh', bypassCache: true }],
   ['navigate/hard_refresh', 'fox_navigate', { action: 'hard_refresh' }],
-  ['navigate/protected', 'fox_navigate', { url: PROTECTED_URL }],
+  ['navigate/read_site', 'fox_navigate', { url: READ_SITE_URL }],
   ['navigate/blocked', 'fox_navigate', { url: BLOCKED_URL }],
   ['click/selector', 'fox_click', { selector: '#b' }],
   ['click/text', 'fox_click', { text: 'OK', doubleClick: true }],
@@ -110,7 +116,7 @@ const CASES: Case[] = [
   ['highlight/options', 'fox_highlight', { selector: '#h', duration: 1000, label: 'L', tabId: 2 }],
   ['create_tab/default', 'fox_create_tab', {}],
   ['create_tab/url', 'fox_create_tab', { url: PLAIN_URL, active: false }],
-  ['create_tab/protected', 'fox_create_tab', { url: PROTECTED_URL }],
+  ['create_tab/read_site', 'fox_create_tab', { url: READ_SITE_URL }],
   ['close_tab/default', 'fox_close_tab', { tabId: 7 }],
   ['switch_tab/default', 'fox_switch_tab', { tabId: 7 }],
   ['wait_for_element/default', 'fox_wait_for_element', { selector: '#w' }],
@@ -121,7 +127,7 @@ const CASES: Case[] = [
   ['wait_for_navigation/options', 'fox_wait_for_navigation', { waitUntil: 'domcontentloaded', urlPattern: '/done', timeout: 60000 }],
   ['wait_for_url/url', 'fox_wait_for_url', { url: `${PLAIN_URL}done` }],
   ['wait_for_url/pattern', 'fox_wait_for_url', { urlPattern: 'done$', timeout: 1000, tabId: 2 }],
-  ['wait_for_url/protected', 'fox_wait_for_url', { url: PROTECTED_URL }],
+  ['wait_for_url/read_site', 'fox_wait_for_url', { url: READ_SITE_URL }],
   ['run_workflow/default', 'fox_run_workflow', { steps: [{ tool: 'fox_click', arguments: { selector: '#a' } }] }],
   ['audit_page/default', 'fox_audit_page', {}],
   ['audit_page/options', 'fox_audit_page', { screenshot: false, fullPage: true, tabId: 2 }],
@@ -166,7 +172,7 @@ const PUBLIC_CASES: Record<string, [tool: string, args: Record<string, unknown>]
   'highlight/options': ['fox_interact', { action: 'highlight', selector: '#h', duration: 1000, label: 'L', tabId: 2 }],
   'create_tab/default': ['fox_tab', { action: 'create' }],
   'create_tab/url': ['fox_tab', { action: 'create', url: PLAIN_URL, active: false }],
-  'create_tab/protected': ['fox_tab', { action: 'create', url: PROTECTED_URL }],
+  'create_tab/read_site': ['fox_tab', { action: 'create', url: READ_SITE_URL }],
   'close_tab/default': ['fox_tab', { action: 'close', tabId: 7 }],
   'switch_tab/default': ['fox_tab', { action: 'switch', tabId: 7 }],
   'wait_for_element/default': ['fox_wait', { for: 'element', selector: '#w' }],
@@ -177,7 +183,7 @@ const PUBLIC_CASES: Record<string, [tool: string, args: Record<string, unknown>]
   'wait_for_navigation/options': ['fox_wait', { for: 'navigation', waitUntil: 'domcontentloaded', urlPattern: '/done', timeout: 60000 }],
   'wait_for_url/url': ['fox_wait', { for: 'url', url: `${PLAIN_URL}done` }],
   'wait_for_url/pattern': ['fox_wait', { for: 'url', urlPattern: 'done$', timeout: 1000, tabId: 2 }],
-  'wait_for_url/protected': ['fox_wait', { for: 'url', url: PROTECTED_URL }],
+  'wait_for_url/read_site': ['fox_wait', { for: 'url', url: READ_SITE_URL }],
   'list_containers/default': ['fox_tabs', { what: 'containers' }],
   'open_in_container/name': ['fox_tab', { action: 'create', url: PLAIN_URL, container: { name: 'Work' } }],
   'open_in_container/cookie_store': ['fox_tab', { action: 'create', url: PLAIN_URL, container: { cookieStoreId: 'firefox-container-1' }, active: false }],
@@ -228,6 +234,7 @@ interface CommandEntry {
   id: string;
   tool: string;
   args: Record<string, unknown>;
+  approval?: string;
   command: Omit<BrowserCommand, 'requestId'> | null;
   refusal?: string;
   timeoutMs?: { extension: number; headless: number };
@@ -245,7 +252,7 @@ beforeAll(() => {
     max_actions_per_minute: 0,
     blocked_url_patterns: POLICY.blockedUrlPatterns,
     allowed_url_patterns: POLICY.allowedUrlPatterns,
-    protected_url_patterns: POLICY.protectedUrlPatterns,
+    confirm_read_sites: POLICY.confirmReadSites,
     container_scope: { enabled: true, container_name: POLICY.containerScope.containerName },
   }));
   process.env['FOX_SAFETY_CONFIG'] = configPath;
@@ -274,14 +281,36 @@ const publicCalls = (): Call[] => Object.entries(PUBLIC_CASES).map(([id, [tool, 
   return { id, tool, raw, args: schema.parse(raw) as Record<string, unknown> };
 });
 
+/**
+ * The tabs of the cases (tabId 2-7, and the active tab) are on PLAIN_URL, so
+ * that an acting call can be approved for that site. Noted before every call:
+ * fox_close_tab makes the guard forget its tab.
+ */
+function noteCaseTabs(): void {
+  getSafetyGuard().noteUrl({
+    tabs: [1, 2, 3, 4, 5, 7].map((id) => ({ id, url: PLAIN_URL, active: id === 1 })),
+  }, {}, 'fox_get_tabs');
+}
+
 async function recordCommands(calls: Call[]): Promise<CommandEntry[]> {
   const entries: CommandEntry[] = [];
   for (const { id, tool, raw, args } of calls) {
+    noteCaseTabs();
     sent.length = 0;
-    const result = await createToolHandler(tool)(args);
+    const handler = createToolHandler(tool);
+    let result = await handler(args);
+    // An acting call: the human approves it, and it is retried with the token.
+    const request = findApprovalRequest(result);
+    if (request !== null) {
+      if (sent.length > 0) throw new Error(`${id}: sent before the approval`);
+      const { approvalToken } = answerFromElicitation(request.requestId, true);
+      result = await handler(args, { approvalToken });
+    }
     if (sent.length > 1) throw new Error(`${id}: ${sent.length} commands sent`);
     const command = sent[0];
-    const entry: CommandEntry = { id, tool, args: raw, command: null };
+    const entry: CommandEntry = {
+      id, tool, args: raw, ...(request !== null ? { approval: request.host } : {}), command: null,
+    };
     if (command) {
       const { requestId: _requestId, ...rest } = command;
       entry.command = rest;
@@ -303,10 +332,13 @@ async function recordCommands(calls: Call[]): Promise<CommandEntry[]> {
 // Guard decisions
 // ---------------------------------------------------------------------------
 
-const GUARD_POLICIES: Record<string, { config: Partial<LoadedSafetyConfig>; tabUrl: string }> = {
+/** tabUrl null: the guard has seen no page (an acting call cannot be approved yet). */
+const GUARD_POLICIES: Record<string, { config: Partial<LoadedSafetyConfig>; tabUrl: string | null }> = {
   default: { config: {}, tabUrl: PLAIN_URL },
   readOnly: { config: { readOnly: true }, tabUrl: PLAIN_URL },
-  protectedTab: { config: {}, tabUrl: PROTECTED_URL },
+  readSiteTab: { config: {}, tabUrl: READ_SITE_URL },
+  localFileTab: { config: {}, tabUrl: 'file:///tmp/inari-test/page.html' },
+  unknownTab: { config: {}, tabUrl: null },
   blockedTab: { config: {}, tabUrl: BLOCKED_URL },
   guardOff: { config: { enabled: false }, tabUrl: BLOCKED_URL },
 };
@@ -322,7 +354,7 @@ function recordGuardDecisions(calls: Call[]): GuardEntry[] {
       maxActionsPerMinute: 0,
       ...config,
     });
-    guard.noteUrl({ url: tabUrl }, {}, 'fox_get_page_info');
+    if (tabUrl !== null) guard.noteUrl({ url: tabUrl }, {}, 'fox_get_page_info');
     return [name, guard] as const;
   });
   return calls.map(({ id, tool, args }) => {

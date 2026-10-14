@@ -23,7 +23,8 @@ export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 // ---------------------------------------------------------------------------
 
 /**
- * One blocked / allowed / protected URL pattern of safety.json, compiled by
+ * One URL pattern of safety.json (blocked_url_patterns, allowed_url_patterns,
+ * confirm_read_sites), compiled by
  * the MCP Server (safety/url-pattern.ts) into the form the Extension
  * matches against a tab URL (extension/src/url-rule.ts applies the same
  * rules; tests/contract/url-rule.test.ts checks both give the same result).
@@ -39,14 +40,14 @@ export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
  *          `path` (null = any) is a prefix of the URL path:
  *            'strict' (allowed list): as written, case-sensitive, at a
  *                     segment boundary unless it ends with '/';
- *            'loose'  (blocked / protected): `path` is already normalised;
+ *            'loose'  (blocked / confirm-read): `path` is already normalised;
  *                     the URL path is compared after percent-decoding,
  *                     collapsing repeated slashes and lower-casing, as a
  *                     plain prefix (/admin covers /administrator).
  *   regex  `re` is tested with flag i against the normalised URL
  *          (scheme://host[:port]/path?query#hash, lower-case host without a
  *          trailing dot, no userinfo); with `matchRaw` also against the URL
- *          as given (blocked / protected lists: over-matching errs on the
+ *          as given (blocked / confirm-read lists: over-matching errs on the
  *          safe side).
  *
  * `source` is the pattern as written in safety.json (reported back as
@@ -89,12 +90,15 @@ export const BrowserCommandSchema = z.object({
    */
   containerScope: z.object({ containerName: z.string().min(1) }).optional(),
   /**
-   * Protected-domain patterns (safety.json `protected_url_patterns`) as
-   * URL rules. Attached to the same commands as `protectedUrlPatterns`
-   * below; an Extension that knows this field uses it instead of
-   * `protectedUrlPatterns`.
+   * safety.json `confirm_read_sites` as URL rules. Attached when the guard is
+   * enabled and the list is not empty, to every command of a reading tool
+   * (screenshots, text, elements, page info, find). The Extension refuses
+   * with `safetyDecision: "confirmation_required"` when the actual target
+   * tab matches (unless `approvedHost` is its site); screenshot_all_tabs
+   * skips such tabs. Covers the case where the server does not know the
+   * tab's URL.
    */
-  protectedUrlRules: z.array(WireUrlRuleSchema).optional(),
+  confirmReadUrlRules: z.array(WireUrlRuleSchema).optional(),
   /**
    * safety.json `blocked_url_patterns` / `allowed_url_patterns` as URL
    * rules. Attached when the guard is enabled and the list is not empty, to
@@ -109,26 +113,12 @@ export const BrowserCommandSchema = z.object({
   blockedUrlRules: z.array(WireUrlRuleSchema).optional(),
   allowedUrlRules: z.array(WireUrlRuleSchema).optional(),
   /**
-   * Legacy form of `protectedUrlRules`, for Extension builds that do not
-   * know it: each entry is a regex tested with flag i against the raw tab
-   * URL (no percent-decoding). Still sent; the Extension also accepts it
-   * alone (older MCP Servers).
-   *
-   * Attached to `screenshot` and `screenshot_all_tabs` when the guard is
-   * enabled and `confirm_protected_actions` is true. For all_tabs the
-   * Extension excludes protected tabs; for a single screenshot it refuses
-   * with `safetyDecision: "confirmation_required"` when the target tab's URL
-   * matches (the MCP Server cannot see which tab is actually captured).
-   * Also attached to every acting tool without a `url` argument; the
-   * Extension refuses it the same way when the actual target tab matches.
-   */
-  protectedUrlPatterns: z.array(z.string()).optional(),
-  /**
    * Set only on a call the human approved (one-time approval token consumed
-   * by the MCP Server): lower-case hostname the approval covers. The
-   * Extension still applies the protected rules, but lets the command run
-   * on a protected tab whose hostname equals this value. It does not lift
-   * the blocked / allowed rules.
+   * by the MCP Server): the site the approval covers (lower-case hostname,
+   * or the scheme such as `file:` for a URL without one). The Extension runs
+   * an acting command only when the site it acts on (the target tab, or the
+   * URL it opens) is this site, and lets a read run on a confirm_read_sites
+   * tab of this site. It does not lift the blocked / allowed rules.
    */
   approvedHost: z.string().optional(),
 });
@@ -137,25 +127,29 @@ export type BrowserCommand = z.infer<typeof BrowserCommandSchema>;
 
 // ---------------------------------------------------------------------------
 // Approval prompt  (data of a `request_approval` command the MCP Server
-// sends for a protected-site action; shown in the Extension's popup)
+// sends for a tool call that needs human approval; shown in the Extension's
+// popup)
 // ---------------------------------------------------------------------------
 
 /**
  * `BrowserCommand.data` of `request_approval` when the MCP Server asks the
- * human about a protected-site action (kind `protected_action`). The
- * Extension shows it in its toolbar popup — never in the page — and answers
+ * human whether to allow one tool call (kind `tool_call`): an acting tool,
+ * or a read of a confirm_read_sites site. The Extension shows it in its
+ * toolbar popup — never in the page — and answers
  * `{ approved, timedOut, cancelled, approvalId }`.
  *
  * fox_request_approval sends `{ message, detail?, timeout }` instead (no
  * `kind`); its answer never unlocks anything.
  */
 export const ApprovalPromptSchema = z.object({
-  kind: z.literal('protected_action'),
+  kind: z.literal('tool_call'),
   approvalId: z.string(),
   toolName: z.string(),
+  /** The site the approval covers (see BrowserCommand `approvedHost`). */
   host: z.string(),
   url: z.string(),
-  matchedPattern: z.string(),
+  /** The confirm_read_sites entry of a read; null for an acting tool. */
+  matchedPattern: z.string().nullable(),
   /** Argument summary, one `key: value` per line. */
   summary: z.string(),
   /** Epoch ms after which the MCP Server no longer accepts the answer. */
@@ -254,12 +248,14 @@ export const SafetyBlockDetailSchema = z.object({
 export type SafetyBlockDetail = z.infer<typeof SafetyBlockDetailSchema>;
 
 // ---------------------------------------------------------------------------
-// Elicitation payload  (for MCP elicitation on protected domains)
+// Elicitation payload  (what the human is asked to approve)
 // ---------------------------------------------------------------------------
 
 export const ElicitationPayloadSchema = z.object({
-  protectedUrl: z.string(),
-  matchedPattern: z.string(),
+  /** The URL the call acts on or reads; null when the server does not know the tab's page. */
+  url: z.string().nullable(),
+  /** The confirm_read_sites entry of a read; null for an acting tool. */
+  matchedPattern: z.string().nullable(),
   toolName: z.string(),
 });
 

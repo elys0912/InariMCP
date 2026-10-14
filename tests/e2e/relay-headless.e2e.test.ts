@@ -4,6 +4,8 @@
  * Starts `packages/mcp-server/dist/index.js` (build first) the way Claude
  * Code does, with FOX_HEADLESS=1, and drives it over MCP against a local
  * HTTP page. Needs Playwright's Firefox (`npx playwright install firefox`).
+ * Acting tools ask the human first: the client declares MCP elicitation and
+ * approves every request (the human of this test, `approvalsAsked`).
  *
  * Isolation: HOME / USERPROFILE point at a temporary directory
  * (tests/setup/isolate-home.ts; token, safety.json, audit log and
@@ -30,6 +32,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { AUTH_HEADER, signRequest, verifyResponse } from '@inari-mcp/shared/node';
 
 const ENTRY = fileURLToPath(new URL('../../packages/mcp-server/dist/index.js', import.meta.url));
@@ -82,6 +85,8 @@ function text(result: unknown): string {
 
 let page: http.Server;
 let pageUrl: string;
+/** The elicitation messages the client was asked to approve. */
+const approvalsAsked: string[] = [];
 let httpPort: number;
 let client: Client;
 let daemonPid: number | undefined;
@@ -181,7 +186,12 @@ beforeAll(async () => {
   httpPort = await freePort();
   const wsPort = await freePort();
 
-  client = new Client({ name: 'inari-e2e', version: '0.0.0' });
+  client = new Client({ name: 'inari-e2e', version: '0.0.0' }, { capabilities: { elicitation: {} } });
+  // The human approves every acting call (fox_navigate).
+  client.setRequestHandler(ElicitRequestSchema, async (request) => {
+    approvalsAsked.push(request.params.message);
+    return { action: 'accept', content: { approve: true } };
+  });
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [ENTRY],
@@ -220,6 +230,8 @@ describe('relay → daemon → headless Firefox', () => {
 
     const nav = await client.callTool({ name: 'fox_navigate', arguments: { url: pageUrl } }, undefined, { timeout: 90_000 });
     expect(nav.isError, text(nav)).not.toBe(true);
+    // An acting tool: the human was asked once, for the page's site.
+    expect(approvalsAsked).toEqual([expect.stringMatching(/^InariMCP: allow this operation\?[\s\S]*Tool: fox_navigate[\s\S]*Site: 127\.0\.0\.1/)]);
 
     // The daemon is up now: learn its PID for the cleanup.
     const token = fs.readFileSync(path.join(os.homedir(), '.inari-mcp', 'api_token'), 'utf-8').trim();
@@ -266,10 +278,10 @@ describe('relay → daemon → headless Firefox', () => {
       expect(typeof e.tool).toBe('string');
       expect(typeof e.decision).toBe('string');
     }
-    const nav = entries.find((e) => e.tool === 'fox_navigate');
-    expect(nav, JSON.stringify(entries.map((e) => e.tool))).toBeDefined();
-    expect(nav?.decision).toBe('allowed');
-    expect(nav?.url).toBe(pageUrl);
+    const navs = entries.filter((e) => e.tool === 'fox_navigate');
+    expect(navs.map((e) => e.decision).slice(0, 3), JSON.stringify(entries.map((e) => e.tool)))
+      .toEqual(['confirmation_required', 'approval_granted', 'allowed_by_human']);
+    expect(navs[2]?.url).toBe(pageUrl);
   });
 
   it('restarts a killed daemon on the next tool call', async () => {

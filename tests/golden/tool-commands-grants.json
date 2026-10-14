@@ -5,11 +5,10 @@
     "args": {
       "selector": "#send"
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_click",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "click",
       "data": {
@@ -17,21 +16,6 @@
         "doubleClick": false,
         "rightClick": false
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "approvedHost": "bank.example.test"
     }
   },
@@ -42,11 +26,10 @@
       "text": "abc",
       "selector": "#q"
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_type",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "type",
       "data": {
@@ -57,21 +40,6 @@
         "delay": 50,
         "allowPassword": false
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "approvedHost": "bank.example.test"
     }
   },
@@ -81,11 +49,10 @@
     "args": {
       "key": "Enter"
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_press_key",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "press_key",
       "data": {
@@ -96,21 +63,6 @@
         "meta": false,
         "allowPassword": false
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "approvedHost": "bank.example.test"
     }
   },
@@ -121,11 +73,10 @@
       "selector": "#v",
       "value": "1"
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_set_value",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "set_value",
       "data": {
@@ -133,21 +84,6 @@
         "value": "1",
         "allowPassword": false
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "approvedHost": "bank.example.test"
     }
   },
@@ -158,32 +94,16 @@
       "selector": "select",
       "value": "a"
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_select_option",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "select_option",
       "data": {
         "selector": "select",
         "value": "a"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "approvedHost": "bank.example.test"
     }
   },
@@ -193,69 +113,54 @@
     "args": {
       "action": "accept"
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_handle_dialog",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "handle_dialog",
       "data": {
         "action": "accept",
         "timeout": 5000
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "approvedHost": "bank.example.test"
     }
   },
   {
-    "id": "known/screenshot",
-    "tool": "fox_screenshot",
-    "args": {},
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_screenshot",
-      "host": "bank.example.test"
+    "id": "known/back",
+    "tool": "fox_navigate",
+    "args": {
+      "action": "back"
     },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
-      "action": "screenshot",
+      "action": "go_back",
       "data": {
-        "scope": "viewport",
-        "saveToFile": true,
-        "includeData": false,
-        "delay": 500,
-        "maxScrolls": 20,
-        "restore": true
+        "action": "back",
+        "newTab": false,
+        "waitForLoad": true,
+        "bypassCache": false
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
+      "approvedHost": "bank.example.test"
+    }
+  },
+  {
+    "id": "known/close_tab",
+    "tool": "fox_close_tab",
+    "args": {
+      "tabId": 1
+    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
+    "command": {
+      "action": "close_tab",
+      "tabId": 1,
+      "data": {},
       "approvedHost": "bank.example.test"
     }
   },
@@ -269,48 +174,32 @@
         "value": "a"
       }
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_set_value",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "select_option",
       "data": {
         "selector": "select",
         "value": "a"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "approvedHost": "bank.example.test"
     }
   },
   {
-    "id": "browser/click",
+    "id": "stale/click",
     "tool": "fox_click",
     "args": {
       "selector": "#send"
     },
-    "refusedFirst": [
+    "approvals": [
+      "plain.example.test",
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [
       "click"
     ],
-    "approval": {
-      "toolName": "fox_click",
-      "host": "bank.example.test"
-    },
     "command": {
       "action": "click",
       "data": {
@@ -318,64 +207,34 @@
         "doubleClick": false,
         "rightClick": false
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "approvedHost": "bank.example.test"
     }
   },
   {
-    "id": "browser/select_option",
+    "id": "stale/select_option",
     "tool": "fox_select_option",
     "args": {
       "selector": "select",
       "value": "a"
     },
-    "refusedFirst": [
+    "approvals": [
+      "plain.example.test",
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [
       "select_option"
     ],
-    "approval": {
-      "toolName": "fox_select_option",
-      "host": "bank.example.test"
-    },
     "command": {
       "action": "select_option",
       "data": {
         "selector": "select",
         "value": "a"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "approvedHost": "bank.example.test"
     }
   },
   {
-    "id": "browser/public_select",
+    "id": "stale/public_select",
     "tool": "fox_set_value",
     "args": {
       "kind": "select",
@@ -384,34 +243,19 @@
         "value": "a"
       }
     },
-    "refusedFirst": [
+    "approvals": [
+      "plain.example.test",
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [
       "select_option"
     ],
-    "approval": {
-      "toolName": "fox_set_value",
-      "host": "bank.example.test"
-    },
     "command": {
       "action": "select_option",
       "data": {
         "selector": "select",
         "value": "a"
       },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
       "approvedHost": "bank.example.test"
     }
   },
@@ -421,11 +265,10 @@
     "args": {
       "url": "https://bank.example.test/transfer"
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_navigate",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "navigate",
       "data": {
@@ -434,7 +277,8 @@
         "newTab": false,
         "waitForLoad": true,
         "bypassCache": false
-      }
+      },
+      "approvedHost": "bank.example.test"
     }
   },
   {
@@ -443,17 +287,34 @@
     "args": {
       "url": "https://bank.example.test/transfer"
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_create_tab",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "create_tab",
       "data": {
         "url": "https://bank.example.test/transfer",
         "active": true
-      }
+      },
+      "approvedHost": "bank.example.test"
+    }
+  },
+  {
+    "id": "target/create_blank_tab",
+    "tool": "fox_create_tab",
+    "args": {},
+    "approvals": [
+      "about:"
+    ],
+    "refusedByBrowser": [],
+    "command": {
+      "action": "create_tab",
+      "data": {
+        "url": "about:blank",
+        "active": true
+      },
+      "approvedHost": "about:"
     }
   },
   {
@@ -463,18 +324,18 @@
       "url": "https://bank.example.test/transfer",
       "containerName": "Work"
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_open_in_container",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "open_in_container",
       "data": {
         "url": "https://bank.example.test/transfer",
         "containerName": "Work",
         "active": true
-      }
+      },
+      "approvedHost": "bank.example.test"
     }
   },
   {
@@ -484,17 +345,17 @@
       "action": "create",
       "url": "https://bank.example.test/transfer"
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_tab",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "create_tab",
       "data": {
         "url": "https://bank.example.test/transfer",
         "active": true
-      }
+      },
+      "approvedHost": "bank.example.test"
     }
   },
   {
@@ -507,18 +368,176 @@
         "name": "Work"
       }
     },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_tab",
-      "host": "bank.example.test"
-    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
     "command": {
       "action": "open_in_container",
       "data": {
         "url": "https://bank.example.test/transfer",
         "containerName": "Work",
         "active": true
-      }
+      },
+      "approvedHost": "bank.example.test"
+    }
+  },
+  {
+    "id": "read/screenshot",
+    "tool": "fox_screenshot",
+    "args": {},
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
+    "command": {
+      "action": "screenshot",
+      "data": {
+        "scope": "viewport",
+        "saveToFile": true,
+        "includeData": false,
+        "delay": 500,
+        "maxScrolls": 20,
+        "restore": true
+      },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "approvedHost": "bank.example.test"
+    }
+  },
+  {
+    "id": "read/get_text",
+    "tool": "fox_get_text",
+    "args": {},
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
+    "command": {
+      "action": "get_text",
+      "data": {
+        "maxLength": 20000
+      },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "approvedHost": "bank.example.test"
+    }
+  },
+  {
+    "id": "read/public_read",
+    "tool": "fox_read",
+    "args": {
+      "mode": "text"
+    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [],
+    "command": {
+      "action": "get_text",
+      "data": {
+        "maxLength": 20000
+      },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "approvedHost": "bank.example.test"
+    }
+  },
+  {
+    "id": "readBrowser/screenshot",
+    "tool": "fox_screenshot",
+    "args": {},
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [
+      "screenshot"
+    ],
+    "command": {
+      "action": "screenshot",
+      "data": {
+        "scope": "viewport",
+        "saveToFile": true,
+        "includeData": false,
+        "delay": 500,
+        "maxScrolls": 20,
+        "restore": true
+      },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "approvedHost": "bank.example.test"
+    }
+  },
+  {
+    "id": "readBrowser/public_read",
+    "tool": "fox_read",
+    "args": {
+      "mode": "text"
+    },
+    "approvals": [
+      "bank.example.test"
+    ],
+    "refusedByBrowser": [
+      "get_text"
+    ],
+    "command": {
+      "action": "get_text",
+      "data": {
+        "maxLength": 20000
+      },
+      "confirmReadUrlRules": [
+        {
+          "kind": "host",
+          "source": "bank.example.test",
+          "scheme": null,
+          "hosts": "tree",
+          "host": "bank.example.test",
+          "port": null,
+          "path": null,
+          "pathMatch": "loose"
+        }
+      ],
+      "approvedHost": "bank.example.test"
     }
   }
 ]

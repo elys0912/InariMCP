@@ -2,13 +2,13 @@
 
 import { errorMessage } from "../error-message";
 import type { ContentRequest } from "../content/types";
-import { findUrlRule, type CompiledUrlRule } from "../url-rule";
+import type { CompiledUrlRule } from "../url-rule";
 import { DEFAULTS, TIMEOUTS, TOP_FRAME_ID } from "./constants";
 import { isTabInScope } from "./container-scope";
 import { noTargetTab, resolveTab } from "./tab-target";
 import { urlPatternArg, shouldSkipTab, urlMatches, positiveOr } from "./tab-wait";
 import type { ScreenshotOptions, CommandResult, ScopeFilter, UrlLists } from "./types";
-import { NO_URL_LISTS, violatesUrlLists } from "./url-policy";
+import { NO_URL_LISTS, isReadConfirmTab, violatesUrlLists } from "./url-policy";
 
 const NO_IMAGE_NOTE =
   "saveToFile is false: no image was captured. InariMCP returns screenshots only " +
@@ -130,7 +130,7 @@ async function captureFullPageImage(
 export async function screenshotAllTabs(
   options: ScreenshotOptions = {},
   scope: ScopeFilter | null = null,
-  protectedRules: CompiledUrlRule[] = [],
+  readRules: CompiledUrlRule[] = [],
   lists: UrlLists = NO_URL_LISTS,
 ): Promise<CommandResult> {
   try {
@@ -145,20 +145,18 @@ export async function screenshotAllTabs(
       targetTabs = targetTabs.filter((t) => urlMatches(t.url, urlPattern));
     }
 
-    // Tabs on blocked / not allowlisted sites, then protected domains
-    // (banking, payments, ...) are excluded. Only the counts are reported --
-    // never the URL or title of excluded tabs. Both counts are always
-    // reported (0 included); the reasons only when a tab was excluded.
+    // Tabs on blocked / not allowlisted sites, then tabs on confirm_read_sites
+    // sites are excluded. Only the counts are reported -- never the URL or
+    // title of excluded tabs. Both counts are always reported (0 included);
+    // the reasons only when a tab was excluded.
     const beforeLists = targetTabs.length;
     targetTabs = targetTabs.filter((t) => violatesUrlLists(t.url, lists) === null);
     const excludedBlocked = beforeLists - targetTabs.length;
-    const beforeProtected = targetTabs.length;
-    if (protectedRules.length > 0) {
-      targetTabs = targetTabs.filter((t) => findUrlRule(t.url, protectedRules) === undefined);
-    }
-    const excludedProtected = beforeProtected - targetTabs.length;
+    const beforeReadSites = targetTabs.length;
+    targetTabs = targetTabs.filter((t) => !isReadConfirmTab(t, readRules));
+    const excludedReadSites = beforeReadSites - targetTabs.length;
     const excluded = {
-      excludedProtected,
+      excludedReadSites,
       excludedBlocked,
       ...(excludedBlocked > 0
         ? {
@@ -166,11 +164,11 @@ export async function screenshotAllTabs(
             "Tabs on sites refused by blocked_url_patterns / allowed_url_patterns in safety.json were not captured.",
         }
         : {}),
-      ...(excludedProtected > 0
+      ...(excludedReadSites > 0
         ? {
           excludedReason:
-            "Tabs matching protected_url_patterns in safety.json were not captured " +
-            "(set confirm_protected_actions to false to include them).",
+            "Tabs on sites of confirm_read_sites in safety.json were not captured " +
+            "(capture each of them with a single-tab screenshot, which asks the human).",
         }
         : {}),
     };

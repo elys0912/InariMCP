@@ -7,12 +7,13 @@
 // background/approvals.ts.
 //
 // Two kinds of request arrive as `request_approval` commands:
-//   protected_action  sent by the MCP Server for a protected-site action
-//                     (shared ApprovalPromptSchema). Approving it lets the
-//                     server issue a one-time token for exactly that call.
-//   message           fox_request_approval: a yes/no question written by
-//                     Claude. The answer goes back to Claude and unlocks
-//                     nothing.
+//   tool_call  sent by the MCP Server for a tool call that needs a human
+//              decision: every acting tool, and reads of a
+//              confirm_read_sites site (shared ApprovalPromptSchema).
+//              Approving it lets the server issue a one-time token for
+//              exactly that call.
+//   message    fox_request_approval: a yes/no question written by Claude.
+//              The answer goes back to Claude and unlocks nothing.
 //
 // Imported by the background modules and popup.ts (bundled into both).
 // Contract tests import it as a module.
@@ -27,7 +28,7 @@ export const APPROVAL_MESSAGE = {
   DECIDE: "inari:approvals:decide",
 } as const;
 
-export type ApprovalKind = "protected_action" | "message";
+export type ApprovalKind = "tool_call" | "message";
 
 export type ApprovalDecision = "approved" | "denied" | "timeout" | "cancelled";
 
@@ -38,7 +39,7 @@ export interface ApprovalView {
   createdAt: number;
   /** When the background stops waiting (epoch ms). */
   deadline: number;
-  // protected_action
+  // tool_call
   toolName?: string;
   host?: string;
   url?: string;
@@ -58,7 +59,7 @@ export function clipApprovalText(value: unknown, max: number): string | undefine
 
 /**
  * Build the popup view of a `request_approval` command. Null when a
- * protected_action request is malformed (it is refused, not shown).
+ * tool_call request is malformed (it is refused, not shown).
  */
 export function parseApprovalPrompt(
   data: unknown,
@@ -72,7 +73,7 @@ export function parseApprovalPrompt(
       ? d.timeout
       : defaultTimeoutMs;
 
-  if (d.kind === "protected_action") {
+  if (d.kind === "tool_call") {
     const str = (k: string): string | null => {
       const value = d[k];
       return typeof value === "string" && value !== "" ? value : null;
@@ -86,7 +87,7 @@ export function parseApprovalPrompt(
     }
     return {
       id: approvalId,
-      kind: "protected_action",
+      kind: "tool_call",
       createdAt: now,
       deadline: Math.min(now + timeout, expiresAt),
       toolName,
@@ -118,25 +119,37 @@ export function approvalCommandResult(
     approved: decision === "approved",
     timedOut: decision === "timeout",
     cancelled: decision === "cancelled",
-    ...(view.kind === "protected_action" ? { approvalId: view.id } : {}),
+    ...(view.kind === "tool_call" ? { approvalId: view.id } : {}),
     decidedBy: decision === "approved" || decision === "denied" ? "popup" : "none",
     decidedAt: new Date(now).toISOString(),
   };
 }
 
 /**
- * Whether an approved call may run on this tab: the tab's hostname equals
- * the hostname the human approved (MCP Server `approvedHost`). Both are
- * compared lower-case without a trailing dot, as URL rules compare hosts
- * (url-rule.ts), so `example.com.` is the approved `example.com`.
+ * The site an approval is bound to, as the MCP Server computes it
+ * (mcp-server safety/approval.ts approvalSiteOf): the lower-case hostname
+ * without a trailing dot, or the scheme (`file:`, `about:`) of a URL without
+ * a hostname. Null when `url` is not an absolute URL.
  */
-export function isApprovedHost(tabUrl: string | undefined, approvedHost: unknown): boolean {
-  if (typeof approvedHost !== "string" || approvedHost === "" || !tabUrl) return false;
-  const bare = (host: string): string => host.toLowerCase().replace(/\.$/, "");
+export function approvalSiteOf(url: string | undefined): string | null {
+  if (!url) return null;
   try {
-    const approved = bare(approvedHost);
-    return approved !== "" && bare(new URL(tabUrl).hostname) === approved;
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
+    return host === "" ? parsed.protocol : host;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/**
+ * Whether an approved call may run on this URL (the target tab's, or the URL
+ * a new tab opens): its site equals the site the human approved (MCP Server
+ * `approvedHost`, compared lower-case without a trailing dot, so
+ * `example.com.` is the approved `example.com`).
+ */
+export function isApprovedHost(url: string | undefined, approvedHost: unknown): boolean {
+  if (typeof approvedHost !== "string" || approvedHost === "") return false;
+  const site = approvalSiteOf(url);
+  return site !== null && site === approvedHost.toLowerCase().replace(/\.$/, "");
 }

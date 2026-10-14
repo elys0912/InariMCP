@@ -33,6 +33,8 @@ describe('A-03 data.action does not replace the content action', () => {
     await handleCommand({
       action: wireName,
       data: { action: 'setValue', selector: '#a', detectOnly: true },
+      // click is an acting command: approved for the tab's site.
+      approvedHost: 'app.example.test',
     }, 'host');
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({ action: contentAction, selector: '#a' });

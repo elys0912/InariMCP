@@ -1,5 +1,5 @@
 /**
- * Contract: human approval of protected-site actions, across
+ * Contract: human approval of tool calls (every acting tool, on every site), across
  *   mcp-server  handlers.ts (confirmation_required → approval request,
  *               approvalToken → allowed_by_human + approvedHost),
  *               tools/approval-flow.ts (elicitation / popup answers → token),
@@ -9,9 +9,10 @@
  *               background.ts (wire envelope, scope sets, message guards),
  *               content.ts (no approval UI in the page)
  *
- * The browser is a fake connection that behaves like the Extension's
- * protected-domain check (protectedUrlPatterns + approvedHost) and answers
- * request_approval like the popup would.
+ * The browser is a fake connection that behaves like the Extension's own
+ * approval check (helpers/extension-approval.ts: an acting command runs only
+ * on the site of its approvedHost) and answers request_approval like the
+ * popup would.
  */
 
 import * as fs from 'node:fs';
@@ -32,16 +33,25 @@ import { getConnectionManager } from '../../packages/mcp-server/src/connection/m
 import { getApprovalStore } from '../../packages/mcp-server/src/safety/approval.js';
 import { callWithApproval, findApprovalRequest } from '../../packages/mcp-server/src/relay/approval.js';
 import { startHttpBridge } from '../../packages/mcp-server/src/transport/http-bridge.js';
+import { getSafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { ACTION_TABLE } from '../../packages/extension/src/background/action-table.ts';
-import { checkProtectedTarget } from '../../packages/extension/src/background/url-policy.ts';
-import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
 import { readExtensionSource, readExtensionTree } from './helpers/extension-source.js';
+import { extensionApprovalRefusal } from './helpers/extension-approval.js';
 
 // ---------------------------------------------------------------------------
 // Extension-side helpers (approval.ts, imported as a module)
 // ---------------------------------------------------------------------------
 
-interface ApprovalView { id: string; kind: string; deadline: number; host?: string; toolName?: string; message?: string }
+interface ApprovalView {
+  id: string;
+  kind: string;
+  deadline: number;
+  host?: string;
+  url?: string;
+  matchedPattern?: string;
+  toolName?: string;
+  message?: string;
+}
 interface ExtensionApproval {
   APPROVAL_MESSAGE: { LIST: string; DECIDE: string };
   parseApprovalPrompt(data: unknown, requestId: string, now: number, defaultTimeoutMs: number): ApprovalView | null;
@@ -57,8 +67,8 @@ let toWireResponse: ToWireResponse;
 // Fake Firefox
 // ---------------------------------------------------------------------------
 
-const PROTECTED_HOST = 'bank.example.test';
-const PROTECTED_URL = `https://${PROTECTED_HOST}/transfer`;
+const SITE_HOST = 'bank.example.test';
+const SITE_URL = `https://${SITE_HOST}/transfer`;
 const PLAIN_URL = 'https://plain.example.test/';
 
 const browser = {
@@ -75,11 +85,9 @@ function extensionAnswer(command: BrowserCommand): Record<string, unknown> {
     if (browser.popupDecision === 'error') return { success: false, error: 'The popup could not be shown' };
     return ext.approvalCommandResult(view, browser.popupDecision, Date.now());
   }
-  // The Extension's own check (background/url-policy.ts): the URL rules it
-  // gets against the real tab URL, let through only on the approved host.
-  const rules = compileUrlRules(command.protectedUrlRules ?? []).rules;
-  const tab = { id: 1, url: browser.tabUrl } as Parameters<typeof checkProtectedTarget>[0];
-  const refusal = checkProtectedTarget(tab, rules, command.approvedHost);
+  // The Extension's own check (background/url-policy.ts) against the real
+  // tab URL: an acting command runs only on the approved site.
+  const refusal = extensionApprovalRefusal(command, browser.tabUrl);
   if (refusal) return refusal;
   if (command.action === 'navigate' && typeof command.data?.['url'] === 'string') {
     browser.tabUrl = command.data['url'];
@@ -116,7 +124,6 @@ beforeAll(async () => {
   fs.writeFileSync(configPath, JSON.stringify({
     audit_log: false,
     max_actions_per_minute: 0,
-    protected_url_patterns: ['bank\\.example\\.test'],
   }));
   process.env['FOX_SAFETY_CONFIG'] = configPath;
   connectFakeBrowser();
@@ -142,10 +149,12 @@ function text(result: CallToolResult): string {
   return result.content.map((b) => (b.type === 'text' ? b.text : '')).join('\n');
 }
 
-async function navigate(url: string): Promise<void> {
-  // A plain page first: the guard tracks it via noteUrl.
-  const result = await createToolHandler('fox_navigate')({ action: 'goto', url });
+/** The tab shows `url`, and the guard learns it from a read (which needs no approval). */
+async function showPage(url: string): Promise<void> {
+  browser.tabUrl = url;
+  const result = await createToolHandler('fox_get_text')({});
   expect(result.isError).toBeFalsy();
+  expect(getSafetyGuard().urlFor()).toBe(url);
   browser.received = [];
 }
 
@@ -153,35 +162,47 @@ async function navigate(url: string): Promise<void> {
 // Server side: no approval → no browser command
 // ---------------------------------------------------------------------------
 
-describe('without approval, protected-site actions are refused', () => {
-  it('fox_navigate to a protected URL: confirmation_required, nothing sent to the browser', async () => {
-    const result = await createToolHandler('fox_navigate')({ action: 'goto', url: PROTECTED_URL });
+describe('without approval, acting tools are refused', () => {
+  it('fox_navigate: confirmation_required, nothing sent to the browser', async () => {
+    const result = await createToolHandler('fox_navigate')({ action: 'goto', url: SITE_URL });
     expect(result.isError).toBe(true);
     expect(browser.received).toEqual([]);
     const d = details(result);
     expect(d).toMatchObject({ decision: 'confirmation_required', confirmationRequired: true });
-    expect(d['approval']).toMatchObject({ toolName: 'fox_navigate', host: PROTECTED_HOST, protectedUrl: PROTECTED_URL });
+    expect(d['approval']).toMatchObject({ toolName: 'fox_navigate', host: SITE_HOST, url: SITE_URL, matchedPattern: null });
     // The LLM is told how approval works and how to retry.
     expect(text(result)).toContain('How approval works');
     expect(text(result)).toContain('call fox_navigate again with the same arguments');
     expect(text(result)).toContain('fox_click');
   });
 
-  it('the Extension refuses an acting tool on a protected tab the server did not know about', async () => {
-    await navigate(PLAIN_URL);
-    browser.tabUrl = PROTECTED_URL; // the user switched the page behind the server's back
-    const result = await createToolHandler('fox_click')({ selector: '#send' });
+  it('the Extension refuses an acting tool approved for another site than its tab is on', async () => {
+    await showPage(PLAIN_URL);
+    browser.tabUrl = SITE_URL; // the user switched the page behind the server's back
+    const args = { selector: '#send' };
+    const first = await createToolHandler('fox_click')(args);
+    expect(browser.received).toEqual([]);
+    expect(details(first)['approval']).toMatchObject({ host: 'plain.example.test' });
+    const { approvalToken } = answerFromElicitation(findApprovalRequest(first)!.requestId, true);
+
+    const result = await createToolHandler('fox_click')(args, { approvalToken });
     expect(result.isError).toBe(true);
-    expect(browser.received.map((c) => c.action)).toEqual(['click']);
-    // How the Extension matches the sent pattern: safety-metadata.test.ts.
-    expect(browser.received[0]!.protectedUrlPatterns).toHaveLength(1);
-    expect(browser.received[0]!.approvedHost).toBeUndefined();
-    expect(details(result)['approval']).toMatchObject({ toolName: 'fox_click', host: PROTECTED_HOST });
+    expect(browser.received).toEqual([expect.objectContaining({ action: 'click', approvedHost: 'plain.example.test' })]);
+    // A new request, for the site the browser reports.
+    expect(details(result)['approval']).toMatchObject({ toolName: 'fox_click', host: SITE_HOST, url: SITE_URL });
+  });
+
+  it('a tab the server has not seen: not sent, and the LLM is told to list the tabs first', async () => {
+    const result = await createToolHandler('fox_click')({ tabId: 99, selector: '#send' });
+    expect(result.isError).toBe(true);
+    expect(browser.received).toEqual([]);
+    expect(details(result)['approval']).toBeUndefined();
+    expect(text(result)).toContain('This call cannot be approved yet');
   });
 
   it('a made-up or reused token does not help', async () => {
     const handler = createToolHandler('fox_navigate');
-    const args = { action: 'goto', url: PROTECTED_URL };
+    const args = { action: 'goto', url: SITE_URL };
     const fake = await handler(args, { approvalToken: 'kat_' + 'x'.repeat(43) });
     expect(fake.isError).toBe(true);
     expect(text(fake)).toContain('was not accepted');
@@ -193,7 +214,7 @@ describe('without approval, protected-site actions are refused', () => {
   // that such a value cannot be approved, not only to shorten it.
   it('arguments too long to show in full: no approval request, the LLM is told the length cannot be approved', async () => {
     const before = getApprovalStore().pendingCount;
-    const url = `${PROTECTED_URL}?note=${'x'.repeat(200)}`;
+    const url = `${SITE_URL}?note=${'x'.repeat(200)}`;
     const result = await createToolHandler('fox_navigate')({ action: 'goto', url });
     expect(result.isError).toBe(true);
     expect(browser.received).toEqual([]);
@@ -201,10 +222,10 @@ describe('without approval, protected-site actions are refused', () => {
     expect(d).toMatchObject({ decision: 'confirmation_required' });
     expect(d['approval']).toBeUndefined();
     expect(getApprovalStore().pendingCount).toBe(before);
-    expect(text(result)).toContain('cannot be approved on a protected site');
+    expect(text(result)).toContain('This call cannot be approved: its arguments are too long');
     expect(text(result)).toContain('too long to show the human in full');
     expect(text(result)).toContain('UTF-16 code units of the value as JSON');
-    expect(text(result)).toContain('a value that cannot be split, such as a long URL, cannot be approved on this site');
+    expect(text(result)).toContain('a value that cannot be split, such as a long URL, cannot be approved');
     expect(text(result)).not.toContain('Shorten the arguments');
   });
 });
@@ -215,7 +236,7 @@ describe('without approval, protected-site actions are refused', () => {
 
 describe('popup approval → one-time token', () => {
   it('request_approval carries the server-built prompt; the Extension answer round-trips', async () => {
-    const first = await createToolHandler('fox_navigate')({ action: 'goto', url: PROTECTED_URL });
+    const first = await createToolHandler('fox_navigate')({ action: 'goto', url: SITE_URL });
     const requestId = findApprovalRequest(first)!.requestId;
 
     const reply = await askBrowser(requestId, getConnectionManager());
@@ -224,17 +245,20 @@ describe('popup approval → one-time token', () => {
 
     const sent = browser.received.find((c) => c.action === 'request_approval')!;
     expect(ApprovalPromptSchema.parse(sent.data)).toMatchObject({
-      kind: 'protected_action',
+      kind: 'tool_call',
       approvalId: requestId,
       toolName: 'fox_navigate',
-      host: PROTECTED_HOST,
+      host: SITE_HOST,
+      url: SITE_URL,
+      matchedPattern: null,
     });
-    // request_approval needs no tab: no protected patterns / scope attached.
-    expect(sent.protectedUrlPatterns).toBeUndefined();
+    // request_approval needs no tab: no URL rules, scope or approval attached.
+    expect(sent.confirmReadUrlRules).toBeUndefined();
+    expect(sent.approvedHost).toBeUndefined();
 
     // The token runs exactly this call once.
     const handler = createToolHandler('fox_navigate');
-    const args = { action: 'goto', url: PROTECTED_URL };
+    const args = { action: 'goto', url: SITE_URL };
     const ok = await handler(args, { approvalToken: reply.approvalToken });
     expect(ok.isError).toBeFalsy();
     expect(browser.received.map((c) => c.action)).toContain('navigate');
@@ -247,12 +271,12 @@ describe('popup approval → one-time token', () => {
   });
 
   it('a token is bound to the arguments', async () => {
-    await navigate(PLAIN_URL);
-    const first = await createToolHandler('fox_navigate')({ action: 'goto', url: PROTECTED_URL });
+    await showPage(PLAIN_URL);
+    const first = await createToolHandler('fox_navigate')({ action: 'goto', url: SITE_URL });
     const reply = await askBrowser(findApprovalRequest(first)!.requestId, getConnectionManager());
     browser.received = [];
     const other = await createToolHandler('fox_navigate')(
-      { action: 'goto', url: `${PROTECTED_URL}?amount=9999` },
+      { action: 'goto', url: `${SITE_URL}?amount=9999` },
       { approvalToken: reply.approvalToken },
     );
     expect(other.isError).toBe(true);
@@ -263,7 +287,7 @@ describe('popup approval → one-time token', () => {
     const reasons = { denied: 'declined', timeout: 'timeout', cancelled: 'cancelled' } as const;
     for (const decision of ['denied', 'timeout', 'cancelled'] as const) {
       browser.popupDecision = decision;
-      const first = await createToolHandler('fox_navigate')({ action: 'goto', url: PROTECTED_URL });
+      const first = await createToolHandler('fox_navigate')({ action: 'goto', url: SITE_URL });
       const requestId = findApprovalRequest(first)!.requestId;
       const reply = await askBrowser(requestId, getConnectionManager());
       expect(reply).toMatchObject({ success: true, approved: false, reason: reasons[decision] });
@@ -275,7 +299,7 @@ describe('popup approval → one-time token', () => {
   // G-21 (c): the popup itself failed: nobody answered, so the request stays open.
   it('a failed popup → browser_error, no token, request still open', async () => {
     browser.popupDecision = 'error';
-    const first = await createToolHandler('fox_navigate')({ action: 'goto', url: PROTECTED_URL });
+    const first = await createToolHandler('fox_navigate')({ action: 'goto', url: SITE_URL });
     const requestId = findApprovalRequest(first)!.requestId;
     const reply = await askBrowser(requestId, getConnectionManager());
     expect(reply).toMatchObject({
@@ -285,9 +309,8 @@ describe('popup approval → one-time token', () => {
     expect(getApprovalStore().getRequest(requestId)).toBeDefined();
   });
 
-  it('acting on the current protected tab: the approved host reaches the Extension', async () => {
-    await navigate(PLAIN_URL);
-    browser.tabUrl = PROTECTED_URL;
+  it('acting on the current tab: the approved site reaches the Extension', async () => {
+    await showPage(SITE_URL);
     const args = { selector: '#send' };
     const first = await createToolHandler('fox_click')(args);
     const reply = await askBrowser(findApprovalRequest(first)!.requestId, getConnectionManager());
@@ -296,17 +319,40 @@ describe('popup approval → one-time token', () => {
     const ok = await createToolHandler('fox_click')(args, { approvalToken: reply.approvalToken });
     expect(ok.isError).toBeFalsy();
     expect(browser.received).toHaveLength(1);
-    expect(browser.received[0]).toMatchObject({ action: 'click', approvedHost: PROTECTED_HOST });
+    expect(browser.received[0]).toMatchObject({ action: 'click', approvedHost: SITE_HOST });
   });
 
-  it('the approved host does not carry over to another protected host', async () => {
-    await navigate(PLAIN_URL);
-    browser.tabUrl = PROTECTED_URL;
+  it('a local page is approved by its scheme', async () => {
+    await showPage('file:///tmp/inari-test/form.html');
+    const args = { selector: '#send' };
+    const first = await createToolHandler('fox_click')(args);
+    expect(findApprovalRequest(first)).toMatchObject({ host: 'file:', url: 'file:///tmp/inari-test/form.html' });
+    const reply = await askBrowser(findApprovalRequest(first)!.requestId, getConnectionManager());
+    browser.received = [];
+    const ok = await createToolHandler('fox_click')(args, { approvalToken: reply.approvalToken });
+    expect(ok.isError).toBeFalsy();
+    expect(browser.received[0]).toMatchObject({ action: 'click', approvedHost: 'file:' });
+  });
+
+  it('every acting call is asked about again: one approval runs one call', async () => {
+    await showPage(SITE_URL);
+    const args = { selector: '#send' };
+    const reply = await askBrowser(findApprovalRequest(await createToolHandler('fox_click')(args))!.requestId, getConnectionManager());
+    expect((await createToolHandler('fox_click')(args, { approvalToken: reply.approvalToken })).isError).toBeFalsy();
+    browser.received = [];
+    const next = await createToolHandler('fox_click')(args);
+    expect(next.isError).toBe(true);
+    expect(findApprovalRequest(next)).toMatchObject({ toolName: 'fox_click', host: SITE_HOST });
+    expect(browser.received).toEqual([]);
+  });
+
+  it('the approved site does not carry over to another host', async () => {
+    await showPage(SITE_URL);
     const args = { selector: '#send' };
     const first = await createToolHandler('fox_click')(args);
     const reply = await askBrowser(findApprovalRequest(first)!.requestId, getConnectionManager());
 
-    browser.tabUrl = `https://other.${PROTECTED_HOST}/`; // still matches the pattern, other host
+    browser.tabUrl = `https://other.${SITE_HOST}/`; // a subdomain: another site
     const result = await createToolHandler('fox_click')(args, { approvalToken: reply.approvalToken });
     expect(result.isError).toBe(true);
     expect(details(result)).toMatchObject({ decision: 'confirmation_required' });
@@ -315,7 +361,7 @@ describe('popup approval → one-time token', () => {
   });
 
   it('no Firefox connected → no_browser', async () => {
-    const first = await createToolHandler('fox_navigate')({ action: 'goto', url: PROTECTED_URL });
+    const first = await createToolHandler('fox_navigate')({ action: 'goto', url: SITE_URL });
     getConnectionManager().unregisterBrowser('fake-firefox');
     try {
       const reply = await askBrowser(findApprovalRequest(first)!.requestId, getConnectionManager());
@@ -332,7 +378,7 @@ describe('popup approval → one-time token', () => {
 
 describe('relay: ask, then retry once with the token', () => {
   const handler = createToolHandler('fox_navigate');
-  const args = { action: 'goto', url: PROTECTED_URL };
+  const args = { action: 'goto', url: SITE_URL };
   const call = (approvalToken?: string): Promise<CallToolResult> => handler(args, { approvalToken });
 
   it('elicitation approved → the call runs', async () => {
@@ -370,8 +416,8 @@ describe('relay: ask, then retry once with the token', () => {
   });
 
   it.each([
-    ['fox_tab', { action: 'create', url: PROTECTED_URL, active: true }],
-    ['fox_create_tab', { url: PROTECTED_URL, active: true }],
+    ['fox_tab', { action: 'create', url: SITE_URL, active: true }],
+    ['fox_create_tab', { url: SITE_URL, active: true }],
   ])('a grouped public tool and its deprecated name (%s): refused, approved, run once', async (tool, toolArgs) => {
     const run = createToolHandler(tool);
     const asked: string[] = [];
@@ -432,7 +478,7 @@ describe('daemon HTTP routes', () => {
   });
 
   it('/mcp/call → /approval/browser → /mcp/call with approvalToken', async () => {
-    const call = { name: 'fox_navigate', arguments: { action: 'goto', url: PROTECTED_URL } };
+    const call = { name: 'fox_navigate', arguments: { action: 'goto', url: SITE_URL } };
     const first = await post('/mcp/call', call);
     expect(first.body['success']).toBe(false);
     const info = findApprovalRequest(first.body['result'] as CallToolResult)!;
@@ -461,27 +507,28 @@ describe('extension: approval request handling', () => {
 
   it('parses the server prompt into a popup view (deadline within the request lifetime)', () => {
     const request = store.createRequest(
-      { toolName: 'fox_click', host: PROTECTED_HOST, argsHash: 'h' },
-      { protectedUrl: PROTECTED_URL, matchedPattern: 'bank', summary: 'selector: "#x"' },
+      { toolName: 'fox_click', host: SITE_HOST, argsHash: 'h' },
+      { url: SITE_URL, matchedPattern: null, summary: 'selector: "#x"' },
     );
     const now = Date.now();
     const view = ext.parseApprovalPrompt(buildApprovalPrompt(request, now), '7', now, 60_000)!;
-    expect(view).toMatchObject({ id: request.id, kind: 'protected_action', toolName: 'fox_click', host: PROTECTED_HOST });
+    expect(view).toMatchObject({ id: request.id, kind: 'tool_call', toolName: 'fox_click', host: SITE_HOST, url: SITE_URL });
+    expect(view.matchedPattern).toBeUndefined();
     expect(view.deadline).toBeLessThanOrEqual(request.expiresAt);
   });
 
-  it('refuses malformed or expired protected_action prompts; fox_request_approval is a plain question', () => {
+  it('refuses malformed or expired tool_call prompts; fox_request_approval is a plain question', () => {
     const now = Date.now();
-    expect(ext.parseApprovalPrompt({ kind: 'protected_action', approvalId: 'a' }, '1', now, 60_000)).toBeNull();
+    expect(ext.parseApprovalPrompt({ kind: 'tool_call', approvalId: 'a' }, '1', now, 60_000)).toBeNull();
     expect(ext.parseApprovalPrompt(
-      { kind: 'protected_action', approvalId: 'a', toolName: 't', host: 'h', expiresAt: now - 1 }, '1', now, 60_000,
+      { kind: 'tool_call', approvalId: 'a', toolName: 't', host: 'h', expiresAt: now - 1 }, '1', now, 60_000,
     )).toBeNull();
     const question = ext.parseApprovalPrompt({ message: 'Proceed?', timeout: 5_000 }, '9', now, 60_000)!;
     expect(question).toMatchObject({ id: 'msg-9', kind: 'message', message: 'Proceed?', deadline: now + 5_000 });
   });
 
   it('only an approved answer with the same approvalId counts on the server', () => {
-    const view = { id: 'appr-1', kind: 'protected_action', deadline: 0 };
+    const view = { id: 'appr-1', kind: 'tool_call', deadline: 0 };
     const wire = (decision: string, id = view.id): ReturnType<typeof parseBrowserResponse> =>
       parseBrowserResponse(toWireResponse('5', ext.approvalCommandResult({ ...view, id }, decision, Date.now())));
     const ok = (r: ReturnType<typeof parseBrowserResponse>): boolean => r.ok && isBrowserApproval(r.response, 'appr-1');
@@ -496,13 +543,17 @@ describe('extension: approval request handling', () => {
     expect(question.ok && isBrowserApproval(question.response, 'msg-6')).toBe(false);
   });
 
-  it('isApprovedHost: exact hostname only', () => {
-    expect(ext.isApprovedHost('https://Bank.Example.test/x', PROTECTED_HOST)).toBe(true);
-    expect(ext.isApprovedHost('https://bank.example.test.evil.test/', PROTECTED_HOST)).toBe(false);
-    expect(ext.isApprovedHost('https://sub.bank.example.test/', PROTECTED_HOST)).toBe(false);
+  it('isApprovedHost: exact hostname only, or the scheme of a URL without one', () => {
+    expect(ext.isApprovedHost('https://Bank.Example.test/x', SITE_HOST)).toBe(true);
+    expect(ext.isApprovedHost('https://bank.example.test.evil.test/', SITE_HOST)).toBe(false);
+    expect(ext.isApprovedHost('https://sub.bank.example.test/', SITE_HOST)).toBe(false);
     expect(ext.isApprovedHost('https://bank.example.test/', undefined)).toBe(false);
     expect(ext.isApprovedHost('https://bank.example.test/', '')).toBe(false);
-    expect(ext.isApprovedHost('not a url', PROTECTED_HOST)).toBe(false);
+    expect(ext.isApprovedHost('not a url', SITE_HOST)).toBe(false);
+    expect(ext.isApprovedHost('file:///tmp/a.html', 'file:')).toBe(true);
+    expect(ext.isApprovedHost('about:blank', 'about:')).toBe(true);
+    expect(ext.isApprovedHost('file:///tmp/a.html', SITE_HOST)).toBe(false);
+    expect(ext.isApprovedHost('https://bank.example.test/', 'https:')).toBe(false);
   });
 });
 

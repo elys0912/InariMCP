@@ -1,5 +1,6 @@
 /**
- * The relay's part of the human-approval flow for protected-site actions.
+ * The relay's part of the human-approval flow: every acting tool, and reads
+ * of a confirm_read_sites site, ask the human first.
  *
  * A tool call answered with confirmation_required carries
  * `details.approval` (tools/handlers.ts). The relay then asks the human
@@ -34,9 +35,11 @@ import type { ApprovalReason } from '../tools/approval-flow.js';
 export interface ApprovalInfo {
   requestId: string;
   toolName: string;
+  /** The site the approval covers. */
   host: string;
-  protectedUrl: string;
-  matchedPattern: string;
+  url: string;
+  /** The confirm_read_sites entry of a read; null for an acting tool. */
+  matchedPattern: string | null;
   summary: string;
   expiresAt: number;
 }
@@ -113,8 +116,8 @@ export function findApprovalRequest(result: CallToolResult): ApprovalInfo | null
       requestId,
       toolName,
       host,
-      protectedUrl: str('protectedUrl') ?? '',
-      matchedPattern: str('matchedPattern') ?? '',
+      url: str('url') ?? '',
+      matchedPattern: str('matchedPattern'),
       summary: str('summary') ?? '',
       expiresAt: a['expiresAt'],
     };
@@ -131,12 +134,12 @@ export function canElicit(caps: ClientCapabilities | undefined): boolean {
 
 export function elicitationParams(info: ApprovalInfo): ElicitRequestFormParams {
   const lines = [
-    'InariMCP: approve an action on a protected site?',
+    'InariMCP: allow this operation?',
     '',
     `Tool: ${info.toolName}`,
-    `Site: ${info.host}` + (info.matchedPattern ? ` (safety.json pattern '${info.matchedPattern}')` : ''),
+    `Site: ${info.host}` + (info.matchedPattern ? ` (confirm_read_sites: '${info.matchedPattern}')` : ''),
   ];
-  if (info.protectedUrl) lines.push(`Page: ${info.protectedUrl}`);
+  if (info.url) lines.push(`Page: ${info.url}`);
   lines.push('Arguments:', info.summary || '(none)', '', 'The approval applies once, to exactly this call.');
   return {
     message: lines.join('\n'),
@@ -145,7 +148,7 @@ export function elicitationParams(info: ApprovalInfo): ElicitRequestFormParams {
       properties: {
         approve: {
           type: 'boolean',
-          title: 'Approve this action',
+          title: 'Allow this operation',
           description: `Allow ${info.toolName} on ${info.host} once`,
           default: false,
         },
@@ -262,7 +265,7 @@ export function appendNote(result: CallToolResult, note: string): CallToolResult
 /**
  * Run a tool call; when it needs human approval, obtain it and repeat the
  * call once with the issued token. No loop: a second confirmation_required
- * (e.g. the tab moved to another protected site) is returned as is.
+ * (e.g. the tab is on another site than the approved one) is returned as is.
  */
 export async function callWithApproval(
   call: (approvalToken?: string) => Promise<CallToolResult>,
@@ -280,7 +283,7 @@ export async function callWithApproval(
     return appendNote(
       second,
       'The human approved the previous attempt, but this call now needs a new approval ' +
-      '(the target page or site changed). Call the tool again to ask the human again.',
+      '(the target tab is on another site than the one approved). Call the tool again to ask the human again.',
     );
   }
   return second;

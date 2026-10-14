@@ -14,9 +14,8 @@ export type AuditDecision =
   | 'not_allowlisted'
   | 'read_only'
   | 'confirmation_required'
-  | 'observed_on_protected_domain'
   | 'out_of_scope'
-  /** A human approved / declined a protected-site action (tools/approval-flow.ts). */
+  /** A human approved / declined a tool call (tools/approval-flow.ts). */
   | 'approval_granted'
   | 'approval_denied'
   | 'invalid_url'

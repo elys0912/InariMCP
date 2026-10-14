@@ -14,8 +14,9 @@
  *   4. Post-processing      — URL tracking, screenshot resource_link, sanitize
  *   5. Return ToolResult    — unified envelope back to Claude Code
  *
- * Protected sites (Layer 4/7): a `confirmation_required` answer — from the
- * guard or from the Extension — opens a human-approval request
+ * Human approval (Layer 4/7): every acting tool, and reads of a
+ * confirm_read_sites site, are answered `confirmation_required` — by the
+ * guard or by the Extension — which opens a human-approval request
  * (safety/approval.ts) and returns it in the result details
  * (`details.approval`). The caller (normally the stdio relay,
  * relay/approval.ts) obtains the human decision and retries with the
@@ -35,7 +36,7 @@ import type {
   ToolResult,
 } from '@inari-mcp/shared';
 import { BROWSER_ACTIONS, BROWSER_SAFETY_DECISIONS, ErrorCode, isRecord } from '@inari-mcp/shared';
-import { LAYER_OF, OBSERVE_TOOLS, TAB_INDEPENDENT_TOOLS, getSafetyGuard, targetUrlOf } from '../safety/guard.js';
+import { LAYER_OF, PAGE_READ_TOOLS, TAB_INDEPENDENT_TOOLS, getSafetyGuard, targetUrlOf } from '../safety/guard.js';
 import type { CallLabel, SafetyDenial, SafetyGuard } from '../safety/guard.js';
 import {
   REQUEST_TTL_MS,
@@ -211,22 +212,12 @@ export function invalidRegexArgument(args: Record<string, unknown>): string | nu
  * Attach safety metadata that only the Extension can enforce:
  *   - containerScope: Layer 0, on EVERY command (the Extension checks the
  *     target tab's cookieStoreId; the server cannot see tabs).
- *   - protectedUrlPatterns: on screenshot, scroll_and_capture and
- *     screenshot_all_tabs, only when the guard is enabled and
- *     confirmProtectedActions is true.
- *     all_tabs: the Extension excludes protected tabs from the capture.
- *     screenshot / scroll_and_capture: the Extension refuses with
- *     safetyDecision "confirmation_required" when the actual target tab is
- *     protected — the server-side Layer 4 check only knows the last URL it
- *     saw.
- *     Also on every acting tool (not in OBSERVE_TOOLS) without a `url`
- *     argument: the guard's Layer 7 can only check the last URL it saw for
- *     the tab, which may be stale or unknown, so the Extension refuses
- *     the command when the actual target tab is protected. Tools with a
- *     `url` are checked by the guard against that URL instead.
- *     Sent twice: `protectedUrlRules` (URL rules, matched like the guard)
- *     and `protectedUrlPatterns` (legacy anchored regexes, for Extension
- *     builds that do not know the rules).
+ *   - confirmReadUrlRules: confirm_read_sites as URL rules, on every reading
+ *     tool (PAGE_READ_TOOLS: fox_screenshot of every scope, fox_get_text,
+ *     ...) when the guard is enabled and the list is not empty. The guard's
+ *     Layer 4 only knows the last URL it saw for the tab, so the Extension
+ *     refuses with safetyDecision "confirmation_required" when the actual
+ *     target tab matches; screenshot all_tabs skips such tabs.
  *   - blockedUrlRules / allowedUrlRules: when the guard is enabled and the
  *     list is not empty, on every tool the guard checks against the target
  *     tab's last-known URL (not tab-independent, no target URL: see
@@ -234,13 +225,9 @@ export function invalidRegexArgument(args: Record<string, unknown>): string | nu
  *     fox_navigate back / forward / refresh is not one). The Extension refuses the
  *     command when the actual target tab violates the lists, and multi-tab
  *     actions skip such tabs: the guard may not know the tab's URL.
+ * Acting tools need no metadata: the Extension refuses every acting command
+ * that does not carry `approvedHost` for the site it acts on (buildCommand).
  */
-const PROTECTED_CAPTURE_ACTIONS: ReadonlySet<BrowserAction> = new Set<BrowserAction>([
-  'screenshot',
-  'scroll_and_capture',
-  'screenshot_all_tabs',
-]);
-
 export function attachSafetyMetadata(
   command: BrowserCommand,
   config: SafetyConfig,
@@ -252,23 +239,14 @@ export function attachSafetyMetadata(
     command.containerScope = { containerName: containerCfg.containerName };
   }
 
+  if (config.enabled && config.confirmReadSites.length > 0 && PAGE_READ_TOOLS.has(toolName)) {
+    command.confirmReadUrlRules = compileUrlPatterns(config.confirmReadSites, 'confirmRead')
+      .patterns.map((p) => p.wire);
+  }
+
   // The same rule as the guard's pre-check: a call with a target URL is
   // checked against that URL by the guard, any other call against the tab.
   const targetUrl = targetUrlOf(toolName, args);
-  const actsOnCurrentTab = !OBSERVE_TOOLS.has(toolName) && targetUrl === null;
-  if (
-    (PROTECTED_CAPTURE_ACTIONS.has(command.action) || actsOnCurrentTab) &&
-    config.enabled &&
-    config.confirmProtectedActions &&
-    config.protectedUrlPatterns.length > 0
-  ) {
-    const compiled = compileUrlPatterns(config.protectedUrlPatterns, 'protected').patterns;
-    command.protectedUrlRules = compiled.map((p) => p.wire);
-    // Older Extension builds test each entry as a case-insensitive regex
-    // against the raw tab URL: the anchored equivalent of each pattern.
-    command.protectedUrlPatterns = compiled.map((p) => p.wireSource);
-  }
-
   if (config.enabled && targetUrl === null && !TAB_INDEPENDENT_TOOLS.has(toolName)) {
     if (config.blockedUrlPatterns.length > 0) {
       command.blockedUrlRules = compileUrlPatterns(config.blockedUrlPatterns, 'blocked')
@@ -383,9 +361,10 @@ function safetyDenialToCallResult(
   const parts = [denial.error];
 
   if (denial.confirmationRequired && denial.elicitation) {
+    const { url, matchedPattern } = denial.elicitation;
     parts.push(
-      `\nConfirmation required: protected URL '${denial.elicitation.protectedUrl}' ` +
-      `(pattern: '${denial.elicitation.matchedPattern}').`,
+      `\nConfirmation required: ${url !== null ? `'${url}'` : 'page not known'}` +
+      (matchedPattern !== null ? ` (confirm_read_sites: '${matchedPattern}')` : '') + '.',
     );
     details['confirmationRequired'] = true;
     details['elicitation'] = denial.elicitation;
@@ -410,9 +389,11 @@ function safetyDenialToCallResult(
 export interface ApprovalRequestDetails {
   requestId: string;
   toolName: string;
+  /** The site the approval is bound to (safety/approval.ts approvalSiteOf). */
   host: string;
-  protectedUrl: string;
-  matchedPattern: string;
+  url: string;
+  /** The confirm_read_sites entry of a read; null for an acting tool. */
+  matchedPattern: string | null;
   summary: string;
   expiresAt: number;
 }
@@ -429,9 +410,9 @@ function confirmationToCallResult(
   tokenRejected: boolean,
 ): CallToolResult {
   const { tool: toolName, args } = label;
-  const protectedUrl = denial.elicitation?.protectedUrl ?? '';
-  const matchedPattern = denial.elicitation?.matchedPattern ?? '';
-  const target = approvalTargetFor(toolName, args, protectedUrl);
+  const url = denial.elicitation?.url ?? null;
+  const matchedPattern = denial.elicitation?.matchedPattern ?? null;
+  const target = approvalTargetFor(toolName, args, url);
 
   const notes: string[] = [];
   if (tokenRejected) {
@@ -446,22 +427,24 @@ function confirmationToCallResult(
   const summary = target === null ? null : summarizeArgs(args);
   if (target === null) {
     notes.push(
-      'This call cannot be approved: the protected page has no usable URL. ' +
-      'Pass the tab explicitly (tabId) and try again.',
+      'This call cannot be approved yet: InariMCP does not know which page the target tab is on, ' +
+      'so it cannot tell the human where the call would act. Call fox_tabs (what: "tabs") first, ' +
+      'then call this tool again (with the tabId of the tab to act on).',
     );
   } else if (summary === null) {
     notes.push(
-      'This call cannot be approved on a protected site: its arguments are too long to show ' +
+      'This call cannot be approved: its arguments are too long to show ' +
       `the human in full (at most ${SUMMARY_VALUE_MAX} per argument value and ${SUMMARY_MAX} for all the lines, ` +
       'counted in UTF-16 code units of the value as JSON, including the quotes and escapes, with ' +
       'invisible characters as \\u escapes). Text that can be split may be sent in ' +
       'several shorter calls; a value that cannot be split, such as a long URL, cannot be ' +
-      'approved on this site: tell the user instead of retrying.',
+      'approved: tell the user instead of retrying.',
     );
   } else {
-    const shownUrl = approvalDisplayUrl(protectedUrl);
+    // target !== null: the URL is known.
+    const shownUrl = approvalDisplayUrl(url ?? '');
     const request = getApprovalStore().createRequest(target, {
-      protectedUrl: shownUrl,
+      url: shownUrl,
       matchedPattern,
       summary,
     });
@@ -469,7 +452,7 @@ function confirmationToCallResult(
       requestId: request.id,
       toolName,
       host: target.host,
-      protectedUrl: shownUrl,
+      url: shownUrl,
       matchedPattern,
       summary: request.summary,
       expiresAt: request.expiresAt,
@@ -482,6 +465,7 @@ function confirmationToCallResult(
       `arguments on ${target.host}, and must be given within ${Math.round(REQUEST_TTL_MS / MS_PER_SECOND)} s. ` +
       'Nothing in the page (buttons, fox_click) can approve it. ' +
       `To retry: call ${toolName} again with the same arguments; the human is asked again. ` +
+      'Every acting call is asked for separately. ' +
       'If the human declined, do not retry without asking them first.',
     );
     extraDetails = { approval };
@@ -719,9 +703,9 @@ function buildCommand({ guard, toolName, args }: CallContext, grant: ApprovalGra
     requestId: '', // Will be assigned by connectionManager.sendCommand()
   };
   attachSafetyMetadata(command, guard.config, toolName, args);
-  // The human approved this call for one host: the Extension may run it on
-  // a protected tab only while that tab is on this host.
-  if (grant !== null && command.protectedUrlPatterns) {
+  // The human approved this call for one site: the Extension runs an acting
+  // command (or a read of a confirm_read_sites site) only on that site.
+  if (grant !== null) {
     command.approvedHost = grant.target.host;
   }
   return command;
@@ -748,8 +732,9 @@ function reportedUrlOf(response: BrowserResponse): string | null {
 
 /**
  * The result of a refusal the browser made itself (`safetyDecision`):
- * confirmation_required (the actual target tab is protected: the same
- * elicitation result as guard Layer 7), Layer 0 out_of_scope, Layer 3
+ * confirmation_required (the actual target tab is on a site the call was not
+ * approved for, or a read's tab matches confirm_read_sites: the same
+ * elicitation result as guard Layer 4/7), Layer 0 out_of_scope, Layer 3
  * blocked_url / not_allowlisted on the actual target tab, or config_error
  * (the browser could not use the attached rules): SAFETY_BLOCKED, distinct
  * from ordinary browser errors. A decision this server does not know is

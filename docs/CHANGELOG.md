@@ -14,6 +14,10 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - Line endings in the repository are fixed to LF with `.gitattributes`, so the extension built on any OS is byte-identical to the one submitted for review.
 - `manifest.json`: `incognito` is `not_allowed` (the extension never sees private-browsing tabs), and `data_collection_permissions` declares `websiteContent` and `browsingActivity` (page content, screenshots and URLs are sent to the local native host and from there to the MCP client).
 - `fox_wait` with `for: "network_idle"`: the counting hooks on the page's `fetch` and `XMLHttpRequest.prototype.send` are installed when the wait starts and removed when it ends (before, they stayed until the page unloaded). They count requests and record nothing about them. Requests already running when the call starts are not seen.
+- Every acting tool asks the human before it runs, on every site: `fox_click`, `fox_type`, `fox_press_key`, `fox_set_value`, `fox_navigate`, `fox_tab` create / close (with or without a container) and `fox_handle_dialog`. One approval covers one call of that tool with those arguments on that site; a series of acting calls is asked call by call. Reading, waiting and UI-only tools (`fox_read`, `fox_find`, `fox_screenshot`, `fox_tabs`, `fox_wait`, `fox_interact`, `fox_tab` switch, …) run without asking. When the daemon has not yet seen the target tab's page, an acting call cannot be approved until `fox_tabs` is called.
+- The Firefox extension itself refuses an acting command that was not approved for the site of its tab (or of the URL it opens), whatever the daemon sends.
+- The approval prompt (MCP elicitation and the toolbar popup) asks "Allow this operation?" with the tool, the site and the arguments, instead of naming a protected site.
+- `fox_safety_status` reports `approvalPolicy` (which calls ask) and `confirmReadSites`, instead of `confirmProtectedActions` and `protectedUrlPatterns`.
 
 ### Removed
 
@@ -22,3 +26,4 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The `allow_script_execution` key of `safety.json` and the `FOX_ALLOW_SCRIPTS` / `CLAUDE_BROWSER_ALLOW_SCRIPTS` variables. A `safety.json` that still has the key is refused as an unknown key until the key is deleted.
 - The `logs` and `script` profiles of `FOX_CAPS` (an unknown profile name is ignored with a warning).
 - The "Inspect Element for InariMCP" context menu entry: it handed its result to nobody.
+- The protected-site list: `protected_url_patterns` (16 default sites: banks and other finance or payment services, `.gov`, patient portals) and `confirm_protected_actions` in `safety.json`. Acting tools ask on every site instead; list the sites where reads and screenshots should ask as well in the new `confirm_read_sites` (default empty). A `safety.json` that still has either key is refused as an unknown key until the key is deleted.

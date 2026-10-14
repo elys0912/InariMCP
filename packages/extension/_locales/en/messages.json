@@ -84,9 +84,9 @@
 
   "notifyApprovalTitle": { "message": "Claude requests approval" },
   "notifyApprovalDefault": { "message": "Claude wants to perform an action" },
-  "notifyApprovalProtected": {
-    "message": "$1 on $2 needs your approval. Click the InariMCP toolbar button to approve or deny.",
-    "description": "$1 = tool name, $2 = site hostname"
+  "notifyApprovalToolCall": {
+    "message": "Allow $1 on $2? Click the InariMCP toolbar button to approve or deny.",
+    "description": "$1 = tool name, $2 = site (hostname)"
   },
   "notifyApprovalQuestion": {
     "message": "$1 — answer with the InariMCP toolbar button.",
@@ -106,19 +106,19 @@
   "bannerCancel": { "message": "Cancel" },
 
   "popupApprovalsTitle": { "message": "Approval requests" },
-  "approvalProtectedTitle": { "message": "Action on a protected site" },
+  "approvalToolCallTitle": { "message": "Allow this operation?" },
   "approvalMessageTitle": { "message": "Question from Claude" },
   "approvalTool": { "message": "Tool" },
   "approvalSite": { "message": "Site" },
   "approvalPage": { "message": "Page" },
-  "approvalPattern": { "message": "Matched rule" },
+  "approvalPattern": { "message": "confirm_read_sites entry" },
   "approvalArgs": { "message": "Arguments" },
-  "approvalProtectedNote": {
-    "message": "Approve only if you asked for this. It allows this one call and nothing else. $1 s left.",
+  "approvalToolCallNote": {
+    "message": "Approve only if you asked for this. It allows this one call of this tool, with these arguments, on this site, and nothing else. $1 s left.",
     "description": "$1 = seconds left"
   },
   "approvalMessageNote": {
-    "message": "Your answer goes back to Claude; it does not unlock protected sites. $1 s left.",
+    "message": "Your answer goes back to Claude; it approves no tool call. $1 s left.",
     "description": "$1 = seconds left"
   },
   "approvalMore": { "message": "$1 more request(s) waiting", "description": "$1 = number of other pending requests" },

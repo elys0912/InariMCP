@@ -65,8 +65,8 @@ function notifyApproval(view: ApprovalView): void {
   try {
     if (!browser.notifications) return;
     const message =
-      view.kind === "protected_action"
-        ? t("notifyApprovalProtected", [view.toolName ?? "", view.host ?? ""])
+      view.kind === "tool_call"
+        ? t("notifyApprovalToolCall", [view.toolName ?? "", view.host ?? ""])
         : t("notifyApprovalQuestion", clipText(view.message || t("notifyApprovalDefault"), LIMITS.APPROVAL_NOTIFICATION_TEXT));
     browser.notifications
       .create(APPROVAL_NOTIFICATION_PREFIX + view.id, {

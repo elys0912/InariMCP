@@ -10,6 +10,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { BrowserCommandSchema } from '@inari-mcp/shared';
 import { handleCommand } from '../../packages/extension/src/background/dispatch.ts';
+import { checkApproval } from '../../packages/extension/src/background/url-policy.ts';
 import { resolveWireAction } from '../../packages/extension/src/background/wire.ts';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG } from '../../packages/mcp-server/src/safety/config.js';
@@ -85,7 +86,7 @@ describe('E-01 / A-02 containerScope', () => {
 describe('E-03 URL rule fields that are not arrays', () => {
   const NOT_ARRAYS: [string, unknown][] = [['a string', 'https://a.example'], ['an object', {}], ['null', null], ['a number', 1]];
 
-  for (const field of ['protectedUrlRules', 'blockedUrlRules', 'allowedUrlRules', 'protectedUrlPatterns']) {
+  for (const field of ['confirmReadUrlRules', 'blockedUrlRules', 'allowedUrlRules']) {
     it.each(NOT_ARRAYS)(`${field} as %s is refused as config_error`, async (_label, value) => {
       installBrowser();
       const result = await handleCommand({ action: 'get_page_info', [field]: value }, 'host');
@@ -94,27 +95,70 @@ describe('E-03 URL rule fields that are not arrays', () => {
     });
   }
 
-  it('an unusable protectedUrlRules does not fall back to the legacy protectedUrlPatterns', async () => {
+  it('confirmReadUrlRules: a read of a matching tab needs the approval of its site', async () => {
     installBrowser();
-    const result = await handleCommand({
-      action: 'get_page_info',
-      protectedUrlRules: 'bank.test',
-      protectedUrlPatterns: ['bank\\.test'],
-    }, 'host');
-    expect(result).toMatchObject({ success: false, safetyDecision: 'config_error' });
+    const rules = [hostRule('app.example.test')];
+    expect(await handleCommand({ action: 'get_page_info', confirmReadUrlRules: rules }, 'host')).toMatchObject({
+      success: false, safetyDecision: 'confirmation_required',
+      url: 'https://app.example.test/page', matchedPattern: 'app.example.test',
+    });
+    expect(sent).toEqual([]);
+    expect(await handleCommand({ action: 'get_page_info', confirmReadUrlRules: [hostRule('bank.test')] }, 'host'))
+      .toMatchObject({ success: true });
+    expect(await handleCommand(
+      { action: 'get_page_info', confirmReadUrlRules: rules, approvedHost: 'app.example.test' }, 'host',
+    )).toMatchObject({ success: true });
+  });
+});
+
+// Fo-07: whether an acting command needs a human approval is the Extension's
+// own rule, not a value the host sends: with nothing attached it is refused.
+describe('Fo-07 acting commands need an approval of their site', () => {
+  it('a click without approvedHost is refused before the handler runs, naming the tab URL', async () => {
+    installBrowser();
+    const result = await handleCommand({ action: 'click', data: { selector: '#a' } }, 'host');
+    expect(result).toMatchObject({
+      success: false, safetyDecision: 'confirmation_required', url: 'https://app.example.test/page',
+    });
+    expect(sent).toEqual([]);
   });
 
-  it('the legacy protectedUrlPatterns alone (older servers) still works', async () => {
+  it('runs with the approval of the tab\'s site only', async () => {
     installBrowser();
-    expect(await handleCommand({ action: 'get_page_info', protectedUrlPatterns: ['app\\.example\\.test'] }, 'host'))
+    expect(await handleCommand({ action: 'click', data: { selector: '#a' }, approvedHost: 'other.test' }, 'host'))
       .toMatchObject({ success: false, safetyDecision: 'confirmation_required' });
-    expect(await handleCommand({ action: 'get_page_info', protectedUrlPatterns: ['bank\\.test'] }, 'host'))
+    expect(await handleCommand({ action: 'click', data: { selector: '#a' }, approvedHost: 'example.test' }, 'host'))
+      .toMatchObject({ success: false, safetyDecision: 'confirmation_required' });
+    expect(sent).toEqual([]);
+    expect(await handleCommand({ action: 'click', data: { selector: '#a' }, approvedHost: 'APP.example.test.' }, 'host'))
       .toMatchObject({ success: true });
+    expect(sent).toHaveLength(1);
+  });
+
+  it('a command from the popup gets no exception', async () => {
+    installBrowser();
+    expect(await handleCommand({ action: 'click', data: { selector: '#a' } }, 'page'))
+      .toMatchObject({ success: false, safetyDecision: 'confirmation_required' });
+  });
+
+  it('an opening command is approved for the URL it opens (a blank tab: about:)', () => {
+    const t = tab;
+    expect(checkApproval('actOnUrl', t, { url: 'https://new.test/a' }, [], 'new.test')).toBeNull();
+    expect(checkApproval('actOnUrl', t, { url: 'https://new.test/a' }, [], 'app.example.test'))
+      .toMatchObject({ safetyDecision: 'confirmation_required', url: 'https://new.test/a' });
+    expect(checkApproval('actOnUrl', undefined, {}, [], 'about:')).toBeNull();
+    expect(checkApproval('actOnUrl', undefined, {}, [], undefined))
+      .toMatchObject({ safetyDecision: 'confirmation_required', url: 'about:blank' });
+  });
+
+  it('a tab that cannot be resolved fails closed', () => {
+    expect(checkApproval('act', undefined, {}, [], 'app.example.test')).toMatchObject({ success: false });
+    expect(checkApproval('act', undefined, {}, [], 'app.example.test')).not.toHaveProperty('safetyDecision');
   });
 });
 
 describe('A-01 a host rule path with a query or fragment', () => {
-  it.each(['protectedUrlRules', 'blockedUrlRules', 'allowedUrlRules'])('in %s is refused as config_error', async (field) => {
+  it.each(['confirmReadUrlRules', 'blockedUrlRules', 'allowedUrlRules'])('in %s is refused as config_error', async (field) => {
     installBrowser();
     const result = await handleCommand({ action: 'get_page_info', [field]: [hostRule('app.example.test', '/page?x=1')] }, 'host');
     expect(result).toMatchObject({ success: false, safetyDecision: 'config_error' });
@@ -123,7 +167,7 @@ describe('A-01 a host rule path with a query or fragment', () => {
   });
 
   it('the guard puts such a safety.json pattern in the config-error state', () => {
-    for (const list of ['blockedUrlPatterns', 'allowedUrlPatterns', 'protectedUrlPatterns'] as const) {
+    for (const list of ['blockedUrlPatterns', 'allowedUrlPatterns', 'confirmReadSites'] as const) {
       const g = new SafetyGuard({ ...DEFAULT_CONFIG, auditLog: false, [list]: ['example.test/a?x=1'] });
       expect(g.check('fox_screenshot', {})?.safetyDecision, list).toBe('config_error');
     }

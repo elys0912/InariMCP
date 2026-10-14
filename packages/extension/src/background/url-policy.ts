@@ -1,5 +1,6 @@
-// URL policy of one command: protected / blocked / allowed rules attached by
-// the MCP Server, and the target-tab checks built on them (L2).
+// URL policy of one command: the human-approval checks and the
+// confirm-read / blocked / allowed rules attached by the MCP Server, and the
+// target-tab checks built on them (L2).
 
 import { isApprovedHost } from "../approval";
 import {
@@ -11,75 +12,143 @@ import {
 } from "../url-rule";
 import type { CommandResult, UrlLists, NativeMessage } from "./types";
 
+/** The page a new tab opened without a URL shows (background/tabs.ts createNewTab). */
+const NEW_TAB_URL = "about:blank";
+
 /**
- * Refuse a command when its target tab (resolved once in handleCommand, the
- * same tab the container scope check and the handler use) is on a
- * protected domain. Returns null when the command may proceed. Fails closed
- * if the tab could not be resolved.
- * `approvedHost`: the human approved this one call for that hostname (the
- * MCP Server consumed an approval token); a protected tab on exactly that
- * hostname is let through.
+ * Which approval check handleCommand applies to a single command before its
+ * handler (the action table's `approval` column, see action-table.ts):
+ *   act       acting on the target tab: approved for the tab's site
+ *   actOnUrl  opening a URL (data.url, else a blank tab): approved for
+ *             that URL's site
+ *   read      reading the target tab: approved for its site when it matches
+ *             the attached confirm_read_sites rules
  */
-export function checkProtectedTarget(
+export type ApprovalCheck = "act" | "actOnUrl" | "read";
+
+/**
+ * The approval check of one command. Returns null when the command may
+ * proceed.
+ *
+ * Acting commands are the Extension's own floor: they run only when the MCP
+ * Server reports a human approval (`approvedHost`) for the site they act on,
+ * whatever else the server attached or left out. A command without it is
+ * refused with safetyDecision "confirmation_required" and the URL, so that
+ * the server can ask the human about that site. Reads are checked only
+ * against the confirm_read_sites rules the server attached.
+ *
+ * `tab`: the target tab resolved once in handleCommand (the same tab the
+ * container scope check and the handler use). Fails closed when it could
+ * not be resolved.
+ */
+export function checkApproval(
+  check: ApprovalCheck,
   tab: browser.tabs.Tab | undefined,
-  patterns: CompiledUrlRule[],
-  approvedHost?: string,
+  data: NativeMessage["data"],
+  readRules: CompiledUrlRule[],
+  approvedHost: string | undefined,
 ): CommandResult | null {
-  if (!tab) {
-    return {
-      success: false,
-      error: "Could not resolve the target tab for the protected domain check",
-    };
+  switch (check) {
+    case "act":
+      if (!tab) return unresolvedTab();
+      return checkApprovedUrl(tab.url, approvedHost);
+    case "actOnUrl":
+      return checkApprovedUrl(urlToOpen(data), approvedHost);
+    case "read":
+      if (readRules.length === 0) return null;
+      if (!tab) return unresolvedTab();
+      return checkReadSite(tab.url, readRules, approvedHost);
+    default: {
+      const unhandled: never = check;
+      return { success: false, error: `Unknown approval check: ${String(unhandled)}` };
+    }
   }
-  const tabUrl = tab.url;
-  const matched = findProtectedMatch(tabUrl, patterns);
-  if (tabUrl && matched && !isApprovedHost(tabUrl, approvedHost)) {
-    // url / matchedPattern end up in the wire response's `data`, so the
-    // server can name the page that was actually refused (its own
-    // last-known URL may be stale).
-    return {
-      success: false,
-      safetyDecision: "confirmation_required",
-      error: "Protected domain: confirmation required",
-      url: tabUrl,
-      matchedPattern: matched.rule.source,
-    };
-  }
-  return null;
+}
+
+function unresolvedTab(): CommandResult {
+  return { success: false, error: "Could not resolve the target tab for the approval check" };
+}
+
+/** The URL an opening command opens: `data.url`, else a blank tab. */
+function urlToOpen(data: NativeMessage["data"]): string {
+  const url = data?.url;
+  return typeof url === "string" && url !== "" ? url : NEW_TAB_URL;
+}
+
+/** An acting command on `url`: runs only with an approval for its site. */
+function checkApprovedUrl(url: string | undefined, approvedHost: string | undefined): CommandResult | null {
+  if (isApprovedHost(url, approvedHost)) return null;
+  // url ends up in the wire response's `data`, so the server can name the
+  // page the human is asked about (its own last-known URL may be stale).
+  return {
+    success: false,
+    safetyDecision: "confirmation_required",
+    error: "Human approval required: an acting command runs only on the site a human approved",
+    ...(url ? { url } : {}),
+  };
+}
+
+/** A read of `url`: refused when it matches confirm_read_sites, unless approved for its site. */
+function checkReadSite(
+  url: string | undefined,
+  rules: CompiledUrlRule[],
+  approvedHost: string | undefined,
+): CommandResult | null {
+  const matched = findUrlRule(url, rules);
+  if (!url || !matched || isApprovedHost(url, approvedHost)) return null;
+  return {
+    success: false,
+    safetyDecision: "confirmation_required",
+    error: "Human approval required: the target tab is on a site of confirm_read_sites",
+    url,
+    matchedPattern: matched.rule.source,
+  };
+}
+
+/**
+ * Whether a multi-tab handler may act on this tab (reload_all,
+ * reload_by_url): only a tab on the site a human approved.
+ */
+export function isApprovedTab(tab: browser.tabs.Tab, approvedHost: string | undefined): boolean {
+  return isApprovedHost(tab.url, approvedHost);
+}
+
+/**
+ * Whether a multi-tab read must skip this tab (screenshot_all_tabs): it
+ * matches the attached confirm_read_sites rules.
+ */
+export function isReadConfirmTab(tab: browser.tabs.Tab, readRules: CompiledUrlRule[]): boolean {
+  return readRules.length > 0 && findUrlRule(tab.url, readRules) !== undefined;
 }
 
 export const NO_URL_LISTS: UrlLists = { blocked: [], allowed: [], allowlistActive: false };
 
 /** parseUrlPolicy. */
 interface UrlPolicy {
-  protectedRules: CompiledUrlRule[];
+  readRules: CompiledUrlRule[];
   lists: UrlLists;
   invalid: number;
 }
 
 /**
- * The URL policy attached to a command: `protectedUrlRules` (else the
- * legacy regex strings of `protectedUrlPatterns`, older MCP Servers),
+ * The URL policy attached to a command: `confirmReadUrlRules`,
  * `blockedUrlRules`, `allowedUrlRules`. `invalid` counts entries that could
  * not be used, and a field that is there but not an array (compileUrlRules):
  * the command is then refused (an unusable entry must not narrow the policy;
  * the server validates them, so this means a mismatch).
  */
 export function parseUrlPolicy(message: NativeMessage): UrlPolicy {
-  const protectedSource = message.protectedUrlRules !== undefined
-    ? message.protectedUrlRules
-    : message.protectedUrlPatterns;
-  const prot = compileUrlRules(protectedSource);
+  const read = compileUrlRules(message.confirmReadUrlRules);
   const blocked = compileUrlRules(message.blockedUrlRules);
   const allowed = compileUrlRules(message.allowedUrlRules);
   return {
-    protectedRules: prot.rules,
+    readRules: read.rules,
     lists: {
       blocked: blocked.rules,
       allowed: allowed.rules,
       allowlistActive: Array.isArray(message.allowedUrlRules) && message.allowedUrlRules.length > 0,
     },
-    invalid: prot.invalid + blocked.invalid + allowed.invalid,
+    invalid: read.invalid + blocked.invalid + allowed.invalid,
   };
 }
 
@@ -119,9 +188,4 @@ export function checkListedTarget(tab: browser.tabs.Tab | undefined, lists: UrlL
       "Navigate it elsewhere (fox_navigate with a url) or close it.",
     url: tab.url,
   };
-}
-
-/** The first protected rule that matches the URL, if any. */
-export function findProtectedMatch(url: string | undefined, patterns: CompiledUrlRule[]): CompiledUrlRule | undefined {
-  return findUrlRule(url, patterns);
 }

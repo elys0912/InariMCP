@@ -16,7 +16,9 @@
 // This script covers the remaining path: daemon → Native Host → Extension.
 //
 // It opens https://example.com/ in the active tab and https://example.org/
-// in a new tab (closed again at the end). Needs internet access.
+// in a new tab (closed again at the end). Needs internet access. Every acting
+// call (the two navigations, closing the tab) asks for approval in the
+// InariMCP toolbar popup in Firefox: approve each one there.
 //
 // Usage: node scripts/e2e/tools-smoke.mjs
 //   FOX_HOST / FOX_HTTP_PORT override the daemon address (default 127.0.0.1:8765;
@@ -28,9 +30,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dataPaths, httpEndpoint, signPost } from '../lib/core.mjs';
 import { httpGet, httpPost } from '../lib/system.mjs';
-import { interpretCallResponse, truncate as short } from './smoke-core.mjs';
+import { approvalRequestId, interpretCallResponse, truncate as short } from './smoke-core.mjs';
 
 const CALL_TIMEOUT_MS = 60_000;
+/** The popup waits up to 60 s for the human (tools/approval-flow.ts BROWSER_APPROVAL_WAIT_MS). */
+const APPROVAL_TIMEOUT_MS = 75_000;
 
 const endpoint = httpEndpoint(process.env);
 const base = `http://${endpoint.host.includes(':') ? `[${endpoint.host}]` : endpoint.host}:${endpoint.port}`;
@@ -49,11 +53,31 @@ if (!health?.browsers_connected) {
   process.exit(1);
 }
 
+async function post(urlPath, payload, timeoutMs) {
+  const body = JSON.stringify(payload);
+  const signed = signPost(apiToken, urlPath, body);
+  return httpPost({ ...endpoint, urlPath, headers: signed.headers, body, timeoutMs });
+}
+
+/**
+ * Call a tool. An acting tool is first refused with an approval request: the
+ * human is asked in the InariMCP popup (POST /approval/browser), and the call
+ * is repeated once with the one-time token, as the relay does.
+ */
 async function call(name, args = {}) {
-  const body = JSON.stringify({ name, arguments: args });
-  const signed = signPost(apiToken, '/mcp/call', body);
-  const res = await httpPost({ ...endpoint, urlPath: '/mcp/call', headers: signed.headers, body, timeoutMs: CALL_TIMEOUT_MS });
-  return interpretCallResponse(res);
+  const first = interpretCallResponse(await post('/mcp/call', { name, arguments: args }, CALL_TIMEOUT_MS));
+  const requestId = approvalRequestId(first);
+  if (requestId === undefined) return first;
+  console.log(`      ${name}: approve it in the InariMCP toolbar popup in Firefox`);
+  const res = await post('/approval/browser', { requestId }, APPROVAL_TIMEOUT_MS);
+  let reply;
+  try { reply = res ? JSON.parse(res.body.toString('utf8')) : undefined; } catch { reply = undefined; }
+  if (typeof reply?.approvalToken !== 'string') {
+    return { ...first, text: `not approved (${reply?.reason ?? reply?.error ?? 'no answer'}): ${first.text}` };
+  }
+  return interpretCallResponse(
+    await post('/mcp/call', { name, arguments: args, approvalToken: reply.approvalToken }, CALL_TIMEOUT_MS),
+  );
 }
 
 const results = [];

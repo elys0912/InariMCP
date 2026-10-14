@@ -352,7 +352,7 @@ footer {
   border-radius: 4px;
 }
 
-.approval-card.protected_action .approval-row:first-of-type .approval-value {
+.approval-card.tool_call .approval-row:first-of-type .approval-value {
   font-weight: 600;
   color: #f9e2af;
 }

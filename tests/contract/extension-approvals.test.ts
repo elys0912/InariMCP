@@ -52,8 +52,8 @@ afterEach(() => {
   delete (globalThis as { browser?: unknown }).browser;
 });
 
-const PROTECTED = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  kind: 'protected_action',
+const TOOL_CALL = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+  kind: 'tool_call',
   approvalId: 'ap-1',
   toolName: 'fox_click',
   host: 'bank.example.test',
@@ -63,7 +63,7 @@ const PROTECTED = (overrides: Record<string, unknown> = {}): Record<string, unkn
 
 describe('background/approvals.ts', () => {
   it('keeps a request pending until the popup approves it, then answers and clears it', async () => {
-    const answer = requestApproval('r-1', PROTECTED());
+    const answer = requestApproval('r-1', TOOL_CALL());
     expect(listApprovals().map((v) => v.id)).toEqual(['ap-1']);
     expect(calls.created).toEqual([`${APPROVAL_NOTIFICATION_PREFIX}ap-1`]);
     expect(calls.badgeText.at(-1)).toBe('1');
@@ -115,18 +115,18 @@ describe('background/approvals.ts', () => {
   });
 
   it('a repeated id (server retry) cancels the older entry and keeps one', async () => {
-    const older = requestApproval('r-4', PROTECTED());
-    const newer = requestApproval('r-5', PROTECTED());
+    const older = requestApproval('r-4', TOOL_CALL());
+    const newer = requestApproval('r-5', TOOL_CALL());
     await expect(older).resolves.toMatchObject({ cancelled: true });
     expect(listApprovals()).toHaveLength(1);
     expect(decideApproval('ap-1', true)).toEqual({ success: true });
     await expect(newer).resolves.toMatchObject({ approved: true });
   });
 
-  it('refuses a malformed protected_action request without showing it', async () => {
-    await expect(requestApproval('r-6', PROTECTED({ host: '' }))).resolves
+  it('refuses a malformed tool_call request without showing it', async () => {
+    await expect(requestApproval('r-6', TOOL_CALL({ host: '' }))).resolves
       .toEqual({ success: false, error: 'Malformed approval request' });
-    await expect(requestApproval('r-7', PROTECTED({ expiresAt: Date.now() - 1 }))).resolves
+    await expect(requestApproval('r-7', TOOL_CALL({ expiresAt: Date.now() - 1 }))).resolves
       .toMatchObject({ success: false });
     expect(listApprovals()).toEqual([]);
     expect(calls.created).toEqual([]);

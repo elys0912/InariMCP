@@ -18,13 +18,12 @@ const ContainerScopeSchema = z.object({
 export const SafetyConfigSchema = z.object({
   enabled: z.boolean(),
   readOnly: z.boolean(),
-  confirmProtectedActions: z.boolean(),
   allowPasswordTyping: z.boolean(),
   maxActionsPerMinute: z.number().int().min(0),
   auditLog: z.boolean(),
   blockedUrlPatterns: z.array(z.string()),
   allowedUrlPatterns: z.array(z.string()),
-  protectedUrlPatterns: z.array(z.string()),
+  confirmReadSites: z.array(z.string()),
   containerScope: ContainerScopeSchema,
 }).strict();
 
@@ -33,34 +32,15 @@ export type SafetyConfig = z.infer<typeof SafetyConfigSchema>;
 export const DEFAULT_CONFIG: SafetyConfig = {
   enabled: true,
   readOnly: false,
-  confirmProtectedActions: true,
   allowPasswordTyping: false,
   maxActionsPerMinute: 120,
   auditLog: true,
   blockedUrlPatterns: [],
   allowedUrlPatterns: [],
-  // Host patterns (safety/url-pattern.ts): a host matches itself and its
-  // subdomains; `re:` marks a regex that must match the whole normalised URL.
-  protectedUrlPatterns: [
-    'paypal.com',
-    'venmo.com',
-    'coinbase.com',
-    'binance.com',
-    'kraken.com',
-    'chase.com',
-    'bankofamerica.com',
-    'wellsfargo.com',
-    'schwab.com',
-    'fidelity.com',
-    'vanguard.com',
-    'robinhood.com',
-    'stripe.com/dashboard',
-    '*.gov',
-    'healthcare.gov',
-    // Any host with a `mychart` label (patient portals: mychart.<org>.org,
-    // www.mychart.<org>.com ...).
-    're:https?://(?:[^/?#@]+\\.)?mychart\\..*',
-  ],
+  // Sites where reading tools (and screenshots) also ask the human first.
+  // Acting tools always ask, on every site. Host patterns as in the other
+  // lists (safety/url-pattern.ts).
+  confirmReadSites: [],
   containerScope: {
     enabled: false,
     containerName: 'InariMCP Agent',
@@ -71,13 +51,12 @@ export const DEFAULT_CONFIG: SafetyConfig = {
 const FILE_KEYS: { readonly [K in keyof SafetyConfig]: string } = {
   enabled: 'enabled',
   readOnly: 'read_only',
-  confirmProtectedActions: 'confirm_protected_actions',
   allowPasswordTyping: 'allow_password_typing',
   maxActionsPerMinute: 'max_actions_per_minute',
   auditLog: 'audit_log',
   blockedUrlPatterns: 'blocked_url_patterns',
   allowedUrlPatterns: 'allowed_url_patterns',
-  protectedUrlPatterns: 'protected_url_patterns',
+  confirmReadSites: 'confirm_read_sites',
   containerScope: 'container_scope',
 };
 

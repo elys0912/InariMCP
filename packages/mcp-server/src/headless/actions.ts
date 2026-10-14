@@ -798,7 +798,7 @@ const requestApproval: TablessHandler = async () => {
     success: false,
     approved: false,
     error:
-      'No human is present in headless mode. Protected-site actions are approved ' +
+      'No human is present in headless mode. Tool calls that need approval are approved ' +
       "through the MCP client's confirmation dialog (MCP elicitation) when it supports one.",
   };
 };

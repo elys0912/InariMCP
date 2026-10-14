@@ -11,7 +11,7 @@ import {
   approvalTargetFor,
   canonicalJson,
   hashArgs,
-  hostOf,
+  approvalSiteOf,
   summarizeArgs,
   approvalDisplayUrl,
   SUMMARY_HIDDEN_CHARS_WARNING,
@@ -28,7 +28,7 @@ function clock(start = 1_000_000): { now: () => number; advance: (ms: number) =>
 
 const ARGS = { selector: '#pay', tabId: 3 };
 const TARGET: ApprovalTarget = { toolName: 'fox_click', host: 'pay.example.test', argsHash: hashArgs(ARGS) };
-const INFO = { protectedUrl: 'https://pay.example.test/checkout', matchedPattern: 'example\\.test', summary: 's' };
+const INFO = { url: 'https://pay.example.test/checkout', matchedPattern: null, summary: 's' };
 
 function issued(store: ApprovalStore, target = TARGET): string {
   const request = store.createRequest(target, INFO);
@@ -38,12 +38,14 @@ function issued(store: ApprovalStore, target = TARGET): string {
 }
 
 describe('approval target helpers', () => {
-  it('hostOf: lower-case hostname, null for non-URLs', () => {
-    expect(hostOf('https://Pay.Example.TEST:8443/x?y')).toBe('pay.example.test');
-    expect(hostOf('about:blank')).toBeNull();
-    expect(hostOf('(target tab)')).toBeNull();
-    expect(hostOf('')).toBeNull();
-    expect(hostOf(null)).toBeNull();
+  it('approvalSiteOf: lower-case hostname, the scheme of a URL without one, null for non-URLs', () => {
+    expect(approvalSiteOf('https://Pay.Example.TEST:8443/x?y')).toBe('pay.example.test');
+    expect(approvalSiteOf('https://pay.example.test./x')).toBe('pay.example.test');
+    expect(approvalSiteOf('about:blank')).toBe('about:');
+    expect(approvalSiteOf('file:///tmp/page.html')).toBe('file:');
+    expect(approvalSiteOf('(target tab)')).toBeNull();
+    expect(approvalSiteOf('')).toBeNull();
+    expect(approvalSiteOf(null)).toBeNull();
   });
 
   it('hashArgs does not depend on key order, but on every value', () => {
@@ -56,6 +58,7 @@ describe('approval target helpers', () => {
   it('approvalTargetFor binds tool, host and argument hash', () => {
     expect(approvalTargetFor('fox_click', ARGS, 'https://pay.example.test/a')).toEqual(TARGET);
     expect(approvalTargetFor('fox_click', ARGS, '(target tab)')).toBeNull();
+    expect(approvalTargetFor('fox_click', ARGS, null)).toBeNull();
   });
 
   it('summarizeArgs shows values in full and masks password', () => {
@@ -104,7 +107,7 @@ describe('approval target helpers', () => {
     expect(summarizeArgs({ text: 'hello' })).toBe('text: "hello"');
   });
 
-  it('approvalDisplayUrl escapes invisible characters of the protected URL', () => {
+  it('approvalDisplayUrl escapes invisible characters of the URL', () => {
     expect(approvalDisplayUrl('https://pay.example.test/\u202Efdp.exe'))
       .toBe(String.raw`https://pay.example.test/\u202Efdp.exe`);
     expect(approvalDisplayUrl('https://pay.example.test/a')).toBe('https://pay.example.test/a');

@@ -46,11 +46,29 @@ describe('BROWSER_ACTIONS ⇔ WIRE_ACTION_MAP', () => {
     for (const name of ['noSuchAction', 'constructor', '__proto__', 'eval_chain']) {
       expect(describeAction(name)).toBe(UNKNOWN_ACTION);
     }
-    expect(UNKNOWN_ACTION).toMatchObject({ scope: 'tab', protectedCheck: 'upfront' });
+    expect(UNKNOWN_ACTION).toMatchObject({ scope: 'tab', approval: 'act' });
     await expect(UNKNOWN_ACTION.handler({ action: 'noSuchAction' } as never)).resolves.toEqual({
       success: false,
       error: 'Unknown action: noSuchAction',
     });
+  });
+
+  // Decision #9 / Fo-07: the Extension itself requires a human approval for
+  // every action that changes page or browser state, whatever the MCP Server
+  // attached; reads check confirm_read_sites; the rest changes no page data.
+  it('every action that changes page or browser state needs an approval', () => {
+    const rows = (pred: (approval: string) => boolean): string[] =>
+      [...ACTION_TABLE].filter(([, d]) => pred(d.approval)).map(([name]) => name).sort();
+    expect(rows((a) => a === 'act')).toEqual([
+      'click', 'clickAndWait', 'closeTab', 'goBack', 'goForward', 'hardRefresh', 'pressKey', 'refresh',
+      'selectOption', 'setValue', 'type',
+    ]);
+    expect(rows((a) => a === 'actOnUrl')).toEqual(['createTab', 'navigate', 'open_in_container']);
+    expect(rows((a) => a === 'actPerTab')).toEqual(['reloadAll', 'reloadByUrl']);
+    expect(rows((a) => a === 'read')).toEqual([
+      'find_text', 'getElements', 'getPageInfo', 'getText', 'getValue', 'screenshot', 'scrollAndCapture',
+    ]);
+    expect(rows((a) => a === 'readPerTab')).toEqual(['screenshotAllTabs']);
   });
 
   // InariMCP (AMO): no wire name runs code given as a string or records the
