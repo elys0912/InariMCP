@@ -274,6 +274,9 @@ export class SafetyGuard {
       );
     }
 
+    // Off, the guard asks nothing; the human approval stays: the Extension
+    // and the headless backend refuse every acting command that carries no
+    // approval for its site (headless/approval-floor.ts).
     if (!this.config.enabled) {
       return null;
     }

@@ -137,7 +137,7 @@ type UnlockedHandler = (c: UnlockedContext) => Promise<Result>;
  * - unsupported: answered with "Unsupported headless action" (after the
  *   target tab was resolved, like a dispatch action)
  */
-type HeadlessRoute =
+export type HeadlessRoute =
   | { kind: 'dispatch'; needsPage: true; run: ActionHandler }
   | { kind: 'dispatch'; needsPage: false; run: TablessHandler }
   | { kind: 'unlocked'; run: UnlockedHandler }
