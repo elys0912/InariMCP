@@ -36,6 +36,8 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The Firefox extension itself refuses an acting command that was not approved for the site of its tab (or of the URL it opens), whatever the daemon sends.
 - The approval prompt (MCP elicitation and the toolbar popup) asks "Allow this operation?" with the tool, the site and the arguments, instead of naming a protected site.
 - `fox_safety_status` reports `approvalPolicy` (which calls ask) and `confirmReadSites`, instead of `confirmProtectedActions` and `protectedUrlPatterns`.
+- `fox_navigate` with `action: "back"`, `"forward"` or `"refresh"` and `newTab: true` acts on the tab as it is, and is approved for the site of that tab (before, the approval was asked for a new blank tab, `about:`).
+- `fox_screenshot` with `scope: "scroll_capture"`: `maxScrolls` is at most 50 and `delay` at most 2000 ms.
 
 ### Removed
 
@@ -52,3 +54,7 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The daemon refuses to start when `FOX_HOST` is not a loopback address (127.0.0.0/8, `::1`, `localhost`), instead of logging a warning and serving plain HTTP / WebSocket to the network.
 - Tools that act on a page are refused on a tab without a host (`view-source:`, `blob:`, `data:`, …; `about:` and `file:` excepted), which no URL pattern of `safety.json` can match. Reading tools still work there.
 - A `urlPattern` argument is refused before it is compiled, by the daemon and again by the extension, so one pattern cannot stall the extension's background page: when it is longer than 256 characters, when a repeated group (`*`, `+` or `{…}` after it) holds a quantifier or `|` (such as `(a+)+`, `(a|aa)+` or `(a?){25}`), or when it has more than 7 unbounded repeats (`*`, `+`, `{n,}`). Character classes are read by the JavaScript rules (`[]` and `[^]` end at their first `]`). A group made optional with `?`, such as `(https?://)?`, is still accepted.
+- Headless mode checks the approval again right before a command runs, against the page it runs on, as the extension does: an acting command runs only on the site a human approved, and a read of a page in `confirm_read_sites` only with an approval for its site. If the page moved to another site since the approval, the call is asked again for that site.
+- `enabled: false` in `safety.json` no longer turns off the human approval in headless mode: every acting tool still asks first, on both backends (it turns off the URL checks and lists, `confirm_read_sites`, `read_only`, `container_scope` and the rate limit).
+- Headless `fox_snapshot` shows `[MASKED]` for the value of a masked field (password, one-time code, card number and the others listed above), and does not mark the chosen option of a masked `<select>` as selected. Before, Playwright's accessibility tree showed these values as they are.
+- Secret query and fragment parameters (`token`, `access_token`, `password`, …) in URLs are masked in the audit log (`url`) and in the `url` of `details.approval` that the MCP client receives, as they already were in the `url` argument. The approval popup in Firefox still shows the whole URL.

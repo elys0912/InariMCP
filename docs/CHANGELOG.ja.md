@@ -36,6 +36,8 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - Firefox の拡張機能も、タブ（または開く URL）のサイトについて承認されていない操作系のコマンドを、daemon が何を送ってきても拒否するようにした。
 - 承認の確認（MCP elicitation とツールバーのポップアップ）を、保護対象サイトの名前ではなく、ツール・サイト・引数を示して「この操作を許可しますか」と尋ねる形にした。
 - `fox_safety_status` は `confirmProtectedActions` と `protectedUrlPatterns` の代わりに、`approvalPolicy`（どの呼び出しで尋ねるか）と `confirmReadSites` を返す。
+- `fox_navigate` の `action: "back"`・`"forward"`・`"refresh"` に `newTab: true` を付けたときは、今のタブを操作するものとして、そのタブのサイトについて承認を求めるようにした（従来は新しい空のタブ `about:` について尋ねていた）。
+- `fox_screenshot` の `scope: "scroll_capture"` で、`maxScrolls` は 50 まで、`delay` は 2000 ms までにした。
 
 ### 削除
 
@@ -52,3 +54,7 @@ Inari MCP for Firefox は 2026-10-14 に [KitsuneMCP](https://github.com/elys091
 - `FOX_HOST` がループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）でなければ daemon は起動しないようにした。従来は警告をログに出して、平文の HTTP・WebSocket をネットワークに開いていた。
 - ホストの無いページ（`view-source:`、`blob:`、`data:` など。`about:` と `file:` は除く）にあるタブでは、ページを操作するツールを拒否するようにした。こうしたページには `safety.json` のどの URL パターンも一致しない。読み取るツールは動く。
 - 引数 `urlPattern` を、次のときはコンパイルする前に拒否するようにした（daemon と拡張機能の両方で）。1 つのパターンで拡張機能のバックグラウンドページが止まらないようにするため。256 文字を超えるとき。繰り返す括弧（後ろに `*`・`+`・`{…}` が付く）の中に量指定子か `|` があるとき（`(a+)+`、`(a|aa)+`、`(a?){25}` など）。上限の無い繰り返し（`*`・`+`・`{n,}`）が 7 個を超えるとき。文字クラスは JavaScript の規則で読む（`[]` と `[^]` は最初の `]` で閉じる）。`?` で省略可能にしただけの括弧（`(https?://)?` など）は従来どおり受け付ける。
+- ヘッドレスモードでも、拡張機能と同じように、コマンドを実行する直前に、実行するページで承認を確かめ直すようにした。操作系のコマンドは人が承認したサイトでだけ動き、`confirm_read_sites` のページの読み取りはそのサイトの承認があるときだけ動く。承認の後にページが別のサイトへ移っていた場合は、そのサイトについて改めて尋ねる。
+- `safety.json` の `enabled: false` で、ヘッドレスモードの人の承認が止まらないようにした。操作系ツールは両方のバックエンドで常に先に尋ねる（`false` で止まるのは、URL の検査と URL の一覧、`confirm_read_sites`、`read_only`、`container_scope`、レート制限）。
+- ヘッドレスの `fox_snapshot` で、伏せる対象の欄（パスワード、ワンタイムコード、カード番号など上に挙げたもの）の値を `[MASKED]` にし、伏せる対象の `<select>` で選んだ option に selected の印を付けないようにした。従来は Playwright のアクセシビリティツリーがこれらの値をそのまま出していた。
+- URL の query と fragment にある秘密の値（`token`、`access_token`、`password` など）を、監査ログの `url` と、MCP クライアントが受け取る `details.approval` の `url` でも伏せるようにした（引数の `url` では従来から伏せていた）。Firefox の承認のポップアップには URL 全体を出す。
