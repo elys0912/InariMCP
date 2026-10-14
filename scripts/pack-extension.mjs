@@ -50,41 +50,64 @@ function runNode(script, args, { echo = false, allowFailure = false } = {}) {
   return r.stdout;
 }
 
+// The zip records readZipFiles() reads, from PKWARE's APPNOTE.TXT: the end of
+// central directory record (4.3.16), a central directory file header
+// (4.3.12) and a local file header (4.3.7). Each starts with its signature;
+// the *_AT tables are the byte offsets of the fields from that start.
+const EOCD_SIGNATURE = 0x06054b50;
+const CENTRAL_SIGNATURE = 0x02014b50;
+const LOCAL_SIGNATURE = 0x04034b50;
+/** The end record without a zip comment; a comment only adds to it. */
+const EOCD_MIN_SIZE = 22;
+const EOCD_AT = { entryCount: 10, centralOffset: 16 };
+/** `name` is where the variable-length part (name, extra field, comment) begins. */
+const CENTRAL_AT = { method: 10, compressedSize: 20, nameLength: 28, extraLength: 30, commentLength: 32, localOffset: 42, name: 46 };
+/** `data` is where the variable-length part (name, extra field) begins; the file data follows it. */
+const LOCAL_AT = { nameLength: 26, extraLength: 28, data: 30 };
+/** Compression methods (APPNOTE 4.4.5) that web-ext writes. */
+const STORED = 0;
+const DEFLATED = 8;
+
 /**
  * Files of a zip as [path, content]. Reads the central directory; supports
  * stored and deflated entries (what web-ext writes), not zip64.
  */
 function readZipFiles(zip) {
-  const EOCD = 0x06054b50;
-  const CENTRAL = 0x02014b50;
-  const LOCAL = 0x04034b50;
-  let eocd = zip.length - 22;
-  while (eocd >= 0 && zip.readUInt32LE(eocd) !== EOCD) eocd -= 1;
+  let eocd = zip.length - EOCD_MIN_SIZE;
+  while (eocd >= 0 && zip.readUInt32LE(eocd) !== EOCD_SIGNATURE) eocd -= 1;
   if (eocd < 0) fail('the zip has no end-of-central-directory record');
 
-  const count = zip.readUInt16LE(eocd + 10);
-  let at = zip.readUInt32LE(eocd + 16);
+  const count = zip.readUInt16LE(eocd + EOCD_AT.entryCount);
+  let at = zip.readUInt32LE(eocd + EOCD_AT.centralOffset);
   const files = [];
   for (let i = 0; i < count; i += 1) {
-    if (zip.readUInt32LE(at) !== CENTRAL) fail('the zip central directory is damaged');
-    const method = zip.readUInt16LE(at + 10);
-    const compressedSize = zip.readUInt32LE(at + 20);
-    const nameLength = zip.readUInt16LE(at + 28);
-    const extraLength = zip.readUInt16LE(at + 30);
-    const commentLength = zip.readUInt16LE(at + 32);
-    const localAt = zip.readUInt32LE(at + 42);
-    const name = zip.toString('utf-8', at + 46, at + 46 + nameLength);
-    at += 46 + nameLength + extraLength + commentLength;
+    if (zip.readUInt32LE(at) !== CENTRAL_SIGNATURE) fail('the zip central directory is damaged');
+    const method = zip.readUInt16LE(at + CENTRAL_AT.method);
+    const compressedSize = zip.readUInt32LE(at + CENTRAL_AT.compressedSize);
+    const nameLength = zip.readUInt16LE(at + CENTRAL_AT.nameLength);
+    const extraLength = zip.readUInt16LE(at + CENTRAL_AT.extraLength);
+    const commentLength = zip.readUInt16LE(at + CENTRAL_AT.commentLength);
+    const localAt = zip.readUInt32LE(at + CENTRAL_AT.localOffset);
+    const name = zip.toString('utf-8', at + CENTRAL_AT.name, at + CENTRAL_AT.name + nameLength);
+    at += CENTRAL_AT.name + nameLength + extraLength + commentLength;
     if (name.endsWith('/')) continue;
 
-    if (zip.readUInt32LE(localAt) !== LOCAL) fail(`the zip local header of ${name} is damaged`);
-    const dataAt = localAt + 30 + zip.readUInt16LE(localAt + 26) + zip.readUInt16LE(localAt + 28);
+    if (zip.readUInt32LE(localAt) !== LOCAL_SIGNATURE) fail(`the zip local header of ${name} is damaged`);
+    const localNameLength = zip.readUInt16LE(localAt + LOCAL_AT.nameLength);
+    const localExtraLength = zip.readUInt16LE(localAt + LOCAL_AT.extraLength);
+    const dataAt = localAt + LOCAL_AT.data + localNameLength + localExtraLength;
     const raw = zip.subarray(dataAt, dataAt + compressedSize);
-    if (method === 0) files.push([name, raw]);
-    else if (method === 8) files.push([name, inflateRawSync(raw)]);
+    if (method === STORED) files.push([name, raw]);
+    else if (method === DEFLATED) files.push([name, inflateRawSync(raw)]);
     else fail(`${name}: unsupported compression method ${method}`);
   }
   return files;
+}
+
+/** Code-unit order of the paths, as sort() without a comparator (not the locale's order). */
+function byPath([pathA], [pathB]) {
+  if (pathA < pathB) return -1;
+  return pathA > pathB ? 1 : 0;
 }
 
 const manifest = JSON.parse(readFileSync(path.join(root, 'packages', 'extension', 'manifest.json'), 'utf-8'));
@@ -111,11 +134,8 @@ runNode(webExt, ['build', ...webExtArgs, '--overwrite-dest', '--filename', path.
 if (!existsSync(zipPath)) fail(`web-ext did not write ${path.relative(root, zipPath)}`);
 
 const sums = readZipFiles(readFileSync(zipPath))
-  .map(([name, content]) => `${createHash('sha256').update(content).digest('hex')}  ${name}`)
-  .sort((a, b) => {
-    const [pathA, pathB] = [a.slice(66), b.slice(66)];
-    return pathA < pathB ? -1 : pathA > pathB ? 1 : 0;
-  });
+  .sort(byPath)
+  .map(([name, content]) => `${createHash('sha256').update(content).digest('hex')}  ${name}`);
 writeFileSync(sumsPath, `${sums.join('\n')}\n`);
 console.log(`pack-extension: ${sums.length} files, hashes in ${path.relative(root, sumsPath)}`);
 
