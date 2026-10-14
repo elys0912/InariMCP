@@ -1,22 +1,29 @@
 /**
- * The built Extension runs no code given as a string (AMO policies: no
- * remote code, no eval). Checked on the bundles of packages/extension/dist
- * that the xpi ships, not on the sources:
- *   - tabs.executeScript is only called with a `file` (a file of the
- *     package), never with `code`;
- *   - no `eval(` and no `new Function(`.
+ * The built Extension runs no code given as a string and writes no HTML
+ * from a string (AMO policies: no remote code, no eval; the Notes for
+ * Reviewers say so). Checked on every bundle of packages/extension/dist that
+ * the xpi ships, not on the sources:
+ *   - tabs.executeScript is never called with `code` (with a `file` only;
+ *     today it is not called at all);
+ *   - no `eval(` and no `new Function(`;
+ *   - no string as the first argument of setTimeout / setInterval;
+ *   - no innerHTML, insertAdjacentHTML or document.write.
  *
- * Needs `npm run build` first. A missing bundle fails the test (it is not
- * skipped), so the check cannot pass by having nothing to read.
+ * Needs `npm run build` first. BUNDLES is the list of bundles
+ * scripts/build-extension.mjs writes; dist must hold exactly those scripts,
+ * so a bundle added to the build without being added here fails the test.
+ * A missing bundle fails the test too (it is not skipped), so the checks
+ * cannot pass by having nothing to read.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const DIST = new URL('../../packages/extension/dist/', import.meta.url);
 
-const BUNDLES = ['background.js', 'content.js', 'popup/popup.js'] as const;
+/** The entryPoints of scripts/build-extension.mjs, as dist paths. */
+const BUNDLES = ['background.js', 'content.js', 'popup/popup.js', 'consent/consent.js'] as const;
 
 function readBundle(file: string): string {
   const full = fileURLToPath(new URL(file, DIST));
@@ -24,6 +31,12 @@ function readBundle(file: string): string {
     throw new Error(`packages/extension/dist/${file} is missing: run npm run build first`);
   }
   return readFileSync(full, 'utf-8');
+}
+
+/** Every script file under dist, as a path relative to it with `/`. */
+function distScripts(): string[] {
+  const entries = readdirSync(fileURLToPath(DIST), { recursive: true, encoding: 'utf-8' });
+  return entries.map((entry) => entry.split('\\').join('/')).filter((entry) => entry.endsWith('.js')).sort();
 }
 
 /**
@@ -46,7 +59,17 @@ function executeScriptArguments(code: string): string[] {
   return out;
 }
 
+/** A setTimeout / setInterval call whose first argument is a string literal (code to evaluate). */
+const STRING_TIMER_RE = /\bset(?:Timeout|Interval)\s*\(\s*['"`]/g;
+
+/** Writing HTML from a string. */
+const HTML_SINK_RE = /\.(?:innerHTML|outerHTML)\b|\binsertAdjacentHTML\b|\bdocument\s*\.\s*write(?:ln)?\s*\(/g;
+
 describe('extension dist: no code strings are run', () => {
+  it('dist holds the bundles of the build and no other script', () => {
+    expect(distScripts()).toEqual([...BUNDLES].sort());
+  });
+
   it.each(BUNDLES)('%s exists (npm run build)', (file) => {
     expect(readBundle(file).length).toBeGreaterThan(0);
   });
@@ -64,6 +87,14 @@ describe('extension dist: no code strings are run', () => {
     expect(code.match(/\bnew\s+Function\s*\(/g) ?? []).toEqual([]);
   });
 
+  it.each(BUNDLES)('%s passes no string to setTimeout or setInterval', (file) => {
+    expect(readBundle(file).match(STRING_TIMER_RE) ?? []).toEqual([]);
+  });
+
+  it.each(BUNDLES)('%s writes no HTML from a string (innerHTML, outerHTML, insertAdjacentHTML, document.write)', (file) => {
+    expect(readBundle(file).match(HTML_SINK_RE) ?? []).toEqual([]);
+  });
+
   // The checks above must see a call written in either form, or they would
   // pass on any bundle.
   it('the checks find what they look for', () => {
@@ -73,5 +104,15 @@ describe('extension dist: no code strings are run', () => {
     expect('window.eval("1")').toMatch(/\beval\s*\(/);
     expect('new Function("return 1")').toMatch(/\bnew\s+Function\s*\(/);
     expect('document.evaluate(xpath, document)').not.toMatch(/\beval\s*\(/);
+
+    for (const call of ['setTimeout("x()", 1)', "window.setInterval( 'x()', 1)", 'setTimeout(\n  `x()`)']) {
+      expect(call.match(STRING_TIMER_RE), call).toHaveLength(1);
+    }
+    expect('setTimeout(() => x(), 1); setInterval(tick, delay)'.match(STRING_TIMER_RE)).toBeNull();
+
+    for (const sink of ['el.innerHTML = s', 'el.outerHTML = s', 'el.insertAdjacentHTML("beforeend", s)', 'document.write(s)', 'document.writeln(s)']) {
+      expect(sink.match(HTML_SINK_RE), sink).toHaveLength(1);
+    }
+    expect('el.textContent = s; label.innerText = s; writer.write(s)'.match(HTML_SINK_RE)).toBeNull();
   });
 });
