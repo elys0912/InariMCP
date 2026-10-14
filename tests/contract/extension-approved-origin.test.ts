@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ACTION_TABLE } from '../../packages/extension/src/background/action-table.ts';
 import { handleCommand } from '../../packages/extension/src/background/dispatch.ts';
 import { approvalOriginOf } from '../../packages/extension/src/site-origin.ts';
 
@@ -39,6 +40,10 @@ afterEach(() => {
 describe('site-origin.ts approvalOriginOf', () => {
   it.each([
     ['https://App.Example.test/a?b#c', 'https://app.example.test'],
+    ['HTTPS://APP.example.test/', 'https://app.example.test'],
+    ['https://Bücher.example/', 'https://xn--bcher-kva.example'],
+    ['blob:https://app.example.test/0b1c', 'blob://'],
+    ['data:text/html,x', 'data://'],
     ['https://app.example.test:443/', 'https://app.example.test'],
     ['http://localhost:3000/x', 'http://localhost:3000'],
     ['file:///home/page.html', 'file://'],
@@ -57,7 +62,7 @@ describe('background: the origin an acting command was approved on', () => {
       'host',
     );
     expect(result).toMatchObject({ success: true });
-    expect(sent).toEqual([{ selector: '#go', approvedOrigin: 'https://app.example.test:8443', action: 'click' }]);
+    expect(sent).toEqual([{ selector: '#go', approvedOrigin: 'https://app.example.test:8443', pauseCount: 0, action: 'click' }]);
   });
 
   it("the command's data cannot set it", async () => {
@@ -74,6 +79,26 @@ describe('background: the origin an acting command was approved on', () => {
   it('a command that does not act carries none', async () => {
     await handleCommand({ action: 'wait_for_element', requestId: 'w-1', data: { selector: '#x' } }, 'host');
     expect(sent[0]!.approvedOrigin).toBeUndefined();
+  });
+
+  // Every "act" row that goes to the content script carries it: the content
+  // script checks only what carries one, so a row that lost it would act
+  // unchecked.
+  const ACT_ROWS = [...ACTION_TABLE].filter(([, row]) => row.approval === 'act').map(([name]) => name);
+
+  it.each(ACT_ROWS)('the "act" row %s: a content script command carries the origin', async (action) => {
+    await handleCommand({ action, tabId: TAB.id, data: { selector: '#go', text: 'x' }, approvedHost: 'app.example.test' }, 'page');
+    for (const message of sent) expect(message).toMatchObject({ approvedOrigin: 'https://app.example.test:8443' });
+  });
+
+  it('the rows that reach the content script are the acting ones it knows', async () => {
+    const reached: string[] = [];
+    for (const action of ACT_ROWS) {
+      sent = [];
+      await handleCommand({ action, tabId: TAB.id, data: { selector: '#go' }, approvedHost: 'app.example.test' }, 'page');
+      if (sent.length > 0) reached.push(action);
+    }
+    expect(reached).toEqual(expect.arrayContaining(['click', 'type', 'setValue', 'selectOption', 'clickAndWait', 'pressKey']));
   });
 });
 
@@ -107,10 +132,14 @@ describe('content: an acting command on a page that left the approved origin', (
       .resolves.toEqual({ scrollHeight: 1_000, scrollWidth: 800, viewportHeight: 600, viewportWidth: 800 });
   });
 
-  it('a malformed origin is refused; a command without one is not checked', async () => {
+  it('a malformed origin is refused', async () => {
     const handleRequest = await contentAt('https://app.example.test:8443/');
     await expect(handleRequest({ action: 'captureFullPage', approvedOrigin: 42 })).resolves
       .toMatchObject({ success: false, safetyDecision: 'confirmation_required' });
+  });
+
+  it('a command without an origin (not an acting one) is not checked', async () => {
+    const handleRequest = await contentAt('https://app.example.test:8443/');
     await expect(handleRequest({ action: 'captureFullPage' })).resolves.toMatchObject({ scrollHeight: 1_000 });
   });
 });

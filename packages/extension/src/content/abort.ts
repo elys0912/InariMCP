@@ -3,8 +3,11 @@
 // (background/dispatch.ts, ABORT_REQUEST_TYPE). A running command sees it at
 // each of its steps: every wait between two steps is sleep() (dom.ts), which
 // then ends at once with ABORTED_MESSAGE, and the waits on page events
-// listen through whenAborted(). A command that starts later (after the pause
-// is lifted) runs as usual: beginCommand().
+// listen through whenAborted(). The abort carries the background's pause
+// count, and so does each command from the Native Host: a command sent
+// before that pause but arriving after the abort is refused before it starts
+// (isSentBeforeAbort). A command sent after the pause was lifted runs as
+// usual: beginCommand().
 
 /**
  * The error a command ends with when the pause stops it. It starts with
@@ -16,14 +19,30 @@ export const ABORTED_MESSAGE = "paused: stopped when the user paused agent actio
 /** Aborted by abortRunningCommands; replaced when the next command starts. */
 let controller = new AbortController();
 
+/** The pause count of the latest abort (background/control-state.ts pauseCount). */
+let abortedPauseCount = 0;
+
 /** A command starts (handler.ts): an abort sent before it does not apply to it. */
 export function beginCommand(): void {
   if (controller.signal.aborted) controller = new AbortController();
 }
 
-/** Stop every command running in this frame now. */
-export function abortRunningCommands(): void {
+/**
+ * Stop every command running in this frame now. `pauseCount`: the
+ * background's count of the pause (a malformed one stops the running
+ * commands all the same).
+ */
+export function abortRunningCommands(pauseCount: unknown): void {
+  if (typeof pauseCount === "number") abortedPauseCount = Math.max(abortedPauseCount, pauseCount);
   controller.abort();
+}
+
+/**
+ * Whether a command with this pause count was sent before the latest abort's
+ * pause (only a number is compared: the popup's commands carry none).
+ */
+export function isSentBeforeAbort(pauseCount: unknown): boolean {
+  return typeof pauseCount === "number" && pauseCount < abortedPauseCount;
 }
 
 /** Whether the commands running now were told to stop. */

@@ -195,3 +195,20 @@ describe('E-16 action names from the Native Host', () => {
       .toMatchObject({ success: true });
   });
 });
+
+describe('checkCommand: the first check that fails gives the refusal', () => {
+  // Each command also lacks the approval an acting command needs, so a check
+  // that moved behind the approval check would show as confirmation_required.
+  const invalidRule = hostRule('app.example.test', '/page?x=1');
+  it.each([
+    ['an unusable container scope, before unusable URL rules', { containerScope: 'agent', confirmReadUrlRules: [invalidRule] }, 'config_error', /container scope/],
+    ['unusable URL rules, before the lists and the approval', { blockedUrlRules: [invalidRule] }, 'config_error', /URL pattern/],
+    ['a tab outside the container scope, before the lists', { containerScope: { containerName: 'other' }, blockedUrlRules: [hostRule('app.example.test')] }, 'out_of_scope', /./],
+    ['a blocked tab, before the approval', { blockedUrlRules: [hostRule('app.example.test')] }, 'blocked_url', /./],
+  ])('%s', async (_label, fields, decision, error) => {
+    installBrowser();
+    const result = await handleCommand({ action: 'click', data: { selector: '#a' }, ...fields }, 'host');
+    expect(result).toMatchObject({ success: false, safetyDecision: decision, error: expect.stringMatching(error) });
+    expect(sent).toEqual([]);
+  });
+});

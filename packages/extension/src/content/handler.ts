@@ -1,10 +1,11 @@
 // Message dispatch of the content script: one message from the background
 // (content.ts), either the abort of the running commands (the pause switch)
-// or one command to its handler -- an acting one only while the page is still
-// on the origin it was approved on.
+// or one command to its handler -- not one sent before the latest pause, and
+// an acting one only while the page is still on the origin it was approved
+// on.
 
 import { approvalOriginOf } from "../site-origin";
-import { abortRunningCommands, beginCommand } from "./abort";
+import { ABORTED_MESSAGE, abortRunningCommands, beginCommand, isSentBeforeAbort } from "./abort";
 import { solveCaptcha } from "./captcha";
 import { ABORT_REQUEST_TYPE } from "./constants";
 import {
@@ -26,7 +27,7 @@ import {
   getText,
 } from "./inspect";
 import { cancelHumanWait } from "./overlay";
-import type { ContentEnvelope, ContentMessage } from "./types";
+import type { ContentAction, ContentEnvelope, ContentMessage, ContentOptionsByAction } from "./types";
 import {
   waitForElement,
   waitForChange,
@@ -34,9 +35,12 @@ import {
   clickAndWait,
 } from "./wait";
 
-/** Whether `request` is the background's abort of the running commands. */
-function isAbortRequest(request: unknown): boolean {
-  return typeof request === "object" && request !== null && (request as { type?: unknown }).type === ABORT_REQUEST_TYPE;
+/** The background's abort of the running commands (its pause count), or null for any other message. */
+function abortRequestOf(request: unknown): { pauseCount?: unknown } | null {
+  if (typeof request !== "object" || request === null) return null;
+  const message = request as { type?: unknown; pauseCount?: unknown };
+
+  return message.type === ABORT_REQUEST_TYPE ? message : null;
 }
 
 /**
@@ -44,11 +48,22 @@ function isAbortRequest(request: unknown): boolean {
  * (abort.ts), and the captcha wait ends like a cancel_human_wait, so a late
  * click cannot look like an answer.
  */
-function abortCommands(): Record<string, unknown> {
-  abortRunningCommands();
+function abortCommands(pauseCount: unknown): Record<string, unknown> {
+  abortRunningCommands(pauseCount);
   cancelHumanWait();
 
   return { success: true, aborted: true };
+}
+
+/**
+ * A command the background sent before the latest pause, arriving after its
+ * abort (the background has answered the MCP Server with "paused" already):
+ * refused before it starts.
+ */
+function refuseSentBeforeAbort(pauseCount: unknown): Record<string, unknown> | null {
+  if (!isSentBeforeAbort(pauseCount)) return null;
+
+  return { success: false, safetyDecision: "paused", error: ABORTED_MESSAGE };
 }
 
 /**
@@ -75,64 +90,54 @@ function refuseOffOrigin(approvedOrigin: unknown): Record<string, unknown> | nul
  * a request; a command's options are read defensively by its handler.
  */
 export async function handleRequest(request: unknown): Promise<Record<string, unknown>> {
-  if (isAbortRequest(request)) return abortCommands();
+  const abort = abortRequestOf(request);
+  if (abort !== null) return abortCommands(abort.pauseCount);
   const message = request as ContentMessage & ContentEnvelope;
-  const refusal = refuseOffOrigin(message.approvedOrigin);
+  const refusal = refuseSentBeforeAbort(message.pauseCount) ?? refuseOffOrigin(message.approvedOrigin);
   if (refusal) return refusal;
 
   beginCommand();
   return handleMessage(message);
 }
 
-export async function handleMessage(
-  message: ContentMessage,
-): Promise<Record<string, unknown>> {
-  switch (message.action) {
-    case "click":
-      return performClick(message);
-    case "type":
-      return performType(message);
-    case "scroll":
-      return performScroll(message);
-    case "getPageInfo":
-      return getPageInfo();
-    case "getElements":
-      return getElements(message);
-    case "highlight":
-      return highlightElement(message);
-    case "waitForElement":
-      return waitForElement(message);
-    case "waitForChange":
-      return waitForChange(message);
-    case "waitForNetworkIdle":
-      return waitForNetworkIdle(message);
-    case "scrollAndCapture":
-      return scrollAndCapture(message);
-    case "clickAndWait":
-      return clickAndWait(message);
-    case "captureFullPage":
-      return captureFullPage();
-    case "getValue":
-      return getValue(message);
-    case "setValue":
-      return setValue(message);
-    case "hover":
-      return hoverElement(message);
-    case "selectOption":
-      return selectOption(message);
-    case "pressKey":
-      return pressKey(message);
-    case "getText":
-      return getText(message);
-    case "solveCaptcha":
-      return solveCaptcha(message);
-    case "cancelHumanWait":
-      return cancelHumanWait();
-    default: {
-      // Reached by a message whose action is not a ContentAction (content.ts
-      // takes any runtime message as a ContentMessage).
-      const unhandled: never = message;
-      throw new Error(`Unknown action: ${String((unhandled as { action: unknown }).action)}`);
-    }
+type ContentResult = Record<string, unknown> | Promise<Record<string, unknown>>;
+
+/** The handler of each background → content action (a key per ContentAction, checked by the type). */
+const CONTENT_HANDLERS: { [A in ContentAction]: (options: ContentOptionsByAction[A]) => ContentResult } = {
+  click: performClick,
+  type: performType,
+  scroll: performScroll,
+  getPageInfo,
+  getElements,
+  highlight: highlightElement,
+  waitForElement,
+  waitForChange,
+  waitForNetworkIdle,
+  scrollAndCapture,
+  clickAndWait,
+  captureFullPage,
+  getValue,
+  setValue,
+  hover: hoverElement,
+  selectOption,
+  pressKey,
+  getText,
+  solveCaptcha,
+  cancelHumanWait,
+};
+
+/**
+ * Run the command's handler. A message whose action is not a ContentAction
+ * (content.ts takes any runtime message as a request) is refused.
+ */
+async function handleMessage(message: ContentMessage): Promise<Record<string, unknown>> {
+  const action: unknown = message.action;
+  if (typeof action !== "string" || !Object.hasOwn(CONTENT_HANDLERS, action)) {
+    throw new Error(`Unknown action: ${String(action)}`);
   }
+
+  // The lookup loses the pairing of the action and its options: the handler
+  // of message.action gets the options sent with it.
+  const handler = CONTENT_HANDLERS[message.action] as (options: ContentMessage) => ContentResult;
+  return handler(message);
 }

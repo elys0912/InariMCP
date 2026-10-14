@@ -106,6 +106,11 @@ export interface ActionContext {
    * the approval was checked on (site-origin.ts), else undefined.
    */
   approvedOrigin: string | undefined;
+  /**
+   * Commands from the Native Host: the pause count (control-state.ts) when
+   * the pause switch was last looked at; undefined for the popup's commands.
+   */
+  pauseCount: number | undefined;
   urlLists: UrlLists;
   /** fox_navigate with newTab, routed as createTab. */
   navigateInNewTab: boolean;
@@ -136,10 +141,13 @@ export type ActionDescriptor = TabActionDescriptor | SelfScopedActionDescriptor 
  * Content-script-forwarded actions. Every command goes to the top frame
  * (sendToContentScript's default), never to whichever frame answers first.
  * An acting command carries the origin it was approved on: the content
- * script refuses it if its page is no longer there (content/handler.ts).
+ * script refuses it if its page is no longer there (content/handler.ts). A
+ * command from the Native Host carries the pause count: it is not sent, or
+ * refused by the content script, after a later pause (tab-target.ts).
  */
 function toContentScript(action: ContentAction): ActionHandler {
-  return (c) => sendToContentScript(c.tabId, { ...c.data, approvedOrigin: c.approvedOrigin, action });
+  return (c) =>
+    sendToContentScript(c.tabId, { ...c.data, approvedOrigin: c.approvedOrigin, pauseCount: c.pauseCount, action });
 }
 
 /**

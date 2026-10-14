@@ -4,6 +4,7 @@ import { errorMessage } from "../error-message";
 import { ABORT_REQUEST_TYPE } from "../content/constants";
 import type { ContentRequest } from "../content/types";
 import { TOP_FRAME_ID } from "./constants";
+import { isPaused, pauseCount } from "./control-state";
 import type { CommandResult } from "./types";
 
 /**
@@ -35,7 +36,9 @@ export function noTargetTab(): CommandResult {
  * answer or be the one that acts.
  *
  * Build `message` as `{ ...data, action }`: the action last, so that a
- * command's data cannot replace the action the background checked.
+ * command's data cannot replace the action the background checked. A
+ * command from the Native Host with `pauseCount` (dispatch.ts) is not sent
+ * when agent actions were paused after it was let through.
  */
 export async function sendToContentScript(
   tabId: number | undefined,
@@ -45,6 +48,8 @@ export async function sendToContentScript(
   try {
     const tab = await resolveTab(tabId);
     if (!tab) return noTargetTab();
+    // The tab lookup waits on the browser: a pause may have come meanwhile.
+    if (isSentBeforePause(message.pauseCount)) return { ...PAUSED_BEFORE_SENDING };
     const result = (await browser.tabs.sendMessage(tab.id, message, { frameId })) as Record<string, unknown>;
     return { success: true, ...result };
   } catch (error) {
@@ -52,15 +57,32 @@ export async function sendToContentScript(
   }
 }
 
+/** The answer of a command a pause outdated before it was sent (dispatch.ts has answered PAUSED already). */
+const PAUSED_BEFORE_SENDING: CommandResult = {
+  success: false,
+  safetyDecision: "paused",
+  error: "paused: the user paused agent actions before the command reached the page",
+};
+
+/** Whether a command let through at `count` pauses (a number: from the Native Host) is outdated by a pause. */
+function isSentBeforePause(count: unknown): boolean {
+  return typeof count === "number" && (isPaused() || count !== pauseCount());
+}
+
 /**
  * The pause switch: tell the content script of `tabId` (its top frame, where
  * every command goes) to stop the commands it runs; each ends at its next
- * step (content/abort.ts). Best effort: a tab without a content script runs
- * none.
+ * step. The abort carries the pause count, so a command of an earlier count
+ * that arrives after it is refused too (content/abort.ts). Best effort: a
+ * tab without a content script runs none.
  */
 export async function abortContentCommands(tabId: number): Promise<void> {
   try {
-    await browser.tabs.sendMessage(tabId, { type: ABORT_REQUEST_TYPE }, { frameId: TOP_FRAME_ID });
+    await browser.tabs.sendMessage(
+      tabId,
+      { type: ABORT_REQUEST_TYPE, pauseCount: pauseCount() },
+      { frameId: TOP_FRAME_ID },
+    );
   } catch {
     // No content script in the tab, or the tab is gone: nothing runs there
   }

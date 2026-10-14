@@ -11,7 +11,7 @@ import { approvalOriginOf } from "../site-origin";
 import type { CompiledUrlRule } from "../url-rule";
 import { describeAction, UNKNOWN_ACTION, type ActionContext, type ActionDescriptor } from "./action-table";
 import { parseContainerScope, enforceContainerScope, outOfScope } from "./container-scope";
-import { isPaused, pauseSignal } from "./control-state";
+import { isPaused, pauseCount, pauseSignal } from "./control-state";
 import { postToHost } from "./native-connection";
 import { startHostCommand } from "./setup-badge";
 import { abortContentCommands, resolveTab } from "./tab-target";
@@ -38,17 +38,34 @@ export const PAUSED_REFUSAL: CommandResult = {
   error: "paused: the user paused agent actions in the Inari MCP for Firefox toolbar popup",
 };
 
+/**
+ * A copy of PAUSED_REFUSAL: a caller may add to the result it gets (the URL
+ * report, the wire response), and the constant must stay as it is.
+ */
+function pausedRefusal(): CommandResult {
+  return { ...PAUSED_REFUSAL };
+}
+
+/**
+ * request_approval answers the pause itself: the pause withdraws the open
+ * approval requests (background.ts, cancelAllApprovals), and the answer
+ * `cancelled` is what makes the MCP Server close its request. A PAUSED
+ * refusal in its place would leave that request open.
+ */
+const ANSWERS_THE_PAUSE_ITSELF: ReadonlySet<string> = new Set(["requestApproval"]);
+
 export async function handleCommand(message: NativeMessage, source: CommandSource): Promise<CommandResult> {
-  // Commands from the user's own pages (the popup) are not the agent's: the
-  // pause switch does not apply to them.
-  const result = source === "host" ? await runHostCommand(message) : await runCommand(message, source);
+  const result = source === "host" ? await runHostCommand(message) : await runUnpausedCommand(message, source);
   postWireResponse(message, result);
 
   return result;
 }
 
-/** Check a command, then run its handler. */
-async function runCommand(message: NativeMessage, source: CommandSource): Promise<CommandResult> {
+/**
+ * A command from the user's own pages (the popup): not the agent's, so the
+ * pause switch does not apply to it. Check it, then run its handler.
+ */
+async function runUnpausedCommand(message: NativeMessage, source: CommandSource): Promise<CommandResult> {
   const checked = await checkCommand(message, source);
   return checked.kind === "refused" ? checked.result : runChecked(checked);
 }
@@ -57,36 +74,42 @@ async function runCommand(message: NativeMessage, source: CommandSource): Promis
  * A command from the Native Host. The pause switch is looked at when it
  * arrives (refused before anything runs, not shown as running), again after
  * the checks (they wait on the browser) and before the answer. A pause while
- * the handler runs answers at once (untilPaused).
+ * the handler runs answers at once (racePause). The command carries the
+ * count of pauses so far, so a content script that already got the abort of
+ * a later pause refuses it (content/abort.ts).
  */
 async function runHostCommand(message: NativeMessage): Promise<CommandResult> {
-  if (isPaused()) return { ...PAUSED_REFUSAL };
+  if (isPaused()) return pausedRefusal();
 
   const finishHostCommand = startHostCommand();
   try {
     const checked = await checkCommand(message, "host");
-    if (isPaused()) return { ...PAUSED_REFUSAL };
+    if (isPaused()) return pausedRefusal();
     if (checked.kind === "refused") return checked.result;
 
-    const result = await untilPaused(runChecked(checked), checked.context.tabId);
-    return isPaused() ? { ...PAUSED_REFUSAL } : result;
+    const running = runChecked({ ...checked, context: { ...checked.context, pauseCount: pauseCount() } });
+    if (ANSWERS_THE_PAUSE_ITSELF.has(checked.context.action ?? "")) return await running;
+    const result = await racePause(running, checked.context.tabId);
+    return isPaused() ? pausedRefusal() : result;
   } finally {
     finishHostCommand();
   }
 }
 
 /**
- * `running`, or PAUSED_REFUSAL as soon as agent actions are paused. The
- * handler is not waited for then: the content script of `tabId` is told to
- * stop, and its typing, waits and scroll_and_capture end at their next step
- * (content/abort.ts).
+ * `running`, or PAUSED_REFUSAL as soon as agent actions are paused, whichever
+ * comes first. The handler is not waited for then: the content script of
+ * `tabId` is told to stop, and its typing, waits and scroll_and_capture end
+ * at their next step (content/abort.ts). What runs in the background only
+ * (screenshot_all_tabs, reload_all, reload_by_url, the tab waits) is not
+ * stopped: it ends on its own, and its result is dropped.
  */
-function untilPaused(running: Promise<CommandResult>, tabId: number | undefined): Promise<CommandResult> {
+function racePause(running: Promise<CommandResult>, tabId: number | undefined): Promise<CommandResult> {
   const signal = pauseSignal();
   return new Promise((resolve) => {
     const onPause = (): void => {
       if (tabId !== undefined) void abortContentCommands(tabId);
-      resolve({ ...PAUSED_REFUSAL });
+      resolve(pausedRefusal());
     };
     signal.addEventListener("abort", onPause, { once: true });
     void running
@@ -140,6 +163,7 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
       readRules: policy.readRules,
       approvedHost: policy.approvedHost,
       approvedOrigin: approvedOriginFor(route.entry, target),
+      pauseCount: undefined,
       urlLists: policy.urlLists,
       navigateInNewTab: route.navigateInNewTab,
     },
@@ -157,27 +181,28 @@ function approvedOriginFor(entry: ActionDescriptor | undefined, target: browser.
   return approvalOriginOf(target.url) ?? undefined;
 }
 
-/** The action a command runs: its internal name and its row of the action table. */
-interface RoutedCommand {
-  kind: "routed";
+/** The internal action a command runs. */
+interface RoutedAction {
   /** Internal action name (undefined: a message without an action). */
   action: string | undefined;
-  entry: ActionDescriptor | undefined;
   /** fox_navigate with newTab, routed as createTab. */
   navigateInNewTab: boolean;
 }
 
+/** A routed command: its action and its row of the action table. */
+interface RoutedCommand extends RoutedAction {
+  kind: "routed";
+  entry: ActionDescriptor | undefined;
+}
+
 /**
- * The internal action of `resolved` (an internal name, wire.ts): fox_navigate
- * with newTab opens the URL in a fresh tab, so it is routed as createTab. The
- * scope check then treats it like fox_create_tab: the new tab is born inside
- * the agent container instead of requiring the current active tab to be in
- * scope.
+ * The internal action of `resolved` (an internal name, wire.ts), with
+ * fox_navigate and newTab routed as createTab: it opens the URL in a fresh
+ * tab, so the scope check treats it like fox_create_tab (the new tab is born
+ * inside the agent container instead of requiring the current active tab to
+ * be in scope). Exported for the contract tests' approval helper.
  */
-export function routeAction(
-  resolved: string | undefined,
-  data: NativeMessage["data"],
-): { action: string | undefined; navigateInNewTab: boolean } {
+export function routeAction(resolved: string | undefined, data: NativeMessage["data"]): RoutedAction {
   const navigateInNewTab = resolved === "navigate" && data?.newTab === true;
   return { action: navigateInNewTab ? "createTab" : resolved, navigateInNewTab };
 }

@@ -22,6 +22,9 @@ let paused = false;
  */
 let pauseController = new AbortController();
 
+/** How many times agent actions were paused since the background started. */
+let pausesSoFar = 0;
+
 /** Which of the two choices a change was about. */
 export type ControlChange = "consent" | "paused";
 
@@ -42,6 +45,16 @@ export function isPaused(): boolean {
 /** Aborted by the next pause (setPaused(true)). */
 export function pauseSignal(): AbortSignal {
   return pauseController.signal;
+}
+
+/**
+ * How many times agent actions were paused so far. A command carries the
+ * count of the moment it was let through, the abort the count of its pause:
+ * a command with a lower count than an abort was sent before that pause
+ * (tab-target.ts, content/abort.ts).
+ */
+export function pauseCount(): number {
+  return pausesSoFar;
 }
 
 /**
@@ -91,6 +104,7 @@ export async function setConsent(granted: boolean): Promise<ControlReply> {
 export async function setPaused(next: boolean): Promise<ControlReply> {
   paused = next;
   if (next) {
+    pausesSoFar++;
     pauseController.abort();
     pauseController = new AbortController();
   }
