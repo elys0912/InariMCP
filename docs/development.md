@@ -6,7 +6,7 @@ How the packages are built and checked. For using InariMCP, see the [README](../
 
 ## Requirements
 
-- Node.js 22.12 or later (or 24) for development: a requirement of Vitest. Running InariMCP needs only Node.js 18.
+- Node.js 24 and npm 11 for development (`.nvmrc`, `engines` in `package.json`): the versions of the AMO review environment, so the Extension package you build matches the submitted one. Running InariMCP itself needs only Node.js 18 (the installer's minimum).
 - `playwright` (an optional dependency of `packages/mcp-server`, installed by `npm ci` unless `--omit=optional` is given). `npm run build` needs it: the headless backend imports its types. `npm run test:e2e` and `npm run e2e:extension` also need its Firefox (`npx playwright install firefox`).
 
 ## Workflow
@@ -19,6 +19,8 @@ npm run build           # every workspace (see Build)
 npm run typecheck       # every workspace with a typecheck script (now: the Extension), then typecheck:tests
 npm test                # Vitest, all projects except e2e
 npm run lint:ext        # web-ext lint of packages/extension
+npm run pack:ext        # the Extension package for AMO, its file hashes, then web-ext lint (see Release)
+npm run pack:source     # the source package for AMO (see Release)
 npm run e2e:extension   # the Extension loads into Firefox as a temporary add-on
 ```
 
@@ -56,6 +58,21 @@ npm run e2e:extension   # the Extension loads into Firefox as a temporary add-on
 - The script lives outside `packages/extension` because web-ext packs every file there that `web-ext-config.mjs` does not ignore.
 
 `npm run lint:ext` runs `web-ext lint` from the repository root, where `web-ext-config.mjs` sets `sourceDir: 'packages/extension'` and the files to leave out (`src`, `package.json`, `tsconfig.json`, source maps, …).
+
+## Release
+
+Steps for a new version, for example 0.1.1. The AMO submission is the listed channel; the reviewer's build instructions are [`BUILD.md`](./BUILD.md), which the source package carries at its top level.
+
+1. **Version.** Set the same `version` in six files: `package.json`, `packages/shared/package.json`, `packages/mcp-server/package.json`, `packages/native-host/package.json`, `packages/extension/package.json` and `packages/extension/manifest.json`. `npm run build` and the test suite do not check this, `--doctor` does (its `versions` item). Edit by hand: `npm version` changes one `package.json` (the workspaces need `--workspaces` as well), never the `manifest.json`, and commits and tags on its own, before the changelog is final. Then run `npm install --package-lock-only` so `package-lock.json` carries the same version, and commit it. A version that has been submitted to AMO cannot be submitted again; the version in the manifest must be higher than the previous one.
+2. **Changelog.** In `docs/CHANGELOG.md` and `docs/CHANGELOG.ja.md`, rename "Unreleased" to the version and the date (`date` of the day), and check that every user-visible change is listed.
+3. **Checks.** `npm ci`, `npm run build`, `npm run typecheck`, `npm test`. CI runs the same on Ubuntu 24.04 ARM64 (`.github/workflows/ci.yml`).
+4. **Commit and tag.** Commit with a clean working tree (`git status` prints nothing), then `git tag v<version>`. `npm run pack:source` refuses a working tree that is not clean.
+5. **Packages.** `npm run pack:ext` and `npm run pack:source`. Both write to `web-ext-artifacts/` (ignored by git):
+   - `inari_mcp_for_firefox-<version>.zip` and `.sha256.txt`: the add-on and the SHA-256 of each file in it. `pack:ext` fails when `web-ext lint` reports any error or warning. Building twice gives the same hashes (`tests/scripts/pack-extension.test.ts`); a zip file itself differs by its file times, so compare the `.sha256.txt` files.
+   - `inari-mcp-source-<version>.zip`: the tracked files of `HEAD` and `BUILD.md`.
+6. **Submit.** Push the tag, make a GitHub release and attach the `.sha256.txt`. In the AMO Developer Hub, upload the add-on zip as a listed version, upload the source zip when asked whether the add-on uses bundled or minified code, and paste the text of `docs/amo/reviewer-notes.md` into Notes for Reviewers.
+
+CI does not upload the packages (to save Actions storage); make them locally at step 5.
 
 ## `@inari-mcp/shared`
 

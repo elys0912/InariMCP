@@ -465,6 +465,8 @@ npm run build             # 全パッケージ。拡張機能はscripts/build-ex
 npm run typecheck         # 拡張機能の型検査（tsc --noEmit）のあと、テストの型検査（typecheck:tests）
 npm test                  # Vitest（e2eを除く）
 npm run lint:ext          # packages/extensionのweb-ext lint
+npm run pack:ext          # AMOに出す拡張機能のzip、ファイルごとのSHA-256、web-ext lint（docs/BUILD.md）
+npm run pack:source       # AMOに出すソースのzip（作業ツリーがきれいなときだけ）
 npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（PlaywrightのFirefoxが必要）
 ```
 
@@ -472,7 +474,7 @@ npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（Pla
 
 `npm audit`が報告する11件は、すべて`web-ext`（devDependency）の依存ツリーにあり、容認している。監査は`npm audit --omit=dev`（0件）で行う。配布物（mcp-server、native-host、拡張機能の`.xpi`）にweb-extは含まれない。
 
-`npm test`はVitestのテスト（パッケージごとの単体テスト、`tests/contract/`の契約テスト、`tests/scripts/`のインストーラのテスト）を実行する。テストファイルごとに一時的なホームディレクトリを使うので、テストがあなたの`~/.inari-mcp/`に触れることはない。開発にはNode.js 22.12以上（または24）が必要（Vitestの要件）。InariMCPの実行自体はNode.js 18で足りる。
+`npm test`はVitestのテスト（パッケージごとの単体テスト、`tests/contract/`の契約テスト、`tests/scripts/`のインストーラのテスト）を実行する。テストファイルごとに一時的なホームディレクトリを使うので、テストがあなたの`~/.inari-mcp/`に触れることはない。開発にはNode.js 24とnpm 11が必要（AMOの審査環境と同じ版。`.nvmrc`）。InariMCPの実行自体はNode.js 18で足りる。
 
 `npm test`に含めていないエンドツーエンドの確認:
 

@@ -2,7 +2,7 @@
  * `node dist/index.js --doctor` (or `inari-mcp doctor`): run the checks of
  * checks.ts with the real environment and print one line per item.
  *
- *   OK    node            v24.16.0 (engines >=18.0.0)
+ *   OK    node            v24.16.0 (engines >=24.0.0)
  *   WARN  daemon          nothing answers on http://127.0.0.1:8765
  *         fix: normal when unused: ...
  *

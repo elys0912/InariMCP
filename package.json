@@ -26,6 +26,8 @@
     "test:firefox": "node scripts/test-firefox.mjs",
     "e2e:extension": "node scripts/e2e/extension-load.mjs",
     "lint:ext": "web-ext lint",
+    "pack:ext": "node scripts/pack-extension.mjs",
+    "pack:source": "node scripts/pack-source.mjs",
     "setup": "node scripts/install.mjs",
     "teardown": "node scripts/uninstall.mjs",
     "install:windows": "node scripts/install.mjs --build",
@@ -34,7 +36,7 @@
     "uninstall:unix": "node scripts/uninstall.mjs"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=24.0.0"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

@@ -13,3 +13,7 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - Renamed from KitsuneMCP to Inari MCP for Firefox. Add-on ID `inari-mcp@elys0912.github.io`, host manifest `inari_mcp`, state directory `~/.inari-mcp`, npm packages `@inari-mcp/*`.
 - Line endings in the repository are fixed to LF with `.gitattributes`, so the extension built on any OS is byte-identical to the one submitted for review.
 - `manifest.json`: `incognito` is `not_allowed` (the extension never sees private-browsing tabs), and `data_collection_permissions` declares `websiteContent` and `browsingActivity` (page content, screenshots and URLs are sent to the local native host and from there to the MCP client).
+
+### Added
+
+- Release tooling for addons.mozilla.org: `npm run pack:ext` builds the Extension zip, writes the SHA-256 of every file in it and runs `web-ext lint` (0 errors and 0 warnings required); `npm run pack:source` makes the source zip from the committed files. [`docs/BUILD.md`](./BUILD.md) tells a reviewer how to rebuild the add-on (Node.js 24, npm 11) and compare it with the submitted one. A GitHub Actions workflow builds, type-checks and tests on Ubuntu 24.04 ARM64.
