@@ -12,8 +12,6 @@ export const TIMEOUTS = {
   CLICK_AND_WAIT: 5_000,
   /** fox_highlight without duration. */
   HIGHLIGHT: 3_000,
-  /** Highlight of the context menu's "inspect element". */
-  INSPECT_HIGHLIGHT: 5_000,
 } as const;
 
 /** Pauses and poll intervals (ms). */
@@ -72,12 +70,8 @@ export const LIMITS = {
   TEXT_MATCHES: 50,
   /** Classes of one element in a generated selector. */
   SELECTOR_CLASSES: 2,
-  /** Changes kept per observer (oldest dropped). */
-  OBSERVER_CHANGES: 100,
   /** clickAndWait: changes returned. */
   CLICK_WAIT_CHANGES: 20,
-  /** Request body of a logged fetch / XHR. */
-  REQUEST_BODY: 1000,
   /** scroll_and_capture: the page counts as scrolled to the end this close (px). */
   SCROLL_END_SLACK: 10,
 } as const;
@@ -107,6 +101,3 @@ export const HIGHLIGHT_STYLE = {
 
 /** DOM id of the captcha wait banner (solveCaptcha, cancelHumanWait). */
 export const CAPTCHA_BANNER_ID = "__fox_captcha_banner";
-
-// Message types and log limits shared with the background (../wire-messages.ts).
-export { LOG_RECORD_MESSAGE, LOGGING_STATE_QUERY, LOG_ENTRY_LIMIT, LOG_TEXT_LIMIT } from "../wire-messages";

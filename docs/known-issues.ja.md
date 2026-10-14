@@ -12,7 +12,7 @@ InariMCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **URLパターンはパスと比べ、クエリやフラグメントとは比べない**: パスに`?`や`#`（`%3F`、`%23`も）を含むホストパターンは、決して一致しないので設定エラーになる。クエリ文字列で一致させたいときは、`re:`（URL全体に対する正規表現）で書くこと
 - **拡張機能とMCP Serverの版が違うと、コマンドが`config_error`で拒否されることがある**: MCP Serverがコマンドに付けたコンテナスコープやURLルールを拡張機能が使えないとき、拡張機能はその検査を飛ばして実行せず、コマンドを拒否する。拡張機能とMCP Serverは一緒に更新すること（READMEの「更新」を参照）
 - **共有daemonは、起動したプロセスの環境変数を使う**: `FOX_READ_ONLY`などの環境変数は、実際にdaemonを起動したプロセスのものだけが読まれる。Firefox（Native Host）が起動したdaemonはFirefoxの環境変数を引き継ぎ、`claude mcp add --env`の値は使われない。確実に効かせたい設定は`~/.inari-mcp/safety.json`に書くこと（READMEを参照）。セッションとdaemonで設定が食い違うと、セッション開始時と`fox_safety_status`の結果に警告が出る
-- **スクリプトの実行は、URLのリスト・保護対象サイトの承認・パスワードのマスクの対象外**: スクリプト系ツール（`fox_evaluate`、`fox_observer`）は既定で有効（`allow_script_execution: true`）で、ガードはスクリプトを実行するタブのURLだけを確認し、スクリプト自身が何をするかは確認しない。拡張機能経路ではスクリプトはコンテンツスクリプトの中で動くので、パスワード欄の値（`fox_read` / `fox_find`では`[MASKED]`になるもの）を読めるし、拡張機能のホスト権限（`<all_urls>`）で`fetch` / XHRの要求を、保護対象サイトにも`allowed_url_patterns`の外のサイトにも承認なしで送れる。エージェントにそれを許したくないときは、`safety.json`の`allow_script_execution`を`false`にする（または`FOX_ALLOW_SCRIPTS=0`）
+- **以前の版の`allow_script_execution`が残った`safety.json`では、すべてのツールが拒否される**: InariMCPにはスクリプト系ツールがないので、このキーは知らないキーになり、ファイルを使えない（ほかの知らないキーと同じく、安全側に倒す）。キーを消してdaemonを再起動する
 - **`blocked_url_patterns` / `allowed_url_patterns`はhttp(s)のタブにだけ効く**: ユーザーが開いた`file://`のページやブラウザ内部のページ（`about:`、`moz-extension://`）はサイトではないので、リストの対象にならない。許可リストのモードでも、そのようなタブは読み取り・操作の対象になる。`fox_navigate`ではそこへ行けない（http(s)と`about:blank`以外は`blocked_scheme`で拒否する）
 
 ## 人による承認
@@ -25,25 +25,18 @@ InariMCPの現行版（v0.1.x）で分かっている制約と注意点。
 
 ## ツール
 
-- **実装されていないツールがある**: 拡張機能経路では`fox_snapshot`、`fox_handle_dialog`、`mode: "chain"`または`"wait_and_act"`の`fox_evaluate`が`Not implemented in extension: <action>`を返す（`<action>`はツール名ではなく内部のアクション名）。以前の`fox_run_workflow`と`fox_audit_page`（既定のツール一覧にはない。`FOX_CAPS=legacy`では`[Deprecated]`付きで一覧に出る）はどのバックエンドでも未実装。READMEの「ツールの対応状況」を参照
-- **DOMを扱うツールはトップフレームでだけ動く**: 拡張機能経路の`fox_click`、`fox_type`、`by: "selector"`の`fox_find`、`fox_read`、`fox_evaluate`、ログ収集のツール、`fox_wait`は、タブのトップの文書に対して動く。iframeやshadow DOMの中には届かない（`text`での要素の検索もそこは探さない）。`by: "text"`の`fox_find`（`browser.find`）はすべてのフレームを探す
+- **実装されていないツールがある**: 拡張機能経路では`fox_snapshot`と`fox_handle_dialog`が`Not implemented in extension: <action>`を返す（`<action>`はツール名ではなく内部のアクション名）。以前の`fox_run_workflow`と`fox_audit_page`（既定のツール一覧にはない。`FOX_CAPS=legacy`では`[Deprecated]`付きで一覧に出る）はどのバックエンドでも未実装。READMEの「ツールの対応状況」を参照
+- **DOMを扱うツールはトップフレームでだけ動く**: 拡張機能経路の`fox_click`、`fox_type`、`by: "selector"`の`fox_find`、`fox_read`、`fox_wait`は、タブのトップの文書に対して動く。iframeやshadow DOMの中には届かない（`text`での要素の検索もそこは探さない）。`by: "text"`の`fox_find`（`browser.find`）はすべてのフレームを探す
 - **クリック・入力・キー・ホバーは合成イベント**: `fox_click`、`fox_type`、`fox_press_key`、`action: "hover"`の`fox_interact`はページ内でDOMイベントを発行する（`isTrusted`は`false`）。実際のユーザー操作を必要とするページ（ポップアップを開く、クリップボードにアクセスする、一部のフレームワーク）では無視されることがあり、キーに対するブラウザの既定の動作（Tabでのフォーカス移動、スクロール）も起きない。例外はフォーム内の入力欄でのEnterで、本物のEnterと同じようにフォームを送信する。`fox_type`は1文字ごとに`delay`ミリ秒待つが、待ち時間の合計が10秒に収まるよう短くする
 - **`for: "navigation"`の`fox_wait`は呼び出した後に終わったナビゲーションだけを待つ**: すでに終わったナビゲーション（クリックの直後など）は数えないので、速いナビゲーションはタイムアウトする。行き先が分かっているなら`for: "url"`を使う（すでにURLが一致していればすぐに返る）
-- **`for: "network_idle"`の`fox_wait`が見る通信は一部だけ**: 数えるのはトップフレームのページ自身のfetch / XHRだけ。そのページで最初に呼ぶ前から続いているリクエストと、`fox_evaluate`が出したリクエストは見えない
+- **`for: "network_idle"`の`fox_wait`が見る通信は一部だけ**: 数えるのはトップフレームのページ自身のfetch / XHRだけ。呼び出した時点で続いているリクエストは見えない
 - **`fox_screenshot`の引数には思いどおりに動かないものがある**: 画像はクライアントに保存したファイル（パスと`resource_link`）としてだけ届き、base64では返らない。そのため`saveToFile: false`では何も撮らずタブの情報だけを返し、`includeData`は効かない。既存の`filename`で保存するとファイルを上書きする（結果に`imageOverwritten`と警告が付く）。背景タブは切り替えずに撮るが、破棄済み（discarded）のタブは撮れず、そのタブに切り替える（`action: "switch"`の`fox_tab`）までエラーになる。`scope: "scroll_capture"`は画像を撮らず、スクロール位置ごとの要素の情報を返す
 - **`kind: "input"`の`fox_set_value`は何も変わらなくても成功を返す**: 入力欄・textarea・select・contenteditableのどれでもない要素や、その値のoptionがないselectに対しても成功になる
 - **ネイティブのダイアログ（alert / confirm / prompt）が開いている間、そのタブへのコマンドはタイムアウトする**: 拡張機能経路ではダイアログを見ることも操作することもできない
 - **コンテンツスクリプトが入れないページでは、読み取り・操作のツールが使えない**: FirefoxのJSONビューアー、`about:`のページ、addons.mozilla.org、ほかの拡張機能のページなど。InariMCPをインストール・更新する前に開いたタブにもコンテンツスクリプトがないので、再読み込みする。`fox_screenshot`や`fox_tabs`のように、tabs APIだけを使うツールは動く
-- **`mode: "script"`の`fox_evaluate`はコンテンツスクリプトの隔離された環境で動く**:
-  - ページのDOMは見えるが、ページ自身のスクリプトが定義した変数や関数（`window.myApp`など）は見えない
-  - スクリプト内の`console.log`はログに残らない。結果は戻り値（JSONにできる値）で返すこと
-  - スクリプトから呼んだ`fetch` / XHRはログに残らず、`for: "network_idle"`の`fox_wait`にも数えられない。ページ自身の通信を観察したいなら、`fox_click`でページ内のボタンを押す
-  - `script`はスクリプトとして評価され、最後の式の値が返る。トップレベルの`return`は使えない（`(() => { ...; return x; })()`のように包む）
-  - ヘッドレスモードではPlaywrightの`page.evaluate`でページ自身の環境で動くので、上記は当てはまらない
-
 ## ヘッドレスモード
 
-- **対応していないツールがある**: `fox_logging`と`fox_get_logs`、`fox_navigate`の`hard_refresh`、`fox_screenshot`の`all_tabs` / `scroll_capture`、コンテナ（`what: "containers"`の`fox_tabs`、`container`を付けた`fox_tab`）。`fox_request_approval`は常に失敗する（「人による承認」を参照）
+- **対応していないツールがある**: `fox_navigate`の`hard_refresh`、`fox_screenshot`の`all_tabs` / `scroll_capture`、コンテナ（`what: "containers"`の`fox_tabs`、`container`を付けた`fox_tab`）。`fox_request_approval`は常に失敗する（「人による承認」を参照）
 - **Playwrightは任意の依存**: 入っていないと（`npm ci --omit=optional`）、`FOX_HEADLESS=1`のdaemonは起動時に`daemon.log`へ`FOX_HEADLESS needs the optional dependency playwright, which is not installed`と出して終了する。拡張機能経路では不要。`npm run build`には必要（ヘッドレスバックエンドがその型をimportする）で、`npm run test:e2e`と`npm run e2e:extension`にも必要
 - **コンテナスコープを有効にするとすべて拒否される**: ヘッドレスモードにはFirefoxのコンテナがないので、`safety.json`で`container_scope.enabled`にしているとブラウザへのコマンドはすべて拒否される（daemonは起動時に警告を出す）。ヘッドレスのdaemonは、コンテナスコープを切った専用の`safety.json`（`FOX_SAFETY_CONFIG`）で起動すること
 - **無視される引数が多い**（結果の`warnings`に並ぶ）:
@@ -60,17 +53,8 @@ InariMCPの現行版（v0.1.x）で分かっている制約と注意点。
   - `fox_interact` `action: "highlight"`: `label`は無視（`duration`の間、赤い枠）
   - `fox_wait` `for: "network_idle"`: `idleTime`は無視
   - `fox_wait` `for: "navigation"`: `urlPattern`は無視（どの遷移でも待機を終える。`waitUntil`は反映する）
-  - `fox_observer`: `observerId`は無視（1ページに1つ）。`action: "remove"`は変更の件数だけを返す
 - **パスワード欄への`fox_press_key`はほとんどのキーを拒否する**: ヘッドレスのキー入力は実際の入力になるため、パスワード欄（`selector`の要素、なければフォーカス中の要素）には値を変えないキー（Enter・Tab・Escape・矢印キー・Home / End・PageUp / PageDown・修飾キー単独）だけを送る。それ以外のキーは、`allow_password_typing`が有効でない限り`fox_type`と同じく拒否する
 - **待たれていないダイアログは閉じられる**: どの`fox_handle_dialog`も待っていないダイアログ（alert / confirm / prompt）は2秒後に閉じられ（dismiss）、そのタブの次の結果で報告される。受け入れたいときは、ダイアログを開く操作の前に`fox_handle_dialog`を呼ぶ。`timeout`の間にダイアログが来なければ、そのタブの次のダイアログに備えて30秒間待機を続ける
-
-## ログ収集
-
-- **ページ読み込み直後のインラインスクリプトのログは取りこぼすことがある**: ログ収集が有効なタブでは、ナビゲーションのたびにコンテンツスクリプトを早い段階（`document_start`）で入れ直すが、これは非同期なので、`<head>` / `<body>`のインラインの`<script>`の`console.log`は、入れ直しが遅れると記録されない。後から動くコード（`setTimeout`など）のログは取れる（すべてのページを常にフックすれば確実に取れるが、プライバシーのためにそうしていない）
-- **ナビゲーション直前のログは失われることがある**: ログはタブごとに拡張機能のバックグラウンドに保持され、再読み込みやナビゲーションの後も残るが、ページは小さなまとまりで（250ミリ秒ごとに）送るので、古いページが閉じるときに送信中だったまとまりは失われる
-- **ログ収集はタブ単位で続く**: タブで一度`action: "start"`の`fox_logging`を呼ぶと、`action: "stop"`かタブを閉じるまで、サイトをまたいで記録を続ける（タブが保護対象サイトにある間は記録を止める）
-- **集めるのは一部の情報源だけ**: コンソールは`console.log` / `warn` / `error` / `info` / `debug`の呼び出しだけで、捕捉されなかった例外やブラウザ自身のエラーは含まない。ネットワークはページの`fetch` / XHRだけで、画像、スクリプト、CSS、WebSocketなどは含まない。どちらもトップフレームのものだけで、iframeの中のものは集めない。それぞれタブごとに最新の500件を残す
-- **ネットワークログの秘密情報は一部しか伏せない**: `authorization`、`cookie`、`set-cookie`、`proxy-authorization`、`x-api-key`のヘッダーはページの中で伏せる。daemonはさらに、ほかの認証情報のヘッダーや項目（APIキー、トークン、CSRFトークン、セッションID、パスワード、シークレット）と、URL・フォームの本文・JSONの本文の中の秘密の値（`token=`、`"password": "…"`、Bearer / Basicの値、JWT）も伏せる。それ以外のヘッダーとリクエスト / レスポンスの本文（先頭1000 / 5000文字）はそのまま記録する
 
 ## インストールと運用
 

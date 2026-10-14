@@ -287,7 +287,7 @@ export class HeadlessBrowser {
 
   /**
    * Name the tab a successful action ran on: its id and the URL it is on
-   * now (a click or a script may have navigated it), as the Extension adds
+   * now (a click may have navigated it), as the Extension adds
    * `url`. The guard (safety/guard.ts noteUrl / checkReachedUrl) records and
    * checks them. Values the action set itself are kept; a tab the action
    * closed is not reported.

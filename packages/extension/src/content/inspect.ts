@@ -1,5 +1,5 @@
 // Observation and display: page info, element lists, highlight, scroll
-// snapshots, full-page dimensions, inspect element, values and text.
+// snapshots, full-page dimensions, values and text.
 
 import { clipText } from "../text-clip";
 import { DEFAULTS, HIGHLIGHT_STYLE, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
@@ -10,7 +10,6 @@ import {
   getElementInfo,
   findElement,
   sleep,
-  generateXPath,
   notFoundError,
   isTextInput,
   isSelectElement,
@@ -276,46 +275,6 @@ export function captureFullPage(): Record<string, unknown> {
     scrollWidth: document.documentElement.scrollWidth,
     viewportHeight: window.innerHeight,
     viewportWidth: window.innerWidth,
-  };
-}
-
-/** Target of the last contextmenu event in this frame (see rememberContextTarget). */
-let lastContextTarget: Element | null = null;
-
-/**
- * contextmenu listener (registered by content.ts): remember the element the
- * menu was opened on. Firefox's contextMenus OnClickData has no pageX /
- * pageY, so the "inspect element" entry uses this element instead of a
- * point. event.target is retargeted to the shadow host, which a selector
- * can reach.
- */
-export function rememberContextTarget(event: { target: EventTarget | null }): void {
-  // Checked by nodeType below (a page element is not `instanceof Element` in this sandbox).
-  const target = event.target as Element | null;
-  lastContextTarget = target && target.nodeType === 1 ? target : null;
-}
-
-/** The remembered element while it is still in the document. */
-export function contextTarget(): Element | null {
-  return lastContextTarget && lastContextTarget.isConnected ? lastContextTarget : null;
-}
-
-export function inspectElement(): Record<string, unknown> {
-  const element = contextTarget();
-  if (!element) {
-    return { found: false };
-  }
-
-  highlightElement({
-    selector: generateSelector(element),
-    duration: TIMEOUTS.INSPECT_HIGHLIGHT,
-  });
-
-  return {
-    found: true,
-    element: getElementInfo(element),
-    selector: generateSelector(element),
-    xpath: generateXPath(element),
   };
 }
 

@@ -4,7 +4,6 @@
     "tool": "fox_screenshot",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -14,7 +13,6 @@
     "tool": "fox_screenshot",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -24,7 +22,6 @@
     "tool": "fox_screenshot",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -34,7 +31,6 @@
     "tool": "fox_screenshot",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -44,7 +40,6 @@
     "tool": "fox_snapshot",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -54,7 +49,6 @@
     "tool": "fox_snapshot",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -64,7 +58,6 @@
     "tool": "fox_get_elements",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -74,7 +67,6 @@
     "tool": "fox_get_elements",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -84,7 +76,6 @@
     "tool": "fox_get_text",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -94,7 +85,6 @@
     "tool": "fox_get_text",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -104,7 +94,6 @@
     "tool": "fox_find_text",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -114,7 +103,6 @@
     "tool": "fox_find_text",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -124,7 +112,6 @@
     "tool": "fox_get_page_info",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -134,7 +121,6 @@
     "tool": "fox_get_page_info",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -144,7 +130,6 @@
     "tool": "fox_get_tabs",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -154,7 +139,6 @@
     "tool": "fox_get_tabs",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -164,7 +148,6 @@
     "tool": "fox_get_tabs",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -174,7 +157,6 @@
     "tool": "fox_navigate",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -184,7 +166,6 @@
     "tool": "fox_navigate",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -194,7 +175,6 @@
     "tool": "fox_navigate",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -204,7 +184,6 @@
     "tool": "fox_navigate",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -214,7 +193,6 @@
     "tool": "fox_navigate",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -224,7 +202,6 @@
     "tool": "fox_navigate",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -234,7 +211,6 @@
     "tool": "fox_navigate",
     "default": "confirmation_required",
     "readOnly": "read_only",
-    "scriptsOff": "confirmation_required",
     "protectedTab": "confirmation_required",
     "blockedTab": "confirmation_required",
     "guardOff": null
@@ -244,7 +220,6 @@
     "tool": "fox_navigate",
     "default": "blocked_url",
     "readOnly": "blocked_url",
-    "scriptsOff": "blocked_url",
     "protectedTab": "blocked_url",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -254,7 +229,6 @@
     "tool": "fox_click",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -264,7 +238,6 @@
     "tool": "fox_click",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -274,7 +247,6 @@
     "tool": "fox_click",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -284,7 +256,6 @@
     "tool": "fox_click",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -294,7 +265,6 @@
     "tool": "fox_type",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -304,7 +274,6 @@
     "tool": "fox_type",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -314,7 +283,6 @@
     "tool": "fox_type",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -324,7 +292,6 @@
     "tool": "fox_type",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -334,7 +301,6 @@
     "tool": "fox_type",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -344,7 +310,6 @@
     "tool": "fox_press_key",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -354,7 +319,6 @@
     "tool": "fox_press_key",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -364,7 +328,6 @@
     "tool": "fox_press_key",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -374,7 +337,6 @@
     "tool": "fox_set_value",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -384,7 +346,6 @@
     "tool": "fox_set_value",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -394,7 +355,6 @@
     "tool": "fox_select_option",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -404,7 +364,6 @@
     "tool": "fox_select_option",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -414,7 +373,6 @@
     "tool": "fox_select_option",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -424,7 +382,6 @@
     "tool": "fox_hover",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -434,7 +391,6 @@
     "tool": "fox_scroll",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -444,7 +400,6 @@
     "tool": "fox_scroll",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -454,7 +409,6 @@
     "tool": "fox_scroll",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -464,7 +418,6 @@
     "tool": "fox_scroll",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -474,7 +427,6 @@
     "tool": "fox_highlight",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -484,7 +436,6 @@
     "tool": "fox_highlight",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -494,7 +445,6 @@
     "tool": "fox_create_tab",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -504,7 +454,6 @@
     "tool": "fox_create_tab",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -514,7 +463,6 @@
     "tool": "fox_create_tab",
     "default": "confirmation_required",
     "readOnly": "read_only",
-    "scriptsOff": "confirmation_required",
     "protectedTab": "confirmation_required",
     "blockedTab": "confirmation_required",
     "guardOff": null
@@ -524,7 +472,6 @@
     "tool": "fox_close_tab",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -534,7 +481,6 @@
     "tool": "fox_switch_tab",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -544,7 +490,6 @@
     "tool": "fox_wait_for_element",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -554,7 +499,6 @@
     "tool": "fox_wait_for_element",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -564,7 +508,6 @@
     "tool": "fox_wait_for_network_idle",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -574,7 +517,6 @@
     "tool": "fox_wait_for_network_idle",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -584,7 +526,6 @@
     "tool": "fox_wait_for_navigation",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -594,7 +535,6 @@
     "tool": "fox_wait_for_navigation",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -604,7 +544,6 @@
     "tool": "fox_wait_for_url",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -614,7 +553,6 @@
     "tool": "fox_wait_for_url",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -624,158 +562,7 @@
     "tool": "fox_wait_for_url",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "start_logging/default",
-    "tool": "fox_start_logging",
-    "default": null,
-    "readOnly": null,
-    "scriptsOff": null,
-    "protectedTab": null,
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "start_logging/options",
-    "tool": "fox_start_logging",
-    "default": null,
-    "readOnly": null,
-    "scriptsOff": null,
-    "protectedTab": null,
-    "blockedTab": null,
-    "guardOff": null
-  },
-  {
-    "id": "stop_logging/default",
-    "tool": "fox_stop_logging",
-    "default": null,
-    "readOnly": null,
-    "scriptsOff": null,
-    "protectedTab": null,
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "get_console_logs/default",
-    "tool": "fox_get_console_logs",
-    "default": null,
-    "readOnly": null,
-    "scriptsOff": null,
-    "protectedTab": null,
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "get_console_logs/options",
-    "tool": "fox_get_console_logs",
-    "default": null,
-    "readOnly": null,
-    "scriptsOff": null,
-    "protectedTab": null,
-    "blockedTab": null,
-    "guardOff": null
-  },
-  {
-    "id": "get_network_logs/default",
-    "tool": "fox_get_network_logs",
-    "default": null,
-    "readOnly": null,
-    "scriptsOff": null,
-    "protectedTab": null,
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "get_network_logs/options",
-    "tool": "fox_get_network_logs",
-    "default": null,
-    "readOnly": null,
-    "scriptsOff": null,
-    "protectedTab": null,
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "clear_logs/default",
-    "tool": "fox_clear_logs",
-    "default": null,
-    "readOnly": null,
-    "scriptsOff": null,
-    "protectedTab": null,
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "clear_logs/options",
-    "tool": "fox_clear_logs",
-    "default": null,
-    "readOnly": null,
-    "scriptsOff": null,
-    "protectedTab": null,
-    "blockedTab": null,
-    "guardOff": null
-  },
-  {
-    "id": "execute_script/default",
-    "tool": "fox_execute_script",
-    "default": null,
-    "readOnly": "read_only",
-    "scriptsOff": "scripts_disabled",
-    "protectedTab": "confirmation_required",
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "execute_script/tab",
-    "tool": "fox_execute_script",
-    "default": null,
-    "readOnly": "read_only",
-    "scriptsOff": "scripts_disabled",
-    "protectedTab": null,
-    "blockedTab": null,
-    "guardOff": null
-  },
-  {
-    "id": "eval_chain/default",
-    "tool": "fox_eval_chain",
-    "default": null,
-    "readOnly": "read_only",
-    "scriptsOff": "scripts_disabled",
-    "protectedTab": "confirmation_required",
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "inject_observer/default",
-    "tool": "fox_inject_observer",
-    "default": null,
-    "readOnly": "read_only",
-    "scriptsOff": "scripts_disabled",
-    "protectedTab": "confirmation_required",
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "inject_observer/options",
-    "tool": "fox_inject_observer",
-    "default": null,
-    "readOnly": "read_only",
-    "scriptsOff": "scripts_disabled",
-    "protectedTab": null,
-    "blockedTab": null,
-    "guardOff": null
-  },
-  {
-    "id": "remove_observer/default",
-    "tool": "fox_remove_observer",
-    "default": null,
-    "readOnly": "read_only",
-    "scriptsOff": "scripts_disabled",
-    "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
   },
@@ -784,7 +571,6 @@
     "tool": "fox_run_workflow",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -794,7 +580,6 @@
     "tool": "fox_audit_page",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -804,27 +589,6 @@
     "tool": "fox_audit_page",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
-    "protectedTab": null,
-    "blockedTab": null,
-    "guardOff": null
-  },
-  {
-    "id": "wait_and_act/default",
-    "tool": "fox_wait_and_act",
-    "default": null,
-    "readOnly": "read_only",
-    "scriptsOff": "scripts_disabled",
-    "protectedTab": "confirmation_required",
-    "blockedTab": "blocked_url",
-    "guardOff": null
-  },
-  {
-    "id": "wait_and_act/options",
-    "tool": "fox_wait_and_act",
-    "default": null,
-    "readOnly": "read_only",
-    "scriptsOff": "scripts_disabled",
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -834,7 +598,6 @@
     "tool": "fox_handle_dialog",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -844,7 +607,6 @@
     "tool": "fox_handle_dialog",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -854,7 +616,6 @@
     "tool": "fox_handle_dialog",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": "confirmation_required",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -864,7 +625,6 @@
     "tool": "fox_request_approval",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -874,7 +634,6 @@
     "tool": "fox_request_approval",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -884,7 +643,6 @@
     "tool": "fox_detect_captcha",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -894,7 +652,6 @@
     "tool": "fox_detect_captcha",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -904,7 +661,6 @@
     "tool": "fox_list_containers",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -914,7 +670,6 @@
     "tool": "fox_open_in_container",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -924,7 +679,6 @@
     "tool": "fox_open_in_container",
     "default": null,
     "readOnly": "read_only",
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null
@@ -934,7 +688,6 @@
     "tool": "fox_open_in_container",
     "default": "blocked_url",
     "readOnly": "blocked_url",
-    "scriptsOff": "blocked_url",
     "protectedTab": "blocked_url",
     "blockedTab": "blocked_url",
     "guardOff": null
@@ -944,7 +697,6 @@
     "tool": "fox_safety_status",
     "default": null,
     "readOnly": null,
-    "scriptsOff": null,
     "protectedTab": null,
     "blockedTab": null,
     "guardOff": null

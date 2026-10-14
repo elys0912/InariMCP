@@ -16,8 +16,8 @@
  * protectedUrlPatterns attachment, post-processing). Every tool is
  * reachable: FOX_CAPS is a per-session tools/list setting applied by each
  * relay, not a daemon-side restriction. Policy
- * restrictions live in the SafetyGuard (safety.json / FOX_READ_ONLY /
- * FOX_ALLOW_SCRIPTS) and apply to every caller alike.
+ * restrictions live in the SafetyGuard (safety.json / FOX_READ_ONLY) and
+ * apply to every caller alike.
  *
  * A relay identifies itself with the `X-Inari-Relay: <id>` header; its
  * calls are audited with transport `relay:<id>` (other callers: `http`).

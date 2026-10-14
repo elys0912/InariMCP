@@ -54,18 +54,12 @@ describe('SafetyGuard.check with an approval grant', () => {
     expect(g.check('fox_screenshot', shot, undefined, grantFor('fox_screenshot', shot))).toBeNull();
   });
 
-  it('never lifts other denials (read-only, scripts off, blocklist, scheme)', () => {
+  it('never lifts other denials (read-only, blocklist, scheme)', () => {
     const click = { selector: '#go' };
     const ro = guard({ readOnly: true });
     ro.noteUrl({ url: PROTECTED });
     expect(ro.check('fox_click', click, undefined, grantFor('fox_click', click)))
       .toMatchObject({ safetyDecision: 'read_only' });
-
-    const script = { script: '1' };
-    const noScripts = guard({ allowScriptExecution: false });
-    noScripts.noteUrl({ url: PROTECTED });
-    expect(noScripts.check('fox_execute_script', script, undefined, grantFor('fox_execute_script', script)))
-      .toMatchObject({ safetyDecision: 'scripts_disabled' });
 
     const nav = { url: PROTECTED };
     expect(

@@ -140,8 +140,6 @@ export const HEADLESS_IGNORED: Readonly<Partial<Record<BrowserAction, readonly I
   wait_for_navigation: [
     { key: 'urlPattern', note: "any navigation ends the wait; use fox_wait with for='url'" },
   ],
-  inject_observer: [{ key: 'observerId', note: 'one observer per page' }],
-  remove_observer: [{ key: 'observerId', note: 'one observer per page' }],
 };
 
 /** One warning per parameter that was set to something other than its default and is ignored. */

@@ -209,10 +209,7 @@ describe('attachSafetyMetadata: protectedUrlPatterns', () => {
     ['screenshot', 'fox_screenshot'],
     ['scroll_and_capture', 'fox_screenshot'],
     ['screenshot_all_tabs', 'fox_screenshot'],
-    ['start_logging', 'fox_start_logging'],
-    ['get_console_logs', 'fox_get_console_logs'],
-    ['get_network_logs', 'fox_get_network_logs'],
-  ] as const)('is attached to capture / logging action %s (%s)', (action, tool) => {
+  ] as const)('is attached to capture action %s (%s)', (action, tool) => {
     const cmd = command(action);
     attachSafetyMetadata(cmd, config(), tool, {});
     expect(cmd.protectedUrlPatterns).toEqual(WIRE);
@@ -265,7 +262,7 @@ describe('attachSafetyMetadata: protectedUrlPatterns', () => {
     expect(cmd.protectedUrlPatterns).toEqual(WIRE);
   });
 
-  it('is not attached to an observe tool outside the capture / logging actions', () => {
+  it('is not attached to an observe tool outside the capture actions', () => {
     const cmd = command('get_page_info');
     attachSafetyMetadata(cmd, config(), 'fox_get_page_info', {});
     expect(cmd.protectedUrlPatterns).toBeUndefined();

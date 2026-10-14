@@ -1,7 +1,7 @@
 /**
- * Contract: FOX_READ_ONLY (1 / true / yes) and FOX_ALLOW_SCRIPTS (0 / false /
- * no / off), read by safety/config.ts, reach the tool handlers: the guard
- * singleton is built from them, whatever safety.json says. Each case loads the modules afresh (vi.resetModules),
+ * Contract: FOX_READ_ONLY (1 / true / yes), read by safety/config.ts,
+ * reaches the tool handlers: the guard singleton is built from it, whatever
+ * safety.json says. Each case loads the modules afresh (vi.resetModules),
  * since the guard reads its config once per process. Which spellings count
  * (case, spaces, other values) is checked on loadConfig in
  * packages/mcp-server/tests/settings-normalize.test.ts.
@@ -23,7 +23,7 @@ beforeEach(() => {
   const configPath = path.join(tmpDir, 'safety.json');
   // safety.json allows everything; only the environment restricts.
   fs.writeFileSync(configPath, JSON.stringify({
-    audit_log: false, max_actions_per_minute: 0, read_only: false, allow_script_execution: true,
+    audit_log: false, max_actions_per_minute: 0, read_only: false,
   }));
   process.env['FOX_SAFETY_CONFIG'] = configPath;
   vi.resetModules();
@@ -62,16 +62,16 @@ describe('environment overrides through the handler path', () => {
     expect((await call('fox_click', { selector: '#a' })).decision).toBe('read_only');
     expect((await call('fox_tab', { action: 'close', tabId: 1 })).decision).toBe('read_only');
     expect((await call('fox_close_tab', { tabId: 1 })).decision).toBe('read_only');
-    expect((await call('fox_evaluate', { mode: 'script', script: '1' })).text).toMatch(/^fox_evaluate refused: safety guard is in read-only mode/);
+    expect((await call('fox_set_value', { selector: '#a', value: 'v' })).text).toMatch(/^fox_set_value refused: safety guard is in read-only mode/);
   });
 
-  it('FOX_ALLOW_SCRIPTS=0 refuses the script tools only', async () => {
+  // InariMCP has no script tools, so FOX_ALLOW_SCRIPTS is no setting any more.
+  it('FOX_ALLOW_SCRIPTS=0 changes nothing', async () => {
     process.env['FOX_ALLOW_SCRIPTS'] = '0';
-    expect(await status()).toMatchObject({ readOnly: false });
-    expect((await call('fox_evaluate', { mode: 'script', script: '1' })).decision).toBe('scripts_disabled');
-    expect((await call('fox_observer', { action: 'remove', observerId: 'o' })).decision).toBe('scripts_disabled');
-    expect((await call('fox_execute_script', { script: '1' })).decision).toBe('scripts_disabled');
-    // Not a script tool: refused later for another reason (no browser), not by the guard.
+    const policy = await status();
+    expect(policy).toMatchObject({ readOnly: false, configError: null });
+    expect(policy).not.toHaveProperty('allowScriptExecution');
+    // Refused later for another reason (no browser), not by the guard.
     expect((await call('fox_click', { selector: '#a' })).decision).toBeNull();
   });
 });

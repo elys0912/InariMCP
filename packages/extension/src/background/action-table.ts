@@ -31,9 +31,7 @@
 //                             `protectedUrlPatterns` before the handler runs
 //                             (unless the human approved that host).
 //                   "handler" the handler applies the patterns itself
-//                             (multi-tab actions skip protected tabs,
-//                             start_logging refuses on its own tab,
-//                             get_*_logs report a pause).
+//                             (multi-tab actions skip protected tabs).
 //                   "none"    no existing tab to check.
 //   needsTabId      (tab only) an explicit tabId is required; the active tab
 //                   is not used as a fallback.
@@ -45,10 +43,9 @@ import type { CompiledUrlRule } from "../url-rule";
 import { requestApproval } from "./approvals";
 import { listContainers, openInContainer } from "./container-scope";
 import { trackHumanWait, solveCaptcha, cancelHumanWait } from "./human-wait";
-import { startLoggingOnTab, stopLoggingOnTab, getLogsOfTab, clearLogsOfTab } from "./logging";
 import { hostStatus, recheckHost } from "./native-connection";
 import { navigateTo, navigateNewTab, navigateHistory } from "./navigation";
-import { getPageInfo, executeScript } from "./page-actions";
+import { getPageInfo } from "./page-actions";
 import { refreshTab, reloadAllTabs, reloadTabsByUrl } from "./reload";
 import { takeScreenshot, screenshotAllTabs } from "./screenshot";
 import { refreshSetupState } from "./setup-badge";
@@ -90,8 +87,6 @@ export interface ActionContext {
   scope: ScopeFilter | null;
   protectedPatterns: CompiledUrlRule[];
   urlLists: UrlLists;
-  /** Hostname a human approved for this one call. */
-  approvedHost: string | undefined;
   /** fox_navigate with newTab, routed as createTab. */
   navigateInNewTab: boolean;
 }
@@ -100,7 +95,7 @@ export type ActionHandler = (c: ActionContext) => Promise<CommandResult>;
 
 interface TabActionDescriptor {
   scope: "tab";
-  protectedCheck: "upfront" | "handler";
+  protectedCheck: "upfront";
   needsTabId?: true;
   skipUrlReport?: true;
   handler: ActionHandler;
@@ -168,7 +163,6 @@ const ACTIONS = {
   navigate: { scope: "tab", protectedCheck: "upfront", handler: (c) => navigateTo(c.tabId, optionsOf<{ url: string }>(c)) },
   getPageInfo: { scope: "tab", protectedCheck: "upfront", handler: (c) => getPageInfo(c.tabId) },
   getElements: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("getElements") },
-  executeScript: { scope: "tab", protectedCheck: "upfront", handler: (c) => executeScript(c.tabId, optionsOf<{ script: string }>(c)) },
   highlight: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("highlight") },
   waitForElement: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("waitForElement") },
 
@@ -230,8 +224,6 @@ const ACTIONS = {
   selectOption: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("selectOption") },
   hover: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("hover") },
   waitForChange: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("waitForChange") },
-  observeElement: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("observeElement") },
-  stopObserving: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("stopObserving") },
   scrollAndCapture: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("scrollAndCapture") },
   clickAndWait: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("clickAndWait") },
   pressKey: { scope: "tab", protectedCheck: "upfront", handler: toContentScript("pressKey") },
@@ -241,25 +233,6 @@ const ACTIONS = {
   // --- Tab waits ---
   waitForNavigation: { scope: "tab", protectedCheck: "upfront", handler: (c) => waitForNavigation(c.tabId, c.data) },
   waitForUrl: { scope: "tab", protectedCheck: "upfront", handler: (c) => waitForUrl(c.tabId, c.data) },
-
-  // --- Console / network logging ---
-  startLogging: {
-    scope: "tab",
-    protectedCheck: "handler",
-    handler: (c) => startLoggingOnTab(c.target, c.data, c.protectedPatterns, c.approvedHost),
-  },
-  stopLogging: { scope: "tab", protectedCheck: "upfront", handler: (c) => stopLoggingOnTab(c.target) },
-  getConsoleLogs: {
-    scope: "tab",
-    protectedCheck: "handler",
-    handler: (c) => getLogsOfTab("getConsoleLogs", c.target, c.data, c.protectedPatterns),
-  },
-  getNetworkLogs: {
-    scope: "tab",
-    protectedCheck: "handler",
-    handler: (c) => getLogsOfTab("getNetworkLogs", c.target, c.data, c.protectedPatterns),
-  },
-  clearLogs: { scope: "tab", protectedCheck: "upfront", handler: (c) => clearLogsOfTab(c.target, c.data) },
 
   // --- Containers / find (snake_case internal names) ---
   list_containers: { scope: "self", protectedCheck: "none", handler: (c) => listContainers(c.scope) },

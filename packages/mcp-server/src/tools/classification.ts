@@ -8,15 +8,13 @@ import { OPERATION_NAMES, TOOL_SCHEMAS, isOperationName } from './schemas.js';
 import type { OperationName, ToolClassification, ToolDefinition } from './schemas.js';
 
 /**
- * Classes the guard lets through without the read-only (Layer 5), script
- * (Layer 6) and protected-domain (Layer 7) checks. None of them changes
- * page data.
+ * Classes the guard lets through without the read-only (Layer 5) and
+ * protected-domain (Layer 7) checks. None of them changes page data.
  */
 const GUARD_PASS_THROUGH: ReadonlySet<ToolClassification> = new Set<ToolClassification>([
   'observe',
   'interact',
   'wait',
-  'logging',
   'human',
 ]);
 
@@ -35,11 +33,6 @@ export function isOperationIn(set: ReadonlySet<OperationName>, name: string): bo
 /** Tools the guard treats as observation (see GUARD_PASS_THROUGH). */
 export const OBSERVE_TOOLS: ReadonlySet<OperationName> = namesWhere((def) =>
   GUARD_PASS_THROUGH.has(def.classification),
-);
-
-/** Tools refused when allowScriptExecution is false. */
-export const SCRIPT_TOOLS: ReadonlySet<OperationName> = namesWhere(
-  (def) => def.classification === 'script',
 );
 
 /**
@@ -62,10 +55,8 @@ const ANNOTATIONS_BY_CLASS: Record<ToolClassification, ToolAnnotations> = {
   observe: { readOnlyHint: true, destructiveHint: false },
   wait: { readOnlyHint: true, destructiveHint: false },
   interact: { readOnlyHint: false, destructiveHint: false },
-  logging: { readOnlyHint: false, destructiveHint: false },
   human: { readOnlyHint: false, destructiveHint: false },
   act: { readOnlyHint: false, destructiveHint: true },
-  script: { readOnlyHint: false, destructiveHint: true },
   workflow: { readOnlyHint: false, destructiveHint: true },
 };
 

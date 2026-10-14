@@ -188,75 +188,6 @@
     }
   },
   {
-    "id": "known/execute_script",
-    "tool": "fox_execute_script",
-    "args": {
-      "script": "1"
-    },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_execute_script",
-      "host": "bank.example.test"
-    },
-    "command": {
-      "action": "execute_script",
-      "data": {
-        "script": "1"
-      },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
-      "approvedHost": "bank.example.test"
-    }
-  },
-  {
-    "id": "known/inject_observer",
-    "tool": "fox_inject_observer",
-    "args": {},
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_inject_observer",
-      "host": "bank.example.test"
-    },
-    "command": {
-      "action": "inject_observer",
-      "data": {
-        "selector": "body",
-        "observeAttributes": true,
-        "observeChildList": true,
-        "observeSubtree": true
-      },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
-      "approvedHost": "bank.example.test"
-    }
-  },
-  {
     "id": "known/handle_dialog",
     "tool": "fox_handle_dialog",
     "args": {
@@ -368,78 +299,6 @@
     }
   },
   {
-    "id": "known/public_script",
-    "tool": "fox_evaluate",
-    "args": {
-      "mode": "script",
-      "script": "1"
-    },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_evaluate",
-      "host": "bank.example.test"
-    },
-    "command": {
-      "action": "execute_script",
-      "data": {
-        "script": "1"
-      },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
-      "approvedHost": "bank.example.test"
-    }
-  },
-  {
-    "id": "known/public_observer",
-    "tool": "fox_observer",
-    "args": {
-      "action": "inject"
-    },
-    "refusedFirst": [],
-    "approval": {
-      "toolName": "fox_observer",
-      "host": "bank.example.test"
-    },
-    "command": {
-      "action": "inject_observer",
-      "data": {
-        "selector": "body",
-        "observeAttributes": true,
-        "observeChildList": true,
-        "observeSubtree": true
-      },
-      "protectedUrlRules": [
-        {
-          "kind": "host",
-          "source": "bank.example.test",
-          "scheme": null,
-          "hosts": "tree",
-          "host": "bank.example.test",
-          "port": null,
-          "path": null,
-          "pathMatch": "loose"
-        }
-      ],
-      "protectedUrlPatterns": [
-        "^[a-z][a-z0-9+.-]*:\\/\\/(?:[^/?#]*@)?(?:[^/?#@]+\\.)?bank\\.example\\.test\\.?(?::\\d+)?(?:[/?#]|$)"
-      ],
-      "approvedHost": "bank.example.test"
-    }
-  },
-  {
     "id": "browser/click",
     "tool": "fox_click",
     "args": {
@@ -478,22 +337,24 @@
     }
   },
   {
-    "id": "browser/execute_script",
-    "tool": "fox_execute_script",
+    "id": "browser/select_option",
+    "tool": "fox_select_option",
     "args": {
-      "script": "1"
+      "selector": "select",
+      "value": "a"
     },
     "refusedFirst": [
-      "execute_script"
+      "select_option"
     ],
     "approval": {
-      "toolName": "fox_execute_script",
+      "toolName": "fox_select_option",
       "host": "bank.example.test"
     },
     "command": {
-      "action": "execute_script",
+      "action": "select_option",
       "data": {
-        "script": "1"
+        "selector": "select",
+        "value": "a"
       },
       "protectedUrlRules": [
         {
@@ -514,23 +375,27 @@
     }
   },
   {
-    "id": "browser/public_script",
-    "tool": "fox_evaluate",
+    "id": "browser/public_select",
+    "tool": "fox_set_value",
     "args": {
-      "mode": "script",
-      "script": "1"
+      "kind": "select",
+      "selector": "select",
+      "option": {
+        "value": "a"
+      }
     },
     "refusedFirst": [
-      "execute_script"
+      "select_option"
     ],
     "approval": {
-      "toolName": "fox_evaluate",
+      "toolName": "fox_set_value",
       "host": "bank.example.test"
     },
     "command": {
-      "action": "execute_script",
+      "action": "select_option",
       "data": {
-        "script": "1"
+        "selector": "select",
+        "value": "a"
       },
       "protectedUrlRules": [
         {

@@ -9,9 +9,9 @@
  * Only playwright types are imported here (see headless-lifecycle.test.ts).
  */
 
-import type { BrowserContext, ConsoleMessage, ElementHandle, Page } from 'playwright';
+import type { BrowserContext, ElementHandle, Page } from 'playwright';
 import { z } from 'zod';
-import { BrowserActionSchema, isRecord, type BrowserAction } from '@inari-mcp/shared';
+import { BrowserActionSchema, type BrowserAction } from '@inari-mcp/shared';
 import { screenshotStem } from '@inari-mcp/shared/node';
 import { countOccurrences, filterAriaSnapshot, parseArgs } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
@@ -26,12 +26,8 @@ import {
   HIGHLIGHT_OUTLINE,
   HISTORY_TIMEOUT_MS,
   NAVIGATE_TIMEOUT_MS,
-  SCRIPT_TIMEOUT_MS,
   SELECT_OPTION_TIMEOUT_MS,
   SNAPSHOT_MAX_CHARS,
-  WAIT_AND_ACT_DEFAULT_MS,
-  WAIT_AND_ACT_POLL_MIN_MS,
-  WAIT_AND_ACT_POLL_MS,
   WAIT_GIVE_UP_SLACK_MS,
 } from './limits.js';
 import * as fs from 'node:fs';
@@ -151,7 +147,7 @@ export const NO_TAB_ERROR =
   "No headless tab is open: open one with fox_tab action 'create' or fox_navigate with newTab: true";
 
 // ---------------------------------------------------------------------------
-// Bounded page scripts
+// Bounded waits
 // ---------------------------------------------------------------------------
 
 /** What bounds a wait: a deadline (Date.now() value) and an optional abort. */
@@ -161,9 +157,8 @@ interface Bound {
 }
 
 /**
- * `work` (a page.evaluate(), which has no timeout of its own), given up
- * after `ms`, at `bound.deadline` or when `bound.signal` aborts, whichever
- * comes first. Giving up does not stop the script in the page; it frees
+ * `work` given up after `ms`, at `bound.deadline` or when `bound.signal`
+ * aborts, whichever comes first. Giving up does not stop the work; it frees
  * execute()'s lock for the next command.
  */
 function bounded<T>(work: Promise<T>, bound: Bound, ms: number, what: string): Promise<T> {
@@ -189,11 +184,6 @@ function bounded<T>(work: Promise<T>, bound: Bound, ms: number, what: string): P
     bound.signal?.addEventListener('abort', onAbort, { once: true });
     work.then((v) => { done(); resolve(v); }, (e: unknown) => { done(); reject(e); });
   });
-}
-
-/** page.evaluate(script), bounded by SCRIPT_TIMEOUT_MS and `bound`. */
-function evaluateScript(page: Page, script: string, bound: Bound, what = 'The script'): Promise<unknown> {
-  return bounded(page.evaluate(script), bound, SCRIPT_TIMEOUT_MS, what);
 }
 
 /**
@@ -546,15 +536,6 @@ const getElements: ActionHandler = async ({ page, args }) => {
   return { success: true, elements: found.elements, count: found.count };
 };
 
-// --- execute_script ---
-const scriptArgs = z.object({ script: z.string() });
-
-const executeScript: ActionHandler = async (c) => {
-  const { script } = parseArgs(scriptArgs, c.args, 'execute_script');
-  const result = await evaluateScript(c.page, script, c);
-  return { success: true, result };
-};
-
 // --- wait_for_element ---
 const waitForElementArgs = selectorArgs.merge(timeoutArgs).extend({ visible: z.boolean() });
 
@@ -811,154 +792,6 @@ const findText: ActionHandler = async ({ page, args }) => {
   return { success: true, query, count: countOccurrences(text, query, caseSensitive, entireWord) };
 };
 
-// --- eval_chain ---
-const evalChainArgs = z.object({
-  steps: z.array(z.object({
-    script: z.string(),
-    label: z.string().optional(),
-    captureConsole: z.boolean(),
-    stopOnError: z.boolean(),
-  })),
-});
-
-const evalChain: ActionHandler = async (c) => {
-  const { page } = c;
-  const { steps } = parseArgs(evalChainArgs, c.args, 'eval_chain');
-  const results: Record<string, unknown>[] = [];
-  let prev: unknown = null;
-  for (const [i, step] of steps.entries()) {
-    const label = step.label ?? `step_${i}`;
-    const consoleMsgs: Array<{ type: string; text: string }> = [];
-    const listener = (msg: ConsoleMessage): void => {
-      consoleMsgs.push({ type: msg.type(), text: msg.text() });
-    };
-    if (step.captureConsole) page.on('console', listener);
-
-    try {
-      const wrapped = `(function($prev) { return (${step.script}); })(${JSON.stringify(prev)})`;
-      const result = await evaluateScript(page, wrapped, c, `Step ${label}`);
-      prev = result;
-      results.push({ label, result, console: consoleMsgs, error: null });
-    } catch (e) {
-      results.push({
-        label,
-        result: null,
-        console: consoleMsgs,
-        error: e instanceof Error ? e.message : String(e),
-      });
-      if (step.stopOnError) break;
-    } finally {
-      if (step.captureConsole) page.removeListener('console', listener);
-    }
-  }
-  return { success: true, steps: results, final: prev };
-};
-
-// --- wait_and_act ---
-const waitAndActArgs = z.object({
-  condition: z.string(),
-  actionScript: z.string(),
-  pollIntervalMs: z.number(),
-  timeoutMs: z.number(),
-});
-
-/** pollIntervalMs as a usable interval: positive, at least WAIT_AND_ACT_POLL_MIN_MS. */
-function pollInterval(v: number): number {
-  return v > 0 ? Math.max(WAIT_AND_ACT_POLL_MIN_MS, v) : WAIT_AND_ACT_POLL_MS;
-}
-
-const waitAndAct: ActionHandler = async (c) => {
-  const { page } = c;
-  const a = parseArgs(waitAndActArgs, c.args, 'wait_and_act');
-  const pollMs = pollInterval(a.pollIntervalMs);
-  const timeoutMs = a.timeoutMs > 0 ? a.timeoutMs : WAIT_AND_ACT_DEFAULT_MS;
-  const startedAt = Date.now();
-  // Measured time, not the sum of the poll intervals: a slow condition
-  // counts, and the loop ends whatever the interval is.
-  const polling: Bound = { deadline: Math.min(startedAt + timeoutMs, c.deadline), signal: c.signal };
-  // The last error of the condition, reported when it is never met (a
-  // condition that cannot run fails the same way as one that stays false).
-  let lastError: string | null = null;
-  for (;;) {
-    let ready = false;
-    try {
-      ready = Boolean(await evaluateScript(page, a.condition, polling, 'The condition'));
-      lastError = null;
-    } catch (e) {
-      // The condition threw or hung: keep polling. An attempt cut short by
-      // the end of the wait keeps the earlier, more telling error.
-      if (lastError === null || Date.now() < polling.deadline) {
-        lastError = e instanceof Error ? e.message : String(e);
-      }
-    }
-    if (ready) {
-      // Run once: a failing action is reported, not retried.
-      const result = await evaluateScript(page, a.actionScript, c, 'The action');
-      return { success: true, result, elapsed_ms: Date.now() - startedAt };
-    }
-    if (c.signal?.aborted === true) {
-      return { success: false, error: 'wait_and_act was cancelled: the caller gave up' };
-    }
-    const left = polling.deadline - Date.now();
-    if (left <= 0) break;
-    await new Promise((r) => setTimeout(r, Math.min(pollMs, left)));
-  }
-  // The caller's deadline may have ended the wait before timeoutMs.
-  const waited = polling.deadline - startedAt;
-  const why = waited < timeoutMs ? ` (the caller's deadline, before timeoutMs ${timeoutMs}ms)` : '';
-  const last = lastError !== null ? `; last condition error: ${lastError}` : '';
-  return { success: false, error: `Condition not met within ${waited}ms${why}${last}` };
-};
-
-// --- inject_observer ---
-const injectObserverArgs = z.object({
-  selector: z.string(),
-  observeAttributes: z.boolean(),
-  observeChildList: z.boolean(),
-  observeSubtree: z.boolean(),
-});
-
-const injectObserver: ActionHandler = async ({ page, args }) => {
-  const a = parseArgs(injectObserverArgs, args, 'inject_observer');
-  const script = `(function() {
-    if (window.__fox_observer) window.__fox_observer.disconnect();
-    window.__fox_mutations = window.__fox_mutations || [];
-    const target = document.querySelector(${JSON.stringify(a.selector)}) || document.body;
-    window.__fox_observer = new MutationObserver(mutations => {
-      mutations.forEach(m => window.__fox_mutations.push({
-        type: m.type,
-        target: m.target.tagName + (m.target.id ? '#' + m.target.id : ''),
-        addedNodes: m.addedNodes.length,
-        removedNodes: m.removedNodes.length,
-        attributeName: m.attributeName,
-        ts: Date.now()
-      }));
-    });
-    window.__fox_observer.observe(target, {
-      attributes: ${a.observeAttributes},
-      childList: ${a.observeChildList},
-      subtree: ${a.observeSubtree}
-    });
-    return 'observer installed on ' + target.tagName;
-  })()`;
-  const result = await page.evaluate(script);
-  return { success: true, message: result };
-};
-
-// --- remove_observer ---
-const removeObserver: ActionHandler = async ({ page }) => {
-  const result = await page.evaluate(`(function() {
-    if (window.__fox_observer) {
-      window.__fox_observer.disconnect();
-      window.__fox_observer = null;
-    }
-    const count = (window.__fox_mutations || []).length;
-    window.__fox_mutations = [];
-    return { disconnected: true, mutationsFlushed: count };
-  })()`);
-  return { success: true, ...(isRecord(result) ? result : {}) };
-};
-
 // --- request_approval ---
 const requestApproval: TablessHandler = async () => {
   return {
@@ -1069,7 +902,6 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   get_elements: dispatch(getElements),
   wait_for_element: dispatch(waitForElement),
   highlight: dispatch(highlight),
-  execute_script: dispatch(executeScript),
 
   // --- tab management ---
   get_tabs: tabless(getTabs),
@@ -1094,24 +926,13 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   go_back: dispatch(goBack),
   go_forward: dispatch(goForward),
 
-  // --- wait / observe ---
+  // --- wait ---
   wait_for_change: UNSUPPORTED,
   wait_for_network_idle: dispatch(waitForNetworkIdle),
-  observe_element: UNSUPPORTED,
-  stop_observing: UNSUPPORTED,
   scroll_and_capture: UNSUPPORTED,
   click_and_wait: UNSUPPORTED,
 
-  // --- console / network logging (not supported in headless mode) ---
-  start_logging: UNSUPPORTED,
-  stop_logging: UNSUPPORTED,
-  get_console_logs: UNSUPPORTED,
-  get_network_logs: UNSUPPORTED,
-  clear_logs: UNSUPPORTED,
-
-  // --- advanced scripting ---
-  eval_chain: dispatch(evalChain),
-  wait_and_act: dispatch(waitAndAct),
+  // --- keyboard / text ---
   press_key: dispatch(pressKey),
   get_text: dispatch(getText),
 
@@ -1121,7 +942,6 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   solve_captcha: dispatch(solveCaptcha),
   cancel_human_wait: UNSUPPORTED,
   audit_page: UNSUPPORTED,
-  inject_observer: dispatch(injectObserver),
 
   // --- P3-3 ---
   snapshot: dispatch(snapshot),
@@ -1131,7 +951,6 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   open_in_container: tabless(containersUnsupported),
   wait_for_navigation: dispatch(waitForNavigation),
   wait_for_url: dispatch(waitForUrl),
-  remove_observer: dispatch(removeObserver),
 };
 
 /** The route of `action`; actions that are no BrowserAction are unsupported. */

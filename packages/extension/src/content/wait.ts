@@ -1,19 +1,14 @@
-// Waits and observers: element, DOM change, network idle, mutation
-// observers, click and wait.
+// Waits: element, DOM change, network idle, click and wait.
 
 import { DELAYS, LIMITS, TIMEOUTS } from "./constants";
-import { findElement, isVisible, getElementInfo, sleep, generateSelector } from "./dom";
+import { findElement, isVisible, getElementInfo, sleep } from "./dom";
 import { performClick } from "./input";
-import { ensurePageHooks } from "./log-store";
-import { activeRequestCount, interceptionStatus } from "./page-hooks";
+import { activeRequestCount, beginNetworkCount, interceptionStatus } from "./page-hooks";
 import type {
   ChangeType,
   WaitOptions,
-  ObserverRecord,
   WaitForChangeOptions,
   NetworkIdleOptions,
-  ObserveOptions,
-  MutationChange,
   ClickAndWaitOptions,
 } from "./types";
 
@@ -37,19 +32,14 @@ export async function waitForElement(
   throw new Error(`Element not found within ${timeout}ms`);
 }
 
-const activeObservers = new Map<string, ObserverRecord>();
-
-/** Generated observer ids: a counter makes them unique within the page. */
-let observerSeq = 0;
-
 const CHANGE_TYPES: readonly ChangeType[] = ["childList", "attributes", "text"];
 
 export async function waitForChange(
   options: WaitForChangeOptions,
 ): Promise<Record<string, unknown>> {
   const timeout = options.timeout || TIMEOUTS.DEFAULT;
-  // A selector that matches nothing fails like observeElement, instead of
-  // silently watching the whole body.
+  // A selector that matches nothing fails, instead of silently watching the
+  // whole body.
   const target = options.selector
     ? document.querySelector(options.selector)
     : document.body;
@@ -144,9 +134,17 @@ export async function waitForChange(
 export async function waitForNetworkIdle(
   options: NetworkIdleOptions,
 ): Promise<Record<string, unknown>> {
-  // Counting needs the page hooks. Requests already in flight before they
-  // were installed are not seen.
-  ensurePageHooks();
+  // The counting hooks are in for this wait only (page-hooks.ts). Requests
+  // already in flight when it starts are not seen.
+  const endCount = beginNetworkCount();
+  try {
+    return await waitUntilIdle(options);
+  } finally {
+    endCount();
+  }
+}
+
+async function waitUntilIdle(options: NetworkIdleOptions): Promise<Record<string, unknown>> {
   const timeout = options.timeout || TIMEOUTS.NETWORK_IDLE;
   const idleTime = options.idleTime || DELAYS.NETWORK_IDLE_TIME;
   const startTime = Date.now();
@@ -164,7 +162,7 @@ export async function waitForNetworkIdle(
         idle: true,
         waitedMs: Date.now() - startTime,
         pendingRequests: 0,
-        interception: { fetch: interceptionStatus().fetch, xhr: interceptionStatus().xhr },
+        interception: interceptionStatus(),
       };
     }
     await sleep(DELAYS.POLL);
@@ -181,102 +179,7 @@ export async function waitForNetworkIdle(
     timedOut: true,
     waitedMs: timeout,
     pendingRequests: activeRequestCount(),
-    interception: { fetch: interceptionStatus().fetch, xhr: interceptionStatus().xhr },
-  };
-}
-
-/**
- * Selector of a mutation's target. A characterData change targets a text
- * node, which has no selector of its own: its parent element stands for it
- * ("text" when it has none, e.g. directly under a shadow root).
- */
-function mutationTargetSelector(node: Node): string {
-  const element = isElementNode(node) ? node : node.parentElement;
-  return element ? generateSelector(element) : "text";
-}
-
-function isElementNode(node: Node): node is Element {
-  return node.nodeType === Node.ELEMENT_NODE;
-}
-
-export function observeElement(
-  options: ObserveOptions,
-): Record<string, unknown> {
-  const target = document.querySelector(options.selector);
-  if (!target) {
-    throw new Error(`Element not found: ${options.selector}`);
-  }
-
-  // Date.now() alone repeats within a millisecond, and a repeated id
-  // silently replaces the earlier observer: the page-wide counter keeps
-  // generated ids unique (the map of observers is per page too).
-  const observerId = options.observerId || `obs_${Date.now()}_${++observerSeq}`;
-
-  activeObservers.get(observerId)?.observer.disconnect();
-
-  const changes: MutationChange[] = [];
-
-  const observer = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-      changes.push({
-        type: mutation.type,
-        timestamp: Date.now(),
-        target: mutationTargetSelector(mutation.target),
-        // Added / removed text nodes have no tagName: reported as "text".
-        addedNodes: Array.from(mutation.addedNodes)
-          .map((n) => (n as Element).tagName?.toLowerCase() || "text")
-          .filter(Boolean),
-        removedNodes: Array.from(mutation.removedNodes)
-          .map((n) => (n as Element).tagName?.toLowerCase() || "text")
-          .filter(Boolean),
-        attributeName: mutation.attributeName,
-        oldValue: mutation.oldValue,
-      });
-
-      if (changes.length > LIMITS.OBSERVER_CHANGES) changes.shift();
-    }
-  });
-
-  const attributes = options.observeAttributes !== false;
-  observer.observe(target, {
-    childList: options.observeChildList !== false,
-    subtree: options.observeSubtree !== false,
-    attributes,
-    characterData: true,
-    attributeOldValue: attributes,
-  });
-
-  activeObservers.set(observerId, {
-    observer,
-    changes,
-    target: options.selector,
-  });
-
-  return { observing: true, observerId, target: options.selector };
-}
-
-export function stopObserving(options: {
-  observerId: string;
-}): Record<string, unknown> {
-  const observerId = options.observerId;
-
-  const record = activeObservers.get(observerId);
-  if (!record) {
-    throw new Error(
-      `No observer '${observerId}' on this page (observers end when the page ` +
-      "reloads or navigates)",
-    );
-  }
-
-  record.observer.disconnect();
-  activeObservers.delete(observerId);
-
-  return {
-    stopped: true,
-    observerId,
-    target: record.target,
-    changes: record.changes,
-    totalChanges: record.changes.length,
+    interception: interceptionStatus(),
   };
 }
 

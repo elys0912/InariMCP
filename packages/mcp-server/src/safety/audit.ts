@@ -13,7 +13,6 @@ export type AuditDecision =
   | 'blocked_url'
   | 'not_allowlisted'
   | 'read_only'
-  | 'scripts_disabled'
   | 'confirmation_required'
   | 'observed_on_protected_domain'
   | 'out_of_scope'

@@ -22,7 +22,6 @@ export const BROWSER_ACTIONS = [
   'get_elements',
   'wait_for_element',
   'highlight',
-  'execute_script',
 
   // --- Tab management ---
   'get_tabs',
@@ -50,21 +49,10 @@ export const BROWSER_ACTIONS = [
   // --- Wait / observe ---
   'wait_for_change',
   'wait_for_network_idle',
-  'observe_element',
-  'stop_observing',
   'scroll_and_capture',
   'click_and_wait',
 
-  // --- Console / network logging ---
-  'start_logging',
-  'stop_logging',
-  'get_console_logs',
-  'get_network_logs',
-  'clear_logs',
-
-  // --- Advanced scripting ---
-  'eval_chain',
-  'wait_and_act',
+  // --- Keyboard / text ---
   'press_key',
   'get_text',
 
@@ -79,7 +67,6 @@ export const BROWSER_ACTIONS = [
    */
   'cancel_human_wait',
   'audit_page',
-  'inject_observer',
 
   // --- New actions (P3-3) ---
   'snapshot',
@@ -89,7 +76,6 @@ export const BROWSER_ACTIONS = [
   'open_in_container',
   'wait_for_navigation',
   'wait_for_url',
-  'remove_observer',
 ] as const;
 
 /** Union type of all valid browser action names */

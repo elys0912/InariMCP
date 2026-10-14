@@ -62,7 +62,7 @@ describe('actions without page work', () => {
 
   it('an unsupported action and an unknown action name are refused by name', async () => {
     const browser = await started();
-    for (const action of ['get_console_logs', 'no_such_action']) {
+    for (const action of ['hard_refresh', 'no_such_action']) {
       const r = await browser.execute(action, undefined, {});
       expect(r).toMatchObject({ success: false, error: `Unsupported headless action: ${action}` });
     }

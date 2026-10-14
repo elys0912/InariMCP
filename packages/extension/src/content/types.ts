@@ -95,15 +95,6 @@ export interface NetworkIdleOptions {
   idleTime?: number;
 }
 
-export interface ObserveOptions {
-  selector: string;
-  observerId?: string;
-  /** fox_inject_observer switches (default true each). */
-  observeAttributes?: boolean;
-  observeChildList?: boolean;
-  observeSubtree?: boolean;
-}
-
 export interface ScrollCaptureOptions {
   scrollStep?: number;
   delay?: number;
@@ -145,23 +136,9 @@ export interface CaptchaOptions {
   timeout?: number;
 }
 
-export interface LoggingOptions {
-  clearExisting?: boolean;
-  protectedPatterns?: unknown;
-}
-
-export interface ClearLogsOptions {
-  console?: boolean;
-  network?: boolean;
-}
-
 export interface GetElementsOptions {
   selector?: string;
   limit?: number;
-}
-
-export interface StopObservingOptions {
-  observerId: string;
 }
 
 /**
@@ -178,12 +155,9 @@ export interface ContentOptionsByAction {
   waitForElement: WaitOptions;
   waitForChange: WaitForChangeOptions;
   waitForNetworkIdle: NetworkIdleOptions;
-  observeElement: ObserveOptions;
-  stopObserving: StopObservingOptions;
   scrollAndCapture: ScrollCaptureOptions;
   clickAndWait: ClickAndWaitOptions;
   captureFullPage: {};
-  inspectElement: {};
   getValue: FindElementOptions;
   setValue: SetValueOptions;
   hover: FindElementOptions;
@@ -192,10 +166,6 @@ export interface ContentOptionsByAction {
   getText: TextOptions;
   solveCaptcha: CaptchaOptions;
   cancelHumanWait: {};
-  startLogging: LoggingOptions;
-  stopLogging: {};
-  flushLogs: {};
-  clearLogs: ClearLogsOptions;
 }
 
 /** Action name of a background → content message. */
@@ -220,46 +190,7 @@ export type ContentMessage = {
   [A in ContentAction]: { action: A } & ContentOptionsByAction[A];
 }[ContentAction];
 
-export interface ConsoleLogEntry {
-  level: string;
-  timestamp: string;
-  message: string;
-  url: string;
-}
-
-export interface NetworkLogEntry {
-  type: string;
-  method: string;
-  url: string;
-  requestHeaders?: Record<string, string>;
-  requestBody?: string | null;
-  startTime: string;
-  pageUrl: string;
-  status?: number;
-  statusText?: string;
-  duration?: number;
-  responseHeaders?: Record<string, string>;
-  responseBody?: string;
-  error?: string;
-}
-
 export interface CaptchaWidget {
   type: string;
   solved: boolean | null;
-}
-
-export interface ObserverRecord {
-  observer: MutationObserver;
-  changes: MutationChange[];
-  target: string;
-}
-
-export interface MutationChange {
-  type: string;
-  timestamp: number;
-  target: string;
-  addedNodes: string[];
-  removedNodes: string[];
-  attributeName: string | null;
-  oldValue: string | null;
 }

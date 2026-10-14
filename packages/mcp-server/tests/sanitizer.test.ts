@@ -8,23 +8,19 @@ describe('maskSensitiveArgs', () => {
   it('replaces sensitive argument values with *** and keeps the rest', () => {
     const args = {
       text: 'hello',
-      script: 'alert(1)',
       value: 'v',
       password: 'p',
       steps: [{ tool: 'fox_click' }],
-      action_script: 'x()',
-      condition: 'true',
+      prompt_text: 'x',
       selector: '#login',
       url: 'https://example.test/',
     };
     expect(maskSensitiveArgs(args)).toEqual({
       text: '***',
-      script: '***',
       value: '***',
       password: '***',
       steps: '***',
-      action_script: '***',
-      condition: '***',
+      prompt_text: '***',
       selector: '#login',
       url: 'https://example.test/',
     });
@@ -36,9 +32,9 @@ describe('maskSensitiveArgs', () => {
     expect(args).toEqual({ text: 'hello' });
   });
 
-  it('matches keys whatever their case or separator (actionScript as in the schema)', () => {
-    expect(maskSensitiveArgs({ actionScript: 'x()', promptText: 'p', Password: 'q', selector: 's' }))
-      .toEqual({ actionScript: '***', promptText: '***', Password: '***', selector: 's' });
+  it('matches keys whatever their case or separator (promptText as in the schema)', () => {
+    expect(maskSensitiveArgs({ 'Prompt-Text': 'x', promptText: 'p', Password: 'q', selector: 's' }))
+      .toEqual({ 'Prompt-Text': '***', promptText: '***', Password: '***', selector: 's' });
   });
 });
 

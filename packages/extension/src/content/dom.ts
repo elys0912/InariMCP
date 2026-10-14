@@ -287,34 +287,6 @@ export function generateSelector(element: Element): string {
   return path.join(" > ");
 }
 
-/**
- * XPath locating `element`. Values are quoted as XPath string literals
- * (escapeXPathString) -- CSS.escape produces CSS escapes, which XPath does
- * not understand. Elements outside the HTML namespace (SVG, MathML) are
- * matched by local-name(), since a plain name test does not find them.
- */
-export function generateXPath(element: Element): string {
-  if (element.id) return `//*[@id=${escapeXPathString(element.id)}]`;
-
-  const HTML_NS = "http://www.w3.org/1999/xhtml";
-  const parts: string[] = [];
-  let current: Element | null = element;
-
-  while (current) {
-    let index = 1;
-    for (let sib = current.previousElementSibling; sib; sib = sib.previousElementSibling) {
-      if (sib.localName === current.localName && sib.namespaceURI === current.namespaceURI) index++;
-    }
-    const step = current.namespaceURI === HTML_NS
-      ? current.localName
-      : `*[local-name()=${escapeXPathString(current.localName)}]`;
-    parts.unshift(`${step}[${index}]`);
-    current = current.parentElement;
-  }
-
-  return "/" + parts.join("/");
-}
-
 export function getElementInfo(element: Element): ElementInfo {
   const rect = element.getBoundingClientRect();
   // Property reads only: on an element without them they are undefined (→ null below).

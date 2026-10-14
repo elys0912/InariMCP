@@ -11,7 +11,6 @@ import { reloadMatchingTabs } from '../../packages/extension/src/background/relo
 import { waitForNavigation } from '../../packages/extension/src/background/tab-wait.ts';
 import { getAllTabs, findText } from '../../packages/extension/src/background/tabs.ts';
 import { registerListeners } from '../../packages/extension/src/background/listeners.ts';
-import { sanitizeLogRecord } from '../../packages/extension/src/background/log-records.ts';
 import { clipApprovalText, isApprovedHost } from '../../packages/extension/src/approval.ts';
 import { clipText } from '../../packages/extension/src/text-clip.ts';
 import { LIMITS, TIMEOUTS } from '../../packages/extension/src/background/constants.ts';
@@ -456,8 +455,6 @@ describe('runtime.onMessage: messages that are not objects (E-23)', () => {
     const onMessage = fakeEvent();
     useFakeBrowser({
       runtime: { onMessage, onMessageExternal: fakeEvent(), id: 'ext', getURL: (p: string) => `moz-extension://x${p}` },
-      webNavigation: { onCommitted: fakeEvent() },
-      tabs: { onRemoved: fakeEvent() },
     });
     registerListeners();
     const sendResponse = vi.fn();
@@ -516,13 +513,7 @@ describe('clipping never splits a surrogate pair (E-17)', () => {
     expect(clipText('abc', 0)).toBe('');
   });
 
-  it('approval text, log records', () => {
+  it('approval text', () => {
     expect(clipApprovalText(`${'a'.repeat(499)}${FOX}x`, 500)).toBe(`${'a'.repeat(499)}…`);
-    const record = sanitizeLogRecord({
-      message: `${'m'.repeat(4999)}${FOX}`,
-      headers: { [`${'k'.repeat(199)}${FOX}`]: `${'v'.repeat(999)}${FOX}` },
-    })!;
-    expect(record.message).toBe('m'.repeat(4999));
-    expect(record.headers).toEqual({ ['k'.repeat(199)]: 'v'.repeat(999) });
   });
 });

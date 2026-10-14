@@ -24,34 +24,13 @@ export const ELEMENT_TIMEOUT_MS = 10_000;
 /** The option lookup and page.selectOption() of select_option. */
 export const SELECT_OPTION_TIMEOUT_MS = 5_000;
 /**
- * A page script: execute_script, each eval_chain step, and each condition /
- * action of wait_and_act. A script whose promise never settles is given up
- * (it may still run in the page).
- */
-export const SCRIPT_TIMEOUT_MS = 30_000;
-
-/**
  * wait_for_* (element, network idle, navigation, url): how long after the
  * Playwright wait's own timeout it is given up (bounded by the deadline as well).
  */
 export const WAIT_GIVE_UP_SLACK_MS = 1_000;
 
-// --- Values in place of an unusable argument ---
-// The arguments are used as the tool schemas deliver them (helpers.ts
-// parseArgs). The schemas of these two fields require at least 1, so the
-// values below are reached only by a direct execute() call with zero or a
-// negative number (kept so such a call cannot poll without pause or end at
-// once). Both equal the schema default (tests/headless-helpers.test.ts).
-
-/** wait_and_act: the wait when timeoutMs is zero or negative. */
-export const WAIT_AND_ACT_DEFAULT_MS = 15_000;
-/** wait_and_act: the poll interval when pollIntervalMs is zero or negative. */
-export const WAIT_AND_ACT_POLL_MS = 200;
-
 // --- Waits ---
 
-/** Shortest poll interval of wait_and_act; smaller pollIntervalMs values are raised to it. */
-export const WAIT_AND_ACT_POLL_MIN_MS = 10;
 /** The CSS outline fox_highlight draws (for its duration argument). */
 export const HIGHLIGHT_OUTLINE = '3px solid red';
 /** Longest a dialog nobody asked for may stay open before it is dismissed (it blocks the page). */

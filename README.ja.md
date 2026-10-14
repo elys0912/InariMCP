@@ -32,9 +32,9 @@ InariMCPは意図的に用途を絞っている。以下に当てはまる場合
 
 ## 特徴
 
-- **21個の`fox_*`ツール** — ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、タブ管理、コンソール/ネットワークログ収集、スクリプト実行、待機をカバー。関連する操作は1つのツールにまとめ、モード引数で切り替える（`fox_wait`の`for: "url"`、`fox_tab`の`action: "close"`など）。以前の41個のツール名も使える。[ツール名の移行](#ツール名の移行)を参照。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
-- **ツールプロファイル（`FOX_CAPS`）** — 全てのツールを登録すると実際にコンテキストトークンを消費する。プロファイル（`core`、`logs`、`script`など）を選んで必要な分だけ読み込める。[`FOX_CAPS`のプロファイル](#fox_capsのプロファイル)を参照。
-- **8層の安全ガード（レイヤー0〜7）** — コンテナスコープ（0）、レート制限（1）、URLスキームの確認とブロック/許可リスト（2〜3）、観察系ツールの通過（4）、読み取り専用モード（5）、スクリプト実行トグル（6）、銀行・決済処理業者・`.gov`などの保護対象ドメインでの人による承認（7）。判定はすべてJSONLの監査ログに残る。ガード自体は常に動作していて、オプトインが必要なのはコンテナスコープ（レイヤー0）だけ。
+- **17個の`fox_*`ツール** — ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、タブ管理、待機をカバー。渡されたJavaScriptを実行するツールや、ページのコンソール/ネットワークの通信を記録するツールはない。関連する操作は1つのツールにまとめ、モード引数で切り替える（`fox_wait`の`for: "url"`、`fox_tab`の`action: "close"`など）。以前の31個のツール名も使える。[ツール名の移行](#ツール名の移行)を参照。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
+- **ツールプロファイル（`FOX_CAPS`）** — 全てのツールを登録すると実際にコンテキストトークンを消費する。プロファイル（`core`、`human`、`wait`など）を選んで必要な分だけ読み込める。[`FOX_CAPS`のプロファイル](#fox_capsのプロファイル)を参照。
+- **安全ガード（レイヤー0〜5と7）** — コンテナスコープ（0）、レート制限（1）、URLスキームの確認とブロック/許可リスト（2〜3）、観察系ツールの通過（4）、読み取り専用モード（5）、銀行・決済処理業者・`.gov`などの保護対象ドメインでの人による承認（7）。判定はすべてJSONLの監査ログに残る。ガード自体は常に動作していて、オプトインが必要なのはコンテナスコープ（レイヤー0）だけ。
 - **ページの外での承認** — 保護対象サイトでの操作は、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのInariMCPツールバーのポップアップで人が承認する。ページの中からは承認できない。[保護対象サイトでの人による承認](#保護対象サイトでの人による承認)を参照。
 - **コンテナ分離（オプトイン）** — Firefoxの`contextualIdentities`を使い、エージェントを専用コンテナに制限できる。これにより、他のタブで開いている銀行・メールのセッションをエージェントから見えなくできる。これはFirefox専用の機能で、Chromiumには同等のものが存在しない。
 - **ヘッドレスモード（上級者向け）** — 拡張機能経由を使いたくない場合のための、Playwrightベースの、Firefox専用ヘッドレスバックエンド。使えないツール・引数が多い（[ツールの対応状況](#ツールの対応状況)を参照）。
@@ -111,7 +111,7 @@ npm run setup
 claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server/dist/index.js
 ```
 
-サーバーへの環境変数は名前の前に書く。例: `claude mcp add --scope user --env FOX_CAPS=core,logs inari-mcp -- node …`（頼る前に[先にdaemonを起動した側の設定が勝つ](#先にdaemonを起動した側の設定が勝つ)を読むこと）。
+サーバーへの環境変数は名前の前に書く。例: `claude mcp add --scope user --env FOX_CAPS=core,human inari-mcp -- node …`（頼る前に[先にdaemonを起動した側の設定が勝つ](#先にdaemonを起動した側の設定が勝つ)を読むこと）。
 
 または、MCP設定に手動で追加する（`config/mcp_config.json`も同じテンプレート）。
 
@@ -122,7 +122,7 @@ claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server
       "command": "node",
       "args": ["<INSTALL_PATH>/packages/mcp-server/dist/index.js"],
       "env": {
-        "FOX_CAPS": "core,logs"
+        "FOX_CAPS": "core,human"
       }
     }
   }
@@ -147,7 +147,7 @@ claude mcp add --scope user inari-mcp -- node <INSTALL_PATH>/packages/mcp-server
 | 黄色の数字 | あなたの承認を待っている要求がある | ポップアップを開いて承認か拒否をする |
 
 4. 診断を実行する: `node packages/mcp-server/dist/index.js --doctor`（[コマンドライン](#コマンドライン)を参照）。ビルド、Firefoxへの登録、Claude Codeへの登録、daemon、ログを確認し、問題ごとに対処を表示する。
-5. Claude Codeに`fox_safety_status`を呼ばせる。有効な安全ポリシー（読み取り専用モード、スクリプトの可否、URLパターン、レート制限、監査ログの場所）が表示され、動いているdaemonがこのセッションと違う設定で起動されていれば警告も出る。ブラウザが接続しているかどうかは表示されない。
+5. Claude Codeに`fox_safety_status`を呼ばせる。有効な安全ポリシー（読み取り専用モード、URLパターン、レート制限、監査ログの場所）が表示され、動いているdaemonがこのセッションと違う設定で起動されていれば警告も出る。ブラウザが接続しているかどうかは表示されない。
 6. 低いレベルで確認するときはdaemonに問い合わせる。
 
 ```bash
@@ -291,21 +291,20 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 ### 環境変数
 
-下表はコードが読む名前。注記のあるものは、フォーク元から引き継いだ古い`CLAUDE_BROWSER_*`の名前も、`FOX_*`版が未設定の場合のフォールバックとして使える。daemonは、空または空白だけの`FOX_HEADLESS`・`FOX_HEADLESS_STARTUP_TIMEOUT`・`FOX_EXECUTABLE`・`FOX_SAFETY_CONFIG`・`FOX_SCREENSHOTS_DIR`・`FOX_READ_ONLY`・`FOX_ALLOW_SCRIPTS`・`FOX_APPROVAL_ELICITATION`・`FOX_DAEMON_IDLE_TIMEOUT`を未設定として扱う（旧名があれば旧名、なければ既定値を使う）。Native Hostも`FOX_SCREENSHOTS_DIR`・`FOX_SCREENSHOT_RETENTION_DAYS`・`FOX_NATIVE_HOST_LOG`を同じように扱う。
+下表はコードが読む名前。注記のあるものは、フォーク元から引き継いだ古い`CLAUDE_BROWSER_*`の名前も、`FOX_*`版が未設定の場合のフォールバックとして使える。daemonは、空または空白だけの`FOX_HEADLESS`・`FOX_HEADLESS_STARTUP_TIMEOUT`・`FOX_EXECUTABLE`・`FOX_SAFETY_CONFIG`・`FOX_SCREENSHOTS_DIR`・`FOX_READ_ONLY`・`FOX_APPROVAL_ELICITATION`・`FOX_DAEMON_IDLE_TIMEOUT`を未設定として扱う（旧名があれば旧名、なければ既定値を使う）。Native Hostも`FOX_SCREENSHOTS_DIR`・`FOX_SCREENSHOT_RETENTION_DAYS`・`FOX_NATIVE_HOST_LOG`を同じように扱う。
 
 | 変数 | 既定値 | 読むプロセス | 説明 |
 |---|---|---|---|
 | `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host、アンインストーラ | HTTP/WSサーバーのアドレス。ループバック以外なら警告を出す。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HOST` |
 | `FOX_HTTP_PORT` | `8765` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_HTTP_PORT` |
 | `FOX_WS_PORT` | `8766` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空または空白だけの値は未設定として扱う（旧名、次に既定値を使う）。旧名: `CLAUDE_BROWSER_WS_PORT` |
-| `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。`legacy`を指定すると、代わりに以前のツール名を一覧にする（[ツール名の移行](#ツール名の移行)を参照）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、スクリプト禁止、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
+| `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。`legacy`を指定すると、代わりに以前のツール名を一覧にする（[ツール名の移行](#ツール名の移行)を参照）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
 | `FOX_HEADLESS` | 未設定 | daemon | `1` / `true` / `yes`でヘッドレスPlaywrightバックエンドを使う。それ以外は無効（`on`など認識できない値は警告をログに出す）。旧名: `CLAUDE_BROWSER_HEADLESS` |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない）。旧名: `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT` |
 | `FOX_EXECUTABLE` | PlaywrightのFirefox | daemon（ヘッドレスのみ） | Playwrightが起動するFirefoxバイナリのパス。旧名: `CLAUDE_BROWSER_EXECUTABLE` |
 | `FOX_SCREENSHOTS_DIR` | `~/.inari-mcp/screenshots` | Native Host（拡張機能経路）、daemon（ヘッドレス経路、`GET /screenshots`） | スクリーンショットの保存先。相対パスはそのプロセスの作業ディレクトリから解決する。旧名: `CLAUDE_BROWSER_SCREENSHOTS_DIR` |
 | `FOX_SCREENSHOT_RETENTION_DAYS` | `30` | Native Host | Native Hostが起動するたびに、自動で付けた名前で保存したスクリーンショットのうち、この日数より古いものを削除する（`0`ですべて残す。負の値や数値でない値は`30`として扱う）。`filename`を指定して保存したものと、ヘッドレスのスクリーンショットは削除しない |
 | `FOX_READ_ONLY` | 未設定 | daemon | `1` / `true` / `yes`で読み取り専用モードを強制する。旧名: `CLAUDE_BROWSER_READ_ONLY` |
-| `FOX_ALLOW_SCRIPTS` | 未設定 | daemon | `0` / `false` / `no` / `off`でスクリプト系ツール（`fox_evaluate`、`fox_observer`。以前の名前は`fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act`、`fox_inject_observer`、`fox_remove_observer`）を無効化する。旧名: `CLAUDE_BROWSER_ALLOW_SCRIPTS` |
 | `FOX_SAFETY_CONFIG` | `~/.inari-mcp/safety.json` | daemon | 安全ポリシーファイルの代替パス。旧名: `CLAUDE_BROWSER_SAFETY_CONFIG` |
 | `FOX_APPROVAL_ELICITATION` | 有効 | 中継、daemon | `0` / `false` / `off` / `no`でMCP elicitationによる承認を無効にする。保護対象サイトでの操作は常にFirefoxのポップアップで承認することになる。中継とdaemonはそれぞれ自分の環境変数を読む。無効にした中継はelicitationで尋ねない。無効にしたdaemonはelicitationの回答を受け付けないので、そこで「はい」と答えた要求はポップアップで改めて尋ねる |
 | `FOX_DAEMON_IDLE_TIMEOUT` | `600` | daemon | 中継・Native Host・実行中の呼び出しがどれもない状態が何秒続いたらdaemonが終了するか（`0`で終了しない） |
@@ -318,9 +317,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | プロファイル | ツール |
 |---|---|
 | `core` | `fox_navigate`、`fox_click`、`fox_type`、`fox_press_key`、`fox_set_value`、`fox_screenshot`、`fox_snapshot`、`fox_read`、`fox_find`、`fox_tabs`、`fox_tab`、`fox_interact`、`fox_wait`、`fox_handle_dialog` |
-| `logs` | `fox_logging`、`fox_get_logs` |
-| `script` | `fox_evaluate`、`fox_observer` |
-| `workflow` | `fox_evaluate`（その`wait_and_act`モード。以前の`fox_run_workflow`と`fox_audit_page`は実装されないまま廃止した） |
+| `workflow` | なし（以前の`fox_wait_and_act`はスクリプト系ツールと一緒に削除した。`fox_run_workflow`と`fox_audit_page`は実装されなかった） |
 | `human` | `fox_request_approval`、`fox_detect_captcha` |
 | `container` | `fox_tabs`、`fox_tab`（コンテナは`what: "containers"`の`fox_tabs`と、`action: "create"`と`container`を指定した`fox_tab`） |
 | `wait` | `fox_wait` |
@@ -330,7 +327,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 
 ### ツール名の移行
 
-以前の41個のツールを21個にまとめた。関連する操作を、モード引数を持つ1つのツールにした。ブラウザ側は変わっておらず、新しいツールの呼び出しは、以前のツールが実行していたものとまったく同じことを実行する。
+以前の31個のツールを17個にまとめた。関連する操作を、モード引数を持つ1つのツールにした。ブラウザ側は変わっておらず、新しいツールの呼び出しは、以前のツールが実行していたものとまったく同じことを実行する。
 
 - 新しいセッションは新しい名前を一覧にする。`FOX_CAPS=legacy`のセッションは代わりに以前の名前を一覧にする（説明は`[Deprecated: …]`で始まる）。
 - daemonは両方を受け付ける。以前の名前は、`FOX_CAPS`の設定に関係なく、HTTP（`POST /mcp/call`）でも引き続き使える。
@@ -353,13 +350,11 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `fox_select_option` | `fox_set_value` `kind: "select"` | `value` / `text` / `index` → `option: { value }` / `{ text }` / `{ index }`（どれか1つだけ） |
 | `fox_hover`、`fox_scroll`、`fox_highlight` | `fox_interact` `action: "hover"` / `"scroll"` / `"highlight"` | |
 | `fox_wait_for_element`、`fox_wait_for_network_idle`、`fox_wait_for_navigation`、`fox_wait_for_url` | `fox_wait` `for: "element"` / `"network_idle"` / `"navigation"` / `"url"` | `for: "url"`には`url`か`urlPattern`が要る |
-| `fox_start_logging`、`fox_stop_logging`、`fox_clear_logs` | `fox_logging` `action: "start"` / `"stop"` / `"clear"` | |
-| `fox_get_console_logs`、`fox_get_network_logs` | `fox_get_logs` `kind: "console"` / `"network"` | |
-| `fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act` | `fox_evaluate` `mode: "script"` / `"chain"` / `"wait_and_act"` | `wait_and_act`: `timeoutMs` → `timeout` |
-| `fox_inject_observer`、`fox_remove_observer` | `fox_observer` `action: "inject"` / `"remove"` | |
 | `fox_run_workflow`、`fox_audit_page` | なし | どのバックエンドでも未実装だった。名前での呼び出しは今もでき、同じエラーになる |
 
 変更なし: `fox_screenshot`、`fox_snapshot`、`fox_navigate`、`fox_click`、`fox_type`、`fox_press_key`、`fox_handle_dialog`、`fox_request_approval`、`fox_detect_captcha`、`fox_safety_status`。
+
+どの名前でも使えなくなったもの: スクリプト系ツール（`fox_evaluate`、`fox_observer`。以前の`fox_execute_script`、`fox_eval_chain`、`fox_wait_and_act`、`fox_inject_observer`、`fox_remove_observer`）とログ収集のツール（`fox_logging`、`fox_get_logs`。以前の`fox_start_logging`、`fox_stop_logging`、`fox_clear_logs`、`fox_get_console_logs`、`fox_get_network_logs`）。[変更履歴](docs/CHANGELOG.ja.md)を参照。
 
 ### `safety.json`
 
@@ -368,9 +363,8 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | キー | 既定値 | 意味 |
 |---|---|---|
 | `enabled` | `true` | 安全ガードを有効にする |
-| `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ、スクリプト）を拒否する。観察・待機・ログ・UIだけを変えるツール（`fox_interact`、`action: "switch"`の`fox_tab`）は使える |
-| `allow_script_execution` | `true` | スクリプト系ツールを許可する。スクリプトの実行は、URLのリスト・保護対象サイトの承認・パスワードのマスクの対象外で、パスワード欄を読むことも、ほかのサイトへ要求を送ることもできる（[既知の制約](docs/known-issues.ja.md)を参照） |
-| `confirm_protected_actions` | `true` | 保護対象サイトでの操作（スクリーンショット・ログ収集を含む）の前に人に尋ねる |
+| `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ）を拒否する。観察・待機・UIだけを変えるツール（`fox_interact`、`action: "switch"`の`fox_tab`）は使える |
+| `confirm_protected_actions` | `true` | 保護対象サイトでの操作（スクリーンショットを含む）の前に人に尋ねる |
 | `allow_password_typing` | `false` | パスワード欄（`type="password"`、または`autocomplete`に`current-password` / `new-password`のトークンを含むもの。大文字小文字は問わず、`section-login current-password`も含む）への`fox_type` / `fox_set_value`を許可する |
 | `max_actions_per_minute` | `120` | レート制限。全セッション共通（`0`で制限なし） |
 | `audit_log` | `true` | `~/.inari-mcp/logs/audit.jsonl`に書く |
@@ -402,15 +396,15 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 1. クライアントが対応していて、`FOX_APPROVAL_ELICITATION`が無効にされていなければ、Claude Code自身の確認ダイアログ（MCP elicitation）で
 2. そうでなければFirefoxで。InariMCPのツールバーボタンに黄色の件数が出て（OSの通知も出る）、ポップアップで承認か拒否をする。elicitationの要求が失敗した場合（クライアントがメソッドを知らない、通信エラー）もポップアップを使う。確認ダイアログがタイムアウトした場合は、承認されないまま終わる
 
-承認が要るのは、ページのデータを変えるツール（入力、遷移、タブの変更、スクリプト）。読み取るだけのツールのうち承認が要るのは3つ: 単一タブの`fox_screenshot`（`scope: "all_tabs"`は保護対象のタブを除いて撮る）、`scope: "scroll_capture"`、`action: "start"`の`fox_logging`（ログ収集中のタブが保護対象サイトにある間は記録を止める）。ほかの読み取りツール（`fox_read`、`fox_find`、`fox_tabs`など）、`fox_wait`、UIだけを変えるツール（`fox_interact`、`action: "switch"`の`fox_tab`）は、保護対象サイトでも承認なしで動く。同時に待てる承認要求は最大32件。
+承認が要るのは、ページのデータを変えるツール（入力、遷移、タブの変更）。読み取るだけのツールのうち承認が要るのは2つ: 単一タブの`fox_screenshot`（`scope: "all_tabs"`は保護対象のタブを除いて撮る）と`scope: "scroll_capture"`。ほかの読み取りツール（`fox_read`、`fox_find`、`fox_tabs`など）、`fox_wait`、UIだけを変えるツール（`fox_interact`、`action: "switch"`の`fox_tab`）は、保護対象サイトでも承認なしで動く。同時に待てる承認要求は最大32件。
 
-承認が効くのは、そのツールをその引数のまま、そのホストで1回呼ぶことだけ。要求の期限（120秒。Firefoxのポップアップが待つのは最大60秒）までに答える必要があり、承認は中継だけが見る1回限りのトークンで運ばれる（モデルには見えない）。引数は省略せずに見せる: 見えない文字と文字の向きを変える文字（双方向制御文字、ゼロ幅文字、タグ文字、U+2028 / U+2029）は警告の行を付けて`\u`のエスケープで表示し、引数が収まらない呼び出し（1つの値が160、または`名前: 値`の行の全体が800を超える。長さは各値をJSONに直した後のUTF-16の単位で数え、引用符とエスケープを含む。値の中の改行は2、絵文字は2と数える）は承認を求めずに、承認できないことをモデルに返す。つまり保護サイトでは、長い引数は承認できない: 長いURLの`fox_navigate`、複数行のスクリプトの`fox_evaluate`、長文の`fox_type`。テキストやスクリプトは短い呼び出しに分けられる場合があるが、URLは分けられない。ページの中のもの — ボタン、`fox_click`、`fox_evaluate` — では承認できない。elicitationでの承認が有効な間は、1つのリスクを受け入れている: 回答はローカルのHTTPでdaemonに届くので、`~/.inari-mcp/api_token`を読めるローカルのプロセスは自分の要求を自分で承認できる。Firefoxのポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する（ヘッドレスモードでは承認できなくなる）。
+承認が効くのは、そのツールをその引数のまま、そのホストで1回呼ぶことだけ。要求の期限（120秒。Firefoxのポップアップが待つのは最大60秒）までに答える必要があり、承認は中継だけが見る1回限りのトークンで運ばれる（モデルには見えない）。引数は省略せずに見せる: 見えない文字と文字の向きを変える文字（双方向制御文字、ゼロ幅文字、タグ文字、U+2028 / U+2029）は警告の行を付けて`\u`のエスケープで表示し、引数が収まらない呼び出し（1つの値が160、または`名前: 値`の行の全体が800を超える。長さは各値をJSONに直した後のUTF-16の単位で数え、引用符とエスケープを含む。値の中の改行は2、絵文字は2と数える）は承認を求めずに、承認できないことをモデルに返す。つまり保護サイトでは、長い引数は承認できない: 長いURLの`fox_navigate`、長文の`fox_type`。テキストは短い呼び出しに分けられる場合があるが、URLは分けられない。ページの中のもの — ボタンや`fox_click` — では承認できない。elicitationでの承認が有効な間は、1つのリスクを受け入れている: 回答はローカルのHTTPでdaemonに届くので、`~/.inari-mcp/api_token`を読めるローカルのプロセスは自分の要求を自分で承認できる。Firefoxのポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する（ヘッドレスモードでは承認できなくなる）。
 
 `fox_request_approval`はこれとは別の、同じポップアップであなたに尋ねる単純な質問で、その答えで保護対象サイトの操作が許可されることはない。
 
 ### 先にdaemonを起動した側の設定が勝つ
 
-daemon はセッションごとに新しく起動されるわけではない。Claude Codeの中継とFirefox（Native Host経由）のどちらか先に起動した方がdaemonを立ち上げ、残りは全員その1つのdaemonと通信する。これは環境変数に影響する — `FOX_READ_ONLY`、`FOX_HEADLESS`、`FOX_ALLOW_SCRIPTS`などは、実際にdaemonを起動したプロセスの環境変数だけが読まれる（`FOX_APPROVAL_ELICITATION`は両側で読む。中継はそれぞれ自分の環境変数から、daemonは起動されたときの環境変数から。[環境変数](#環境変数)を参照）。Native Hostが起動したdaemonはFirefoxの環境変数を引き継ぎ、Claude Codeのセッションのものは使わない。Firefoxが先にdaemonを起動していた場合、後から起動したClaude CodeセッションのMCP設定に`FOX_READ_ONLY=1`と書いてあっても効かない。警告は出る（セッション開始時と`fox_safety_status`の結果）が、既存のdaemonはそのままの設定で動き続ける。
+daemon はセッションごとに新しく起動されるわけではない。Claude Codeの中継とFirefox（Native Host経由）のどちらか先に起動した方がdaemonを立ち上げ、残りは全員その1つのdaemonと通信する。これは環境変数に影響する — `FOX_READ_ONLY`、`FOX_HEADLESS`などは、実際にdaemonを起動したプロセスの環境変数だけが読まれる（`FOX_APPROVAL_ELICITATION`は両側で読む。中継はそれぞれ自分の環境変数から、daemonは起動されたときの環境変数から。[環境変数](#環境変数)を参照）。Native Hostが起動したdaemonはFirefoxの環境変数を引き継ぎ、Claude Codeのセッションのものは使わない。Firefoxが先にdaemonを起動していた場合、後から起動したClaude CodeセッションのMCP設定に`FOX_READ_ONLY=1`と書いてあっても効かない。警告は出る（セッション開始時と`fox_safety_status`の結果）が、既存のdaemonはそのままの設定で動き続ける。
 
 `safety.json`にはこの問題がない。どちらがdaemonを起動しても、既定では同じ固定パス（`~/.inari-mcp/safety.json`）から読まれるからだ。`read_only`などを確実に効かせたいなら、環境変数ではなく`safety.json`側に設定すること。
 
@@ -445,9 +439,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 | ツール | 拡張機能経路 | ヘッドレス |
 |---|---|---|
 | `fox_snapshot` | 未実装 | アクセシビリティツリーをYAMLのテキストで返す |
-| `fox_evaluate`の`mode: "chain"` / `"wait_and_act"`、`fox_handle_dialog` | 未実装 | 動く |
-| `fox_observer` | 動く | 動く（1ページに1つ。`action: "remove"`は変更の件数だけを返す） |
-| `fox_logging`、`fox_get_logs` | 動く | 非対応 |
+| `fox_handle_dialog` | 未実装 | 動く |
 | `fox_navigate`の`action: "hard_refresh"`、`fox_screenshot`の`scope: "all_tabs"` / `"scroll_capture"` | 動く | 非対応 |
 | `fox_tabs`の`what: "containers"`、`fox_tab`の`action: "create"`に`container`を付けたもの | 動く | 非対応（コンテナがない） |
 | `fox_request_approval` | 動く | 常に拒否（尋ねる相手がいない） |

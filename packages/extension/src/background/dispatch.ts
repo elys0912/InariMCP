@@ -140,9 +140,9 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
   // server's last-seen URL, which is shared by every session). The server
   // attaches the patterns, when confirm_protected_actions is true, to
   // single-tab captures and to every acting tool without a `url` argument.
-  // Only rows with protectedCheck "upfront" are checked here: the logging
-  // actions and the multi-tab actions (screenshot_all_tabs, reload_all,
-  // reload_by_url) apply the patterns in their handlers, and actions that
+  // Only rows with protectedCheck "upfront" are checked here: the
+  // multi-tab actions (screenshot_all_tabs, reload_all, reload_by_url)
+  // apply the patterns in their handlers, and actions that
   // act on no existing tab (new tab, tab list, approval, status) have no
   // target to check.
   if (protectedPatterns.length > 0 && entry?.protectedCheck === "upfront") {
@@ -162,7 +162,6 @@ async function checkCommand(message: NativeMessage, source: CommandSource): Prom
       scope,
       protectedPatterns,
       urlLists,
-      approvedHost,
       navigateInNewTab,
     },
   };

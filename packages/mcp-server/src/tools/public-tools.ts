@@ -1,7 +1,7 @@
 /**
- * The public tools (WP13 tool consolidation: 41 tools → 21).
+ * The public tools (WP13 tool consolidation: 31 operations → 17 tools).
  *
- * Ten tools are the operations of schemas.ts as they are. The other eleven
+ * Ten tools are the operations of schemas.ts as they are. The other seven
  * group several operations behind a discriminator argument (fox_wait
  * `for`, fox_tab `action`, ...); each value of it is a variant that runs
  * one operation (tools/operations.ts). The wire actions, the Extension, the
@@ -22,7 +22,7 @@
 import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
 import { isRecord } from '@inari-mcp/shared';
-import { MAX_TIMEOUT_ARG_MS, TOOL_SCHEMAS, callSchemaOf } from './schemas.js';
+import { TOOL_SCHEMAS, callSchemaOf } from './schemas.js';
 import type { OperationName } from './schemas.js';
 import { toolAnnotations } from './classification.js';
 import type { ToolAnnotations } from './classification.js';
@@ -425,7 +425,7 @@ const foxInteract = grouped({
 const foxWait = grouped({
   name: 'fox_wait',
   description:
-    "Wait for a page condition; fails after timeout (ms). for 'element': an element matching selector appears (and is visible, unless visible=false). for 'network_idle': the page's own top-frame fetch/XHR requests have been idle for idleTime ms; requests made by fox_evaluate, and those in flight before the first call on the page, are not seen; headless: Playwright networkidle, idleTime ignored. for 'navigation': the tab's next top-level navigation finishes (waitUntil load or domcontentloaded; optionally only one matching urlPattern); a navigation that finished before the call is missed, so prefer for 'url' when the destination is known; headless: urlPattern ignored. for 'url': the URL equals url or matches the urlPattern regex (one of them required); returns at once if it already does.",
+    "Wait for a page condition; fails after timeout (ms). for 'element': an element matching selector appears (and is visible, unless visible=false). for 'network_idle': the page's own top-frame fetch/XHR requests have been idle for idleTime ms; requests already in flight when the call starts are not seen; headless: Playwright networkidle, idleTime ignored. for 'navigation': the tab's next top-level navigation finishes (waitUntil load or domcontentloaded; optionally only one matching urlPattern); a navigation that finished before the call is missed, so prefer for 'url' when the destination is known; headless: urlPattern ignored. for 'url': the URL equals url or matches the urlPattern regex (one of them required); returns at once if it already does.",
   discriminator: 'for',
   discriminatorDescription: "'element', 'network_idle', 'navigation' or 'url'",
   variants: {
@@ -440,68 +440,6 @@ const foxWait = grouped({
     if (!has('url') && !has('urlPattern')) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['url'], message: "for 'url' needs url or urlPattern" });
     }
-  },
-});
-
-const foxLogging = grouped({
-  name: 'fox_logging',
-  description:
-    "Control console and fetch/XHR capture of the tab (top frame); read the logs with fox_get_logs. action 'start': start capturing (before the actions to monitor); logs are kept per tab across reloads and navigations (the newest 500 console and 500 network entries) until cleared or the tab is closed; refused on a protected site unless approved, and recording pauses while the tab is on one. action 'stop': stop capturing; the logs are kept. action 'clear': clear the console and/or network logs. Not supported in headless mode.",
-  discriminator: 'action',
-  discriminatorDescription: "'start', 'stop' or 'clear'",
-  variants: {
-    start: { fields: fieldsOf('fox_start_logging'), run: same('fox_start_logging') },
-    stop: { fields: fieldsOf('fox_stop_logging'), run: same('fox_stop_logging') },
-    clear: { fields: fieldsOf('fox_clear_logs'), run: same('fox_clear_logs') },
-  },
-});
-
-const foxGetLogs = grouped({
-  name: 'fox_get_logs',
-  description:
-    "Return what fox_logging captured on this tab (the latest `limit`); paused while the tab is on a protected site; not supported in headless mode. kind 'console': top-frame calls to console.log/warn/error/info/debug, filtered by level and/or a case-insensitive search text; not uncaught exceptions, browser errors, iframes or console output of fox_evaluate; currentPageReached=false means the current page could not be asked for its latest entries. kind 'network': fetch/XHR requests filtered by URL regex, method, status or errorsOnly (network error or status >= 400); no images, scripts, CSS or WebSocket traffic; authorization, cookie, API-key and token headers and secret fields in URLs and bodies are masked, other headers and bodies (truncated) are returned as recorded.",
-  discriminator: 'kind',
-  discriminatorDescription: "'console' or 'network'",
-  variants: {
-    console: { fields: fieldsOf('fox_get_console_logs'), run: same('fox_get_console_logs') },
-    network: { fields: fieldsOf('fox_get_network_logs'), run: same('fox_get_network_logs') },
-  },
-});
-
-const foxEvaluate = grouped({
-  name: 'fox_evaluate',
-  description:
-    "Run JavaScript in the tab's top frame; refused when script execution is disabled (allow_script_execution in safety.json or FOX_ALLOW_SCRIPTS=0). mode 'script': return the value of the last expression (JSON-compatible; no top-level `return`, wrap code in an IIFE); Extension path: runs in the content script's isolated world, which sees the page DOM but not the variables of the page's own scripts, and its console.log and fetch/XHR are not captured by fox_logging; headless: runs in the page's own world. mode 'chain': evaluate steps in order, each receiving the prior result as `$prev`, console output captured per step. mode 'wait_and_act': poll until condition is truthy, then run actionScript and return its result. chain and wait_and_act are headless only (the Extension path returns an error).",
-  discriminator: 'mode',
-  discriminatorDescription: "'script', 'chain' or 'wait_and_act'",
-  variants: {
-    script: { fields: fieldsOf('fox_execute_script'), run: same('fox_execute_script') },
-    chain: { fields: fieldsOf('fox_eval_chain'), run: same('fox_eval_chain') },
-    wait_and_act: {
-      fields: {
-        ...fieldsOf('fox_wait_and_act', ['condition', 'actionScript', 'pollIntervalMs']),
-        timeout: z.number().int().positive().max(MAX_TIMEOUT_ARG_MS).optional().default(15000)
-          .describe(`Max wait time in ms before giving up (at most ${MAX_TIMEOUT_ARG_MS})`),
-        tabId,
-      },
-      run: {
-        ...same('fox_wait_and_act'),
-        toOp: renamed({ timeout: 'timeoutMs' }),
-        fromOp: renamed({ timeoutMs: 'timeout' }),
-      },
-    },
-  },
-});
-
-const foxObserver = grouped({
-  name: 'fox_observer',
-  description:
-    "Watch DOM changes. Requires script execution enabled. action 'inject': start a MutationObserver on an element (default body) that collects attribute, child list and subtree changes; it ends when the page reloads or navigates; headless: one observer per page (a new call replaces it, observerId is ignored), changes collect in window.__fox_mutations. action 'remove': remove the observer observerId and return the changes it collected (the last 100); fails when no such observer exists on the current page; headless: observerId is ignored and only the number of changes is returned.",
-  discriminator: 'action',
-  discriminatorDescription: "'inject' or 'remove'",
-  variants: {
-    inject: { fields: fieldsOf('fox_inject_observer'), run: same('fox_inject_observer') },
-    remove: { fields: fieldsOf('fox_remove_observer'), run: same('fox_remove_observer') },
   },
 });
 
@@ -546,10 +484,6 @@ const PUBLIC_TOOL_TABLE = {
   fox_set_value: foxSetValue,
   fox_interact: foxInteract,
   fox_wait: foxWait,
-  fox_logging: foxLogging,
-  fox_get_logs: foxGetLogs,
-  fox_evaluate: foxEvaluate,
-  fox_observer: foxObserver,
   fox_handle_dialog: asIs('fox_handle_dialog', AS_IS_DESCRIPTIONS.fox_handle_dialog),
   fox_request_approval: asIs('fox_request_approval'),
   fox_detect_captcha: asIs('fox_detect_captcha'),
@@ -602,16 +536,6 @@ export const LEGACY_REPLACEMENTS: Readonly<Record<LegacyOperationName, readonly 
   fox_wait_for_network_idle: ['fox_wait', 'network_idle'],
   fox_wait_for_navigation: ['fox_wait', 'navigation'],
   fox_wait_for_url: ['fox_wait', 'url'],
-  fox_start_logging: ['fox_logging', 'start'],
-  fox_stop_logging: ['fox_logging', 'stop'],
-  fox_clear_logs: ['fox_logging', 'clear'],
-  fox_get_console_logs: ['fox_get_logs', 'console'],
-  fox_get_network_logs: ['fox_get_logs', 'network'],
-  fox_execute_script: ['fox_evaluate', 'script'],
-  fox_eval_chain: ['fox_evaluate', 'chain'],
-  fox_wait_and_act: ['fox_evaluate', 'wait_and_act'],
-  fox_inject_observer: ['fox_observer', 'inject'],
-  fox_remove_observer: ['fox_observer', 'remove'],
   fox_run_workflow: null,
   fox_audit_page: null,
 };

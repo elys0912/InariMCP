@@ -149,17 +149,16 @@ function cancelHumanWait(conn: BrowserConnection, requestId: string): void {
 }
 
 /**
- * Headroom added on top of a tool's own `timeout` / `timeoutMs` argument, so
+ * Headroom added on top of a tool's own `timeout` argument, so
  * the browser-side wait expires (and reports a meaningful error) before the
  * transport-level timeout fires.
  */
 const ARG_TIMEOUT_MARGIN_MS = 5_000;
 
-/** The tool's own `timeoutMs` / `timeout` argument (schemas.ts), when it is a positive number. */
+/** The tool's own `timeout` argument (schemas.ts), when it is a positive number. */
 function argTimeoutOf(data: Record<string, unknown>): number | undefined {
-  return [data['timeoutMs'], data['timeout']].find(
-    (v): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0,
-  );
+  const v = data['timeout'];
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : undefined;
 }
 
 /**
@@ -167,7 +166,7 @@ function argTimeoutOf(data: Record<string, unknown>): number | undefined {
  *
  * base = per-action value (request_approval 90 s, solve_captcha 200 s) or
  *        the per-transport default (30 s / headless 35 s).
- * If the tool arguments carry `timeout` or `timeoutMs` (schemas.ts), the
+ * If the tool arguments carry `timeout` (schemas.ts), the
  * result is max(base, arg + margin): an explicit long wait is honoured,
  * and the transport never gives up before the browser-side wait does.
  */

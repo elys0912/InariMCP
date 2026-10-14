@@ -19,8 +19,8 @@
  *   2. the relay margin covers the daemon's headless startup wait.
  *   3. daemon > extension when a timeout argument is given (arg + 5 s),
  *      including every default the tool schemas fill in.
- *   4. the only timeout argument keys in the tool schemas are `timeout` and
- *      `timeoutMs` (the keys both relay and daemon read).
+ *   4. the only timeout argument key in the tool schemas is `timeout` (the
+ *      key both relay and daemon read).
  *   5. daemon > extension for content.ts fallbacks (no argument).
  *   6. native-host bookkeeping TTL > daemon's longest base timeout, and >
  *      the daemon's wait for the largest timeout argument the schemas
@@ -53,9 +53,7 @@ const ARG_SETS: readonly Record<string, unknown>[] = [
   {},
   { timeout: 1_000 },
   { timeout: 60_000 },
-  { timeoutMs: 600_000 },
   { timeout: 3_600_000 },
-  { timeoutMs: 45_000, timeout: 90_000 },
 ];
 
 function daemonTimeout(action: BrowserAction, args: Record<string, unknown>, kind: BrowserKind): number {
@@ -108,11 +106,9 @@ describe('2. relay margin covers the headless startup wait', () => {
 describe('3. daemon waits longer than an explicit browser-side wait', () => {
   it('resolveCommandTimeout >= argument + 5 s for every action / transport', () => {
     for (const arg of [1, 1_000, 30_000, 90_000, 200_000, 3_600_000]) {
-      for (const key of ['timeout', 'timeoutMs']) {
-        for (const action of BROWSER_ACTIONS) {
-          for (const kind of KINDS) {
-            expect(daemonTimeout(action, { [key]: arg }, kind)).toBeGreaterThanOrEqual(arg + 5_000);
-          }
+      for (const action of BROWSER_ACTIONS) {
+        for (const kind of KINDS) {
+          expect(daemonTimeout(action, { timeout: arg }, kind)).toBeGreaterThanOrEqual(arg + 5_000);
         }
       }
     }
@@ -132,13 +128,13 @@ describe('3. daemon waits longer than an explicit browser-side wait', () => {
 });
 
 describe('4. timeout argument keys', () => {
-  it('tool schemas only use `timeout` / `timeoutMs`', () => {
+  it('tool schemas only use `timeout`', () => {
     const keys = new Set<string>();
     for (const def of Object.values(TOOL_SCHEMAS)) {
       const shape = (def.inputSchema as unknown as { shape: Record<string, unknown> }).shape;
       for (const key of Object.keys(shape)) if (/timeout/i.test(key)) keys.add(key);
     }
-    expect([...keys].sort()).toEqual(['timeout', 'timeoutMs']);
+    expect([...keys].sort()).toEqual(['timeout']);
   });
 });
 

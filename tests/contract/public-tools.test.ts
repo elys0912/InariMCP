@@ -150,10 +150,6 @@ describe('tool annotations (WP13 specification 2.2)', () => {
     fox_handle_dialog: [false, true],
     fox_interact: [false, false],
     fox_wait: [true, false],
-    fox_logging: [false, false],
-    fox_get_logs: [true, false],
-    fox_evaluate: [false, true],
-    fox_observer: [false, true],
     fox_request_approval: [false, false],
     fox_detect_captcha: [true, false],
   };

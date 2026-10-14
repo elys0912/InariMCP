@@ -19,19 +19,18 @@ describe('resolveCommandTimeout', () => {
     }
   });
 
-  it('returns max(base, argument + 5 s) for timeout / timeoutMs', () => {
+  it('returns max(base, argument + 5 s) for timeout', () => {
     expect(resolveCommandTimeout(command('click', { timeout: 1_000 }), 'native-host')).toBe(30_000);
     expect(resolveCommandTimeout(command('click', { timeout: 60_000 }), 'native-host')).toBe(65_000);
-    expect(resolveCommandTimeout(command('click', { timeoutMs: 60_000 }), 'headless')).toBe(65_000);
+    expect(resolveCommandTimeout(command('click', { timeout: 60_000 }), 'headless')).toBe(65_000);
     expect(
       resolveCommandTimeout(command('solve_captcha', { timeout: 300_000 }), 'native-host'),
     ).toBe(305_000);
   });
 
-  it('prefers timeoutMs over timeout when both are present', () => {
-    expect(
-      resolveCommandTimeout(command('click', { timeoutMs: 40_000, timeout: 90_000 }), 'native-host'),
-    ).toBe(45_000);
+  // The key of the removed fox_wait_and_act: no tool has it any more.
+  it('ignores timeoutMs', () => {
+    expect(resolveCommandTimeout(command('click', { timeoutMs: 90_000 }), 'native-host')).toBe(30_000);
   });
 
   it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, '60000', null])(
@@ -47,9 +46,8 @@ describe('maxCommandTimeoutMs', () => {
     expect(maxCommandTimeoutMs({})).toBe(200_000);
   });
 
-  it('honours timeout / timeoutMs with the same 5 s margin', () => {
+  it('honours timeout with the same 5 s margin', () => {
     expect(maxCommandTimeoutMs({ timeout: 600_000 })).toBe(605_000);
-    expect(maxCommandTimeoutMs({ timeoutMs: 600_000 })).toBe(605_000);
     expect(maxCommandTimeoutMs({ timeout: 1_000 })).toBe(200_000);
   });
 });

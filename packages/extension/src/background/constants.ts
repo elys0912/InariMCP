@@ -38,8 +38,6 @@ export const TOP_FRAME_ID = 0;
 export const DEFAULTS = {
   /** fox_tabs list: tabs returned. */
   TABS_LIMIT: 50,
-  /** get_console_logs / get_network_logs: newest entries returned. */
-  LOGS_LIMIT: 100,
   SCREENSHOT_FORMAT: "png",
   SCREENSHOT_QUALITY: 90,
 } as const;
@@ -48,18 +46,9 @@ export const DEFAULTS = {
 export const LIMITS = {
   /** Approval question in the desktop notification. */
   APPROVAL_NOTIFICATION_TEXT: 160,
-  /** Fields of one log entry from a content script. */
-  LOG_RECORD_FIELDS: 20,
-  /** Entries of a string record (headers) of a log entry, and their key / value length. */
-  LOG_RECORD_ENTRIES: 50,
-  LOG_RECORD_KEY: 200,
-  LOG_RECORD_VALUE: 1000,
   /** Console summary of a Native Messaging frame: action / requestId length, key names listed. */
   NATIVE_SUMMARY_TEXT: 64,
   NATIVE_SUMMARY_KEYS: 20,
   /** sendToNativeHost: attempts after the first when not connected or posting fails. */
   SEND_RETRIES: 3,
 } as const;
-
-// Message types and log limits shared with the content script (../wire-messages.ts).
-export { LOG_RECORD_MESSAGE, LOGGING_STATE_QUERY, LOG_ENTRY_LIMIT, LOG_TEXT_LIMIT } from "../wire-messages";

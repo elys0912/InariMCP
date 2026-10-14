@@ -3,8 +3,7 @@
 //
 // Three bundles, one per execution context, each self-contained (IIFE):
 //   src/background.ts     -> dist/background.js     (manifest background)
-//   src/content.ts        -> dist/content.js        (manifest content script,
-//                                                    and the early injection)
+//   src/content.ts        -> dist/content.js        (manifest content script)
 //   src/popup/popup.ts    -> dist/popup/popup.js    (popup.html)
 // plus the static files popup.html / popup.css / content.css.
 //

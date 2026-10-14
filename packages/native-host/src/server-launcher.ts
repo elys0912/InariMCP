@@ -59,12 +59,12 @@ function installedDaemonVersion(): string | undefined {
 export { daemonLogPath };
 
 /** Policy settings the daemon reads from its environment (mcp-server/src/safety/config.ts). */
-const DAEMON_POLICY_VARS = [ENV.FOX_READ_ONLY, ENV.FOX_ALLOW_SCRIPTS, ENV.FOX_SAFETY_CONFIG] as const;
+const DAEMON_POLICY_VARS = [ENV.FOX_READ_ONLY, ENV.FOX_SAFETY_CONFIG] as const;
 
 /**
  * Environment for a daemon started by the Native Host. It is Firefox's own
- * environment, not the one of any Claude Code session, so a FOX_READ_ONLY /
- * FOX_ALLOW_SCRIPTS set in `claude mcp add --env` is not seen by it (the relay
+ * environment, not the one of any Claude Code session, so a FOX_READ_ONLY
+ * set in `claude mcp add --env` is not seen by it (the relay
  * warns about such a mismatch, see relay/daemon-client.ts). The policy
  * settings actually inherited are therefore logged, by name only.
  */
@@ -72,7 +72,7 @@ export function daemonEnvNote(env: NodeJS.ProcessEnv = process.env): string {
   // Blank counts as unset, as the daemon reads them (mcp-server resolveFoxEnv).
   const set = DAEMON_POLICY_VARS.filter((name) => (env[name]?.trim() ?? '') !== '');
   return set.length === 0
-    ? 'daemon inherits no FOX_READ_ONLY / FOX_ALLOW_SCRIPTS / FOX_SAFETY_CONFIG from the Native Host environment'
+    ? 'daemon inherits no FOX_READ_ONLY / FOX_SAFETY_CONFIG from the Native Host environment'
     : `daemon inherits ${set.join(', ')} from the Native Host environment ` +
       '(settings of a Claude Code session are not applied to a daemon started here)';
 }

@@ -492,7 +492,7 @@ describe('doctor: claude registrations', () => {
       projects: {
         [cwd]: {
           mcpServers: {
-            'inari-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: 'true', CLAUDE_BROWSER_ALLOW_SCRIPTS: '0' } },
+            'inari-mcp': { ...entryFor(serverEntry), env: { CLAUDE_BROWSER_READ_ONLY: 'yes' } },
           },
         },
       },
@@ -500,8 +500,8 @@ describe('doctor: claude registrations', () => {
     const results = await runChecks(deps({
       token: TOKEN,
       info: {
-        settings: { FOX_READ_ONLY: '1', FOX_ALLOW_SCRIPTS: '0' },
-        effectiveSettings: { FOX_READ_ONLY: 'on', FOX_ALLOW_SCRIPTS: 'off' },
+        settings: { FOX_READ_ONLY: '1' },
+        effectiveSettings: { FOX_READ_ONLY: 'on' },
       },
     }));
     expect(byId(results, 'settings')).toMatchObject({ status: 'OK' });

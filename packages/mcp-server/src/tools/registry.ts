@@ -39,7 +39,7 @@ export type ToolCallHandler = (
 // ---------------------------------------------------------------------------
 
 /** The FOX_CAPS profile names (the same with and without `legacy`). */
-export const PROFILE_NAMES = ['core', 'logs', 'script', 'workflow', 'human', 'container', 'wait'] as const;
+export const PROFILE_NAMES = ['core', 'workflow', 'human', 'container', 'wait'] as const;
 export type ProfileName = (typeof PROFILE_NAMES)[number];
 
 /**
@@ -66,25 +66,9 @@ const LEGACY_PROFILES: Readonly<Record<ProfileName, readonly OperationName[]>> =
     'fox_wait_for_element',
   ],
 
-  logs: [
-    'fox_start_logging',
-    'fox_stop_logging',
-    'fox_get_console_logs',
-    'fox_get_network_logs',
-    'fox_clear_logs',
-  ],
-
-  script: [
-    'fox_execute_script',
-    'fox_eval_chain',
-    'fox_inject_observer',
-    'fox_remove_observer',
-  ],
-
   workflow: [
     'fox_run_workflow',
     'fox_audit_page',
-    'fox_wait_and_act',
   ],
 
   human: [
@@ -127,10 +111,9 @@ const PROFILES: Readonly<Record<ProfileName, readonly PublicToolName[]>> = {
     'fox_wait',
     'fox_handle_dialog',
   ],
-  logs: ['fox_logging', 'fox_get_logs'],
-  script: ['fox_evaluate', 'fox_observer'],
-  // The old workflow profile: fox_wait_and_act is fox_evaluate mode=wait_and_act.
-  workflow: ['fox_evaluate'],
+  // The old workflow profile: fox_run_workflow and fox_audit_page are no
+  // public tools (not implemented), so only fox_safety_status is registered.
+  workflow: [],
   human: ['fox_request_approval', 'fox_detect_captcha'],
   // Containers are fox_tabs what=containers and fox_tab action=create with container.
   container: ['fox_tabs', 'fox_tab'],

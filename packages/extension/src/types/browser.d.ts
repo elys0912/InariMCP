@@ -20,7 +20,6 @@ declare namespace browser {
 
     interface MessageSender {
       tab?: tabs.Tab;
-      frameId?: number;
       id?: string;
       url?: string;
     }
@@ -106,10 +105,6 @@ declare namespace browser {
     }
 
     function captureTab(tabId: number, options?: ImageDetails): Promise<string>;
-    function executeScript(
-      tabId: number,
-      details: { code?: string; file?: string; runAt?: string; frameId?: number },
-    ): Promise<unknown[]>;
     function goBack(tabId: number): Promise<void>;
     function goForward(tabId: number): Promise<void>;
 
@@ -131,16 +126,12 @@ declare namespace browser {
   }
 
   namespace webNavigation {
-    interface CommittedDetails {
+    /** onCompleted / onDOMContentLoaded details. */
+    interface NavigationDetails {
       tabId: number;
       frameId: number;
       url: string;
     }
-    const onCommitted: {
-      addListener(callback: (details: CommittedDetails) => void): void;
-    };
-    /** onCompleted / onDOMContentLoaded details (same shape as onCommitted). */
-    type NavigationDetails = CommittedDetails;
     interface NavigationEvent {
       addListener(callback: (details: NavigationDetails) => void): void;
       removeListener(callback: (details: NavigationDetails) => void): void;
@@ -245,7 +236,7 @@ declare namespace browser {
     const onClicked: {
       addListener(
         callback: (
-          info: { menuItemId: string; frameId?: number },
+          info: { menuItemId: string },
           tab: tabs.Tab,
         ) => void,
       ): void;
