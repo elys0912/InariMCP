@@ -493,7 +493,7 @@ describe('doctor: claude registrations', () => {
     expect(byId(results, 'settings').detail).toContain('the Claude Code registration env');
   });
 
-  it('R-2: compares effective values like the relay: yes and 1 agree', async () => {
+  it('compares effective values like the relay: yes and 1 agree', async () => {
     writeToken(TOKEN);
     writeClaudeConfig({
       projects: {
@@ -514,7 +514,7 @@ describe('doctor: claude registrations', () => {
     expect(byId(results, 'settings')).toMatchObject({ status: 'OK' });
   });
 
-  it('R-2: an effective difference is still a WARN', async () => {
+  it('an effective difference is still a WARN', async () => {
     writeToken(TOKEN);
     writeClaudeConfig({
       projects: { [cwd]: { mcpServers: { 'inari-mcp': { ...entryFor(serverEntry), env: { FOX_READ_ONLY: 'true' } } } } },

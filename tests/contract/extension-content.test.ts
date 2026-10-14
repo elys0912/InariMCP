@@ -166,7 +166,7 @@ function real(name: string, fn: () => Promise<void>, timeout = 30_000): void {
   }, timeout);
 }
 
-describe('3.A1 fox_type: `text` is what to type, not a locator', () => {
+describe('fox_type: `text` is what to type, not a locator', () => {
   it('the locator of a placeholder-only fox_type has no text (nor other data)', () => {
     const data = { text: 'hello', placeholder: 'Search', clear: true, pressEnter: true, delay: 0 };
     expect(fns.locatorWithoutText(data)).toEqual({ placeholder: 'Search' });
@@ -734,8 +734,8 @@ describe('content input checks and truncation', () => {
     expect(r[1]).toMatchObject({ scrolled: true, position: { x: 0, y: 0 } });
   });
 
-  // The Extension's scroll is the reference the headless backend follows
-  // (R3 E-1 / E-2): these pin its behaviour, E-3 its result shape.
+  // The Extension's scroll is the reference the headless backend follows:
+  // these pin its behaviour and its result shape.
   real('fox_scroll: no direction, amount 0, and locators that match nothing', async () => {
     await load('<div id="box" style="height:100px;overflow:auto"><div style="height:1000px">in</div></div>' +
       '<div style="height:3000px">tall</div>');
@@ -751,17 +751,17 @@ describe('content input checks and truncation', () => {
        const top = await f.input.performScroll({ selector: '#box', direction: 'top' });
        return { none, zero, missingSelector, missingTarget, bottom, top };`,
     );
-    // No direction: nothing moves, still scrolled: true (E-2).
+    // No direction: nothing moves, still scrolled: true.
     expect(r.none).toEqual({ scrolled: true, position: { x: 0, y: 0 } });
-    // amount 0 is 0 pixels, not the 300 px default (E-3).
+    // amount 0 is 0 pixels, not the 300 px default.
     expect(r.zero).toEqual({ scrolled: true, position: { x: 0, y: 0 } });
     // A selector that matches nothing scrolls the window; a toElement that
-    // matches nothing falls through to the direction (E-1).
+    // matches nothing falls through to the direction.
     expect(r.missingSelector).toMatchObject({ scrolled: true });
     expect((r.missingSelector.position as { y: number }).y).toBeGreaterThan(0);
     expect(r.missingTarget).not.toHaveProperty('element');
     expect((r.missingTarget.position as { y: number }).y).toBeGreaterThan(0);
-    // top / bottom report the measured position like every other direction (E-3).
+    // top / bottom report the measured position like every other direction.
     expect((r.bottom.position as { y: number }).y).toBeGreaterThan(0);
     expect(r.top).toEqual({ scrolled: true, position: { x: 0, y: 0 } });
   });

@@ -169,7 +169,7 @@ describe('HeadlessBrowser lifecycle', () => {
     expect(launch.mock.calls[0]?.[0]).not.toHaveProperty('executablePath');
   });
 
-  it('uses FOX_EXECUTABLE trimmed (H-16, H-22)', async () => {
+  it('uses FOX_EXECUTABLE trimmed', async () => {
     vi.stubEnv('FOX_EXECUTABLE', ' /opt/ff/firefox ');
     fakeBrowser();
     await new HeadlessBrowser().start();

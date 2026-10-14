@@ -56,7 +56,7 @@ describe('tool sets derived from the schemas', () => {
     ]);
   });
 
-  // G-8: derived from ToolDefinition.tabIndependent, the set the guard had by hand.
+  // derived from ToolDefinition.tabIndependent, the set the guard had by hand.
   it('put the tab-independent tools in TAB_INDEPENDENT_TOOLS', () => {
     expect([...TAB_INDEPENDENT_TOOLS].sort()).toEqual([
       'fox_close_tab', 'fox_create_tab', 'fox_get_tabs', 'fox_list_containers',

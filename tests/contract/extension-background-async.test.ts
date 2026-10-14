@@ -162,7 +162,7 @@ describe('native connection: a replaced port', () => {
     expect(ports.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('a post failing on every retry still drops the last port and reconnects (R3 #7)', async () => {
+  it('a post failing on every retry still drops the last port and reconnects', async () => {
     const { mod, ports, hooks } = await loadNativeConnection();
     mod.connectNativeHost();
     answerLast(ports[0]!);
@@ -188,7 +188,7 @@ describe('native connection: a replaced port', () => {
     expect(ports.length).toBeGreaterThan(RETRIES + 1);
   });
 
-  it('a failed post reports the loss like a disconnect: lastError and the reconnect counter (E-7)', async () => {
+  it('a failed post reports the loss like a disconnect: lastError and the reconnect counter', async () => {
     const { mod, ports } = await loadNativeConnection();
     // Two hosts that exit without answering: the backoff counter reaches 2.
     mod.connectNativeHost();
@@ -221,7 +221,7 @@ describe('native connection: a replaced port', () => {
     expect(ports).toHaveLength(5);
   });
 
-  it('a malformed frame is dropped, not taken as an answer or a command (E-9)', async () => {
+  it('a malformed frame is dropped, not taken as an answer or a command', async () => {
     const { mod, ports, hooks } = await loadNativeConnection();
     mod.connectNativeHost();
     const pending = mod.sendToNativeHost({ action: 'status' }, { timeoutMs: 5_000 })

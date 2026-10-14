@@ -498,11 +498,11 @@ describe('uninstall (real run in a temp home)', () => {
     expect(ctx.text()).toContain('daemon PID 222: stopped');
   });
 
-  it('never touches a InariMCP process of another checkout', async () => {
+  it('never touches an Inari MCP process of another checkout', async () => {
     const ctx = realRunDeps(home, repoRoot);
     ctx.processList.push({ pid: 333, cmd: `"${process.execPath}" "/other/clone/packages/native-host/dist/index.js"` });
     expect(await runUninstall(['--yes'], ctx.deps)).toBe(0);
-    expect(ctx.text()).toContain('not touched (another InariMCP checkout?): PID 333');
+    expect(ctx.text()).toContain('not touched (another Inari MCP checkout?): PID 333');
   });
 
   it('--keep-claude leaves the Claude Code registration alone', async () => {

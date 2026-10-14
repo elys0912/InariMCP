@@ -7,7 +7,7 @@ import {
   resolveWsPort,
 } from '@inari-mcp/shared/node';
 
-describe('parsePort (4.A3)', () => {
+describe('parsePort', () => {
   it.each([
     ['8785', 8785],
     ['1', 1],
@@ -31,13 +31,13 @@ describe('shared/node endpoint', () => {
     expect(resolveDaemonHost({ FOX_HOST: '' })).toBe('127.0.0.1');
   });
 
-  it('a blank FOX_HOST counts as unset and a set one is trimmed (R3 N-1)', () => {
+  it('a blank FOX_HOST counts as unset and a set one is trimmed', () => {
     expect(resolveDaemonHost({ FOX_HOST: ' ' })).toBe('127.0.0.1');
     expect(resolveDaemonHost({ FOX_HOST: '\t' })).toBe('127.0.0.1');
     expect(resolveDaemonHost({ FOX_HOST: ' 127.0.0.2 ' })).toBe('127.0.0.2');
   });
 
-  it('a blank FOX_*_PORT counts as unset without a warning; a set one is trimmed (R3 N-1)', () => {
+  it('a blank FOX_*_PORT counts as unset without a warning; a set one is trimmed', () => {
     const reports: string[] = [];
     const onInvalid = (name: string): void => {
       reports.push(name);

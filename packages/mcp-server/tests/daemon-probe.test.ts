@@ -117,7 +117,7 @@ async function exitCodeFor(port: number): Promise<number | undefined> {
   return codes[0];
 }
 
-describe('occupiedPortExit (R-11: the decision, without exiting)', () => {
+describe('occupiedPortExit (the decision, without exiting)', () => {
   it('0 only for a daemon that proved our token', () => {
     expect(occupiedPortExit({ kind: 'ok' }, 'h', 1).code).toBe(0);
     for (const occupant of [

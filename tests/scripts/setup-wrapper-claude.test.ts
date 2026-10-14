@@ -165,7 +165,7 @@ describe('already registered? (paths are compared)', () => {
 });
 
 describe('envValue', () => {
-  it('is the trimmed value, or undefined when unset, empty or blank (R3 §3)', () => {
+  it('is the trimmed value, or undefined when unset, empty or blank', () => {
     expect(envValue({}, 'X')).toBeUndefined();
     expect(envValue({ X: '' }, 'X')).toBeUndefined();
     expect(envValue({ X: ' \t ' }, 'X')).toBeUndefined();
@@ -181,7 +181,7 @@ describe('claudeConfigPath', () => {
     expect(claudeConfigPath('win32', 'C:\\Users\\u', { CLAUDE_CONFIG_DIR: 'D:\\cfg' })).toBe('D:\\cfg\\.claude.json');
   });
 
-  it('takes an empty or blank CLAUDE_CONFIG_DIR as unset and trims a set one (R3 §3)', () => {
+  it('takes an empty or blank CLAUDE_CONFIG_DIR as unset and trims a set one', () => {
     expect(claudeConfigPath('linux', '/home/u', { CLAUDE_CONFIG_DIR: '' })).toBe('/home/u/.claude.json');
     expect(claudeConfigPath('linux', '/home/u', { CLAUDE_CONFIG_DIR: '  ' })).toBe('/home/u/.claude.json');
     expect(claudeConfigPath('linux', '/home/u', { CLAUDE_CONFIG_DIR: ' /cfg ' })).toBe('/cfg/.claude.json');

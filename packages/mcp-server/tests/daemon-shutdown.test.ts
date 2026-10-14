@@ -17,7 +17,7 @@ function setup(steps: ShutdownStep[] = []): {
 }
 
 describe('createDaemonShutdown', () => {
-  it('R-4: a failing step is logged, the later steps still run, and stop() still exits', async () => {
+  it('a failing step is logged, the later steps still run, and stop() still exits', async () => {
     const ran: string[] = [];
     const { shutdown, exit, lines } = setup([
       { name: 'first', run: () => { ran.push('first'); throw new Error('boom'); } },
@@ -31,14 +31,14 @@ describe('createDaemonShutdown', () => {
     expect(lines).toContain('shutdown: second failed: bang');
   });
 
-  it('Q-5: started is true from the first call on, whatever started it', () => {
+  it('started is true from the first call on, whatever started it', () => {
     const { shutdown } = setup();
     expect(shutdown.started).toBe(false);
     void shutdown.stop('idle for 600s');
     expect(shutdown.started).toBe(true);
   });
 
-  it('Q-5: a forced stop during a graceful drain ends the wait at once', async () => {
+  it('a forced stop during a graceful drain ends the wait at once', async () => {
     vi.useFakeTimers();
     try {
       const { activity, shutdown, exit } = setup();
@@ -67,7 +67,7 @@ describe('createDaemonShutdown', () => {
   });
 });
 
-describe('buildShutdownSteps (R-3)', () => {
+describe('buildShutdownSteps', () => {
   function fakeWsServer(): { server: ClosableWsServer; closed: number[]; serverClosed: () => boolean } {
     const closed: number[] = [];
     let serverClosed = false;

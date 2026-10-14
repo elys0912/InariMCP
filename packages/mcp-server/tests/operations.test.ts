@@ -57,7 +57,7 @@ describe('public tools and operations', () => {
     expect(shape['timeout']!.description).toContain('10000 (element)');
   });
 
-  // G-21 (d): the callers parse with callSchemaFor() first, which refuses
+  // the callers parse with callSchemaFor() first, which refuses
   // both; resolveOperation() itself does not guess.
   it('throws for an unknown variant and for a name that is no tool', () => {
     expect(() => resolveOperation('fox_wait', { for: 'nothing' })).toThrow("fox_wait: unknown for 'nothing'");
@@ -65,7 +65,7 @@ describe('public tools and operations', () => {
     expect(() => resolveOperation('fox_no_such_tool', {})).toThrow('fox_no_such_tool: unknown tool');
   });
 
-  // G-25: the classes as a list next to the joined string.
+  // the classes as a list next to the joined string.
   it('describeTool gives the classes of every operation a tool can run', () => {
     expect(describeTool('fox_tab')).toMatchObject({ classification: 'act|interact', classifications: ['act', 'interact'] });
     expect(describeTool('fox_read')).toMatchObject({ classification: 'observe', classifications: ['observe'] });
@@ -73,7 +73,7 @@ describe('public tools and operations', () => {
   });
 });
 
-// WP-G P-1 (C-3): fox_navigate goes to its url only for goto.
+// fox_navigate goes to its url only for goto.
 describe('fox_navigate url', () => {
   const navigate = callSchemaFor('fox_navigate')!;
 
@@ -95,7 +95,7 @@ describe('fox_navigate url', () => {
   });
 });
 
-// WP-G T-3: numeric arguments the backends use as counts, sizes or waits
+// numeric arguments the backends use as counts, sizes or waits
 // have a lower bound (0 where "none" makes sense, else 1).
 describe('lower bounds of numeric arguments', () => {
   it.each([

@@ -41,7 +41,7 @@ function touch(name: string, mtimeSec: number): void {
   fs.utimesSync(p, mtimeSec, mtimeSec);
 }
 
-describe('listScreenshots (2.A3)', () => {
+describe('listScreenshots', () => {
   it('lists .png files newest first', () => {
     touch('old.png', 1_000);
     touch('new.png', 3_000);

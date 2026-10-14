@@ -42,7 +42,7 @@ describe('tools-smoke: interpretCallResponse', () => {
     expect(interpretCallResponse(null).isError).toBe(true);
   });
 
-  it('reports a 2xx body without a result object (array, {}) as an error (R3 §4)', () => {
+  it('reports a 2xx body without a result object (array, {}) as an error', () => {
     for (const body of [[], ['ok'], {}, { success: true }, { success: true, result: [] }, { result: null }]) {
       const r = interpretCallResponse(answer(200, body));
       expect(r.isError, JSON.stringify(body)).toBe(true);

@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SafetyGuard } from '../src/safety/guard.js';
 import { DEFAULT_CONFIG, loadConfig, type LoadedSafetyConfig } from '../src/safety/config.js';
 
-// loadConfig (safety/config.ts), moved out of guard.test.ts (G-22). The
+// loadConfig (safety/config.ts), moved out of guard.test.ts. The
 // guard is used only to show that a config error refuses every tool.
 
-describe('loadConfig (2.B2)', () => {
+describe('loadConfig', () => {
   let dir: string;
   let stderr: ReturnType<typeof vi.spyOn>;
 
@@ -126,7 +126,7 @@ describe('loadConfig (2.B2)', () => {
 
   // A blank FOX_SAFETY_CONFIG is unset, as for every other daemon
   // setting.
-  it('WP-G T-5: with FOX_SAFETY_CONFIG blank, fox_safety_status names the default file by its full path', () => {
+  it('with FOX_SAFETY_CONFIG blank, fox_safety_status names the default file by its full path', () => {
     vi.stubEnv('HOME', dir);
     vi.stubEnv('USERPROFILE', dir);
     vi.stubEnv('FOX_SAFETY_CONFIG', ' ');

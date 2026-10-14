@@ -112,7 +112,7 @@ describe('client abort (5.5)', () => {
   });
 });
 
-describe('command context for the connection (Q-2)', () => {
+describe('command context for the connection', () => {
   /** A browser that records the CommandContext of each command and never answers. */
   function contextBrowser(manager: BrowserConnectionManager): CommandContext[] {
     const seen: CommandContext[] = [];

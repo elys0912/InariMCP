@@ -238,7 +238,7 @@ describe('approval by tool class (acting tools always ask)', () => {
   });
 });
 
-describe('Layer 2-3 on the parsed target URL (2.B1)', () => {
+describe('Layer 2-3 on the parsed target URL', () => {
   // confirmation_required: the URL passed the lists (an acting tool then asks the human).
   it('an allowlist entry does not admit look-alike hosts or URLs that merely mention it', () => {
     const g = guard({ allowedUrlPatterns: ['example.test'] });
@@ -270,7 +270,7 @@ describe('Layer 2-3 on the parsed target URL (2.B1)', () => {
   });
 });
 
-describe('fail-closed configuration (2.B2)', () => {
+describe('fail-closed configuration', () => {
   it('a config error refuses every tool, even with the guard disabled', () => {
     const g = guard({ enabled: false, configError: 'safety.json: Unexpected token' });
     for (const tool of ['fox_screenshot', 'fox_get_tabs', 'fox_click']) {
@@ -303,7 +303,7 @@ describe('fail-closed configuration (2.B2)', () => {
   });
 });
 
-describe('per-tab URL tracking (2.B4): the page an approval is asked for', () => {
+describe('per-tab URL tracking: the page an approval is asked for', () => {
   it('keeps each tab URL apart', () => {
     const g = guard();
     g.noteUrl({ url: 'https://bank.test/' }, { tabId: 1 }, 'fox_get_text');
@@ -364,7 +364,7 @@ describe('per-tab URL tracking (2.B4): the page an approval is asked for', () =>
     expect(g.urlFor(9)).toBe('https://b.test/');
   });
 
-  // G-5: the new tab's URL is not recorded for the tab the tabId argument names.
+  // the new tab's URL is not recorded for the tab the tabId argument names.
   it('fox_navigate newTab with a tabId records the new tab, not the named one', () => {
     const g = guard();
     g.noteUrl({ url: 'https://a.test/' }, { tabId: 1 }, 'fox_get_text');
@@ -442,7 +442,7 @@ describe('per-tab URL tracking (2.B4): the page an approval is asked for', () =>
     expect(g.urlFor()).toBe('https://b.test/');
   });
 
-  // WP-G S-3: headless results carry no tab id.
+  // headless results carry no tab id.
   it('a result without a tab id keeps the known active tab id', () => {
     const g = guard();
     g.noteUrl({ tabs: [{ id: 2, url: 'https://a.test/', active: true }] }, {}, 'fox_get_tabs');
@@ -463,7 +463,7 @@ describe('per-tab URL tracking (2.B4): the page an approval is asked for', () =>
     expect(g.urlFor()).toBe('https://new.test/');
   });
 
-  // WP-G O-1: what a backend that reports the tab id at the top level gets.
+  // what a backend that reports the tab id at the top level gets.
   it('a top-level tabId in a result names the active tab', () => {
     const g = guard();
     g.noteUrl({ url: 'https://a.test/', tabId: 1 }, { url: 'https://a.test/' }, 'fox_navigate');
@@ -472,7 +472,7 @@ describe('per-tab URL tracking (2.B4): the page an approval is asked for', () =>
   });
 });
 
-describe('the reached URL and the tab URL against blocked/allowed lists (2.B3)', () => {
+describe('the reached URL and the tab URL against blocked/allowed lists', () => {
   it('withholds a result that ended on a blocked site', () => {
     const g = guard({ blockedUrlPatterns: ['blocked.test'] });
     const denial = g.checkReachedUrl('fox_click', {}, { url: 'https://www.blocked.test/landing' });
@@ -529,7 +529,7 @@ describe('confirmationFromBrowser', () => {
     expect(c).toMatchObject({ layer: 4, elicitation: { url: 'https://bank.test/', matchedPattern: 'bank.test' } });
   });
 
-  // WP-G P-2: the refused call closed nothing.
+  // the refused call closed nothing.
   it('a refused fox_close_tab leaves the tab and the active tab known', () => {
     const g = guard();
     g.noteUrl({ url: 'https://bank.test/' }, { tabId: 2 }, 'fox_switch_tab');
@@ -546,7 +546,7 @@ describe('review follow-ups', () => {
     expect(decision(g, 'fox_wait_for_url', { tabId: 1, url: 'https://fine.test/' })).toBe('blocked_url');
   });
 
-  // WP-G P-1: only goto goes to its url (the call schema refuses the rest;
+  // only goto goes to its url (the call schema refuses the rest;
   // the guard does not rely on that).
   it("the url of fox_navigate back / forward / refresh is not a target: the tab URL is checked", () => {
     const g = guard({ blockedUrlPatterns: ['blocked.test'] });
@@ -567,7 +567,7 @@ describe('review follow-ups', () => {
     expect(targetUrlOf('fox_navigate', { url: '' })).toBeNull();
   });
 
-  // WP-G: a denial carries only the decisions that refuse.
+  // a denial carries only the decisions that refuse.
   it('DenialDecision is the refusing part of AuditDecision', () => {
     expectTypeOf<DenialDecision>().toEqualTypeOf<
       'rate_limited' | 'blocked_scheme' | 'blocked_url' | 'not_allowlisted' | 'read_only' |
@@ -577,7 +577,7 @@ describe('review follow-ups', () => {
   });
 });
 
-describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => {
+describe('the handler pipeline keeps the guard up to date', () => {
   /** The guard of the handlers, without a rate limit unless `overrides` sets one. */
   const handlerGuard = (overrides: Partial<LoadedSafetyConfig> = {}): SafetyGuard =>
     useGuard(testGuard, { maxActionsPerMinute: 0, ...overrides });
@@ -657,7 +657,7 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
 
   const decisions = (lines: Array<Record<string, unknown>>): unknown[] => lines.map((l) => l['decision']);
 
-  // WP-G T-1: the guard's line is the only one for a call that ran; a
+  // the guard's line is the only one for a call that ran; a
   // failure adds browser_error (not denied), and audit_log off means no line.
   it('audits a call that ran once, and a browser failure as browser_error', async () => {
     handlerGuard({ auditLog: true });
@@ -696,7 +696,7 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     expect(lines).toEqual([expect.objectContaining({ decision: 'confirmation_required', url: masked, args: { url: masked } })]);
   });
 
-  // WP-G P-3: refused before the guard, so neither counted nor audited as allowed.
+  // refused before the guard, so neither counted nor audited as allowed.
   it('a password field is refused as denied, without using up the rate limit', async () => {
     const g = handlerGuard({ auditLog: true, maxActionsPerMinute: 10 });
     const send = vi.spyOn(getConnectionManager(), 'sendCommand');
@@ -721,7 +721,7 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
     expect(g.status().actionsInLastMinute).toBe(0);
   });
 
-  // WP-G B-2: the fox_ prefix rule is checked against BROWSER_ACTIONS, so
+  // the fox_ prefix rule is checked against BROWSER_ACTIONS, so
   // every operation must reach a known browser action.
   it('every operation sends a browser action of BROWSER_ACTIONS', async () => {
     handlerGuard({ enabled: false });
@@ -758,7 +758,7 @@ describe('the handler pipeline keeps the guard up to date (2.B3 / 2.B4)', () => 
   });
 });
 
-describe('rate limit counts only calls that would run (2.B7)', () => {
+describe('rate limit counts only calls that would run', () => {
   it('refused calls and fox_safety_status do not use up the budget', () => {
     const g = guard({ maxActionsPerMinute: 2, readOnly: true });
     for (let i = 0; i < 5; i++) {

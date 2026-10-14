@@ -28,7 +28,7 @@ afterEach(() => { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10,
  * directory of their own, outside `dir`: Windows refuses to delete the cwd
  * of a running process and files a new process just wrote may still be open
  * (AV scan), so `dir` must not depend on when they exit. Deleted once in
- * afterAll, after they have exited (R3 §4 trampoline flakiness).
+ * afterAll, after they have exited (the trampoline tests were flaky otherwise).
  */
 let daemonRoot: string;
 const daemonPids: number[] = [];

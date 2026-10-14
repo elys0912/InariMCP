@@ -134,7 +134,7 @@ describe('snapshot', () => {
 describe('scroll', () => {
   const TALL = '<div style="height:3000px">tall</div><div id="t" style="height:10px">target</div><div style="height:3000px"></div>';
 
-  real('moves the window by direction and amount; no direction moves nothing (H-26)', async () => {
+  real('moves the window by direction and amount; no direction moves nothing', async () => {
     await load(TALL);
     const down = await browser.execute('scroll', undefined, { direction: 'down', amount: 300 });
     expect(down).toMatchObject({ success: true, scrolled: true, target: 'window', position: { y: 300 } });
@@ -238,7 +238,7 @@ describe('select_option', () => {
   });
 });
 
-describe('type and set_value (H-2, H-6)', () => {
+describe('type and set_value', () => {
   /** The value of an input, select or textarea, else the text of the element. */
   async function valueOf(selector: string): Promise<unknown> {
     return inPage(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); return 'value' in e ? e.value : e.textContent; })()`);
@@ -276,7 +276,7 @@ describe('type and set_value (H-2, H-6)', () => {
   });
 });
 
-describe('reading the page (H-3, H-7, H-8, H-15)', () => {
+describe('reading the page', () => {
   real('get_text returns totalLength and title as the Extension does', async () => {
     await load('<title>T</title><p>hello world</p>');
     const r = await browser.execute('get_text', undefined, { maxLength: 5 });
@@ -363,7 +363,7 @@ describe('options of a masked select and selectors that test a value, as on the 
   });
 });
 
-describe('history and waits (H-13)', () => {
+describe('history and waits', () => {
   // A wait holds the lock, so the navigation it waits for is started by a
   // timer in the page before the wait is sent.
   const later = (js: string): Promise<unknown> => inPage(`setTimeout(() => { ${js} }, 300); 1`);
@@ -417,7 +417,7 @@ describe('other page actions', () => {
     expect(await browser.execute('solve_captcha', undefined, { detectOnly: true })).toMatchObject({ present: false, widgets: [] });
   });
 
-  real('focus_tab makes the tab active and names it (H-23)', async () => {
+  real('focus_tab makes the tab active and names it', async () => {
     await load('<p>first</p>');
     const tabs = await browser.execute('get_tabs', undefined, {});
     const first = defined((tabs['tabs'] as Array<{ id: number; active: boolean }>).find((t) => t.active)).id;
@@ -470,7 +470,7 @@ describe('screenshot', () => {
   });
 });
 
-describe('direct execute() calls the tool schemas would refuse (H-24, H-25)', () => {
+describe('direct execute() calls the tool schemas would refuse', () => {
   real('close_tab without tabId closes nothing; navigate with an empty url fails', async () => {
     await load('<p>x</p>');
     const before = (await browser.execute('get_tabs', undefined, {}))['totalTabs'];
@@ -555,7 +555,7 @@ describe('dialogs', () => {
     expect(Date.now() - started).toBeLessThan(10_000);
   });
 
-  real('a second handle_dialog replaces the first, which does not arm (Q-3)', async () => {
+  real('a second handle_dialog replaces the first, which does not arm', async () => {
     await load(ALERT);
     const first = browser.execute('handle_dialog', undefined, { action: 'accept', timeout: 300 });
     const second = browser.execute('handle_dialog', undefined, { action: 'dismiss', timeout: 10_000 });
@@ -570,7 +570,7 @@ describe('dialogs', () => {
     expect((later['dialogs'] as Array<{ auto: boolean }>)[0]?.auto).toBe(true);
   }, 40_000);
 
-  real('a cancelled handle_dialog ends at once and does not arm (Q-2)', async () => {
+  real('a cancelled handle_dialog ends at once and does not arm', async () => {
     await load(ALERT);
     const abort = new AbortController();
     const waiting = browser.execute('handle_dialog', undefined, { action: 'accept', timeout: 20_000 },
@@ -627,7 +627,7 @@ describe('warnings and timeouts', () => {
 // Without a selector the guard follows the focus from the top document's
 // activeElement (the <iframe> / shadow host) to the field inside it
 // (headless/focus.ts). The Extension path still has the old limit.
-// Moved from password-guard.test.ts (H-29): the guard where the element is
+// Moved from password-guard.test.ts: the guard where the element is
 // resolved by the server rather than by content.ts.
 describe('type / set_value: password guard on the element written to', () => {
   const script = inPage;
@@ -729,7 +729,7 @@ describe('type without selector: password guard follows the focus', () => {
   //   limitation of headless/focus.ts).
 });
 
-describe('press_key: password guard (H-1)', () => {
+describe('press_key: password guard', () => {
   const PW = '<input id="pw" type="password"><input id="t" type="text">';
 
   async function valueOf(id: string): Promise<unknown> {
@@ -776,7 +776,7 @@ describe('press_key: password guard (H-1)', () => {
   });
 });
 
-describe('password fields of an XHTML document (H-5)', () => {
+describe('password fields of an XHTML document', () => {
   const XHTML = (body: string): string =>
     `data:application/xhtml+xml;charset=utf-8,${encodeURIComponent(
       `<html xmlns="http://www.w3.org/1999/xhtml"><body>${body}</body></html>`,
@@ -796,7 +796,7 @@ describe('password fields of an XHTML document (H-5)', () => {
   });
 });
 
-describe('commands given up while waiting for the lock (Q-2)', () => {
+describe('commands given up while waiting for the lock', () => {
   // A click on it sets the title, so a command that ran shows.
   const BUTTON = `<button id="b" onclick="document.title = 'ran'">x</button>`;
   const CLICK = { selector: '#b' };
@@ -832,7 +832,7 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
     expect(info['title']).not.toBe('ran');
   });
 
-  real('a cancelled wait_for_* ends at once and frees the lock (H-4)', async () => {
+  real('a cancelled wait_for_* ends at once and frees the lock', async () => {
     await load('<p>x</p>');
     const waits: Array<[string, Record<string, unknown>]> = [
       ['wait_for_element', { selector: '#never', timeout: 20_000, visible: true }],
@@ -864,7 +864,7 @@ describe('commands given up while waiting for the lock (Q-2)', () => {
   });
 });
 
-describe('element waits and create_tab (R-3, R-2)', () => {
+describe('element waits and create_tab', () => {
   real('set_value on a missing element fails within the element timeout, not after 60 s', async () => {
     await load('<p>x</p>');
     const started = Date.now();
@@ -885,7 +885,7 @@ describe('element waits and create_tab (R-3, R-2)', () => {
   });
 });
 
-describe('results name the tab and its URL (O-1)', () => {
+describe('results name the tab and its URL', () => {
   real('a click that navigates reports the URL it ended on and the tab id', async () => {
     await load('<a id="a" href="#next">next</a>');
     const tabs = await browser.execute('get_tabs', undefined, {});
@@ -922,7 +922,7 @@ describe('results name the tab and its URL (O-1)', () => {
   });
 });
 
-describe('closing the last tab (Q-1)', () => {
+describe('closing the last tab', () => {
   real('tab commands still work afterwards and other actions name the way out', async () => {
     const list = async (): Promise<number[]> =>
       ((await browser.execute('get_tabs', undefined, {}))['tabs'] as Array<{ id: number }>).map((t) => t.id);

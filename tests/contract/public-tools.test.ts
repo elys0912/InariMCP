@@ -67,7 +67,7 @@ describe('tools that are an operation as is', () => {
     }
   });
 
-  // G-7: the call schema is the operation's callSchema where it has one,
+  // the call schema is the operation's callSchema where it has one,
   // else its inputSchema.
   it('parse with the operation callSchema when there is one, else with its inputSchema', () => {
     const navigate = TOOL_SCHEMAS['fox_navigate']!;

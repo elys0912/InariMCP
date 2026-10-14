@@ -1,6 +1,6 @@
 /**
  * tools/handlers.ts: what the tests of the result format, the safety
- * metadata and the guard do not cover (R3 G-21 (b), §4 mimeTypeFor).
+ * metadata and the guard do not cover (including mimeTypeFor).
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';

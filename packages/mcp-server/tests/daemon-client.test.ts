@@ -191,7 +191,7 @@ describe('DaemonClient and oversized calls', () => {
   });
 });
 
-describe('DaemonClient: refused signature (X-3 / L-4)', () => {
+describe('DaemonClient: refused signature', () => {
   const other = 'e'.repeat(64);
 
   it('tool call: the proof of /health fails for another token, so nothing is sent', async () => {
@@ -256,7 +256,7 @@ describe('DaemonClient: approvals to an impostor (nothing is sent before the dae
   });
 });
 
-describe('DaemonClient: elicitation answer refused by the daemon (X-1)', () => {
+describe('DaemonClient: elicitation answer refused by the daemon', () => {
   it('keeps reason elicitation_disabled from the signed 403', async () => {
     vi.stubEnv('FOX_APPROVAL_ELICITATION', '0');
     try {
@@ -384,7 +384,7 @@ describe('DaemonClient: slow /health (a busy daemon is not taken for a missing o
   }, 15_000);
 });
 
-describe('DaemonClient: daemon shutting down (Q-6)', () => {
+describe('DaemonClient: daemon shutting down', () => {
   it('waits for the stopping daemon to go away and sends the call once more', async () => {
     let releaseShutdown: ((v: Record<string, unknown>) => void) | undefined;
     const stopping = await startHttpBridge({

@@ -55,7 +55,7 @@ describe('unrecognizedHeadlessValue', () => {
 });
 
 describe('resolveFoxEnv', () => {
-  it('returns the value without surrounding white space; blank is unset (H-16)', () => {
+  it('returns the value without surrounding white space; blank is unset', () => {
     expect(resolveFoxEnv({ FOX_EXECUTABLE: '  /opt/ff/firefox \n' }, 'FOX_EXECUTABLE')).toBe('/opt/ff/firefox');
     expect(resolveFoxEnv({ FOX_EXECUTABLE: ' ' }, 'FOX_EXECUTABLE')).toBeUndefined();
     expect(resolveFoxEnv({}, 'FOX_EXECUTABLE')).toBeUndefined();

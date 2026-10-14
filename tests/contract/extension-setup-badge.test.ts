@@ -87,7 +87,7 @@ describe('background/setup-badge.ts', () => {
         { kind: 'noSession', serverUrl: url, registerCommand: 'claude mcp add x' },
       ],
       ['daemonDown', { mcp_server: { url, available: false, relays: null } }, { kind: 'daemonDown', serverUrl: url }],
-      // Native Hosts before 0.1.2 send no `relays` field at all
+      // a Native Host older than the extension sends no `relays` field at all
       ['hostOutdated', { mcp_server: { url, available: true } }, { kind: 'hostOutdated', serverUrl: url }],
     ])('maps to %s', async (_kind, reply, expected) => {
       host.reply.mockResolvedValueOnce(reply);

@@ -155,7 +155,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
     expect(g.urlFor(3)).toBeNull();
   });
 
-  // G-11: config_error (the Extension could not use the attached rules) is
+  // config_error (the Extension could not use the attached rules) is
   // audited as such, in no layer.
   it('config_error is SAFETY_BLOCKED without a layer and audited as config_error', async () => {
     const g = useGuard(testGuard);
@@ -185,7 +185,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
     expect(stderr.mock.calls.map((c) => String(c[0])).join('')).not.toContain('unknown safetyDecision');
   });
 
-  // G-11: a decision this server does not know is no silent `denied`.
+  // a decision this server does not know is no silent `denied`.
   it('an unknown safetyDecision is refused as denied and reported on stderr', async () => {
     const g = useGuard(testGuard);
     const audit = vi.spyOn(g, 'recordAudit');
@@ -199,7 +199,7 @@ describe('handler path: a refusal the Extension made itself (WP5b)', () => {
     expect(stderr.mock.calls.map((c) => String(c[0])).join('')).toContain('"new_layer_9"');
   });
 
-  // G-21 (a): the Extension refused without reporting the tab's URL, and the
+  // the Extension refused without reporting the tab's URL, and the
   // guard knows none either: nothing names a site to approve.
   it('confirmation_required without a known URL cannot be approved', async () => {
     useGuard(testGuard, { confirmReadSites: ['bank.test'] });

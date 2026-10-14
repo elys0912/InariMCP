@@ -70,7 +70,7 @@ describe('SafetyGuard.check with an approval grant', () => {
       .toMatchObject({ safetyDecision: 'blocked_scheme' });
   });
 
-  // WP-G P-4: allowed_by_human only for a call the grant let through.
+  // allowed_by_human only for a call the grant let through.
   it('audits allowed_by_human only when the grant lifted the confirmation', () => {
     const lastDecision = (): unknown =>
       JSON.parse(fs.readFileSync(getAuditLogPath(), 'utf-8').trim().split('\n').at(-1)!)['decision'];

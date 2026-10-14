@@ -89,7 +89,7 @@ afterEach(() => {
   delete (globalThis as { browser?: unknown }).browser;
 });
 
-describe('3.A6 / 5.11 waitForTabLoad', () => {
+describe('waitForTabLoad', () => {
   it('ignores a "complete" left over from the previous page and fails on timeout', async () => {
     vi.useFakeTimers();
     const tabs = fakeTabs({ status: 'complete', url: 'https://old.test/' });
@@ -168,7 +168,7 @@ describe('3.A6 / 5.11 waitForTabLoad', () => {
   });
 });
 
-describe('3.A4 handleCommand end to end (fake browser)', () => {
+describe('handleCommand end to end (fake browser)', () => {
   const agentTab = fakeTab({ id: 1, url: 'https://app.example.test/page', cookieStoreId: 'c-agent' });
   const bankTab = fakeTab({ id: 2, url: 'https://bank.example.test/', cookieStoreId: 'c-agent' });
   const outsideTab = fakeTab({ id: 3, url: 'https://app.example.test/other', cookieStoreId: 'firefox-default' });
@@ -346,18 +346,18 @@ describe('go_back / go_forward wait for the load like navigate', () => {
   });
 });
 
-describe('3.A2 reconnect backoff', () => {
+describe('reconnect backoff', () => {
   it('starts over only after a confirmed connection stayed up for the stable period', async () => {
     const next = nextReconnectAttempts;
     expect(next(4, null, 10_000)).toBe(4); // host never answered
     expect(next(4, 2_000, 10_000)).toBe(4); // crashed right after answering
     expect(next(4, 10_000, 10_000)).toBe(0);
     // That connectNative() itself does not reset the counter is run on fake
-    // ports in extension-background-async.test.ts (E-7).
+    // ports in extension-background-async.test.ts.
   });
 });
 
-describe('3.A3 / 5.1 frame routing', () => {
+describe('frame routing', () => {
   it('every tabs.sendMessage call names the top frame, the only one with the content script', () => {
     const calls = [...background.matchAll(/browser\.tabs\s*\.sendMessage\(([\s\S]*?)\)(?:\s*as|\s*\.|;)/g)];
     expect(calls.length).toBeGreaterThan(0);
@@ -365,7 +365,7 @@ describe('3.A3 / 5.1 frame routing', () => {
   });
 });
 
-describe('3.A5 capture of the target tab', () => {
+describe('capture of the target tab', () => {
   // takeScreenshot itself is run in 'screenshot of a background tab' below.
   it('no background source calls captureVisibleTab(windowId)', () => {
     expect(background).not.toMatch(/\.captureVisibleTab\(/);
@@ -548,7 +548,7 @@ describe('WP5b URL rules and urlPattern arguments', () => {
   });
 });
 
-describe('E-4 runtime.onMessage sender checks (fake browser)', () => {
+describe('runtime.onMessage sender checks (fake browser)', () => {
   const EXTENSION_ID = 'inari@test';
   const POPUP_URL = 'moz-extension://inari/popup/popup.html';
   type Listener = (message: unknown, sender: browser.runtime.MessageSender, sendResponse: (r: unknown) => void) => boolean | void;

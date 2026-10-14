@@ -61,7 +61,7 @@ describe('applyPasswordPolicy', () => {
     expect(data2['allowPassword']).toBe(true);
   });
 
-  it('sets it on fox_press_key too: headless key presses are real input (H-1)', () => {
+  it('sets it on fox_press_key too: headless key presses are real input', () => {
     const data: Record<string, unknown> = { allowPassword: true };
     applyPasswordPolicy('fox_press_key', data, false);
     expect(data['allowPassword']).toBe(false);

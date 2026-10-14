@@ -11,7 +11,7 @@ function harness(): { handlers: ReturnType<typeof createProcessHandlers>; exits:
   return { handlers: createProcessHandlers({ exit: (c) => exits.push(c), log: (l) => lines.push(l) }), exits, lines };
 }
 
-describe('Native Host process handlers (4.A8)', () => {
+describe('Native Host process handlers', () => {
   it('uncaughtException logs and exits 1', () => {
     const h = harness();
     h.handlers.uncaughtException(new Error('boom'));

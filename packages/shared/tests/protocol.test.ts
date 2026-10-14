@@ -79,7 +79,7 @@ describe('util helpers', () => {
     expect(formatZodIssues([])).toBe('');
   });
 
-  it('shortId gives exactly 6 base-36 characters (R3 N-9)', () => {
+  it('shortId gives exactly 6 base-36 characters', () => {
     expect(shortId()).toMatch(/^[a-z0-9]{6}$/);
   });
 });

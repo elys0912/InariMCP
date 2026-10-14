@@ -33,7 +33,7 @@ describe('parseArgs', () => {
   });
 
   it('names the action and every field at fault when they do not fit', () => {
-    // The field names, not zod's wording (H-27).
+    // The field names, not zod's wording.
     let message = '';
     try {
       parseArgs(schema, { timeout: '5' }, 'wait_for_element');
@@ -145,7 +145,7 @@ describe('maskAriaSnapshot (the masked fields of fox_snapshot)', () => {
   });
 });
 
-describe('countOccurrences (find_text, H-7)', () => {
+describe('countOccurrences (find_text)', () => {
   const TEXT = 'Cat cat concatenate. CAT_x (cat)';
 
   it('counts case-insensitively by default, case-sensitively on request', () => {
@@ -186,17 +186,17 @@ describe('ignoredParamWarnings', () => {
     expect(ignoredParamWarnings('click', { xpath: '//a' })).toHaveLength(1);
   });
 
-  it('type clear is honoured with a selector and warned about without one (H-2)', () => {
+  it('type clear is honoured with a selector and warned about without one', () => {
     expect(ignoredParamWarnings('type', { clear: true, selector: '#a' })).toEqual([]);
     expect(ignoredParamWarnings('type', { clear: true })).toEqual([expect.stringContaining('clear')]);
   });
 
-  it('get_elements warns only for a limit above what headless returns (H-8)', () => {
+  it('get_elements warns only for a limit above what headless returns', () => {
     expect(ignoredParamWarnings('get_elements', { limit: 10 })).toEqual([]);
     expect(ignoredParamWarnings('get_elements', { limit: 500 })).toEqual([expect.stringContaining('limit')]);
   });
 
-  it('honoured parameters give no warning (H-7, H-15)', () => {
+  it('honoured parameters give no warning', () => {
     expect(ignoredParamWarnings('find_text', { caseSensitive: true, entireWord: true })).toEqual([]);
     expect(ignoredParamWarnings('highlight', { duration: 100 })).toEqual([]);
     expect(ignoredParamWarnings('wait_for_element', { visible: false })).toEqual([]);
@@ -216,7 +216,7 @@ describe('ignoredParamWarnings', () => {
 });
 
 describe('HEADLESS_IGNORED against the tool schemas', () => {
-  // Action -> ignored keys, from the exported table (H-17: no longer parsed from the source).
+  // Action -> ignored keys, from the exported table (no longer parsed from the source).
   const table = new Map<string, string[]>(
     Object.entries(HEADLESS_IGNORED).map(([action, params]) => [action, (params ?? []).map((p) => p.key)]),
   );
@@ -267,7 +267,7 @@ describe('HEADLESS_IGNORED against the tool schemas', () => {
   });
 });
 
-describe('captcha detection: the same strings as the Extension (H-12)', () => {
+describe('captcha detection: the same strings as the Extension', () => {
   it('every selector and token name of CAPTCHA_SELECTORS appears in content/captcha.ts', () => {
     const extension = readExtensionSource('content/captcha.ts');
     for (const [name, value] of Object.entries(CAPTCHA_SELECTORS)) {
@@ -276,7 +276,7 @@ describe('captcha detection: the same strings as the Extension (H-12)', () => {
   });
 });
 
-describe('step timeouts stay below the headless command timeout (R-3)', () => {
+describe('step timeouts stay below the headless command timeout', () => {
   it('every single-step timeout, and the two waits of type / set_value together, end first', () => {
     for (const ms of [NAVIGATE_TIMEOUT_MS, HISTORY_TIMEOUT_MS, ELEMENT_TIMEOUT_MS, SELECT_OPTION_TIMEOUT_MS]) {
       expect(ms).toBeLessThan(HEADLESS_COMMAND_TIMEOUT_MS);

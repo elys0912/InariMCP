@@ -182,7 +182,7 @@ describe('callWithApproval', () => {
   });
 });
 
-describe('obtainApproval: daemon refuses elicitation answers (X-1)', () => {
+describe('obtainApproval: daemon refuses elicitation answers', () => {
   const disabled = {
     success: false,
     approved: false,

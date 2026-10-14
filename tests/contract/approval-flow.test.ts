@@ -302,7 +302,7 @@ describe('popup approval → one-time token', () => {
     expect(getApprovalStore().getRequest(requestId)).toBeUndefined();
   });
 
-  // G-21 (c): the popup itself failed: nobody answered, so the request stays open.
+  // the popup itself failed: nobody answered, so the request stays open.
   it('a failed popup → browser_error, no token, request still open', async () => {
     browser.popupDecision = 'error';
     const first = await createToolHandler('fox_navigate')({ action: 'goto', url: SITE_URL });
@@ -362,7 +362,7 @@ describe('popup approval → one-time token', () => {
     const result = await createToolHandler('fox_click')(args, { approvalToken: reply.approvalToken });
     expect(result.isError).toBe(true);
     expect(details(result)).toMatchObject({ decision: 'confirmation_required' });
-    // WP-G P-4: the token was valid, but lifted nothing here: say so.
+    // the token was valid, but lifted nothing here: say so.
     expect(text(result)).toContain('The approval token sent with this call was not accepted');
   });
 
@@ -592,7 +592,7 @@ describe('extension: approval UI is outside the page', () => {
   });
 
   // Who may list or decide approvals is checked on the listeners themselves
-  // (extension-background.test.ts, 'E-4 runtime.onMessage sender checks').
+  // (extension-background.test.ts, 'runtime.onMessage sender checks').
   it('the popup uses the shared message types, not its own literals', () => {
     expect(popup).toContain('APPROVAL_MESSAGE.LIST');
     expect(popup).toContain('APPROVAL_MESSAGE.DECIDE');

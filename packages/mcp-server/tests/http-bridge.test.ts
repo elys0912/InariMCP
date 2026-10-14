@@ -138,7 +138,7 @@ describe('signed requests', () => {
     expect(verifyResponse(TOKEN, s.nonce, 200, r.raw, r.headers[AUTH_HEADER.signature])).toBe(true);
   });
 
-  describe('nonce memory follows a monotonic clock (X-5, L-2)', () => {
+  describe('nonce memory follows a monotonic clock', () => {
     const WINDOW = 1_000;
     const T = 1_700_000_000_000;
 
@@ -439,7 +439,7 @@ describe('POST /daemon/shutdown', () => {
     expect((await request('POST', '/daemon/shutdown', { ...s.headers, 'Content-Type': 'application/json' }, '{}')).status).toBe(501);
   });
 
-  it('X-2: a failing prepare is answered 500 and the daemon still exits (no lasting 503)', async () => {
+  it('a failing prepare is answered 500 and the daemon still exits (no lasting 503)', async () => {
     let exits = 0;
     server = await startHttpBridge({
       host: '127.0.0.1',
@@ -480,7 +480,7 @@ describe('daemon state seen by tool calls', () => {
   const approvalBody = JSON.stringify({ requestId: 'r1' });
   const headers = { 'X-API-Key': TOKEN, 'Content-Type': 'application/json' };
 
-  it('Q-5: refuses tool calls and approvals (503) once the daemon stops on its own (signal, idle)', async () => {
+  it('refuses tool calls and approvals (503) once the daemon stops on its own (signal, idle)', async () => {
     let stopping = false;
     await start({ isShuttingDown: () => stopping });
     expect((await request('POST', '/mcp/call', headers, callBody)).status).toBe(200);
@@ -489,7 +489,7 @@ describe('daemon state seen by tool calls', () => {
     expect((await request('POST', '/approval/browser', headers, approvalBody)).status).toBe(503);
   });
 
-  it('Q-4: a daemon that cannot start answers waiting calls with the reason (500)', async () => {
+  it('a daemon that cannot start answers waiting calls with the reason (500)', async () => {
     let fail: (err: Error) => void = () => undefined;
     const ready = new Promise<void>((_resolve, reject) => { fail = reject; });
     await start({ ready });

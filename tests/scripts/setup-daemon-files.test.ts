@@ -95,7 +95,7 @@ describe('probeDaemon', () => {
     expect(await probeDaemon(deps, closed, token)).toEqual({ kind: 'none' });
   });
 
-  it('kind "foreign" for a server that is not a InariMCP daemon', async () => {
+  it('kind "foreign" for a server that is not an Inari MCP daemon', async () => {
     await serve((_req, res) => res.end('<html>hello</html>'));
     expect(await probeDaemon(deps, endpoint, token)).toEqual({ kind: 'foreign' });
   });
@@ -115,7 +115,7 @@ describe('probeDaemon', () => {
     expect(await probeDaemon(deps, endpoint, token)).toEqual({ kind: 'foreign' });
   });
 
-  it('kind "foreign" for a 200 InariMCP answer whose status is not "ok", like inariHealth (R3 N-11)', async () => {
+  it('kind "foreign" for a 200 InariMCP answer whose status is not "ok", like inariHealth', async () => {
     for (const status of ['starting', '', undefined]) {
       const server = await serve((_req, res) => {
         res.writeHead(200, { 'content-type': 'application/json' });

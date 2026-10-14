@@ -11,7 +11,7 @@ import {
 
 const TOKEN = 'c'.repeat(64);
 
-describe('evaluateHealth (4.A4)', () => {
+describe('evaluateHealth', () => {
   const nonce = newNonce();
   const good = (extra: Record<string, unknown> = {}): string =>
     JSON.stringify({
