@@ -12,15 +12,15 @@
 import type { BrowserContext, ElementHandle, Page } from 'playwright';
 import { z } from 'zod';
 import {
-  assertReadSelector,
   BrowserActionSchema,
   isMaskedField,
   MASKED_VALUE,
+  maskedText,
   type BrowserAction,
   type MaskFieldInfo,
 } from '@inari-mcp/shared';
 import { screenshotStem } from '@inari-mcp/shared/node';
-import { countOccurrences, filterAriaSnapshot, parseArgs } from './helpers.js';
+import { assertHeadlessReadSelector, countOccurrences, filterAriaSnapshot, parseArgs } from './helpers.js';
 import { isPasswordElement, PASSWORD_REFUSAL } from '../safety/password-guard.js';
 import { focusedIsPassword } from './focus.js';
 import { getScreenshotsDir } from '../utils/screenshot.js';
@@ -214,27 +214,54 @@ function boundedWait<T>(bound: Bound, timeout: number, what: string, wait: (ms: 
 // Masked values and the password guard
 // ---------------------------------------------------------------------------
 
+/** What the masked-value rule (shared/src/field-mask.ts) and the tools read of a found element. */
+interface ElementFacts {
+  tag: string;
+  text: string;
+  box: { x: number; y: number; width: number; height: number } | null;
+  mask: MaskFieldInfo;
+}
+
+/** The facts of every match of a selector: their count, and the facts of the first `max`. */
+interface FoundElements {
+  count: number;
+  elements: ElementFacts[];
+}
+
 /**
- * What the masked-value rule (shared/src/field-mask.ts) reads from an
- * element (an <option>: with its <select>), as the Extension's
- * content/dom.ts isMaskedField does. Runs in the page.
+ * The count of `els`, and tag, text (first `maxText` characters), box and
+ * the masked-value rule's input of the first `max` (an <option>: with its
+ * <select>, as the Extension's content/dom.ts isMaskedField reads it). One
+ * page function, run by $$eval: the only reader of the rule's input here.
  */
-function maskFieldInfo(el: Element): MaskFieldInfo {
-  const read = (e: Element): MaskFieldInfo => ({
+function elementFacts(els: Element[], { max, maxText }: { max: number; maxText: number }): FoundElements {
+  const maskInfo = (e: Element): MaskFieldInfo => ({
     localName: e.localName,
     type: e.localName === 'input' ? (e as HTMLInputElement).type : '',
     autocomplete: e.getAttribute('autocomplete'),
   });
-  const info = read(el);
-  if (el.localName !== 'option') return info;
-
-  const select = el.closest('select');
-  return { ...info, select: select === null ? null : read(select) };
+  const optionMaskInfo = (e: Element): MaskFieldInfo => {
+    const select = e.closest('select');
+    return { ...maskInfo(e), select: select === null ? null : maskInfo(select) };
+  };
+  const facts = (e: Element): ElementFacts => {
+    const r = e.getBoundingClientRect();
+    return {
+      tag: e.tagName.toLowerCase(),
+      text: (e instanceof HTMLElement ? e.innerText : e.textContent ?? '').slice(0, maxText),
+      // null for an element without a box (display: none), as boundingBox() answered.
+      box: e.getClientRects().length === 0 ? null : { x: r.x, y: r.y, width: r.width, height: r.height },
+      mask: e.localName === 'option' ? optionMaskInfo(e) : maskInfo(e),
+    };
+  };
+  return { count: els.length, elements: els.slice(0, max).map(facts) };
 }
 
-/** `text` as the tools return it: MASKED_VALUE for a masked field that has text (as content/dom.ts shownText). */
-function shownText(text: string, info: MaskFieldInfo): string {
-  return text !== '' && isMaskedField(info) ? MASKED_VALUE : text;
+/** Whether the first match of `selector` is a masked field (false when nothing matches). */
+async function firstIsMasked(page: Page, selector: string): Promise<boolean> {
+  const found = await page.$$eval(selector, elementFacts, { max: 1, maxText: 0 });
+  const first = found.elements[0];
+  return first !== undefined && isMaskedField(first.mask);
 }
 
 /**
@@ -484,9 +511,6 @@ function scrollBy(page: Page, selector: string | null, direction: ScrollDirectio
 
 const scroll: ActionHandler = async ({ page, args }) => {
   const { toElement, direction, amount, selector } = parseArgs(scrollArgs, args, 'scroll');
-  assertReadSelector(selector);
-  assertReadSelector(toElement);
-
   const warnings: string[] = [];
   if (toElement) {
     const found = await scrollToElement(page, toElement);
@@ -529,8 +553,6 @@ const highlightArgs = selectorArgs.extend({ duration: z.number() });
 
 const highlight: ActionHandler = async ({ page, args }) => {
   const { selector, duration } = parseArgs(highlightArgs, args, 'highlight');
-  assertReadSelector(selector);
-
   await page.$eval(
     selector,
     (el, { ms, outline }) => {
@@ -553,45 +575,16 @@ const getPageInfo: ActionHandler = async ({ page }) => {
 // --- get_elements ---
 const getElementsArgs = selectorArgs.extend({ limit: z.number() });
 
-interface FoundElement {
-  tag: string;
-  text: string;
-  box: { x: number; y: number; width: number; height: number } | null;
-}
-
-/** Tag, text and box of a found element. Runs in the page. */
-function describeElement(e: Element, maxText: number): FoundElement {
-  const r = e.getBoundingClientRect();
-  return {
-    tag: e.tagName.toLowerCase(),
-    text: (e instanceof HTMLElement ? e.innerText : e.textContent ?? '').slice(0, maxText),
-    // null for an element without a box (display: none), as boundingBox() answered.
-    box: e.getClientRects().length === 0 ? null : { x: r.x, y: r.y, width: r.width, height: r.height },
-  };
-}
-
-/** describeElement, its text masked by the masked-value rule. */
-async function describeShown(handle: ElementHandle): Promise<FoundElement> {
-  const [found, info] = await Promise.all([
-    handle.evaluate(describeElement, ELEMENT_TEXT_MAX_CHARS),
-    handle.evaluate(maskFieldInfo),
-  ]);
-  return { ...found, text: shownText(found.text, info) };
-}
-
 const getElements: ActionHandler = async ({ page, args }) => {
   const { selector, limit } = parseArgs(getElementsArgs, args, 'get_elements');
-  assertReadSelector(selector);
-
-  // `count` is every match, as on the Extension (content/inspect.ts getElements).
-  const handles = await page.$$(selector);
-  try {
-    const shown = handles.slice(0, Math.max(0, Math.min(limit, GET_ELEMENTS_MAX)));
-    const elements = await Promise.all(shown.map(describeShown));
-    return { success: true, elements, count: handles.length };
-  } finally {
-    await Promise.all(handles.map((h) => h.dispose()));
-  }
+  // One round trip; `count` is every match, as on the Extension (content/inspect.ts getElements).
+  const found = await page.$$eval(
+    selector,
+    elementFacts,
+    { max: Math.max(0, Math.min(limit, GET_ELEMENTS_MAX)), maxText: ELEMENT_TEXT_MAX_CHARS },
+  );
+  const elements = found.elements.map(({ mask, text, ...shown }) => ({ ...shown, text: maskedText(text, isMaskedField(mask)) }));
+  return { success: true, elements, count: found.count };
 };
 
 // --- wait_for_element ---
@@ -599,8 +592,6 @@ const waitForElementArgs = selectorArgs.merge(timeoutArgs).extend({ visible: z.b
 
 const waitForElement: ActionHandler = async (c) => {
   const { selector, timeout, visible } = parseArgs(waitForElementArgs, c.args, 'wait_for_element');
-  assertReadSelector(selector);
-
   await boundedWait(c, timeout, 'wait_for_element', (ms) =>
     c.page.waitForSelector(selector, { timeout: ms, state: visible ? 'visible' : 'attached' }));
   return { success: true };
@@ -680,7 +671,7 @@ const getValue: ActionHandler = async ({ page, args }) => {
   // As on the Extension (content/inspect.ts getValue): a <label> is read as
   // itself (its text), not as its control.
   const label = await el.evaluate((e) => e instanceof HTMLLabelElement);
-  if (!label && isMaskedField(await el.evaluate(maskFieldInfo))) return { success: true, value: MASKED_VALUE };
+  if (!label && (await firstIsMasked(page, selector))) return { success: true, value: MASKED_VALUE };
   const value = await el.evaluate((e): string | null => {
     if (e instanceof HTMLInputElement || e instanceof HTMLTextAreaElement) return e.value;
     if (e instanceof HTMLSelectElement) return e.options[e.selectedIndex]?.value ?? null;
@@ -827,12 +818,10 @@ const getTextArgs = z.object({ selector: z.string().optional(), maxLength: z.num
 
 const getText: ActionHandler = async ({ page, args }) => {
   const { selector, maxLength } = parseArgs(getTextArgs, args, 'get_text');
-  assertReadSelector(selector);
-
   const target = selector || 'body';
-  const innerText = await page.innerText(target, { timeout: ELEMENT_TIMEOUT_MS });
+  const rawText = await page.innerText(target, { timeout: ELEMENT_TIMEOUT_MS });
   // A masked field read as itself (an option of a masked select), as on the Extension.
-  const text = shownText(innerText, await page.$eval(target, maskFieldInfo));
+  const text = maskedText(rawText, await firstIsMasked(page, target));
   const truncated = text.length > maxLength;
   return {
     success: true,
@@ -948,6 +937,20 @@ const containersUnsupported: TablessHandler = () => Promise.resolve({
 // ---------------------------------------------------------------------------
 
 const dispatch = (run: ActionHandler): HeadlessRoute => ({ kind: 'dispatch', needsPage: true, run });
+
+/**
+ * A reading action, which runs without a human approval: its selector
+ * `fields` are checked here once (assertHeadlessReadSelector: what the
+ * Extension refuses, and anything but plain CSS) before the handler runs.
+ * A new such action gets its fields here.
+ */
+const reading = (fields: readonly string[], run: ActionHandler): HeadlessRoute => dispatch((c) => {
+  for (const field of fields) {
+    const selector = c.args[field];
+    if (typeof selector === 'string') assertHeadlessReadSelector(selector);
+  }
+  return run(c);
+});
 const tabless = (run: TablessHandler): HeadlessRoute => ({ kind: 'dispatch', needsPage: false, run });
 const UNSUPPORTED: HeadlessRoute = { kind: 'unsupported' };
 
@@ -957,12 +960,12 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   screenshot: dispatch(screenshot),
   click: dispatch(click),
   type: dispatch(type),
-  scroll: dispatch(scroll),
+  scroll: reading(['selector', 'toElement'], scroll),
   navigate: tabless(navigate),
   get_page_info: dispatch(getPageInfo),
-  get_elements: dispatch(getElements),
-  wait_for_element: dispatch(waitForElement),
-  highlight: dispatch(highlight),
+  get_elements: reading(['selector'], getElements),
+  wait_for_element: reading(['selector'], waitForElement),
+  highlight: reading(['selector'], highlight),
 
   // --- tab management ---
   get_tabs: tabless(getTabs),
@@ -974,7 +977,7 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   focus_tab: dispatch(focusTab),
 
   // --- form / input ---
-  get_value: dispatch(getValue),
+  get_value: reading(['selector'], getValue),
   set_value: dispatch(setValue),
   select_option: dispatch(selectOption),
   hover: dispatch(hover),
@@ -995,7 +998,7 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
 
   // --- keyboard / text ---
   press_key: dispatch(pressKey),
-  get_text: dispatch(getText),
+  get_text: reading(['selector'], getText),
 
   // --- approval / workflow ---
   request_approval: tabless(requestApproval),
@@ -1005,7 +1008,7 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   audit_page: UNSUPPORTED,
 
   // --- P3-3 ---
-  snapshot: dispatch(snapshot),
+  snapshot: reading(['selector'], snapshot),
   find_text: dispatch(findText),
   handle_dialog: { kind: 'unlocked', run: (c) => c.dialogs.handleDialog(c.tabId, c.args, c.signal) },
   list_containers: tabless(containersUnsupported),

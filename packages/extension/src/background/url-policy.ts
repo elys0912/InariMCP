@@ -92,8 +92,8 @@ const VIEW_SOURCE_PREFIX = "view-source:";
 
 /**
  * How many view-source: / about:reader wrappers findReadRule takes off
- * (`view-source:about:reader?url=...` has two); a URL wrapped deeper is
- * matched as far as that.
+ * (`view-source:about:reader?url=...` has two). A URL wrapped deeper counts
+ * as matching (the human is asked) rather than going unchecked.
  */
 const MAX_SHOWN_PAGE_DEPTH = 3;
 
@@ -102,7 +102,8 @@ function shownPageUrl(url: string): string | null {
   if (url.toLowerCase().startsWith(VIEW_SOURCE_PREFIX)) return url.slice(VIEW_SOURCE_PREFIX.length);
   try {
     const parsed = new URL(url);
-    return parsed.protocol === "about:" && parsed.pathname === "reader" ? parsed.searchParams.get("url") : null;
+    const isReader = parsed.protocol === "about:" && parsed.pathname.toLowerCase() === "reader";
+    return isReader ? parsed.searchParams.get("url") : null;
   } catch {
     return null;
   }
@@ -111,11 +112,13 @@ function shownPageUrl(url: string): string | null {
 /**
  * The first confirm_read_sites rule `url` matches, or the page it shows
  * matches: a view-source: or about:reader tab has no host of its own, so a
- * host rule could never match it.
+ * host rule could never match it. Past MAX_SHOWN_PAGE_DEPTH wrappers, the
+ * first rule (fail closed).
  */
 function findReadRule(url: string, rules: CompiledUrlRule[]): CompiledUrlRule | undefined {
   let current: string | null = url;
-  for (let depth = 0; current !== null && depth <= MAX_SHOWN_PAGE_DEPTH; depth++) {
+  for (let depth = 0; current !== null; depth++) {
+    if (depth > MAX_SHOWN_PAGE_DEPTH) return rules[0];
     const matched = findUrlRule(current, rules);
     if (matched) return matched;
     current = shownPageUrl(current);

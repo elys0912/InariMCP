@@ -193,7 +193,7 @@
   },
   {
     "name": "fox_get_elements",
-    "description": "[Deprecated: fox_get_elements is deprecated; use fox_find with by='selector'.] List elements matching a CSS selector (querySelectorAll: the first `limit` matches, plus the total count). Per element: tag, id, classes, name, type, text (first 200 chars), value, href, src, placeholder, ariaLabel, role, disabled, checked, visible, position (viewport coordinates incl. centerX/centerY) and a generated CSS selector. Values of password, hidden, one-time-code and payment card (autocomplete cc-*) fields, and the options of such a select are masked, and so is the text of such an option. A selector that tests the value attribute (such as [value^=\"a\"]) or uses :checked is refused: it could tell a masked value one guess at a time. Headless: tag, text and bounding box only, at most 50.",
+    "description": "[Deprecated: fox_get_elements is deprecated; use fox_find with by='selector'.] List elements matching a CSS selector (querySelectorAll: the first `limit` matches, plus the total count). Per element: tag, id, classes, name, type, text (first 200 chars), value, href, src, placeholder, ariaLabel, role, disabled, checked, visible, position (viewport coordinates incl. centerX/centerY) and a generated CSS selector. Values and texts of password, hidden, one-time-code and payment card (autocomplete cc-*) fields, and the options of such a select are masked. A selector that tests the value or selected attribute (such as [value^=\"a\"] or option[selected]) or uses :checked or :default is refused, as is one longer than 1024 characters: it could tell a masked value one guess at a time. Headless: plain CSS only (no xpath=, text=, role=, //, >> or other Playwright selector forms). Headless: tag, text and bounding box only, at most 50.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -279,7 +279,7 @@
   },
   {
     "name": "fox_get_text",
-    "description": "[Deprecated: fox_get_text is deprecated; use fox_read with mode='text'.] Extract the visible text content of the page or a specific element. Lighter-weight than a screenshot for reading page content. The text of a masked field reads as [MASKED] (masked: password, hidden, one-time-code and payment card (autocomplete cc-*) fields, and the options of such a select). A selector that tests the value attribute (such as [value^=\"a\"]) or uses :checked is refused: it could tell a masked value one guess at a time.",
+    "description": "[Deprecated: fox_get_text is deprecated; use fox_read with mode='text'.] Extract the visible text content of the page or a specific element. Lighter-weight than a screenshot for reading page content. The text of a masked field reads as [MASKED] (masked: password, hidden, one-time-code and payment card (autocomplete cc-*) fields, and the options of such a select). A selector that tests the value or selected attribute (such as [value^=\"a\"] or option[selected]) or uses :checked or :default is refused, as is one longer than 1024 characters: it could tell a masked value one guess at a time. Headless: plain CSS only (no xpath=, text=, role=, //, >> or other Playwright selector forms).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -349,7 +349,7 @@
   },
   {
     "name": "fox_highlight",
-    "description": "[Deprecated: fox_highlight is deprecated; use fox_interact with action='highlight'.] Highlight an element on the page with a colored overlay for visual debugging. Optionally show a label. Returns at most the element's tag, generated selector and position, never its text, value or links. A selector that tests the value attribute (such as [value^=\"a\"]) or uses :checked is refused: it could tell a masked value one guess at a time.",
+    "description": "[Deprecated: fox_highlight is deprecated; use fox_interact with action='highlight'.] Highlight an element on the page with a colored overlay for visual debugging. Optionally show a label. Returns at most the element's tag, generated selector and position, never its text, value or links. A selector that tests the value or selected attribute (such as [value^=\"a\"] or option[selected]) or uses :checked or :default is refused, as is one longer than 1024 characters: it could tell a masked value one guess at a time. Headless: plain CSS only (no xpath=, text=, role=, //, >> or other Playwright selector forms).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -771,7 +771,7 @@
   },
   {
     "name": "fox_scroll",
-    "description": "[Deprecated: fox_scroll is deprecated; use fox_interact with action='scroll'.] Scroll the page or a specific element in any direction, or scroll a target element into view. Returns at most the element's tag, generated selector and position, never its text, value or links. A selector that tests the value attribute (such as [value^=\"a\"]) or uses :checked is refused: it could tell a masked value one guess at a time.",
+    "description": "[Deprecated: fox_scroll is deprecated; use fox_interact with action='scroll'.] Scroll the page or a specific element in any direction, or scroll a target element into view. Returns at most the element's tag, generated selector and position, never its text, value or links. A selector that tests the value or selected attribute (such as [value^=\"a\"] or option[selected]) or uses :checked or :default is refused, as is one longer than 1024 characters: it could tell a masked value one guess at a time. Headless: plain CSS only (no xpath=, text=, role=, //, >> or other Playwright selector forms).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1006,7 +1006,7 @@
   },
   {
     "name": "fox_wait_for_element",
-    "description": "[Deprecated: fox_wait_for_element is deprecated; use fox_wait with for='element'.] Wait for an element matching a CSS selector to appear (and optionally become visible) on the page. Returns at most the element's tag, generated selector and position, never its text, value or links. A selector that tests the value attribute (such as [value^=\"a\"]) or uses :checked is refused: it could tell a masked value one guess at a time.",
+    "description": "[Deprecated: fox_wait_for_element is deprecated; use fox_wait with for='element'.] Wait for an element matching a CSS selector to appear (and optionally become visible) on the page. Returns at most the element's tag, generated selector and position, never its text, value or links. A selector that tests the value or selected attribute (such as [value^=\"a\"] or option[selected]) or uses :checked or :default is refused, as is one longer than 1024 characters: it could tell a masked value one guess at a time. Headless: plain CSS only (no xpath=, text=, role=, //, >> or other Playwright selector forms).",
     "inputSchema": {
       "type": "object",
       "properties": {

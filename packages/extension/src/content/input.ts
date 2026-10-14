@@ -1,6 +1,5 @@
 // Input: click, type, scroll, set / select values, hover, key presses.
 
-import { assertReadSelector } from "@inari-mcp/shared/field-mask";
 import { DEFAULTS, DELAYS, TIMEOUTS } from "./constants";
 import {
   findElement,
@@ -335,14 +334,12 @@ function scrollTowards(element: Element | null, direction: ScrollDirection, amou
  * nothing falls through to the direction, and without a direction nothing
  * moves. `position` is always the measured {x, y} after the scroll.
  * A scroll is no read (no confirm_read_sites check): toElement returns
- * where the element is, not its content.
+ * where the element is, not its content. Its selectors are checked by
+ * handler.ts (READ_SELECTOR_FIELDS).
  */
 export async function performScroll(
   options: ScrollOptions,
 ): Promise<Record<string, unknown>> {
-  assertReadSelector(options.selector);
-  assertReadSelector(options.toElement);
-
   const element = options.selector || options.xpath || options.id ? findElement(options) : null;
 
   if (options.toElement) {

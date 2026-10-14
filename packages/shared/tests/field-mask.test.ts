@@ -12,7 +12,10 @@ import {
   assertReadSelector,
   isMaskedField,
   MASKED_VALUE,
+  maskedText,
+  MAX_READ_SELECTOR_LENGTH,
   readSelectorProblem,
+  selectorTestProblem,
   type MaskFieldInfo,
 } from '@inari-mcp/shared/field-mask';
 
@@ -52,6 +55,10 @@ describe('isMaskedField', () => {
     expect(isMaskedField(info)).toBe(masked);
   });
 
+  it('maskedText masks the non-empty text of a masked field only', () => {
+    expect([maskedText('05', true), maskedText('', true), maskedText('Japan', false)]).toEqual(['[MASKED]', '', 'Japan']);
+  });
+
   it('masks as [MASKED], as every other mask of the project', () => {
     expect(MASKED_VALUE).toBe('[MASKED]');
   });
@@ -81,6 +88,13 @@ describe('readSelectorProblem', () => {
     [':checked in upper case', 'input:CHECKED'],
     [':checked with an escape', 'option:\\63 hecked'],
     [':checked inside :not()', 'option:not(:not(:checked))'],
+    ['[selected] (the option a page drew as chosen)', 'select[autocomplete~=cc-exp-month] option[selected]'],
+    ['[selected] in upper case', 'option[SELECTED]'],
+    ['[selected] with a namespace prefix', 'option[ns|selected]'],
+    ['[selected] after another pseudo-class', 'option:nth-child(2)[selected]'],
+    [':default', 'option:default'],
+    [':default in upper case, inside :is()', 'select :is(OPTION:DEFAULT)'],
+    ['a selector longer than the limit', `#a${' a'.repeat(MAX_READ_SELECTOR_LENGTH)}`],
   ])('refuses %s', (_what, selector) => {
     expect(readSelectorProblem(selector)).not.toBeNull();
   });
@@ -93,20 +107,39 @@ describe('readSelectorProblem', () => {
     ['value inside a string', 'a[title="[value=1]"]'],
     [':checked inside a string', 'a[title=":checked"]'],
     ['other pseudo-classes', 'input:disabled, li:nth-child(2), a:hover'],
+    ['an attribute whose name only contains selected', 'li[data-selected]'],
+    ['[checked] (no masked field has a checked state)', 'input[name=plan][checked]'],
+    ['a selector of exactly the limit', `#${'a'.repeat(MAX_READ_SELECTOR_LENGTH - 1)}`],
     ['an empty selector (the element is required elsewhere)', ''],
   ])('accepts %s', (_what, selector) => {
     expect(readSelectorProblem(selector)).toBeNull();
   });
 
   it('says what was refused and what to use instead', () => {
-    expect(readSelectorProblem('[value="a"]')).toMatch(/value attribute.*id, name, type or position/);
-    expect(readSelectorProblem('option:checked')).toMatch(/:checked/);
+    expect(readSelectorProblem('[value="a"]')).toMatch(/value or selected attribute.*id, name, type or position/);
+    expect(readSelectorProblem('option:checked')).toMatch(/:checked or :default/);
+    expect(readSelectorProblem('a'.repeat(MAX_READ_SELECTOR_LENGTH + 1))).toMatch(/longer than 1024 characters \(1025\)/);
+  });
+
+  // Quadratic scans took seconds on such inputs (100 000 '[' about 9 s).
+  it.each([
+    ['open brackets', '['],
+    ['brackets with a letter', '[a'],
+    ['backslashes', '\\'],
+    ['quotes', '"\\'],
+    ['namespace bars', '[|'],
+  ])('reads 100 000 characters of %s in linear time', (_what, unit) => {
+    const selector = unit.repeat(Math.ceil(100_000 / unit.length));
+    const started = performance.now();
+    selectorTestProblem(selector);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(readSelectorProblem(selector)).toMatch(/longer than/);
   });
 });
 
 describe('assertReadSelector', () => {
   it('throws the reason for a refused selector, and passes the others and a missing one', () => {
-    expect(() => assertReadSelector('input[value^="a"]')).toThrow(/^Selector refused: it tests the value attribute/);
+    expect(() => assertReadSelector('input[value^="a"]')).toThrow(/^Selector refused: it tests the value or selected attribute/);
     expect(() => assertReadSelector('#login')).not.toThrow();
     expect(() => assertReadSelector(undefined)).not.toThrow();
   });

@@ -1,6 +1,5 @@
 // Waits: element, DOM change, network idle, click and wait.
 
-import { assertReadSelector } from "@inari-mcp/shared/field-mask";
 import { DELAYS, LIMITS, TIMEOUTS } from "./constants";
 import { findElement, isVisible, getElementInfo, getElementLocation, sleep } from "./dom";
 import { performClick } from "./input";
@@ -20,8 +19,6 @@ import type {
 export async function waitForElement(
   options: WaitOptions,
 ): Promise<Record<string, unknown>> {
-  assertReadSelector(options.selector);
-
   const timeout = options.timeout || TIMEOUTS.WAIT_ELEMENT;
   const interval = options.interval || DELAYS.POLL;
   const startTime = Date.now();

@@ -1,7 +1,7 @@
 // Observation and display: page info, element lists, highlight, scroll
 // snapshots, full-page dimensions, values and text.
 
-import { assertReadSelector, MASKED_VALUE } from "@inari-mcp/shared/field-mask";
+import { MASKED_VALUE, maskedText } from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
 import { DEFAULTS, HIGHLIGHT_STYLE, INTERACTIVE_SELECTORS, LIMITS, TIMEOUTS } from "./constants";
 import {
@@ -105,8 +105,6 @@ export function getElements(options: {
   selector?: string;
   limit?: number;
 }): Record<string, unknown> {
-  assertReadSelector(options.selector);
-
   const elements: ElementInfo[] = [];
   const selector = options.selector || "*";
   const limit = options.limit || DEFAULTS.ELEMENTS_LIMIT;
@@ -143,8 +141,6 @@ function removeHighlight(): void {
 export function highlightElement(
   options: HighlightOptions,
 ): Record<string, unknown> {
-  assertReadSelector(options.selector);
-
   removeHighlight();
 
   const element = findElement(options);
@@ -313,8 +309,6 @@ export function getValue(
 export function getText(
   options: TextOptions,
 ): Record<string, unknown> {
-  assertReadSelector(options.selector);
-
   let element: Element = document.body;
   if (options.selector) {
     const found = findElement(options);
@@ -323,9 +317,9 @@ export function getText(
   }
 
   const maxLength = options.maxLength || DEFAULTS.TEXT_MAX_LENGTH;
-  const shown = (element as HTMLElement).innerText || element.textContent || "";
+  const rawText = (element as HTMLElement).innerText || element.textContent || "";
   // A masked field read as itself (an option of a masked select, a masked textarea).
-  const text = shown !== "" && isMaskedField(element) ? MASKED_VALUE : shown;
+  const text = maskedText(rawText, isMaskedField(element));
 
   return {
     text: clipText(text, maxLength),

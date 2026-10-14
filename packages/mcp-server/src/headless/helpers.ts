@@ -4,7 +4,7 @@
  */
 
 import type { z } from 'zod';
-import { BrowserActionSchema, formatZodIssues, type BrowserAction } from '@inari-mcp/shared';
+import { assertReadSelector, BrowserActionSchema, formatZodIssues, type BrowserAction } from '@inari-mcp/shared';
 import { GET_ELEMENTS_MAX } from './limits.js';
 
 /**
@@ -154,4 +154,43 @@ export function ignoredParamWarnings(action: string, args: Record<string, unknow
     out.push(`${p.key}: ignored in headless mode (${p.note})`);
   }
   return out;
+}
+
+/** An engine prefix of a Playwright selector (`xpath=`, `internal:role=`, `*css=`): the name its parser accepts before `=`. */
+const SELECTOR_ENGINE_RE = /^[a-zA-Z_0-9+:*-]+$/;
+
+/**
+ * Why Playwright would not read `selector` as plain CSS, or null. These are
+ * the other forms of its selector parser (playwright-core
+ * parseSelectorString): a chain with `>>`, an engine prefix (`xpath=`,
+ * `text=`, `role=`, `internal:attr=`, also `css=`), a quoted text selector,
+ * and an XPath (`//`, `(//`, `..`). Those engines test attributes and states
+ * (`@value`, `role=option[selected]`) that readSelectorProblem does not read,
+ * so the reading actions take plain CSS only.
+ */
+export function playwrightDialectProblem(selector: string): string | null {
+  if (selector.includes('>>')) return 'it chains selectors with >>';
+
+  const part = selector.trim();
+  const eq = part.indexOf('=');
+  if (eq !== -1 && SELECTOR_ENGINE_RE.test(part.slice(0, eq).trim())) {
+    return `it names a Playwright selector engine (${part.slice(0, eq).trim()}=)`;
+  }
+  if (part.startsWith('"') || part.startsWith("'")) return 'it is a Playwright text selector (quoted)';
+  if (/^\(*\/\//.test(part) || part.startsWith('..')) return 'it is an XPath';
+  return null;
+}
+
+/**
+ * Refuse the selector of a headless reading action: what the Extension
+ * refuses (assertReadSelector), and anything Playwright would not read as
+ * plain CSS (playwrightDialectProblem).
+ */
+export function assertHeadlessReadSelector(selector: string): void {
+  const problem = playwrightDialectProblem(selector);
+  if (problem !== null) {
+    throw new Error(`Selector refused: ${problem}; the reading tools take a CSS selector only`);
+  }
+
+  assertReadSelector(selector);
 }

@@ -1,7 +1,12 @@
 // DOM helpers: element location, locators, selectors / XPath, element info,
 // the masked-value rule and the password field guard.
 
-import { isMaskedField as isMaskedFieldInfo, MASKED_VALUE, type MaskFieldInfo } from "@inari-mcp/shared/field-mask";
+import {
+  isMaskedField as isMaskedFieldInfo,
+  MASKED_VALUE,
+  maskedText,
+  type MaskFieldInfo,
+} from "@inari-mcp/shared/field-mask";
 import { clipText } from "../text-clip";
 import { LIMITS } from "./constants";
 import type { FindElementOptions, ElementInfo, ElementLocation, ElementPosition } from "./types";
@@ -86,9 +91,7 @@ export function shownValue(element: Element, value: unknown, max: number): strin
  */
 export function shownText(element: Element, max: number): string | null {
   const text = clipText(element.textContent?.trim() ?? "", max);
-  if (text === "") return null;
-
-  return isMaskedField(element) ? MASKED_VALUE : text;
+  return text === "" ? null : maskedText(text, isMaskedField(element));
 }
 
 export function assertNotPasswordField(

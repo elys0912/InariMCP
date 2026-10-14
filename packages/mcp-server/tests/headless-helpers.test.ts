@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import type { AnyZodObject, ZodTypeAny } from 'zod';
 import {
+  assertHeadlessReadSelector,
   countOccurrences,
   filterAriaSnapshot,
   HEADLESS_IGNORED,
   ignoredParamWarnings,
   parseArgs,
+  playwrightDialectProblem,
 } from '../src/headless/helpers.js';
 import { CAPTCHA_SELECTORS } from '../src/headless/actions.js';
 import { TOOL_SCHEMAS } from '../src/tools/schemas.js';
@@ -216,5 +218,39 @@ describe('step timeouts stay below the headless command timeout (R-3)', () => {
     }
     expect(2 * ELEMENT_TIMEOUT_MS).toBeLessThan(HEADLESS_COMMAND_TIMEOUT_MS);
     expect(2 * SELECT_OPTION_TIMEOUT_MS).toBeLessThan(HEADLESS_COMMAND_TIMEOUT_MS);
+  });
+});
+
+describe('selectors of the headless reading actions: plain CSS only', () => {
+  it.each([
+    ['an xpath= engine', "xpath=//input[@type='hidden'][starts-with(@value,'a')]"],
+    ['an XPath without a prefix', '//input[starts-with(@value,"a")]'],
+    ['an XPath in parentheses', '(//option)[1]'],
+    ['a parent XPath', '..'],
+    ['a role engine', 'role=option[selected]'],
+    ['an internal engine', 'internal:role=option[selected=true]'],
+    ['a text engine', 'text=Card'],
+    ['a css= prefix (still an engine name)', 'css=option'],
+    ['an engine with spaces around =', ' xpath = //input'],
+    ['a capturing engine', '*css=select'],
+    ['a chain', 'select >> internal:role=option[selected]'],
+    ['a quoted text selector', '"Card number"'],
+  ])('refuses %s', (_what, selector) => {
+    expect(playwrightDialectProblem(selector)).not.toBeNull();
+    expect(() => assertHeadlessReadSelector(selector)).toThrow(/^Selector refused: .*CSS selector only/);
+  });
+
+  it.each([
+    ['an id', '#login'],
+    ['an attribute with = inside the brackets', 'a[href="https://a.test/?q=1"]'],
+    ['a type and a name', 'input[type=hidden][name=csrf]'],
+    ['a child combinator', 'ul > li:nth-child(2)'],
+  ])('accepts %s', (_what, selector) => {
+    expect(playwrightDialectProblem(selector)).toBeNull();
+    expect(() => assertHeadlessReadSelector(selector)).not.toThrow();
+  });
+
+  it('refuses what the Extension refuses as well', () => {
+    expect(() => assertHeadlessReadSelector('option[selected]')).toThrow(/^Selector refused: it tests the value or selected attribute/);
   });
 });

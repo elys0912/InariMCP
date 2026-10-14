@@ -325,14 +325,20 @@ describe('options of a masked select and selectors that test a value, as on the 
       .toMatchObject({ success: true, text: 'Japan' });
   });
 
-  real('the reading commands refuse a selector with [value…] or :checked before using it', async () => {
+  real('the reading commands refuse a selector with [value…], [selected], :checked, :default or a Playwright dialect', async () => {
     await load(CARD);
     const refused = [
       await browser.execute('get_elements', undefined, { selector: 'input[name=csrf][value^="s"]', limit: 50 }),
+      await browser.execute('get_elements', undefined, { selector: "xpath=//input[starts-with(@value,'s')]", limit: 50 }),
+      await browser.execute('get_elements', undefined, { selector: 'select >> internal:role=option[selected]', limit: 50 }),
       await browser.execute('get_text', undefined, { selector: '#m option:checked', maxLength: 100 }),
+      await browser.execute('get_text', undefined, { selector: '#m option[selected]', maxLength: 100 }),
       await browser.execute('wait_for_element', undefined, { selector: '[VALUE="secret"]', timeout: 300, visible: false }),
-      await browser.execute('highlight', undefined, { selector: 'option:checked', duration: 200 }),
+      await browser.execute('wait_for_element', undefined, { selector: 'role=option[selected]', timeout: 300, visible: false }),
+      await browser.execute('highlight', undefined, { selector: 'option:default', duration: 200 }),
       await browser.execute('scroll', undefined, { toElement: 'input[value]', amount: 100 }),
+      await browser.execute('snapshot', undefined, { selector: 'input[type=hidden][value^="s"]', includeText: true }),
+      await browser.execute('snapshot', undefined, { selector: '//input[@value]', includeText: true }),
     ];
     for (const r of refused) {
       expect(r).toMatchObject({ success: false });

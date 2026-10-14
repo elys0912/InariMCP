@@ -75,12 +75,39 @@ export function isMaskedField(field: MaskFieldInfo): boolean {
   return tokens.some(isMaskedAutocompleteToken);
 }
 
+/**
+ * A text as the tools return it: MASKED_VALUE when it is the text of a
+ * masked field (`masked`: isMaskedField of its element) and not empty, else
+ * as it is. An empty text stays empty, so a password input (no text) does
+ * not read as [MASKED] text.
+ */
+export function maskedText(text: string, masked: boolean): string {
+  return text !== '' && masked ? MASKED_VALUE : text;
+}
+
 // ---------------------------------------------------------------------------
 // Selectors of the reading tools
 // ---------------------------------------------------------------------------
 
-/** A CSS escape: up to 6 hex digits and one optional white space, or one other character. */
-const CSS_ESCAPE_RE = /^\\(?:([0-9a-fA-F]{1,6})[ \t\n\r\f]?|([^\n\r\f]))/;
+/**
+ * Longest CSS selector a reading tool accepts, in UTF-16 code units. Enough
+ * for any selector written by hand or generated from a page (a long
+ * `#id > div:nth-of-type(n) > …` path is a few hundred), and it keeps the
+ * check and the page's own selector matching bounded.
+ */
+export const MAX_READ_SELECTOR_LENGTH = 1024;
+
+/** The rule of readSelectorProblem in one sentence, for the tool descriptions. */
+export const READ_SELECTOR_RULE_TEXT =
+  'A selector that tests the value or selected attribute (such as [value^="a"] or option[selected]) or uses ' +
+  `:checked or :default is refused, as is one longer than ${MAX_READ_SELECTOR_LENGTH} characters: ` +
+  'it could tell a masked value one guess at a time.';
+
+/**
+ * A CSS escape: up to 6 hex digits and one optional white space, or one
+ * other character. Sticky: matched at lastIndex, so the scan stays linear.
+ */
+const CSS_ESCAPE_RE = /\\(?:([0-9a-fA-F]{1,6})[ \t\n\r\f]?|([^\n\r\f]))/y;
 
 const BACKSLASH = '\\';
 
@@ -88,7 +115,7 @@ const BACKSLASH = '\\';
 const MAX_CODE_POINT = 0x10ffff;
 const REPLACEMENT_CHARACTER = String.fromCodePoint(0xfffd);
 
-/** A piece of a selector as selectorSyntax reads it, and the index of the next piece. */
+/** A piece of a selector as normalizedSelector reads it, and the index of the next piece. */
 interface SyntaxPiece {
   text: string;
   next: number;
@@ -96,7 +123,8 @@ interface SyntaxPiece {
 
 /** The CSS escape at `start` (a backslash): the character it stands for. */
 function cssEscapeAt(selector: string, start: number): SyntaxPiece {
-  const match = CSS_ESCAPE_RE.exec(selector.slice(start));
+  CSS_ESCAPE_RE.lastIndex = start;
+  const match = CSS_ESCAPE_RE.exec(selector);
   // A backslash before a line break, or at the end, escapes nothing.
   if (match === null) return { text: '', next: start + 1 };
 
@@ -134,13 +162,13 @@ function syntaxPieceAt(selector: string, i: number): SyntaxPiece {
 }
 
 /**
- * The selector as its syntax reads, for the checks below: CSS escapes
- * decoded, comments and white space removed, strings emptied (`""`), lower
- * case: `[ VAL\75 e ]` reads as `[value]`. Not a CSS parser: it only has to
- * leave no spelling of an attribute name or a pseudo-class that the checks
- * would miss (it may join what CSS keeps apart, which only refuses more).
+ * The selector normalized for the checks below: CSS escapes decoded,
+ * comments and white space removed, strings emptied (`""`), lower case:
+ * `[ VAL\75 e ]` reads as `[value]`. Not a CSS parser: it only has to leave
+ * no spelling of an attribute name or a pseudo-class that the checks would
+ * miss (it may join what CSS keeps apart, which only refuses more).
  */
-function selectorSyntax(selector: string): string {
+function normalizedSelector(selector: string): string {
   let out = '';
   let i = 0;
   while (i < selector.length) {
@@ -152,35 +180,51 @@ function selectorSyntax(selector: string): string {
 }
 
 /**
- * An attribute selector on `value` (any namespace, any operator): `[value]`,
- * `[value^="a"]`, `[*|value="a" i]`. The value attribute is the value of a
- * hidden field and the default of the others.
+ * An attribute selector on `value` or `selected` (any namespace, any
+ * operator): `[value]`, `[value^="a"]`, `[*|value="a" i]`, `option[selected]`.
+ * The value attribute is the value of a hidden field and the default of the
+ * others; the selected attribute is the option a page drew as chosen (often
+ * the saved one). The namespace part stops at `[` as well, so the match is
+ * linear in the length of the selector.
  */
-const VALUE_ATTRIBUTE_RE = /\[(?:[^\]|]*\|)?value(?=[\]=~|^$*]|$)/;
+const SELECTION_ATTRIBUTE_RE = /\[(?:[^\]|[]*\|)?(?:value|selected)(?=[\]=~|^$*]|$)/;
 
-/** :checked matches the chosen option of a select, and checked boxes. */
-const CHECKED_PSEUDO_RE = /:checked/;
+/** :checked matches the chosen option of a select (and checked boxes), :default the option drawn as chosen. */
+const SELECTION_PSEUDO_RE = /:(?:checked|default)/;
+
+/**
+ * readSelectorProblem without the length limit: what the selector tests.
+ * Linear in the length of the selector
+ * (packages/shared/tests/field-mask.test.ts times it).
+ */
+export function selectorTestProblem(selector: string): string | null {
+  const normalized = normalizedSelector(selector);
+  if (SELECTION_ATTRIBUTE_RE.test(normalized)) {
+    return 'it tests the value or selected attribute ([value…], [selected]), which can tell a masked value ' +
+      'one guess at a time; find the element by id, name, type or position instead';
+  }
+  if (SELECTION_PSEUDO_RE.test(normalized)) {
+    return 'it uses :checked or :default, which can tell which option of a masked field is chosen; ' +
+      'find the element without them';
+  }
+  return null;
+}
 
 /**
  * Why a reading tool refuses this CSS selector, or null when it does not.
  * Such a selector would not return a masked value, but it can test one: the
  * match count of `input[name=csrf][value^="a"]`, or whether a wait for it
- * ends, tells the value one guess at a time, and `option:checked` picks the
- * chosen option of a select. Refused: an attribute selector on `value` and
- * the :checked pseudo-class, however they are spelled (case, escapes,
- * comments, white space).
+ * ends, tells the value one guess at a time, and `option:checked` or
+ * `option[selected]` picks the chosen option of a select. Refused: an
+ * attribute selector on `value` or `selected`, the :checked and :default
+ * pseudo-classes, however they are spelled (case, escapes, comments, white
+ * space), and a selector longer than MAX_READ_SELECTOR_LENGTH.
  */
 export function readSelectorProblem(selector: string): string | null {
-  const syntax = selectorSyntax(selector);
-  if (VALUE_ATTRIBUTE_RE.test(syntax)) {
-    return 'it tests the value attribute ([value…]), which can tell a masked value one guess at a time; ' +
-      'find the element by id, name, type or position instead';
+  if (selector.length > MAX_READ_SELECTOR_LENGTH) {
+    return `it is longer than ${MAX_READ_SELECTOR_LENGTH} characters (${selector.length})`;
   }
-  if (CHECKED_PSEUDO_RE.test(syntax)) {
-    return 'it uses :checked, which can tell which option of a masked field is chosen; ' +
-      'find the element without :checked';
-  }
-  return null;
+  return selectorTestProblem(selector);
 }
 
 /**
@@ -194,3 +238,4 @@ export function assertReadSelector(selector: string | undefined): void {
   const problem = readSelectorProblem(selector);
   if (problem !== null) throw new Error(`Selector refused: ${problem}`);
 }
+

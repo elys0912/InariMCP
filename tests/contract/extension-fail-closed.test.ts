@@ -13,6 +13,7 @@ import { ACTION_TABLE } from '../../packages/extension/src/background/action-tab
 import { handleCommand } from '../../packages/extension/src/background/dispatch.ts';
 import { checkApproval, isReadConfirmTab } from '../../packages/extension/src/background/url-policy.ts';
 import { resolveWireAction } from '../../packages/extension/src/background/wire.ts';
+import { runContentCommand } from '../../packages/extension/src/content/handler.ts';
 import { compileUrlRules } from '../../packages/extension/src/url-rule.ts';
 import { SafetyGuard } from '../../packages/mcp-server/src/safety/guard.js';
 import { DEFAULT_CONFIG } from '../../packages/mcp-server/src/safety/config.js';
@@ -171,6 +172,9 @@ describe('reads checked against confirm_read_sites', () => {
     ['a tab on another site', 'https://shop.test/', false],
     ['the source view of another site', 'view-source:https://shop.test/', false],
     ['the reader view of another site', readerOf('https://shop.test/'), false],
+    ['a reader view spelled in upper case', 'about:READER?url=' + encodeURIComponent('https://bank.test/a'), true],
+    ['another site wrapped deeper than can be unwrapped (asked, not unchecked)',
+      `view-source:${readerOf(`view-source:${readerOf('https://shop.test/')}`)}`, true],
   ])('%s → asks: %s', (_what, url, asks) => {
     const result = checkApproval('read', { id: 1, url } as browser.tabs.Tab, {}, rules, undefined);
     if (asks) expect(result).toMatchObject({ success: false, safetyDecision: 'confirmation_required', url });
@@ -193,6 +197,21 @@ describe('reads checked against confirm_read_sites', () => {
 
   it('get_tab_info, which returns the page info, is a read', () => {
     expect(ACTION_TABLE.get('getTabInfo')?.approval).toBe('read');
+  });
+});
+
+describe('the content script checks the selectors of every reading command once', () => {
+  it.each([
+    ['getElements', { selector: 'input[value^="a"]' }],
+    ['getText', { selector: 'option[selected]' }],
+    ['getValue', { selector: 'option:checked' }],
+    ['highlight', { selector: 'option:default' }],
+    ['scroll', { toElement: '[value]' }],
+    ['scroll', { selector: '[selected]', direction: 'down' }],
+    ['waitForElement', { selector: ':checked' }],
+    ['waitForChange', { selector: '[value]' }],
+  ])('%s %j is refused before its handler runs', async (action, fields) => {
+    await expect(runContentCommand({ action, ...fields } as never)).rejects.toThrow(/^Selector refused: /);
   });
 });
 

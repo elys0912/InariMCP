@@ -432,7 +432,7 @@ const foxInteract = grouped({
   name: 'fox_interact',
   description:
     "Hover, scroll or highlight. action 'hover': dispatch synthetic mouseenter / mouseover events on the element (isTrusted=false: JavaScript hover handlers run, CSS :hover styles do not apply); since the page's own handlers run, it asks the human first like the acting tools, and read-only mode refuses it. action 'scroll': scroll the page or the element `selector` by direction and amount, or scroll the element toElement into view. action 'highlight': show a colored overlay (and optional label) on the element for visual debugging. Scroll and highlight change UI state only, never page data, and are allowed in read-only mode; " +
-    'they refuse a selector that tests the value attribute (such as [value^="a"]) or uses :checked, which could tell a masked value one guess at a time. ' +
+    `for them: ${READ_SELECTOR_NOTE} ` +
     ELEMENT_LOCATION_NOTE,
   discriminator: 'action',
   discriminatorDescription: "'hover', 'scroll' or 'highlight'",

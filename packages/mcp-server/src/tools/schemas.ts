@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { READ_SELECTOR_RULE_TEXT } from '@inari-mcp/shared';
 
 // ---------------------------------------------------------------------------
 // Tool classification (used by SafetyGuard and the MCP annotations)
@@ -101,12 +102,12 @@ export const MASKED_FIELDS_NOTE =
   'password, hidden, one-time-code and payment card (autocomplete cc-*) fields, and the options of such a select';
 
 /**
- * Shared by the tools that take a CSS selector without asking the human to
- * read (shared/src/field-mask.ts readSelectorProblem).
+ * Shared by the tools whose CSS selector is checked before it is used
+ * (reads, waits, scroll, highlight: shared/src/field-mask.ts
+ * readSelectorProblem, and headless/helpers.ts playwrightDialectProblem).
  */
 export const READ_SELECTOR_NOTE =
-  'A selector that tests the value attribute (such as [value^="a"]) or uses :checked is refused: ' +
-  'it could tell a masked value one guess at a time.';
+  `${READ_SELECTOR_RULE_TEXT} Headless: plain CSS only (no xpath=, text=, role=, //, >> or other Playwright selector forms).`;
 
 /** Shared by the tools that find an element without reading it. */
 export const ELEMENT_LOCATION_NOTE =
@@ -446,7 +447,7 @@ const OPERATIONS = {
     name: 'fox_get_elements',
     description:
       'List elements matching a CSS selector (querySelectorAll: the first `limit` matches, plus the total count). Per element: tag, id, classes, name, type, text (first 200 chars), value, href, src, placeholder, ariaLabel, role, disabled, checked, visible, position (viewport coordinates incl. centerX/centerY) and a generated CSS selector. ' +
-      `Values of ${MASKED_FIELDS_NOTE} are masked, and so is the text of such an option. ${READ_SELECTOR_NOTE} ` +
+      `Values and texts of ${MASKED_FIELDS_NOTE} are masked. ${READ_SELECTOR_NOTE} ` +
       'Headless: tag, text and bounding box only, at most 50.',
     inputSchema: foxGetElementsSchema,
     classification: 'observe',
