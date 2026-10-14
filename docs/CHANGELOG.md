@@ -13,6 +13,8 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - First-run permission page: right after installation the extension asks, in a tab, whether Inari MCP for Firefox may connect (what it does, what it sends, what it needs, privacy policy). It does not connect to the native host until you allow it; until then the badge shows `OFF`, and the popup reopens the page. Needs the `storage` permission to remember the answer.
 - Pause switch in the toolbar popup: while on, every command from the MCP client is refused with an error starting with `paused`, pending approval requests are withdrawn, and the badge shows `II`.
 - The badge shows `●` while a command from the MCP client runs. The badge states have one order: not allowed, paused, approval count, running, setup state.
+- README: a Permissions section lists what each of the nine extension permissions is used for and where (`cookies` reads no cookie; it is what Firefox requires to open a tab in a container), and that the agent can create a Firefox container.
+- Release tooling for addons.mozilla.org: `npm run pack:ext` builds the Extension zip, writes the SHA-256 of every file in it and runs `web-ext lint` (0 errors and 0 warnings required); `npm run pack:source` makes the source zip from the committed files. [`docs/BUILD.md`](./BUILD.md) tells a reviewer how to rebuild the add-on (Node.js 24, npm 11) and compare it with the submitted one. A GitHub Actions workflow builds, type-checks and tests on Ubuntu 24.04 ARM64.
 
 ### Changed
 
@@ -20,6 +22,7 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - Line endings in the repository are fixed to LF with `.gitattributes`, so the extension built on any OS is byte-identical to the one submitted for review.
 - `manifest.json`: `incognito` is `not_allowed` (the extension never sees private-browsing tabs), and `data_collection_permissions` declares `websiteContent` and `browsingActivity` (page content, screenshots and URLs are sent to the local native host and from there to the MCP client).
 - `fox_wait` with `for: "network_idle"`: the counting hooks on the page's `fetch` and `XMLHttpRequest.prototype.send` are installed when the wait starts and removed when it ends (before, they stayed until the page unloaded). They count requests and record nothing about them. Requests already running when the call starts are not seen.
+- Screenshots saved under a `filename` you chose are now deleted after `FOX_SCREENSHOT_RETENTION_DAYS` (default 30) like the others; the Native Host lists them in `.named-screenshots` in the screenshots directory and never deletes any other file there.
 
 ### Removed
 
@@ -28,8 +31,6 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of [KitsuneMCP](https://gi
 - The `allow_script_execution` key of `safety.json` and the `FOX_ALLOW_SCRIPTS` / `CLAUDE_BROWSER_ALLOW_SCRIPTS` variables. A `safety.json` that still has the key is refused as an unknown key until the key is deleted.
 - The `logs` and `script` profiles of `FOX_CAPS` (an unknown profile name is ignored with a warning).
 - The "Inspect Element for InariMCP" context menu entry: it handed its result to nobody.
-- Screenshots saved under a `filename` you chose are now deleted after `FOX_SCREENSHOT_RETENTION_DAYS` (default 30) like the others; the Native Host lists them in `.named-screenshots` in the screenshots directory and never deletes any other file there.
-- README: a Permissions section lists what each of the nine extension permissions is used for and where (`cookies` reads no cookie; it is what Firefox requires to open a tab in a container), and that the agent can create a Firefox container.
 
 ### Security
 

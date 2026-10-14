@@ -488,6 +488,8 @@ npm run build             # every package; the Extension is bundled by scripts/b
 npm run typecheck         # type check of the Extension (tsc --noEmit), then of the tests (typecheck:tests)
 npm test                  # Vitest, without e2e
 npm run lint:ext          # web-ext lint of packages/extension
+npm run pack:ext          # the Extension zip for AMO + SHA-256 of its files + web-ext lint (see docs/BUILD.md)
+npm run pack:source       # the source zip for AMO (needs a clean working tree)
 npm run e2e:extension     # the Extension loads into Firefox (needs Playwright's Firefox)
 ```
 
@@ -495,7 +497,7 @@ Build, packages and checks in detail: [`docs/development.md`](docs/development.m
 
 `npm audit` reports 11 vulnerabilities, all in the dependency tree of `web-ext` (a devDependency); they are accepted. Audit with `npm audit --omit=dev` (0 vulnerabilities): the distributed parts (mcp-server, native-host, the extension `.xpi`) do not contain web-ext.
 
-`npm test` runs the Vitest suites (unit tests per package, contract tests in `tests/contract/`, installer tests in `tests/scripts/`). Each test file gets a temporary home directory, so the tests never touch your `~/.inari-mcp/`. Development needs Node.js 22.12 or later (or 24), a requirement of Vitest, although running InariMCP only needs Node.js 18.
+`npm test` runs the Vitest suites (unit tests per package, contract tests in `tests/contract/`, installer tests in `tests/scripts/`). Each test file gets a temporary home directory, so the tests never touch your `~/.inari-mcp/`. Development needs Node.js 24 and npm 11 (the versions of the AMO review environment; `.nvmrc`), although running InariMCP only needs Node.js 18.
 
 End-to-end checks, kept out of `npm test`:
 

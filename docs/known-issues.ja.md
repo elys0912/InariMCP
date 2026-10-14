@@ -70,4 +70,4 @@ InariMCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **空のAPIトークンファイルがあるとdaemonが起動しない**: `~/.inari-mcp/api_token`があって中身が空のとき（書き込み中に異常終了した場合など）、ほかのプロセスが書き込み中かもしれないので上書きせず、削除を求めるメッセージを出してdaemonが終了する。ファイルを削除してからやり直す（次のツール呼び出しで新しいトークンを作る）。読めないトークンファイルもエラーになる
 - **Windowsではファイルのモード（0o600 / 0o700）が効かない**: `~/.inari-mcp/`のAPIトークン、ログ、スクリーンショットは、ユーザープロファイルのフォルダのアクセス権で守られる。プロファイルの外の`FOX_SCREENSHOTS_DIR`を指定すると、Native Hostが警告をログに出す
 - **ログファイルは5 MBで切り替わる**: `~/.inari-mcp/logs/`のログは5 MBを超えると`<名前>.old`に退避される（1世代だけ残る）。`daemon.log`は動いているdaemonが開いたままなので、複製してから中身を空にする（copy-truncate。その間に書かれた行は失われる）。`native-host.log`と監査ログは書き込みのたびに確認する。`daemon.log`はdaemonの起動時と、Native Hostが動いている間は1時間ごとに確認する。FirefoxなしでClaude Codeだけから使っていると、daemonが再起動するまで5 MBを超えて大きくなる
-- **開発にはNode.js 22.12以上（または24）が必要**: `npm test` / `npm run test:e2e`（Vitest）の要件。InariMCP自体はNode.js 18以上で動く
+- **開発にはNode.js 24とnpm 11が必要**: AMOの審査環境と同じ版（`.nvmrc`、`engines`）。InariMCP自体はNode.js 18以上で動くが、`--doctor`は`engines`を確認するので、24より古いNode.jsはFAILと報告される

@@ -6,7 +6,7 @@
 
 ## 必要なもの
 
-- 開発にはNode.js 22.12以上（または24）。Vitestの要件。InariMCPの実行だけならNode.js 18で足りる。
+- 開発にはNode.js 24とnpm 11（`.nvmrc`と`package.json`の`engines`）。AMOの審査環境と同じ版にして、作った拡張機能のパッケージを提出したものと一致させる。InariMCPの実行だけならNode.js 18で足りる（インストーラの下限）。
 - `playwright`（`packages/mcp-server`の任意の依存。`--omit=optional`を付けなければ`npm ci`で入る）。`npm run build`に必要（ヘッドレスバックエンドがその型をimportする）。`npm run test:e2e`と`npm run e2e:extension`には、そのFirefox（`npx playwright install firefox`）も必要。
 
 ## 作業の流れ
@@ -19,6 +19,8 @@ npm run build           # 全workspace（「ビルド」を参照）
 npm run typecheck       # typecheckスクリプトを持つworkspace（現在は拡張機能だけ）のあとtypecheck:tests
 npm test                # Vitest。e2e以外の全プロジェクト
 npm run lint:ext        # packages/extensionのweb-ext lint
+npm run pack:ext        # AMOに出す拡張機能のパッケージとファイルごとのハッシュ、続けてweb-ext lint（「リリース」を参照）
+npm run pack:source     # AMOに出すソースのパッケージ（「リリース」を参照）
 npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefoxに読み込まれるか
 ```
 
@@ -57,6 +59,21 @@ npm run e2e:extension   # 拡張機能が一時的なアドオンとしてFirefo
 - スクリプトを`packages/extension`の外に置いているのは、web-extが`web-ext-config.mjs`で除外していないファイルをすべてパッケージに入れるため。
 
 `npm run lint:ext`はリポジトリのルートで`web-ext lint`を実行する。ルートの`web-ext-config.mjs`が`sourceDir: 'packages/extension'`と除外するファイル（`src`、`package.json`、`tsconfig.json`、ソースマップなど）を決めている。
+
+## リリース
+
+新しい版（例: 0.1.1）を出す手順。AMOへの提出は listed。審査者向けのビルド手順は[`BUILD.md`](./BUILD.md)（英語）で、ソースのパッケージの最上位に入る。
+
+1. **版。** 6つのファイルの`version`を同じ値にする: `package.json`、`packages/shared/package.json`、`packages/mcp-server/package.json`、`packages/native-host/package.json`、`packages/extension/package.json`、`packages/extension/manifest.json`。`npm run build`とテストは確認しないが、`--doctor`は確認する（`versions`の項目）。手で書き換える。`npm version`は`package.json`を1つだけ変え（workspaceには`--workspaces`も要る）、`manifest.json`は変えず、変更履歴が固まる前にコミットとタグを作ってしまうため。そのあと`npm install --package-lock-only`で`package-lock.json`の版もそろえ、コミットする。AMOに提出した版は再提出できず、manifestの版は前の版より大きくする。
+2. **変更履歴。** `docs/CHANGELOG.md`と`docs/CHANGELOG.ja.md`で「Unreleased」を版とその日の日付（`date`）に直し、利用者に見える変更がすべて載っているか確認する。
+3. **確認。** `npm ci`、`npm run build`、`npm run typecheck`、`npm test`。CIはUbuntu 24.04 ARM64で同じことを行う（`.github/workflows/ci.yml`）。
+4. **コミットとタグ。** 作業ツリーがきれいな状態（`git status`が何も出さない）でコミットし、`git tag v<版>`。`npm run pack:source`は、きれいでない作業ツリーでは失敗する。
+5. **パッケージ。** `npm run pack:ext`と`npm run pack:source`。どちらも`web-ext-artifacts/`（gitの対象外）に書く。
+   - `inari_mcp_for_firefox-<版>.zip`と`.sha256.txt`: 拡張機能と、その中の各ファイルのSHA-256。`web-ext lint`がエラーか警告を1件でも出すと`pack:ext`は失敗する。2回作ると同じハッシュになる（`tests/scripts/pack-extension.test.ts`）。zip自体はファイルの時刻が入って異なるので、`.sha256.txt`で比べる。
+   - `inari-mcp-source-<版>.zip`: `HEAD`の管理下のファイルと`BUILD.md`。
+6. **提出。** タグをpushし、GitHubのreleaseを作って`.sha256.txt`を添付する。AMOのDeveloper Hubで、拡張機能のzipをlistedの版としてアップロードし、バンドルや縮小したコードを使うかと聞かれたらソースのzipをアップロードし、Notes for Reviewersに`docs/amo/reviewer-notes.md`の本文を貼る。
+
+CIはパッケージをアップロードしない（Actionsのストレージの節約）。手順5でローカルに作る。
 
 ## `@inari-mcp/shared`
 
