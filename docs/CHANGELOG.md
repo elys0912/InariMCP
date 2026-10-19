@@ -6,7 +6,11 @@ User-facing changes of Inari MCP for Firefox, newest first.
 
 Inari MCP for Firefox started on 2026-10-14 as a copy of KitsuneMCP (private) 0.2.0 (commit b2642a9). It is the edition prepared for listing on addons.mozilla.org: it has a different add-on ID, a different native-messaging host name (`inari_mcp`) and a different state directory (`~/.inari-mcp`), so both editions can be installed side by side. For the history before the split, see the KitsuneMCP changelog.
 
-## Unreleased (0.1.0)
+## Unreleased
+
+## 0.1.0 — 2026-10-14
+
+The first version listed on addons.mozilla.org. The entries below are the differences from KitsuneMCP 0.2.0, which this version was split from; if you never used KitsuneMCP, the README says what Inari MCP for Firefox does.
 
 ### Added
 
@@ -34,7 +38,7 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of KitsuneMCP (private) 0.
 - Running Inari MCP needs Node.js 20 or later (`engines`, the installer and `--doctor`); the reproducible build for the AMO review uses Node.js 24.x and npm 11.x.
 - A refusal while the agent is paused reaches the MCP client as a safety refusal (`decision: "paused"`, text starting with `paused:`) instead of a browser error.
 - The extension's description and the popup footer use the name "Inari MCP for Firefox"; the footer says that page content goes through the native host on this computer to the MCP client.
-- The toolbar button, the popup, the badge texts and the context menu use the short name "Inari MCP" (before: "InariMCP"), and so do the approval prompt and the approval notes of the tool results. Approval and CAPTCHA notifications and the popup name the requester "the MCP client" instead of "Claude".
+- The toolbar button, the popup, the badge texts and the context menu use the short name "Inari MCP", and so do the approval prompt and the approval notes of the tool results. Approval and CAPTCHA notifications and the popup name the requester "the MCP client" instead of "Claude".
 - The permission page lists everything that is sent: page content including the values of form fields (password and similar fields are masked), screenshots, URLs, the tab list and the names of your containers. Its privacy policy link opens the Japanese policy when Firefox's language is Japanese. The popup's pause note says that the command that is running is stopped as well.
 - The context menu entry "Take Screenshot for Inari MCP" is there only while the extension is allowed to connect. Before, it was there before the permission and after it was declined too, and its screenshot went nowhere. When the extension is allowed but not connected to the native host, an OS notification now says that the screenshot was not sent.
 - The content script runs in the top frame of a page only (`all_frames: false`; no tool reached the other frames), and logs nothing when it loads. No stylesheet is put into pages any more: the overlay of `fox_interact` with `action: "highlight"` gets its look on the element itself, so a page cannot find a class or keyframe name of the add-on.
