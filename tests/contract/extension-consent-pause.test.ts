@@ -4,7 +4,8 @@
  *   - no Native Messaging connection before the user allowed it, one after,
  *     and none of the reconnect timers once it is withdrawn;
  *   - every command from the Native Host refused while paused (the popup's
- *     own commands still run), and the badge while a command runs;
+ *     own commands still run), and the badge while a command runs; what the
+ *     pause does to a command already running is in extension-pause-abort;
  *   - who may read or change the consent and the pause switch, and the
  *     consent page opened on the first install only;
  *   - the screenshot entry of the page menu only while the consent is given,
@@ -328,10 +329,11 @@ describe('control-state: saved choices', () => {
 });
 
 // ---------------------------------------------------------------------------
-// dispatch.ts: the pause switch and the running-command badge
+// dispatch.ts: the pause switch and the running-command badge. What the
+// pause does to a command already running is in extension-pause-abort.test.ts.
 // ---------------------------------------------------------------------------
 
-describe('dispatch: paused and running commands', () => {
+describe('dispatch: the pause switch refuses before a handler runs, and the badge', () => {
   async function loadDispatch() {
     const posted: Record<string, unknown>[] = [];
     vi.doMock('../../packages/extension/src/background/native-connection.ts', async (importOriginal) => ({

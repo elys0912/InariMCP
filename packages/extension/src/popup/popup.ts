@@ -129,34 +129,36 @@ function setText(id: string, text: string): void {
   if (el) el.textContent = text;
 }
 
-function renderSetup(state: SetupState, os: string): void {
+/** The status pill for a setup state: its style and text (null: left as it is). */
+function statusOf(state: SetupState): { style: PillStyle; text: string } | null {
   switch (state.kind) {
     case 'connecting':
-      updateStatus('starting', t('statusConnecting'));
-      break;
+      return { style: 'starting', text: t('statusConnecting') };
     case 'noSession':
-      updateStatus('notice', t('statusNoSession'));
-      break;
+      return { style: 'notice', text: t('statusNoSession') };
     case 'hostOutdated':
-      updateStatus('notice', t('statusUpdateNeeded'));
-      break;
+      return { style: 'notice', text: t('statusUpdateNeeded') };
     case 'ready':
-      updateStatus(
-        'connected',
-        state.relays === 1 ? t('statusConnected') : t('statusConnectedN', String(state.relays)),
-      );
-      break;
+      return {
+        style: 'connected',
+        text: state.relays === 1 ? t('statusConnected') : t('statusConnectedN', String(state.relays)),
+      };
     case 'hostMissing':
     case 'hostError':
     case 'daemonDown':
-      updateStatus('disconnected', t('statusSetupNeeded'));
-      break;
+      return { style: 'disconnected', text: t('statusSetupNeeded') };
     default: {
       // Every kind is handled above: a new one must be added here.
       const unhandled: never = state;
       void unhandled;
+      return null;
     }
   }
+}
+
+function renderSetup(state: SetupState, os: string): void {
+  const status = statusOf(state);
+  if (status) updateStatus(status.style, status.text);
 
   if ('serverUrl' in state && state.serverUrl) {
     setText('server-url', state.serverUrl.replace(/^https?:\/\//, ''));
