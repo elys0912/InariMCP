@@ -9,16 +9,16 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Page } from 'playwright';
-import { HeadlessBrowser } from '../src/headless/backend.js';
 import { PASSWORD_REFUSAL } from '../src/safety/password-guard.js';
 import { skipOrFailWithoutFirefox } from '../../../tests/contract/helpers/real-firefox.js';
+import { TestHeadlessBrowser } from './helpers/test-browser.js';
 
 type Result = Record<string, unknown>;
 
 // Arguments are passed as the tool schemas deliver them (defaults filled in).
 const NEW_BLANK_TAB = { url: 'about:blank' };
 
-const browser = new HeadlessBrowser();
+const browser = new TestHeadlessBrowser();
 let available = false;
 
 const PAGE = (body: string): string =>

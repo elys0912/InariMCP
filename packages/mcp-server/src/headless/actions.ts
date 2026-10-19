@@ -95,7 +95,7 @@ function detectCaptcha(s: typeof CAPTCHA_SELECTORS): { present: boolean; widgets
 
 /** The tab state of HeadlessBrowser that handlers read or change. */
 export interface TabHost {
-  /** The browser context (execute() runs no handler before start()). */
+  /** The browser context (_execute() runs no handler before start()). */
   context(): BrowserContext;
   activeTabId(): number | null;
   tabs(): ReadonlyMap<number, Page>;
@@ -144,7 +144,7 @@ interface UnlockedContext {
 type UnlockedHandler = (c: UnlockedContext) => Promise<Result>;
 
 /**
- * - dispatch: run under execute()'s lock. With needsPage, on the page of the
+ * - dispatch: run under _execute()'s lock. With needsPage, on the page of the
  *   target tab, and the result names that tab (url, tabId); without, also
  *   when no tab is open (tab list, new tabs).
  * - unlocked: run outside the lock (handle_dialog: it waits for a dialog
@@ -175,7 +175,7 @@ interface Bound {
 /**
  * `work` given up after `ms`, at `bound.deadline` or when `bound.signal`
  * aborts, whichever comes first. Giving up does not stop the work; it frees
- * execute()'s lock for the next command.
+ * _execute()'s lock for the next command.
  */
 function bounded<T>(work: Promise<T>, bound: Bound, ms: number, what: string): Promise<T> {
   const limit = Math.max(0, Math.min(ms, bound.deadline - Date.now()));
@@ -207,7 +207,7 @@ function bounded<T>(work: Promise<T>, bound: Bound, ms: number, what: string): P
 
 /**
  * A Playwright wait of up to `timeout` ms, cut to `bound.deadline` and given
- * up when `bound.signal` aborts, so a cancelled wait frees execute()'s lock
+ * up when `bound.signal` aborts, so a cancelled wait frees _execute()'s lock
  * at once (the Playwright wait itself runs on until its own timeout).
  * `wait` gets the timeout to pass to Playwright: at least 1 ms, since
  * Playwright reads 0 as "no timeout".
@@ -707,8 +707,8 @@ const createTab: TablessHandler = async ({ args, host }) => {
 };
 
 // --- close_tab ---
-// The tool schemas require tabId; execute() has already refused an unknown
-// one. A direct execute() call without one is refused as on the Extension
+// The tool schemas require tabId; _execute() has already refused an unknown
+// one. A direct call from the tests without one is refused as on the Extension
 // (needsTabId), rather than closing the active tab.
 const closeTab: ActionHandler = async ({ page, tabId }) => {
   if (tabId === undefined) return { success: false, error: 'close_tab requires tabId' };
@@ -718,7 +718,7 @@ const closeTab: ActionHandler = async ({ page, tabId }) => {
 };
 
 // --- focus_tab ---
-// As close_tab; execute() adds the tab's id and URL to the result.
+// As close_tab; _execute() adds the tab's id and URL to the result.
 const focusTab: ActionHandler = async ({ page, tabId, host }) => {
   if (tabId !== undefined) host.activateTab(tabId, page);
   await page.bringToFront();

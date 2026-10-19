@@ -11,7 +11,7 @@ import { GET_ELEMENTS_MAX } from './limits.js';
  * The arguments of `action`, checked against `schema`. Calls through the MCP
  * tools arrive parsed by the tool schemas (tools/schemas.ts), defaults
  * filled in, so the headless schemas require what those guarantee and add
- * no defaults of their own. Anything else (a direct execute() call) fails
+ * no defaults of their own. Anything else (a direct call from the tests) fails
  * with the zod issues.
  */
 export function parseArgs<T>(
