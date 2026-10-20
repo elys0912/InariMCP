@@ -338,6 +338,16 @@ const foxSwitchTabSchema = z.object({
   tabId: z.number().int().describe('ID of the tab to focus/activate'),
 });
 
+/** 0.2.0: the window states fox_tab action "window" accepts. */
+export const WINDOW_STATES = ['maximized', 'normal', 'fullscreen'] as const;
+
+const foxSetWindowStateSchema = z.object({
+  state: z.enum(WINDOW_STATES).optional().default('maximized').describe(
+    "Window state: 'maximized' (default), 'normal' (restore) or 'fullscreen'",
+  ),
+  tabId: z.number().int().optional().describe('Tab whose window to change (defaults to the active tab)'),
+});
+
 // =========================================================================
 // Wait tools
 // =========================================================================
@@ -504,6 +514,13 @@ const OPERATIONS = {
   },
   fox_switch_tab: {
     inputSchema: foxSwitchTabSchema,
+    classification: 'interact',
+    tabIndependent: true,
+  },
+  // 0.2.0: fox_tab action "window". Changes the browser's UI only, so it is
+  // class interact like fox_switch_tab (no approval, allowed in read-only mode).
+  fox_set_window_state: {
+    inputSchema: foxSetWindowStateSchema,
     classification: 'interact',
     tabIndependent: true,
   },

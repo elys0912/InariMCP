@@ -605,6 +605,28 @@
     "guardOff": null
   },
   {
+    "id": "set_window_state/default",
+    "tool": "fox_tab",
+    "default": null,
+    "readOnly": null,
+    "readSiteTab": null,
+    "localFileTab": null,
+    "unknownTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
+    "id": "set_window_state/options",
+    "tool": "fox_tab",
+    "default": null,
+    "readOnly": null,
+    "readSiteTab": null,
+    "localFileTab": null,
+    "unknownTab": null,
+    "blockedTab": null,
+    "guardOff": null
+  },
+  {
     "id": "wait_for_element/default",
     "tool": "fox_wait",
     "default": null,

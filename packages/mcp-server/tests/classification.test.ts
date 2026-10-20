@@ -60,7 +60,7 @@ describe('tool sets derived from the schemas', () => {
   it('put the tab-independent tools in TAB_INDEPENDENT_TOOLS', () => {
     expect([...TAB_INDEPENDENT_TOOLS].sort()).toEqual([
       'fox_close_tab', 'fox_create_tab', 'fox_get_tabs', 'fox_list_containers',
-      'fox_open_in_container', 'fox_safety_status', 'fox_switch_tab',
+      'fox_open_in_container', 'fox_safety_status', 'fox_set_window_state', 'fox_switch_tab',
     ]);
   });
 

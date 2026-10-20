@@ -119,6 +119,9 @@ const CASES: Case[] = [
   ['create_tab/read_site', 'fox_tab', { action: 'create', url: READ_SITE_URL }],
   ['close_tab/default', 'fox_tab', { action: 'close', tabId: 7 }],
   ['switch_tab/default', 'fox_tab', { action: 'switch', tabId: 7 }],
+  // 0.2.0
+  ['set_window_state/default', 'fox_tab', { action: 'window' }],
+  ['set_window_state/options', 'fox_tab', { action: 'window', state: 'fullscreen', tabId: 2 }],
   ['wait_for_element/default', 'fox_wait', { for: 'element', selector: '#w' }],
   ['wait_for_element/options', 'fox_wait', { for: 'element', selector: '#w', timeout: 40000, visible: false, tabId: 2 }],
   ['wait_for_network_idle/default', 'fox_wait', { for: 'network_idle' }],

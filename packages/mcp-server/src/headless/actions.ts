@@ -1030,6 +1030,8 @@ const HEADLESS_ROUTES: Readonly<Record<BrowserAction, HeadlessRoute>> = {
   create_tab: tabless(createTab),
   close_tab: dispatch(closeTab),
   focus_tab: dispatch(focusTab),
+  // 0.2.0: no browser window to resize in headless mode; the page size is the viewport.
+  set_window_state: UNSUPPORTED,
 
   // --- form / input ---
   set_value: dispatch(setValue),

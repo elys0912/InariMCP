@@ -18,9 +18,9 @@ Inari MCP for Firefoxは、Firefox拡張機能・ネイティブメッセージ�
 
 これは[nanogenomic/ClaudeCodeBrowser](https://github.com/nanogenomic/ClaudeCodeBrowser)（MIT）のフォークで、PythonからTypeScriptに移植し、Firefox専用に絞ったもの。
 
-### Inari MCPとKitsuneMCP
+### 特徴となる点
 
-Inari MCP for FirefoxはKitsuneMCP（非公開）のaddons.mozilla.org版で、2026-10-14にKitsuneMCP 0.2.0から分岐し、版は0.1.0から数える。MCPクライアントやAIから来たコードをページで実行せず、コンソール・ネットワークのログを取らず、ページやブラウザへの操作のたびに承認を求める（読み取り・待機・スクロール・要素の強調表示・タブの切り替えは承認を求めない）。アドオンのID（`inari-mcp@elys0912.github.io`）、ネイティブメッセージングのホスト名（`inari_mcp`）、状態ディレクトリ（`~/.inari-mcp`）がKitsuneMCPと違うので、両方を同じFirefoxに入れられる。既定のポート（`8785` / `8786`）もKitsuneMCP（`8765` / `8766`）と違うので、両方を同時に動かせる。
+Inari MCP for FirefoxはClaudeCodeBrowser（MIT）から派生したもので、2026-10-14からaddons.mozilla.orgに掲載し、版は0.1.0から数える。MCPクライアントやAIから来たコードをページで実行せず、コンソール・ネットワークのログを取らず、ページやブラウザへの操作のたびに承認を求める（読み取り・待機・スクロール・要素の強調表示・タブの切り替え・ウインドウの最大化などは承認を求めない）。アドオンのID（`inari-mcp@elys0912.github.io`）、ネイティブメッセージングのホスト名（`inari_mcp`）、状態ディレクトリ（`~/.inari-mcp`）を独自に持ち、既定のポートは`8785` / `8786`なので、同じFirefoxに以前の版が入っていてもぶつからない。
 
 ## なぜ作ったか？
 
@@ -51,7 +51,45 @@ Inari MCPは意図的に用途を絞っている。以下に当てはまる場�
 
 ## クイックスタート
 
-手順は3つ：1. [AMOから拡張機能を入れる](#amoから拡張機能を入れる)、2. [ネイティブホストを入れる](#ネイティブホストを入れる)、3. [MCPクライアントに登録する](#mcpクライアントに登録する)。
+手順は3つ：1. [AMOから拡張機能を入れる](#amoから拡張機能を入れる)、2. [ネイティブホストを入れる](#ネイティブホストを入れる)、3. [MCPクライアントに登録する](#mcpクライアントに登録する)。コマンドラインに慣れていなければ、まず次の[はじめての人向けの手順](#はじめての人向けの手順)を読む。細かい説明はそのあとの節にある。
+
+### はじめての人向けの手順
+
+登場するもの：
+
+- **拡張機能** — Firefoxに入れる部品。addons.mozilla.org（Firefoxの公式のアドオン配布サイト）から入れる。
+- **ネイティブホスト** — 拡張機能とAIツールをつなぐ、このPCの中の補助プログラム。GitHubから入手して、コマンドを3つ打って入れる。これが無いと拡張機能は何もしない。
+- **MCPクライアント** — Claude CodeなどのAIツール。ここにInari MCPを登録すると、AIがFirefoxを使えるようになる。
+
+**1. Node.jsを入れる。** https://nodejs.org/ から「LTS」と書かれた版をダウンロードして、そのままインストールする（バージョン20以上なら使える）。すでに入っていればこの手順は飛ばしてよい。
+
+**2. 拡張機能を入れる。** Firefoxで[addons.mozilla.orgのInari MCP for Firefox](https://addons.mozilla.org/firefox/addon/inari-mcp-for-firefox/)を開き、「Firefox へ追加」を押す。Firefoxが確認を出すので「追加」する。続いて拡張機能が「許可しますか」という画面を新しいタブで開く。読んで「許可する」を押す。ツールバーに狐のボタンが出る。
+
+**3. ネイティブホストをダウンロードする。** 拡張機能と同じ版が要る。Firefoxの`about:addons`を開き、Inari MCP for Firefoxの版（例：0.2.0）を確認して、次のURLの`<版>`をその数字にして開く。
+
+```text
+https://github.com/elys0912/InariMCP/archive/refs/tags/v<版>.zip
+```
+
+ダウンロードしたzipを展開する（Windowsでは右クリック →「すべて展開」）。できたフォルダ（`InariMCP-<版>`）を、消さない場所に置く。
+
+**4. コマンドを3つ打つ。** 展開したフォルダでコマンドラインを開く（Windows：フォルダの中で右クリック →「ターミナルで開く」。macOS：ターミナルで`cd `と打ってからフォルダをドラッグしてEnter）。次の3行を上から順に、1行ずつ打つ。それぞれ終わるまで待つ。
+
+```bash
+npm ci
+npm run build
+npm run setup -- --register-claude
+```
+
+3行目がネイティブホストをFirefoxに登録し、Claude Codeにも登録する。途中で質問が出たらEnterで既定の答えを選んでよい。Claude Code以外のAIツールを使うときは、3行目を`npm run setup`だけにする。登録用のコマンドが表示されるので、それをそのツールのやり方で登録する（[MCPクライアントに登録する](#mcpクライアントに登録する)）。
+
+**5. 確かめる。** Claude Codeを起動し直し、ツールバーの狐のボタンを押す。「接続済み」と出ていれば完了。「要セットアップ」や「セッションなし」と出るときは[再起動と接続確認](#再起動と接続確認)の表を見る。
+
+**使うとき。** AIがクリックや入力などページを変える操作をしようとすると、Claude Codeの画面か狐のボタンのポップアップで承認を求められる。読むだけの操作は承認なしで進む。しばらくAIに触らせたくないときは、ポップアップの一時停止のスイッチを入れる。
+
+**更新のとき。** 拡張機能はFirefoxが自動で更新する。そのあと狐のボタンに「要更新」と出たら、手順3と4をもう一度行う（新しい版のzipを落として、コマンドを3つ打つ）。古いフォルダは消してよい。
+
+**やめるとき。** 展開したフォルダで`npm run teardown`を打つと登録が消える。そのあとFirefoxの`about:addons`で拡張機能を削除し、フォルダを消す。
 
 ### 前提条件
 
@@ -390,7 +428,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | キー | 既定値 | 意味 |
 |---|---|---|
 | `enabled` | `true` | 安全ガードを有効にする（URLの検査とURLの一覧、`confirm_read_sites`、`read_only`、`container_scope`、レート制限）。`false`にするとこれらは止まるが、人の承認は止まらない。操作系ツールは常に先に尋ねる（[人による承認](#人による承認)） |
-| `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ）を拒否する。観察・待機・UIだけを変えるツール（`action: "scroll"`か`"highlight"`の`fox_interact`、`action: "switch"`の`fox_tab`）は使える |
+| `read_only` | `false` | ページやブラウザの状態を変えるツール（入力、遷移、タブ）を拒否する。観察・待機・UIだけを変えるツール（`action: "scroll"`か`"highlight"`の`fox_interact`、`action: "switch"`か`"window"`の`fox_tab`）は使える |
 | `allow_password_typing` | `false` | パスワード欄（`type="password"`、または`autocomplete`に`current-password` / `new-password`のトークンを含むもの。大文字小文字は問わず、`section-login current-password`も含む）への`fox_type` / `fox_set_value`を許可する。伏せ字は解かない: パスワード欄と隠し欄（`type="password"` / `"hidden"`）、`autocomplete`に`current-password`・`new-password`・`one-time-code`か、`cc-`で始まるトークン（`cc-number`、`cc-name`など）を含む欄の値は、読み取るツール（`fox_read`、`fox_find`）で両方のバックエンドとも常に`[MASKED]`になる |
 | `max_actions_per_minute` | `120` | レート制限。全セッション共通（`0`で制限なし） |
 | `audit_log` | `true` | `~/.inari-mcp/logs/audit.jsonl`に書く |
@@ -413,7 +451,7 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 
 ホストとスキームは大文字小文字を区別しない。`allowed_url_patterns`ではパスは書いたとおりに一致する（区切りの位置で: `/admin`は`/administrator`を含まない）。`blocked_url_patterns`と`confirm_read_sites`では、`%xx`のエスケープを戻し、連続するスラッシュをまとめ、大文字小文字をそろえたうえで、後ろに何が続いても一致する。それ以外の書き方（`paypal\.com`のような正規表現だけのもの）は、どのリストでもエラーにする。ホストパターンか、URL全体に一致させる`re:`で書く。
 
-`safety.json`を使えない場合（読めない、JSONとして不正、未知のキー — KitsuneMCPの`safety.json`にある`protected_url_patterns`と`confirm_protected_actions`も含む —、型の誤り、使えないURLパターン）、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。使えないURLパターンとは、空のもの、不正な`re:`の正規表現、ホストパターンのうち不正なポート（1〜65535以外）やIPv6アドレス、IPアドレスの前の`*.`、末尾の`/*`以外でパスに含まれる`*`、パスに含まれる`?` / `#`（`%3F` / `%23`も）、ホストパターンでも`re:`でもないもの。`blocked_url_patterns`と`confirm_read_sites`にあるドットのないホストパターン（`paypal`はホスト`paypal`とそのサブドメインにだけ一致する）は、警告付きで使い、警告は`fox_safety_status`（`patternWarnings`）に出る。遷移先も確認する: 許可するのは`http://`・`https://`・`about:blank`だけで、ホストの前にユーザー名やパスワードが付いたURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。ホストの無いページ（`view-source:`、`blob:`、`data:`など。`about:`のページと`file:`は除く）にあるタブはどのURLパターンにも一致しないので、そこで操作するツールは拒否する。読み取るツールは動く。
+`safety.json`を使えない場合（読めない、JSONとして不正、未知のキー — 以前の版の`safety.json`にある`protected_url_patterns`と`confirm_protected_actions`も含む —、型の誤り、使えないURLパターン）、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。使えないURLパターンとは、空のもの、不正な`re:`の正規表現、ホストパターンのうち不正なポート（1〜65535以外）やIPv6アドレス、IPアドレスの前の`*.`、末尾の`/*`以外でパスに含まれる`*`、パスに含まれる`?` / `#`（`%3F` / `%23`も）、ホストパターンでも`re:`でもないもの。`blocked_url_patterns`と`confirm_read_sites`にあるドットのないホストパターン（`paypal`はホスト`paypal`とそのサブドメインにだけ一致する）は、警告付きで使い、警告は`fox_safety_status`（`patternWarnings`）に出る。遷移先も確認する: 許可するのは`http://`・`https://`・`about:blank`だけで、ホストの前にユーザー名やパスワードが付いたURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。ホストの無いページ（`view-source:`、`blob:`、`data:`など。`about:`のページと`file:`は除く）にあるタブはどのURLパターンにも一致しないので、そこで操作するツールは拒否する。読み取るツールは動く。
 
 ### 人による承認
 
@@ -438,7 +476,7 @@ daemon はセッションごとに新しく起動されるわけではない。C
 
 ## Status
 
-Inari MCP for Firefox 0.1.0は、addons.mozilla.orgに掲載する最初の版。以下はKitsuneMCPと共通の経緯。
+Inari MCP for Firefox 0.1.0は、addons.mozilla.orgに掲載した最初の版。以下は掲載までの経緯。
 
 **完了済み:**
 - 設計 + 多角的レビュー
@@ -469,6 +507,7 @@ Inari MCP for Firefox 0.1.0は、addons.mozilla.orgに掲載する最初の版�
 | `fox_handle_dialog` | 未実装 | 動く |
 | `fox_navigate`の`action: "hard_refresh"`、`fox_screenshot`の`scope: "all_tabs"` / `"scroll_capture"` | 動く | 非対応 |
 | `fox_tabs`の`what: "containers"`、`fox_tab`の`action: "create"`に`container`を付けたもの | 動く | 非対応（コンテナがない） |
+| `fox_tab`の`action: "window"` | 動く | 非対応（ブラウザのウインドウがない） |
 | `fox_request_approval` | 動く | 常に拒否（尋ねる相手がいない） |
 | その他すべて | 動く | 動くが、無視される引数が多い（結果の`warnings`に並ぶ。[既知の制約](docs/known-issues.ja.md)を参照） |
 
@@ -514,7 +553,6 @@ npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（Pla
 - [既知の制約](docs/known-issues.ja.md)
 - [開発](docs/development.ja.md)
 - [Issues](https://github.com/elys0912/InariMCP/issues) — 質問と不具合の報告
-- KitsuneMCP（非公開） — この版の分岐元
 
 ## Credits
 

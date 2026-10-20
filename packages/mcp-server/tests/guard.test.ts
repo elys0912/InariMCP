@@ -77,6 +77,7 @@ const NOT_PAGE_READS: ReadonlyArray<[tool: string, args: Record<string, unknown>
   ['fox_scroll', {}],
   ['fox_highlight', { selector: '#h' }],
   ['fox_switch_tab', { tabId: 1 }],
+  ['fox_set_window_state', {}], // 0.2.0
   ['fox_wait_for_element', { selector: '#w' }],
   ['fox_wait_for_network_idle', {}],
   ['fox_wait_for_navigation', {}],
@@ -743,6 +744,7 @@ describe('the handler pipeline keeps the guard up to date', () => {
       ['fox_tab', { action: 'create' }],
       ['fox_tab', { action: 'create', url: 'https://a.test/', container: { name: 'W' } }],
       ['fox_tab', { action: 'close', tabId: 1 }], ['fox_tab', { action: 'switch', tabId: 1 }],
+      ['fox_tab', { action: 'window' }], // 0.2.0
       ['fox_wait', { for: 'element', selector: '#a' }], ['fox_wait', { for: 'network_idle' }],
       ['fox_wait', { for: 'navigation' }], ['fox_wait', { for: 'url', url: 'https://a.test/' }],
       ['fox_handle_dialog', { action: 'accept' }], ['fox_request_approval', { message: 'm' }],

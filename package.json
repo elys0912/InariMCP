@@ -1,6 +1,6 @@
 {
   "name": "inari-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Inari MCP for Firefox — lets an MCP client such as Claude Code operate your Firefox through an extension and a native messaging host",
   "license": "MIT",

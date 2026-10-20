@@ -2,7 +2,7 @@
 
 **English** | [日本語](./known-issues.ja.md)
 
-Limitations and caveats known in the current version of Inari MCP (v0.1.x).
+Limitations and caveats known in the current version of Inari MCP (v0.2.x).
 
 ## Safety guard
 
@@ -12,7 +12,7 @@ Limitations and caveats known in the current version of Inari MCP (v0.1.x).
 - **An Extension and an MCP Server of different versions can refuse commands as `config_error`**: when the Extension cannot use the container scope or the URL rules the MCP Server attaches to a command, it refuses the command instead of running it without that check. Update the Extension and the MCP Server together (see Update in the README)
 - **The shared daemon uses the environment of whoever started it**: environment variables such as `FOX_READ_ONLY` are read only from the process that actually launched the daemon. A daemon started by Firefox (the Native Host) inherits Firefox's environment; `claude mcp add --env` values are not used. Put settings that must apply in `~/.inari-mcp/safety.json` (see the README). When a session and the daemon disagree, a warning appears at session start and in the `fox_safety_status` result
 - **A `safety.json` from an earlier version with `allow_script_execution` refuses every tool**: Inari MCP has no script tools, so the key is unknown and the file cannot be used (fail-closed, like any unknown key). Delete the key and restart the daemon
-- **A `safety.json` from KitsuneMCP with `protected_url_patterns` or `confirm_protected_actions` refuses every tool**: InariMCP asks for every acting tool on every site, so there is no protected-site list and no switch for it; both keys are unknown (fail-closed). Delete them and restart the daemon; list the sites where reads and screenshots should ask as well in `confirm_read_sites`
+- **A `safety.json` with `protected_url_patterns` or `confirm_protected_actions` (keys of an earlier edition) refuses every tool**: InariMCP asks for every acting tool on every site, so there is no protected-site list and no switch for it; both keys are unknown (fail-closed). Delete them and restart the daemon; list the sites where reads and screenshots should ask as well in `confirm_read_sites`
 - **`blocked_url_patterns` / `allowed_url_patterns` apply only to http(s) tabs**: a `file://` page or a browser-internal page (`about:`, `moz-extension://`) that the user opened is not a site, so the lists do not cover it: even in allowlist mode such a tab can be read and acted on. `fox_navigate` cannot go there (anything other than http(s) and `about:blank` is refused as `blocked_scheme`)
 
 ## Human approval

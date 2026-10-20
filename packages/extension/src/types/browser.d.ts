@@ -163,11 +163,18 @@ declare namespace browser {
       focused: boolean;
       state: string;
       type: string;
+      // 0.2.0: reported by set_window_state.
+      width?: number;
+      height?: number;
     }
 
     function get(windowId: number): Promise<Window>;
     function getAll(): Promise<Window[]>;
-    function update(windowId: number, updateInfo: { focused?: boolean }): Promise<Window>;
+    function update(
+      windowId: number,
+      // 0.2.0: `state` for set_window_state.
+      updateInfo: { focused?: boolean; state?: "normal" | "minimized" | "maximized" | "fullscreen" },
+    ): Promise<Window>;
   }
 
   namespace i18n {

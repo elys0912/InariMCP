@@ -44,6 +44,8 @@ const WIRE_ACTIONS = {
   create_tab: "createTab",
   close_tab: "closeTab",
   focus_tab: "focusTab",
+  // 0.2.0: fox_tab action "window" (maximize / restore / fullscreen the tab's window).
+  set_window_state: "setWindowState",
 
   // --- Form / input ---
   set_value: "setValue",

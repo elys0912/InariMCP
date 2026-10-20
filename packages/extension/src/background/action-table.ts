@@ -64,7 +64,7 @@ import { takeScreenshot, screenshotAllTabs } from "./screenshot";
 import { refreshSetupState } from "./setup-badge";
 import { sendToContentScript } from "./tab-target";
 import { waitForNavigation, waitForUrl } from "./tab-wait";
-import { getAllTabs, createNewTab, closeTab, focusTab, findText } from "./tabs";
+import { getAllTabs, createNewTab, closeTab, focusTab, setWindowState, findText } from "./tabs";
 import type {
   NativeMessage,
   CommandResult,
@@ -198,6 +198,8 @@ const ACTIONS = {
   },
   closeTab: { scope: "tab", approval: "act", needsTabId: true, skipUrlReport: true, handler: withTabId(closeTab) },
   focusTab: { scope: "tab", approval: "none", needsTabId: true, handler: withTabId(focusTab) },
+  // 0.2.0: changes only the browser's own window, so like focusTab it needs no approval.
+  setWindowState: { scope: "tab", approval: "none", handler: (c) => setWindowState(c.target, c.data) },
   screenshotAllTabs: {
     scope: "self",
     approval: "readPerTab",

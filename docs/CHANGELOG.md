@@ -4,9 +4,21 @@
 
 User-facing changes of Inari MCP for Firefox, newest first.
 
-Inari MCP for Firefox started on 2026-10-14 as a copy of KitsuneMCP (private) 0.2.0 (commit b2642a9). It is the edition prepared for listing on addons.mozilla.org: it has a different add-on ID, a different native-messaging host name (`inari_mcp`) and a different state directory (`~/.inari-mcp`), so both editions can be installed side by side. For the history before the split, see the KitsuneMCP changelog.
+Inari MCP for Firefox is derived from ClaudeCodeBrowser (MIT). It started on 2026-10-14 as the edition prepared for listing on addons.mozilla.org, with its own add-on ID, native-messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), and is numbered from 0.1.0.
 
-## Unreleased (0.1.0)
+## 0.2.0 — 2026-10-20
+
+### Added
+
+- **`fox_tab` with `action: "window"` changes the state of a browser window**: it sets the window of `tabId` (default: the active tab) to `state` `"maximized"` (the default), `"normal"` or `"fullscreen"`, and returns the window's state and size. Maximize the window before `fox_screenshot` so the page is laid out at the full screen width. It only changes the browser's UI, so like `action: "switch"` it works in read-only mode and without approval. Not available in headless mode.
+
+### Changed
+
+- **New icon**: the fox in red inside a gold clock face, so the toolbar button and the add-ons list are easier to tell apart from other extensions with a fox.
+
+## 0.1.0 — 2026-10-14
+
+The first version listed on addons.mozilla.org. The entries below are the changes made for the listing, relative to the code this version was derived from; the README says what Inari MCP for Firefox does.
 
 ### Added
 
@@ -24,17 +36,17 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of KitsuneMCP (private) 0.
 
 ### Changed
 
-- Renamed from KitsuneMCP to Inari MCP for Firefox. Add-on ID `inari-mcp@elys0912.github.io`, host manifest `inari_mcp`, state directory `~/.inari-mcp`, npm packages `@inari-mcp/*`.
+- Renamed to Inari MCP for Firefox. Add-on ID `inari-mcp@elys0912.github.io`, host manifest `inari_mcp`, state directory `~/.inari-mcp`, npm packages `@inari-mcp/*`.
 - Line endings in the repository are fixed to LF with `.gitattributes`, so the extension built on any OS is byte-identical to the one submitted for review.
 - `manifest.json`: `incognito` is `not_allowed` (the extension never sees private-browsing tabs), and `data_collection_permissions` declares `websiteContent`, `browsingActivity` and `websiteActivity` (page content, form values, screenshots and URLs are sent to the local native host and from there to the MCP client, and the extension performs the approved clicks and typing in pages).
 - `fox_wait` with `for: "network_idle"`: the counting hooks on the page's `fetch` and `XMLHttpRequest.prototype.send` are installed when the wait starts and removed when it ends (before, they stayed until the page unloaded). They count requests and record nothing about them. Requests already running when the call starts are not seen.
 - Screenshots saved under a `filename` you chose are now deleted after `FOX_SCREENSHOT_RETENTION_DAYS` (default 30) like the others; the Native Host lists them in `.named-screenshots` in the screenshots directory and never deletes any other file there.
 - README: installation now starts from addons.mozilla.org (1. the extension from AMO, 2. the native host, 3. the MCP client), and the top of the README says what is sent and what is needed. The "WIP", "AMO listing not planned" and "install the unlisted .xpi from GitHub Releases" statements are gone. New sections: Privacy and Links.
-- Default ports are `8785` (HTTP) and `8786` (WebSocket) instead of KitsuneMCP's `8765` / `8766`, so Inari MCP and KitsuneMCP can run at the same time. `FOX_HTTP_PORT` / `FOX_WS_PORT` still override them.
+- Default ports are `8785` (HTTP) and `8786` (WebSocket) instead of `8765` / `8766`, so Inari MCP does not collide with an earlier edition running at the same time. `FOX_HTTP_PORT` / `FOX_WS_PORT` still override them.
 - Running Inari MCP needs Node.js 20 or later (`engines`, the installer and `--doctor`); the reproducible build for the AMO review uses Node.js 24.x and npm 11.x.
 - A refusal while the agent is paused reaches the MCP client as a safety refusal (`decision: "paused"`, text starting with `paused:`) instead of a browser error.
 - The extension's description and the popup footer use the name "Inari MCP for Firefox"; the footer says that page content goes through the native host on this computer to the MCP client.
-- The toolbar button, the popup, the badge texts and the context menu use the short name "Inari MCP" (before: "InariMCP"), and so do the approval prompt and the approval notes of the tool results. Approval and CAPTCHA notifications and the popup name the requester "the MCP client" instead of "Claude".
+- The toolbar button, the popup, the badge texts and the context menu use the short name "Inari MCP", and so do the approval prompt and the approval notes of the tool results. Approval and CAPTCHA notifications and the popup name the requester "the MCP client" instead of "Claude".
 - The permission page lists everything that is sent: page content including the values of form fields (password and similar fields are masked), screenshots, URLs, the tab list and the names of your containers. Its privacy policy link opens the Japanese policy when Firefox's language is Japanese. The popup's pause note says that the command that is running is stopped as well.
 - The context menu entry "Take Screenshot for Inari MCP" is there only while the extension is allowed to connect. Before, it was there before the permission and after it was declined too, and its screenshot went nowhere. When the extension is allowed but not connected to the native host, an OS notification now says that the screenshot was not sent.
 - The content script runs in the top frame of a page only (`all_frames: false`; no tool reached the other frames), and logs nothing when it loads. No stylesheet is put into pages any more: the overlay of `fox_interact` with `action: "highlight"` gets its look on the element itself, so a page cannot find a class or keyframe name of the add-on.
@@ -61,7 +73,7 @@ Inari MCP for Firefox started on 2026-10-14 as a copy of KitsuneMCP (private) 0.
 - The "Inspect Element for InariMCP" context menu entry: it handed its result to nobody.
 - The protected-site list: `protected_url_patterns` (16 default sites: banks and other finance or payment services, `.gov`, patient portals) and `confirm_protected_actions` in `safety.json`. Acting tools ask on every site instead; list the sites where reads and screenshots should ask as well in the new `confirm_read_sites` (default empty). A `safety.json` that still has either key is refused as an unknown key until the key is deleted.
 - The browser commands that no tool sends: `get_tab_info`, `find_tabs`, `get_value`, `reload_all`, `reload_by_url`, `wait_for_change` and `click_and_wait`. Neither the extension nor the headless backend handles them any more.
-- The compatibility layer for the earlier tool names of KitsuneMCP: `FOX_CAPS=legacy` (the list with `[Deprecated: …]` descriptions), the 20 earlier names that are no tool any more (`fox_get_text`, `fox_create_tab`, `fox_wait_for_url`, …; refused as unknown tools, also over `POST /mcp/call`), the note on their first call and `legacyTool` in the audit log. Call the 17 tools instead (`fox_read`, `fox_tab`, `fox_wait`, …).
+- The compatibility layer for the earlier tool names: `FOX_CAPS=legacy` (the list with `[Deprecated: …]` descriptions), the 20 earlier names that are no tool any more (`fox_get_text`, `fox_create_tab`, `fox_wait_for_url`, …; refused as unknown tools, also over `POST /mcp/call`), the note on their first call and `legacyTool` in the audit log. Call the 17 tools instead (`fox_read`, `fox_tab`, `fox_wait`, …).
 - The never implemented `fox_run_workflow` and `fox_audit_page`, and the empty `workflow` profile of `FOX_CAPS` (now an unknown profile name, ignored with a warning).
 - The `CLAUDE_BROWSER_*` environment variables inherited from the fork (`CLAUDE_BROWSER_HOST`, `CLAUDE_BROWSER_HTTP_PORT`, `CLAUDE_BROWSER_WS_PORT`, `CLAUDE_BROWSER_HEADLESS`, `CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT`, `CLAUDE_BROWSER_EXECUTABLE`, `CLAUDE_BROWSER_SCREENSHOTS_DIR`, `CLAUDE_BROWSER_READ_ONLY`, `CLAUDE_BROWSER_SAFETY_CONFIG`): the daemon, the relay, the Native Host, the installer and `--doctor` read only the `FOX_*` names. Also the names `FOX_PORT`, `FOX_DEBUG` and `FOX_CONTAINER`, which nothing read.
 - The other compatibility paths inherited from the fork: a bare regular expression in the URL lists of `safety.json` (`paypal\.com`; it was read as a host pattern where possible, else matched anywhere in the URL) is now a configuration error in every list — write a host pattern, or `re:` for a whole-URL match; `POST /browser/command` (an alias of `POST /mcp/call`); the reading of a daemon that does not report `effectiveSettings`; the message for a Native Host that sends a plain token.

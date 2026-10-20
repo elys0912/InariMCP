@@ -612,7 +612,7 @@
   },
   {
     "name": "fox_tab",
-    "description": "Open, close or switch tabs. action 'create': open a new tab (url, default about:blank; active); with `container` the tab opens in a Firefox container (by name, created if not found, or by cookieStoreId, which must exist; isolated cookies/storage; url required; with container scope enabled in safety.json only the agent container is allowed; not available in headless mode). action 'close': close the tab tabId. action 'switch': focus/activate the tab tabId.",
+    "description": "Open, close or switch tabs, or change a tab's window. action 'create': open a new tab (url, default about:blank; active); with `container` the tab opens in a Firefox container (by name, created if not found, or by cookieStoreId, which must exist; isolated cookies/storage; url required; with container scope enabled in safety.json only the agent container is allowed; not available in headless mode). action 'close': close the tab tabId. action 'switch': focus/activate the tab tabId. action 'window': set the state of the window of tabId (default: the active tab) to 'maximized' (default), 'normal' or 'fullscreen', e.g. maximize before a screenshot; returns the window's state and size; not available in headless mode.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -621,9 +621,10 @@
           "enum": [
             "create",
             "close",
-            "switch"
+            "switch",
+            "window"
           ],
-          "description": "'create', 'close' or 'switch'"
+          "description": "'create', 'close', 'switch' or 'window'"
         },
         "url": {
           "type": "string",
@@ -650,7 +651,16 @@
         },
         "tabId": {
           "type": "integer",
-          "description": "(action=close|switch; required) ID of the tab to close"
+          "description": "(action=close|switch|window; required for close|switch) ID of the tab to close"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "maximized",
+            "normal",
+            "fullscreen"
+          ],
+          "description": "(action=window; default 'maximized') Window state: 'maximized' (default), 'normal' (restore) or 'fullscreen'"
         }
       },
       "required": [

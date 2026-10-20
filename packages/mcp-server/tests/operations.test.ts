@@ -15,7 +15,7 @@ describe('public tools and operations', () => {
     expect(describeTool(name)).toBeNull();
   });
 
-  // The earlier tool names of KitsuneMCP, and the never
+  // The earlier tool names (before the rename), and the never
   // implemented workflow tools, are no tools.
   it.each([
     'fox_get_text', 'fox_get_page_info', 'fox_get_elements', 'fox_find_text', 'fox_get_tabs',

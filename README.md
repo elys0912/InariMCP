@@ -18,9 +18,9 @@ Inari MCP for Firefox is a Firefox extension, a native messaging host and an MCP
 
 It's a fork of [nanogenomic/ClaudeCodeBrowser](https://github.com/nanogenomic/ClaudeCodeBrowser) (MIT), ported from Python to TypeScript and narrowed to Firefox only.
 
-### Inari MCP and KitsuneMCP
+### What sets it apart
 
-Inari MCP for Firefox is the addons.mozilla.org edition of KitsuneMCP (private), split off from KitsuneMCP 0.2.0 on 2026-10-14 and numbered from 0.1.0. It runs no code that comes from the MCP client or the AI in pages, records no console or network logs, and asks before every action on a page or the browser (reading, waiting, scrolling, highlighting an element and switching tabs do not ask). It has its own add-on ID (`inari-mcp@elys0912.github.io`), native messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), so both can be installed in the same Firefox. Its default ports (`8785` / `8786`) differ from KitsuneMCP's (`8765` / `8766`), so both can also run at the same time.
+Inari MCP for Firefox is derived from ClaudeCodeBrowser (MIT) and has been listed on addons.mozilla.org since 2026-10-14, numbered from 0.1.0. It runs no code that comes from the MCP client or the AI in pages, records no console or network logs, and asks before every action on a page or the browser (reading, waiting, scrolling, highlighting an element, switching tabs and changing the window state do not ask). It has its own add-on ID (`inari-mcp@elys0912.github.io`), native messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), and its default ports are `8785` / `8786`, so it does not collide with an earlier edition installed in the same Firefox.
 
 ## Why?
 
@@ -390,7 +390,7 @@ Auto-generated on first run at `~/.inari-mcp/safety.json` (or `FOX_SAFETY_CONFIG
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Safety guard on: the checks of URLs and the URL lists, `confirm_read_sites`, `read_only`, `container_scope` and the rate limit. `false` turns these off, but not the human approval: every acting tool still asks first (see [Human approval](#human-approval)) |
-| `read_only` | `false` | Refuse the tools that change page or browser state (input, navigation, tabs); observation, waiting and UI-only tools (`fox_interact` with `action: "scroll"` or `"highlight"`, `fox_tab` with `action: "switch"`) still work |
+| `read_only` | `false` | Refuse the tools that change page or browser state (input, navigation, tabs); observation, waiting and UI-only tools (`fox_interact` with `action: "scroll"` or `"highlight"`, `fox_tab` with `action: "switch"` or `"window"`) still work |
 | `allow_password_typing` | `false` | Allow `fox_type` / `fox_set_value` on password fields (`type="password"`, or an `autocomplete` with the token `current-password` / `new-password` in any case, such as `section-login current-password`). It unmasks nothing: what the tools read (`fox_read`, `fox_find`) always shows `[MASKED]` for the value of a password or hidden field (`type="password"` / `"hidden"`) and of a field whose `autocomplete` has `current-password`, `new-password`, `one-time-code` or a token starting with `cc-` (`cc-number`, `cc-name`, …), on both backends |
 | `max_actions_per_minute` | `120` | Rate limit, shared by all sessions (`0` = no limit) |
 | `audit_log` | `true` | Write `~/.inari-mcp/logs/audit.jsonl` |
@@ -413,7 +413,7 @@ URL patterns are matched against the parsed URL, not the raw string, so `example
 
 Host and scheme compare case-insensitively. In `allowed_url_patterns` a path matches as written (at a segment boundary: `/admin` does not cover `/administrator`); in `blocked_url_patterns` and `confirm_read_sites` it matches any continuation after decoding `%xx` escapes, collapsing repeated slashes and folding case. Any other entry, such as a bare regular expression (`paypal\.com`), is an error in every list: write it as a host pattern, or as `re:` for a whole-URL match.
 
-If `safety.json` cannot be used (unreadable, invalid JSON, an unknown key — `protected_url_patterns` and `confirm_protected_actions` from a KitsuneMCP `safety.json` included —, a wrong type, an unusable URL pattern), the daemon logs the error to stderr (`daemon.log`) and refuses every tool except `fox_safety_status`, which shows the error, until the file is fixed and the daemon restarted. A URL pattern is unusable when it is empty, an invalid `re:` regex, a host pattern with an invalid port (1–65535) or IPv6 address, `*.` before an IP address, `*` in a path other than a trailing `/*`, `?` / `#` (or `%3F` / `%23`) in a path, or an entry that is not a host pattern or `re:`. A dot-less host pattern in `blocked_url_patterns` or `confirm_read_sites` (`paypal` matches only the host `paypal` and its subdomains) is used with a warning, shown in `fox_safety_status` (`patternWarnings`). Navigation targets are checked as well: only `http://`, `https://` and `about:blank` are allowed, URLs with a user name or password before the host are refused, and a result whose final URL (after a redirect or a click) is blocked is withheld. A tab on a page without a host (`view-source:`, `blob:`, `data:`, …; `about:` pages and `file:` excepted) matches no URL pattern, so tools that act on it are refused there; reading tools still work.
+If `safety.json` cannot be used (unreadable, invalid JSON, an unknown key — `protected_url_patterns` and `confirm_protected_actions` from an earlier edition's `safety.json` included —, a wrong type, an unusable URL pattern), the daemon logs the error to stderr (`daemon.log`) and refuses every tool except `fox_safety_status`, which shows the error, until the file is fixed and the daemon restarted. A URL pattern is unusable when it is empty, an invalid `re:` regex, a host pattern with an invalid port (1–65535) or IPv6 address, `*.` before an IP address, `*` in a path other than a trailing `/*`, `?` / `#` (or `%3F` / `%23`) in a path, or an entry that is not a host pattern or `re:`. A dot-less host pattern in `blocked_url_patterns` or `confirm_read_sites` (`paypal` matches only the host `paypal` and its subdomains) is used with a warning, shown in `fox_safety_status` (`patternWarnings`). Navigation targets are checked as well: only `http://`, `https://` and `about:blank` are allowed, URLs with a user name or password before the host are refused, and a result whose final URL (after a redirect or a click) is blocked is withheld. A tab on a page without a host (`view-source:`, `blob:`, `data:`, …; `about:` pages and `file:` excepted) matches no URL pattern, so tools that act on it are refused there; reading tools still work.
 
 ### Human approval
 
@@ -438,7 +438,7 @@ The daemon isn't started fresh per session — whoever gets there first (your Cl
 
 ## Status
 
-Inari MCP for Firefox 0.1.0 is the first version listed on addons.mozilla.org. The list below is the history it shares with KitsuneMCP.
+Inari MCP for Firefox 0.1.0 is the first version listed on addons.mozilla.org. The list below is the history before the listing.
 
 **Done:**
 - Design and multi-angle review
@@ -469,6 +469,7 @@ Inari MCP for Firefox 0.1.0 is the first version listed on addons.mozilla.org. T
 | `fox_handle_dialog` | not implemented | works |
 | `fox_navigate` with `action: "hard_refresh"`; `fox_screenshot` with `scope: "all_tabs"` or `"scroll_capture"` | work | not supported |
 | `fox_tabs` `what: "containers"`, `fox_tab` `action: "create"` with `container` | work | not supported (no containers) |
+| `fox_tab` `action: "window"` | works | not supported (no browser window) |
 | `fox_request_approval` | works | always refused (nobody to ask) |
 | everything else | works | works, but many parameters are ignored (listed in the result's `warnings`; see [known issues](docs/known-issues.md)) |
 
@@ -514,7 +515,6 @@ End-to-end checks, kept out of `npm test`:
 - [Known issues](docs/known-issues.md)
 - [Development](docs/development.md)
 - [Issues](https://github.com/elys0912/InariMCP/issues) — questions and bug reports
-- KitsuneMCP (private) — the edition this one split off from
 
 ## Credits
 

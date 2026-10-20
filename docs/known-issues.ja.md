@@ -2,7 +2,7 @@
 
 [English](./known-issues.md) | **日本語**
 
-Inari MCPの現行版（v0.1.x）で分かっている制約と注意点。
+Inari MCPの現行版（v0.2.x）で分かっている制約と注意点。
 
 ## 安全ガード
 
@@ -12,7 +12,7 @@ Inari MCPの現行版（v0.1.x）で分かっている制約と注意点。
 - **拡張機能とMCP Serverの版が違うと、コマンドが`config_error`で拒否されることがある**: MCP Serverがコマンドに付けたコンテナスコープやURLルールを拡張機能が使えないとき、拡張機能はその検査を飛ばして実行せず、コマンドを拒否する。拡張機能とMCP Serverは一緒に更新すること（READMEの「更新」を参照）
 - **共有daemonは、起動したプロセスの環境変数を使う**: `FOX_READ_ONLY`などの環境変数は、実際にdaemonを起動したプロセスのものだけが読まれる。Firefox（Native Host）が起動したdaemonはFirefoxの環境変数を引き継ぎ、`claude mcp add --env`の値は使われない。確実に効かせたい設定は`~/.inari-mcp/safety.json`に書くこと（READMEを参照）。セッションとdaemonで設定が食い違うと、セッション開始時と`fox_safety_status`の結果に警告が出る
 - **以前の版の`allow_script_execution`が残った`safety.json`では、すべてのツールが拒否される**: Inari MCPにはスクリプト系ツールがないので、このキーは知らないキーになり、ファイルを使えない（ほかの知らないキーと同じく、安全側に倒す）。キーを消してdaemonを再起動する
-- **KitsuneMCPの`protected_url_patterns`や`confirm_protected_actions`が残った`safety.json`では、すべてのツールが拒否される**: InariMCPはどのサイトでも操作系ツールごとに尋ねるので、保護対象サイトの一覧もその切り替えもない。どちらのキーも知らないキーになる（安全側に倒す）。キーを消してdaemonを再起動し、読み取りとスクリーンショットでも尋ねたいサイトは`confirm_read_sites`に書く
+- **以前の版のキー`protected_url_patterns`や`confirm_protected_actions`が残った`safety.json`では、すべてのツールが拒否される**: InariMCPはどのサイトでも操作系ツールごとに尋ねるので、保護対象サイトの一覧もその切り替えもない。どちらのキーも知らないキーになる（安全側に倒す）。キーを消してdaemonを再起動し、読み取りとスクリーンショットでも尋ねたいサイトは`confirm_read_sites`に書く
 - **`blocked_url_patterns` / `allowed_url_patterns`はhttp(s)のタブにだけ効く**: ユーザーが開いた`file://`のページやブラウザ内部のページ（`about:`、`moz-extension://`）はサイトではないので、リストの対象にならない。許可リストのモードでも、そのようなタブは読み取り・操作の対象になる。`fox_navigate`ではそこへ行けない（http(s)と`about:blank`以外は`blocked_scheme`で拒否する）
 
 ## 人による承認
