@@ -6,7 +6,7 @@ User-facing changes of Inari MCP for Firefox, newest first.
 
 Inari MCP for Firefox is derived from ClaudeCodeBrowser (MIT). It started on 2026-10-14 as the edition prepared for listing on addons.mozilla.org, with its own add-on ID, native-messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), and is numbered from 0.1.0.
 
-## Unreleased
+## 0.2.0 — 2026-10-20
 
 ### Added
 

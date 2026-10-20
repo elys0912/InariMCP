@@ -20,7 +20,7 @@ It's a fork of [nanogenomic/ClaudeCodeBrowser](https://github.com/nanogenomic/Cl
 
 ### What sets it apart
 
-Inari MCP for Firefox is derived from ClaudeCodeBrowser (MIT) and has been listed on addons.mozilla.org since 2026-10-14, numbered from 0.1.0. It runs no code that comes from the MCP client or the AI in pages, records no console or network logs, and asks before every action on a page or the browser (reading, waiting, scrolling, highlighting an element and switching tabs do not ask). It has its own add-on ID (`inari-mcp@elys0912.github.io`), native messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), and its default ports are `8785` / `8786`, so it does not collide with an earlier edition installed in the same Firefox.
+Inari MCP for Firefox is derived from ClaudeCodeBrowser (MIT) and has been listed on addons.mozilla.org since 2026-10-14, numbered from 0.1.0. It runs no code that comes from the MCP client or the AI in pages, records no console or network logs, and asks before every action on a page or the browser (reading, waiting, scrolling, highlighting an element, switching tabs and changing the window state do not ask). It has its own add-on ID (`inari-mcp@elys0912.github.io`), native messaging host name (`inari_mcp`) and state directory (`~/.inari-mcp`), and its default ports are `8785` / `8786`, so it does not collide with an earlier edition installed in the same Firefox.
 
 ## Why?
 
