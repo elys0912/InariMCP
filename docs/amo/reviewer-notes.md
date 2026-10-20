@@ -53,4 +53,7 @@ The .xpi is bundled with esbuild from TypeScript. Build it in the root directory
   npm run build
   npm run pack:ext
 pack:ext writes the add-on zip and the SHA-256 of every file in it to web-ext-artifacts/, to compare with the submitted file. The source package is made with "npm run pack:source". BUILD.md lists the build environment (OS, Node.js and npm versions), the same commands and how to compare the result.
+
+7. Changes since the previous version
+The Version Notes hold this version's section of docs/CHANGELOG.md. The permissions, the data sent over native messaging and the manifest's data collection declaration are unchanged; the changed source files are marked with comments that start with "<version>:".
 ```

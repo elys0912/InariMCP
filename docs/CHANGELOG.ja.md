@@ -4,13 +4,21 @@
 
 Inari MCP for Firefox の利用者に見える変更。新しいものが上。
 
-Inari MCP for Firefox は 2026-10-14 に KitsuneMCP（非公開）0.2.0（コミット b2642a9）の写しとして始めた。addons.mozilla.org への掲載に向けて整えた版で、アドオンの ID、ネイティブメッセージングのホスト名（`inari_mcp`）、状態ディレクトリ（`~/.inari-mcp`）が KitsuneMCP と異なるため、両方を同じ Firefox に入れられる。分岐前の履歴は KitsuneMCP の変更履歴を参照。
+Inari MCP for Firefox は ClaudeCodeBrowser（MIT）から派生したもので、2026-10-14 に addons.mozilla.org への掲載に向けて整えた版として始めた。独自のアドオン ID、ネイティブメッセージングのホスト名（`inari_mcp`）、状態ディレクトリ（`~/.inari-mcp`）を持ち、版は 0.1.0 から数える。
 
 ## Unreleased
 
+### 追加
+
+- **`fox_tab` の `action: "window"` でブラウザのウインドウの状態を変えられる**：`tabId`（既定は現在のタブ）のウインドウを `state` の `"maximized"`（既定）、`"normal"`、`"fullscreen"` にして、変更後のウインドウの状態と大きさを返す。`fox_screenshot` の前に最大化しておくと、ページが画面の幅で配置される。ブラウザの UI だけを変えるので、`action: "switch"` と同じく読み取り専用モードでも動き、承認も求めない。ヘッドレスモードでは使えない。
+
+### 変更
+
+- **アイコンを替えた**：金色の時計の文字盤の中に赤い狐。ツールバーのボタンやアドオンの一覧で、狐を使う他の拡張機能と見分けやすくした。
+
 ## 0.1.0（2026-10-14）
 
-addons.mozilla.org に掲載した最初の版。以下は分岐元の KitsuneMCP 0.2.0 との差分。KitsuneMCP を使っていなければ、Inari MCP for Firefox でできることは README を参照。
+addons.mozilla.org に掲載した最初の版。以下は掲載に向けて、派生元のコードから変えた点。Inari MCP for Firefox でできることは README を参照。
 
 ### 追加
 
@@ -28,13 +36,13 @@ addons.mozilla.org に掲載した最初の版。以下は分岐元の KitsuneMC
 
 ### 変更
 
-- KitsuneMCP から Inari MCP for Firefox に改名。アドオン ID `inari-mcp@elys0912.github.io`、ホストのマニフェスト `inari_mcp`、状態ディレクトリ `~/.inari-mcp`、npm パッケージ `@inari-mcp/*`。
+- Inari MCP for Firefox に改名。アドオン ID `inari-mcp@elys0912.github.io`、ホストのマニフェスト `inari_mcp`、状態ディレクトリ `~/.inari-mcp`、npm パッケージ `@inari-mcp/*`。
 - リポジトリの改行を `.gitattributes` で LF に固定した。どの OS でビルドしても、審査に出す拡張とバイト単位で同じになる。
 - `manifest.json`：`incognito` を `not_allowed` にした（プライベートブラウジングのタブは拡張から見えない）。`data_collection_permissions` で `websiteContent`・`browsingActivity`・`websiteActivity` を申告した（ページの内容・フォームの値・スクリーンショット・URL を手元のネイティブホストへ送り、そこから MCP クライアントへ渡る。拡張機能は承認されたクリックや入力をページで行う）。
 - `for: "network_idle"` の `fox_wait`：ページの `fetch` と `XMLHttpRequest.prototype.send` に入れる計数用のフックを、待ちの開始で入れ、待ちの終了で外すようにした（以前はページを閉じるまで残っていた）。フックはリクエストを数えるだけで、中身は何も記録しない。呼び出した時点で続いているリクエストは見えない。
 - `filename` を指定して保存したスクリーンショットも、ほかと同じく `FOX_SCREENSHOT_RETENTION_DAYS`（既定 30 日）を過ぎたら削除するようにした。ネイティブホストはその名前をスクリーンショットのディレクトリの `.named-screenshots` に記録し、ディレクトリにあるほかのファイルは削除しない。
 - README：インストールを addons.mozilla.org から始める形にした（1. AMO から拡張機能、2. ネイティブホスト、3. MCP クライアントへの登録）。冒頭に送るものと要るものを書いた。「WIP」「AMO 掲載は予定なし」「GitHub Releases の unlisted の .xpi を入れる」の記述を外した。プライバシー・関連リンクの節を足した（権限の節は「追加」を参照）。
-- 既定のポートを KitsuneMCP の `8765` / `8766` から `8785`（HTTP）/ `8786`（WebSocket）に変えた。Inari MCP と KitsuneMCP を同時に動かせる。`FOX_HTTP_PORT` / `FOX_WS_PORT` で変えられるのは従来どおり。
+- 既定のポートを `8765` / `8766` から `8785`（HTTP）/ `8786`（WebSocket）に変えた。以前の版が同時に動いていてもぶつからない。`FOX_HTTP_PORT` / `FOX_WS_PORT` で変えられるのは従来どおり。
 - Inari MCP の実行に要る Node.js を 20 以上にした（`engines`、インストーラ、`--doctor`）。審査の再現ビルドは Node.js 24.x と npm 11.x。
 - 一時停止中の拒否は、ブラウザのエラーではなく安全上の拒否として MCP クライアントに返す（`decision: "paused"`、文言は `paused:` で始まる）。
 - 拡張機能の説明文とポップアップの末尾を「Inari MCP for Firefox」の名前にした。末尾には、ページの内容が手元の PC のネイティブホストを経て MCP クライアントへ渡ることを書いた。
@@ -65,7 +73,7 @@ addons.mozilla.org に掲載した最初の版。以下は分岐元の KitsuneMC
 - コンテキストメニューの「InariMCP で要素を調べる」を削除した。結果をどこにも渡していなかった。
 - 保護対象サイトの一覧を削除した：`safety.json` の `protected_url_patterns`（既定の 16 件：銀行などの金融・決済のサービス、`.gov`、患者ポータル）と `confirm_protected_actions`。代わりに操作系ツールはどのサイトでも尋ねる。読み取りとスクリーンショットでも尋ねたいサイトは、新しい `confirm_read_sites`（既定は空）に書く。どちらかのキーが残った `safety.json` は、知らないキーとして、キーを消すまで使えない。
 - どのツールも送らないブラウザコマンド `get_tab_info`、`find_tabs`、`get_value`、`reload_all`、`reload_by_url`、`wait_for_change`、`click_and_wait` を削除した。拡張機能もヘッドレスのバックエンドもこれらを処理しない。
-- KitsuneMCP の以前のツール名の互換層を削除した：`FOX_CAPS=legacy`（説明が `[Deprecated: …]` で始まる一覧）、ツールでなくなった以前の 20 個の名前（`fox_get_text`、`fox_create_tab`、`fox_wait_for_url` など。`POST /mcp/call` でも知らないツールとして拒否する）、最初の呼び出しに付けた注記、監査ログの `legacyTool`。代わりに 17 個のツール（`fox_read`、`fox_tab`、`fox_wait` など）を呼ぶ。
+- 以前のツール名の互換層を削除した：`FOX_CAPS=legacy`（説明が `[Deprecated: …]` で始まる一覧）、ツールでなくなった以前の 20 個の名前（`fox_get_text`、`fox_create_tab`、`fox_wait_for_url` など。`POST /mcp/call` でも知らないツールとして拒否する）、最初の呼び出しに付けた注記、監査ログの `legacyTool`。代わりに 17 個のツール（`fox_read`、`fox_tab`、`fox_wait` など）を呼ぶ。
 - 実装されなかった `fox_run_workflow` と `fox_audit_page`、`FOX_CAPS` の空のプロファイル `workflow` を削除した（知らないプロファイル名として、警告を出して無視する）。
 - フォーク元から引き継いだ環境変数 `CLAUDE_BROWSER_*`（`CLAUDE_BROWSER_HOST`、`CLAUDE_BROWSER_HTTP_PORT`、`CLAUDE_BROWSER_WS_PORT`、`CLAUDE_BROWSER_HEADLESS`、`CLAUDE_BROWSER_HEADLESS_STARTUP_TIMEOUT`、`CLAUDE_BROWSER_EXECUTABLE`、`CLAUDE_BROWSER_SCREENSHOTS_DIR`、`CLAUDE_BROWSER_READ_ONLY`、`CLAUDE_BROWSER_SAFETY_CONFIG`）を削除した。daemon、中継、Native Host、インストーラ、`--doctor` は `FOX_*` の名前だけを読む。どこからも読まれていなかった `FOX_PORT`、`FOX_DEBUG`、`FOX_CONTAINER` の定義も削除した。
 - フォーク元から引き継いだその他の互換の経路を削除した：`safety.json` の URL のリストに正規表現だけを書いたもの（`paypal\.com`。これまではできればホストパターンとして読み、読めなければ URL のどこかに一致させた）は、どのリストでも設定エラーにする。ホストパターンか、URL 全体に一致させる `re:` で書く。ほかに、`POST /browser/command`（`POST /mcp/call` の別名）、`effectiveSettings` を返さない daemon の設定の読み方、平文のトークンを送る Native Host への案内の文を削除した。

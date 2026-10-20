@@ -1,37 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <defs>
-    <path
-      id="fox-face"
-      d="M 4 2
-         L 16 11
-         L 28 2
-         L 30 15
-         L 16 30
-         L 2 15
-         Z"
-    />
-    <clipPath id="fox-left-half">
-      <rect x="0" y="0" width="16" height="32" />
-    </clipPath>
-    <clipPath id="fox-right-half">
-      <rect x="16" y="0" width="16" height="32" />
-    </clipPath>
-  </defs>
-
-  <use href="#fox-face" fill="#D9372B" clip-path="url(#fox-left-half)" />
-  <use href="#fox-face" fill="#F5C518" clip-path="url(#fox-right-half)" />
-
-  <use
-    href="#fox-face"
-    fill="none"
-    stroke="#3A0E08"
-    stroke-width="1.7"
-    stroke-linejoin="miter"
-    stroke-miterlimit="3"
-  />
-
-  <path d="M 7 6 L 13 9 L 9 11 Z" fill="#3A0E08" />
-  <path d="M 25 6 L 19 9 L 23 11 Z" fill="#3A0E08" />
-  <path d="M 9 18 L 13 17 L 12 20 Z" fill="#3A0E08" />
-  <path d="M 23 18 L 19 17 L 20 20 Z" fill="#3A0E08" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Inari MCP for Firefox mark (0.2.0): the author's blog icon (a fox inside
+       a clock face with 12 ticks, the one at 12 o'clock longer and bolder),
+       with the clock face in gold and the fox in red. -->
+  <rect width="64" height="64" rx="14" fill="#0d1210"/>
+  <circle cx="32" cy="32" r="27" fill="none" stroke="#f5b800" stroke-width="3"/>
+  <line x1="32.00" y1="13.50" x2="32.00" y2="6.50" stroke="#f5b800" stroke-width="3.6"/>
+  <line x1="43.00" y1="12.95" x2="44.75" y2="9.92" stroke="#f5b800" stroke-width="2.2"/>
+  <line x1="51.05" y1="21.00" x2="54.08" y2="19.25" stroke="#f5b800" stroke-width="2.2"/>
+  <line x1="54.00" y1="32.00" x2="57.50" y2="32.00" stroke="#f5b800" stroke-width="2.2"/>
+  <line x1="51.05" y1="43.00" x2="54.08" y2="44.75" stroke="#f5b800" stroke-width="2.2"/>
+  <line x1="43.00" y1="51.05" x2="44.75" y2="54.08" stroke="#f5b800" stroke-width="2.2"/>
+  <line x1="32.00" y1="54.00" x2="32.00" y2="57.50" stroke="#f5b800" stroke-width="2.2"/>
+  <line x1="21.00" y1="51.05" x2="19.25" y2="54.08" stroke="#f5b800" stroke-width="2.2"/>
+  <line x1="12.95" y1="43.00" x2="9.92" y2="44.75" stroke="#f5b800" stroke-width="2.2"/>
+  <line x1="10.00" y1="32.00" x2="6.50" y2="32.00" stroke="#f5b800" stroke-width="2.2"/>
+  <line x1="12.95" y1="21.00" x2="9.92" y2="19.25" stroke="#f5b800" stroke-width="2.2"/>
+  <line x1="21.00" y1="12.95" x2="19.25" y2="9.92" stroke="#f5b800" stroke-width="2.2"/>
+  <path transform="translate(32 33) scale(0.85) translate(-32 -33)" d="M18 17 L27 26 L37 26 L46 17 L45 35 L32 50 L19 35 Z" fill="#e5002b"/>
 </svg>

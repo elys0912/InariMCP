@@ -61,7 +61,7 @@ While a tool waits for a page's network to be idle, the extension wraps the page
 Screenshots taken through the extension are kept on your computer for 30 days. A log of tool calls (time, tool name, URL) is kept on your computer.
 Privacy policy: https://github.com/elys0912/InariMCP/blob/v<version>/docs/PRIVACY.md
 
-Inari MCP for Firefox is the addons.mozilla.org edition of KitsuneMCP, a fork of ClaudeCodeBrowser (MIT). It is not made by Anthropic or Mozilla.
+Inari MCP for Firefox is derived from ClaudeCodeBrowser (MIT). It is not made by Anthropic or Mozilla.
 ```
 
 ## 日本語 (ja)
@@ -77,34 +77,33 @@ Claude Code などの MCP クライアントから、普段使いの Firefox の
 ### 説明（Description）
 
 ```text
-Inari MCP for Firefox は、普段使いの Firefox を Claude Code などの MCP クライアントにつなぐ。そこで使う AI が、あなたの実際のプロファイルとログイン状態のまま、ページを読む、要素を探す、スクリーンショットを撮る、タブを開く・切り替える、クリック・入力・ページの移動をする、といったことを行える。
+Inari MCP for Firefox は、Claude Code などの AI ツールが、いま使っている Firefox を代わりに操作できるようにする拡張機能です。AI はページを読み、スクリーンショットを撮り、タブを開いたり切り替えたり、クリックや文字の入力をします。ログイン済みのサイトも、そのまま使えます。
 
-送るもの
-MCP クライアントがツールを呼ぶと、拡張機能はそのツールに要るものだけをタブから読む：ページの文字と要素、フォームの値、URL とタイトル、開いているタブの一覧、スクリーンショット。それを同じ PC のネイティブホストへ送り、ネイティブホストは接続した MCP クライアントへ渡す。MCP クライアントはそれを自分の AI の提供元へ送る。開発者には何も送らない（開発者のサーバーは無い）。
-パスワード・hidden・ワンタイムコード・クレジットカードの欄の値は伏せて、送らない。スクリーンショットは画面の画像なので伏せない。cookie は読まない。
+■ AI に渡るもの
+AI が必要としたときだけ、ページの文字、入力欄の内容、URL、開いているタブの一覧、スクリーンショットを、この PC の中の補助プログラム（ネイティブホスト）を通して AI ツールへ渡します。AI ツールはそれを AI の提供元（Claude なら Anthropic）に送ります。
+開発者には何も送られません。開発者のサーバーはありません。
+パスワード、ワンタイムコード、クレジットカード番号の欄は伏せ字にして渡しません。スクリーンショットは画面そのままなので、伏せ字になりません。cookie は読みません。
 
-要るもの
-- Node.js 20 以上
-- https://github.com/elys0912/InariMCP のネイティブホストと MCP サーバー（clone して npm ci、npm run build、npm run setup）。これが無いと拡張機能は何もしない。
-- Claude Code などの MCP クライアント
+■ あなたが決めること
+・最初に起動したとき、使ってよいか確認する画面が出ます。許可するまで何もしません。あとから取り消せます。
+・クリック、入力、ページの移動、タブの開閉など、ページを変える操作は、毎回あなたの承認を待ちます。承認は AI ツールの画面か、Firefox のツールバーのボタンから行います。読むだけの操作は承認なしで動きます（設定で特定のサイトを「読むときも確認」にできます）。
+・ツールバーのボタンに一時停止のスイッチがあります。入れている間、AI からの操作はすべて断ります。
 
-制御はあなたの手に
-- 初回の起動で許可を求める。許可するまでネイティブホストに繋がない。ツールバーのポップアップから許可の画面を開き直して、許可を取り消せる。
-- ページやブラウザへの操作（クリック、入力、キーの入力、入力欄の値の設定、hover、ページの移動、タブを開く・閉じる）は、どのサイトでも毎回、MCP クライアントかツールバーのポップアップであなたの承認を待つ。読み取り・待機・スクロール・要素の強調表示・タブの切り替えは承認を求めない。ただし confirm_read_sites に書いたサイトでは、ページの読み取りとスクリーンショットも承認を待つ。
-- MCP クライアントのダイアログでの承認は、127.0.0.1 を通って手元の Inari MCP のサーバーに届く。その鍵（~/.inari-mcp/api_token）を読める手元の PC のプログラムは、自分の要求を自分で承認できる。ツールバーのポップアップでだけ承認するには FOX_APPROVAL_ELICITATION=0 を設定する。
-- ツールが動いている間はバッジが付く。ポップアップの一時停止スイッチで、すべての呼び出しを断れる。実行中の呼び出しにはすぐ paused を返し、ページの中の処理は次の段で止まり、ブラウザだけで行う操作は最後まで動いて結果を捨てる。
+■ 使うために必要なもの
+・Node.js 20 以上
+・補助プログラム（ネイティブホスト）と MCP サーバー。https://github.com/elys0912/InariMCP から入手し、README の手順で入れます。これが無いと拡張機能は何もしません。
+・Claude Code などの MCP 対応の AI ツール
 
-できないこと
-- MCP クライアントや AI から来たコードは実行しない。
-- プライベートウィンドウでは動かない。
-- CAPTCHA は解かない。あなたに操作を返す。
+■ しないこと
+・AI から送られてきたプログラムを実行しません。
+・プライベートウィンドウでは動きません。
+・CAPTCHA（人間かどうかの確認）は解きません。あなたに操作を返します。
 
-ツールがページの通信が止むのを待つ間だけ、拡張機能はページの fetch と XMLHttpRequest の send を包む。リクエストを数えるだけで、そのまま元の関数に渡し、中身は読まない。待ちが終わると元の関数に戻す。
-
-拡張機能で撮ったスクリーンショットは手元の PC に 30 日残る。ツールの呼び出しの記録（時刻・ツール名・URL）も手元の PC に残る。
+補足：AI が「ページの通信が落ち着くまで待つ」操作をしている間だけ、ページの通信回数を数えます。通信の中身は読まず、終わると元に戻します。
+スクリーンショットは PC の中に 30 日間残ります。操作の記録（時刻、操作名、URL）も PC の中に残ります。
 プライバシーポリシー：https://github.com/elys0912/InariMCP/blob/v<version>/docs/PRIVACY.ja.md
 
-Inari MCP for Firefox は KitsuneMCP の addons.mozilla.org 版で、KitsuneMCP は ClaudeCodeBrowser（MIT）のフォーク。Anthropic や Mozilla が作ったものではない。
+Inari MCP for Firefox は ClaudeCodeBrowser（MIT ライセンス）から派生したものです。Anthropic、Mozilla とは関係ありません。
 ```
 
 ## Images

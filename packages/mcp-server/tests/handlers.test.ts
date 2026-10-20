@@ -19,7 +19,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// The earlier tool names of KitsuneMCP are no tools here.
+// The earlier tool names (before the rename) are no tools here.
 describe('a call by an earlier tool name', () => {
   it('is refused as an unknown tool, and nothing is sent', async () => {
     const send = vi.spyOn(getConnectionManager(), 'sendCommand');
