@@ -28,6 +28,8 @@ export const BROWSER_ACTIONS = [
   'create_tab',
   'close_tab',
   'focus_tab',
+  // 0.2.0: fox_tab action "window" (maximize / restore / fullscreen the tab's window).
+  'set_window_state',
 
   // --- Form / input ---
   'set_value',

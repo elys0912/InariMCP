@@ -317,9 +317,10 @@ const containerSchema = z.object({
 const foxTab = grouped({
   name: 'fox_tab',
   description:
-    "Open, close or switch tabs. action 'create': open a new tab (url, default about:blank; active); with `container` the tab opens in a Firefox container (by name, created if not found, or by cookieStoreId, which must exist; isolated cookies/storage; url required; with container scope enabled in safety.json only the agent container is allowed; not available in headless mode). action 'close': close the tab tabId. action 'switch': focus/activate the tab tabId.",
+    "Open, close or switch tabs, or change a tab's window. action 'create': open a new tab (url, default about:blank; active); with `container` the tab opens in a Firefox container (by name, created if not found, or by cookieStoreId, which must exist; isolated cookies/storage; url required; with container scope enabled in safety.json only the agent container is allowed; not available in headless mode). action 'close': close the tab tabId. action 'switch': focus/activate the tab tabId. action 'window': set the state of the window of tabId (default: the active tab) to 'maximized' (default), 'normal' or 'fullscreen', e.g. maximize before a screenshot; returns the window's state and size; not available in headless mode.",
   discriminator: 'action',
-  discriminatorDescription: "'create', 'close' or 'switch'",
+  // 0.2.0: 'window'
+  discriminatorDescription: "'create', 'close', 'switch' or 'window'",
   variants: {
     create: {
       fields: {
@@ -344,6 +345,8 @@ const foxTab = grouped({
     },
     close: { fields: fieldsOf('fox_close_tab'), run: same('fox_close_tab') },
     switch: { fields: fieldsOf('fox_switch_tab'), run: same('fox_switch_tab') },
+    // 0.2.0
+    window: { fields: fieldsOf('fox_set_window_state'), run: same('fox_set_window_state') },
   },
   refine: (args, ctx) => {
     const container = args['container'];

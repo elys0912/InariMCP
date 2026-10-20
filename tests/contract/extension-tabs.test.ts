@@ -11,6 +11,7 @@ import {
   findText,
   focusTab,
   getAllTabs,
+  setWindowState,
 } from '../../packages/extension/src/background/tabs.ts';
 
 type Tab = browser.tabs.Tab;
@@ -33,7 +34,7 @@ function installFakeBrowser(overrides: Record<string, unknown> = {}) {
     create: vi.fn(async (props: { url: string }) => tab({ id: 9, url: props.url })),
     remove: vi.fn<(id: number) => Promise<void>>(async () => {}),
     update: vi.fn(async (id: number) => tab({ id, windowId: 2 })),
-    windowsUpdate: vi.fn(async () => ({})),
+    windowsUpdate: vi.fn<(id: number, info: { focused?: boolean; state?: string }) => Promise<object>>(async () => ({})),
     createContainer: vi.fn(async () => ({ cookieStoreId: 'c-new' })),
     find: vi.fn(async () => ({ count: 2, rangeData: [{}, {}], rectData: [{ r: 1 }] })),
     sendMessage: vi.fn<(id: number, message: unknown, options: unknown) => Promise<unknown>>(
@@ -123,6 +124,26 @@ describe('background/tabs.ts', () => {
     expect(await focusTab(2)).toEqual({ success: true });
     expect(spies.update).toHaveBeenCalledWith(2, { active: true });
     expect(spies.windowsUpdate).toHaveBeenCalledWith(2, { focused: true });
+  });
+
+  // 0.2.0: fox_tab action "window".
+  it('setWindowState changes the window of the pinned tab (maximized by default) and reports it', async () => {
+    const spies = installFakeBrowser();
+    spies.windowsUpdate.mockImplementation(async (id, info) => (
+      { id, state: info.state, width: 1920, height: 1032 }
+    ));
+    expect(await setWindowState(TABS[1], {})).toEqual({
+      success: true, windowId: 2, state: 'maximized', width: 1920, height: 1032,
+    });
+    expect(spies.windowsUpdate).toHaveBeenCalledWith(2, { state: 'maximized' });
+    expect(await setWindowState(TABS[0], { state: 'normal' })).toMatchObject({ success: true, windowId: 1, state: 'normal' });
+
+    expect(await setWindowState(TABS[0], { state: 'minimized' })).toEqual({
+      success: false, error: 'state must be one of: maximized, normal, fullscreen',
+    });
+    expect(await setWindowState(undefined, {})).toEqual({ success: false, error: 'No target tab' });
+    spies.windowsUpdate.mockRejectedValueOnce(new Error('Invalid window ID: 2'));
+    expect(await setWindowState(TABS[1], {})).toEqual({ success: false, error: 'Invalid window ID: 2' });
   });
 
   it('findText searches the pinned tab, and fails without one', async () => {

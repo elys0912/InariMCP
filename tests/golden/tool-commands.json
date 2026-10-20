@@ -2587,6 +2587,51 @@
     "headless": "dispatch:focus_tab"
   },
   {
+    "id": "set_window_state/default",
+    "tool": "fox_tab",
+    "args": {
+      "action": "window"
+    },
+    "command": {
+      "action": "set_window_state",
+      "data": {
+        "state": "maximized"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
+    "id": "set_window_state/options",
+    "tool": "fox_tab",
+    "args": {
+      "action": "window",
+      "state": "fullscreen",
+      "tabId": 2
+    },
+    "command": {
+      "action": "set_window_state",
+      "tabId": 2,
+      "data": {
+        "state": "fullscreen"
+      },
+      "containerScope": {
+        "containerName": "Golden Agent"
+      }
+    },
+    "timeoutMs": {
+      "extension": 30000,
+      "headless": 35000
+    },
+    "headless": "default"
+  },
+  {
     "id": "wait_for_element/default",
     "tool": "fox_wait",
     "args": {

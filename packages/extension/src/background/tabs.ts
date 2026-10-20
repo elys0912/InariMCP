@@ -149,6 +149,36 @@ export async function focusTab(tabId: number): Promise<CommandResult> {
   }
 }
 
+// 0.2.0: fox_tab action "window".
+const WINDOW_STATES = ["maximized", "normal", "fullscreen"] as const;
+type WindowState = (typeof WINDOW_STATES)[number];
+
+function isWindowState(value: unknown): value is WindowState {
+  return typeof value === "string" && (WINDOW_STATES as readonly string[]).includes(value);
+}
+
+/**
+ * set_window_state (0.2.0): change the state of the target tab's window
+ * (resolved once by handleCommand), e.g. maximize it before a screenshot.
+ * Reports the window as Firefox returns it after the change.
+ */
+export async function setWindowState(
+  target: browser.tabs.Tab | undefined,
+  data: Record<string, unknown> | undefined,
+): Promise<CommandResult> {
+  const state = data?.state ?? "maximized";
+  if (!isWindowState(state)) {
+    return { success: false, error: `state must be one of: ${WINDOW_STATES.join(", ")}` };
+  }
+  if (!target) return noTargetTab();
+  try {
+    const win = await browser.windows.update(target.windowId, { state });
+    return { success: true, windowId: win.id, state: win.state, width: win.width, height: win.height };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+}
+
 /**
  * find_text refuses a tab whose page shows a masked field
  * (content/inspect.ts hasMaskedFields): Firefox's find may match the text
