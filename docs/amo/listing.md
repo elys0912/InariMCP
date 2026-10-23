@@ -47,7 +47,7 @@ What you need
 
 You stay in control
 - On first start, the extension asks for your permission. It does not connect to the native host until you allow it. The toolbar popup can open the permission page again, where you can withdraw it.
-- Every action on a page or the browser (clicking, typing, pressing keys, setting a field, hovering, navigating, opening or closing a tab) waits for your approval, each time and on every site, in the MCP client or in the toolbar popup. Reading, waiting, scrolling, highlighting an element, switching tabs and maximizing or restoring the window do not ask, except that reading a page and taking screenshots ask on the sites you list in confirm_read_sites.
+- Every action on a page or the browser (clicking, typing, pressing keys, setting a field, hovering, navigating, opening or closing a tab) waits for your approval, each time and on every site, in the MCP client or in the toolbar popup. Reading, waiting, scrolling, highlighting an element, switching tabs and changing the state of the window (maximizing, restoring or making it full screen) do not ask, except that reading a page and taking screenshots ask on the sites you list in confirm_read_sites.
 - An approval given in the MCP client's dialog reaches the local Inari MCP server over 127.0.0.1. A program on your computer that can read its key (~/.inari-mcp/api_token) could approve its own requests. To approve only in the toolbar popup, set FOX_APPROVAL_ELICITATION=0.
 - A badge shows while a tool is working. A pause switch in the popup refuses every call; a running one is answered "paused" at once, its work in the page stops at the next step, and an operation done by the browser alone runs to its end with its result dropped.
 
@@ -86,7 +86,7 @@ AI が必要としたときだけ、ページの文字、入力欄の内容、UR
 
 ■ あなたが決めること
 ・最初に起動したとき、使ってよいか確認する画面が出ます。許可するまで何もしません。あとから取り消せます。
-・クリック、入力、ページの移動、タブの開閉など、ページを変える操作は、毎回あなたの承認を待ちます。承認は AI ツールの画面か、Firefox のツールバーのボタンから行います。読むだけの操作と、タブの切り替えやウインドウの最大化は承認なしで動きます（設定で特定のサイトを「読むときも確認」にできます）。
+・クリック、入力、ページの移動、タブの開閉など、ページを変える操作は、毎回あなたの承認を待ちます。承認は AI ツールの画面か、Firefox のツールバーのボタンから行います。読むだけの操作と、タブの切り替えやウインドウの状態の変更（最大化・復元・全画面）は承認なしで動きます（設定で特定のサイトを「読むときも確認」にできます）。
 ・AI ツールの画面での承認は、この PC の中の通信で Inari MCP に届きます。この PC で動く別のプログラムが、その通信の鍵（~/.inari-mcp/api_token）を読めれば、自分で承認を出せてしまいます。気になる場合は、設定 FOX_APPROVAL_ELICITATION=0 でツールバーのボタンからの承認だけにできます。
 ・ツールバーのボタンに一時停止のスイッチがあります。入れている間、AI からの操作はすべて断ります。
 
