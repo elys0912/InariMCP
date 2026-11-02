@@ -57,8 +57,8 @@ interface ArmedDialog {
   until: number;
 }
 
-/** One action to run: what execute() and runCommand() share. */
-interface HeadlessCall {
+/** One action to run: what runCommand() and the tests' execute() share. */
+export interface HeadlessCall {
   action: string;
   tabId: number | undefined;
   args: Record<string, unknown>;
@@ -101,7 +101,7 @@ interface DialogWaiter {
 }
 
 export class HeadlessBrowser {
-  // Dialogs are tracked per tab outside the execute() lock: a fox_handle_dialog
+  // Dialogs are tracked per tab outside the _execute() lock: a fox_handle_dialog
   // waiting for a dialog must not block the click that opens it.
   private _pendingDialog = new Map<number, Dialog>();
   private _dialogWaiters = new Map<number, DialogWaiter>();
@@ -256,7 +256,11 @@ export class HeadlessBrowser {
   /**
    * Run a command of the MCP Server (daemon/main.ts): the action behind the
    * approval floor (approval-floor.ts), which is checked right before it
-   * runs, against the page it runs on. `ctx` as in execute().
+   * runs, against the page it runs on. `ctx` is the deadline and
+   * cancellation of the command (connection/manager.ts); by default the one
+   * of the command being sent. An action whose command was given up while
+   * it waited for the lock is not run: the caller has already been told it
+   * failed and may send it again.
    */
   async runCommand(
     command: BrowserCommand,
@@ -271,27 +275,12 @@ export class HeadlessBrowser {
   }
 
   /**
-   * Run one action, without the approval floor: the tests drive the actions
-   * with it, the daemon runs every command through runCommand() (no other
-   * caller in src: headless-lifecycle.test.ts checks). `ctx` is
-   * the deadline and cancellation of the command (connection/manager.ts);
-   * by default the one of the command being sent. An action whose command
-   * was given up while it waited for the lock is not run: the caller has
-   * already been told it failed and may send it again.
-   *
-   * @internal
+   * runCommand(), and the tests' execute() without the floor (`approval`
+   * null; tests/helpers/test-browser.ts). The daemon has no other way to an
+   * action: this class has no public method that skips the floor
+   * (headless-lifecycle.test.ts checks).
    */
-  execute(
-    action: string,
-    tabId: number | undefined,
-    args: Record<string, unknown>,
-    ctx: CommandContext | undefined = currentCommandContext(),
-  ): Promise<Record<string, unknown>> {
-    return this._execute({ action, tabId, args, ctx }, null);
-  }
-
-  /** execute() and runCommand(); `approval` null: no floor. */
-  private async _execute(call: HeadlessCall, approval: CommandApproval | null): Promise<Record<string, unknown>> {
+  protected async _execute(call: HeadlessCall, approval: CommandApproval | null): Promise<Record<string, unknown>> {
     const { action, tabId, args, ctx } = call;
     const route = headlessRoute(action);
     // Not serialised: it waits for a dialog that a queued action may be about to open.

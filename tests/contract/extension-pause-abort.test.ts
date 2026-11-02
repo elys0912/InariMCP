@@ -7,7 +7,9 @@
  * sleep() of content/dom.ts). A command sent before a pause is refused even
  * when it reaches the content script after the abort (its pause count). A
  * pending approval request ends as "cancelled". Runs against a fake `browser`
- * and, for the content modules, fake DOM globals (no real browser).
+ * and, for the content modules, fake DOM globals (no real browser). The
+ * switch itself (a command refused before its handler, the badge) is in
+ * extension-consent-pause.test.ts.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

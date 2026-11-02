@@ -1,5 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import * as path from 'node:path';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,6 +7,7 @@ vi.mock('playwright', () => ({ firefox: { launch } }));
 
 import type { BrowserCommand } from '@inari-mcp/shared';
 import { HeadlessBrowser } from '../src/headless/backend.js';
+import { TestHeadlessBrowser } from './helpers/test-browser.js';
 
 function fakeBrowser(): { close: ReturnType<typeof vi.fn> } {
   const page = { on: vi.fn(), url: () => 'about:blank' };
@@ -28,13 +28,11 @@ describe('playwright stays optional at load time', () => {
     expect(staticImports.every((l) => l.startsWith('import type'))).toBe(true);
   });
 
-  // execute() has no approval floor: the daemon must go through runCommand().
-  it('no source file calls execute() of the headless backend', () => {
-    const srcDir = fileURLToPath(new URL('../src/', import.meta.url));
-    const callers = readdirSync(srcDir, { recursive: true, encoding: 'utf-8' })
-      .filter((rel) => rel.endsWith('.ts'))
-      .filter((rel) => /\.execute\(/.test(readFileSync(path.join(srcDir, rel), 'utf-8')));
-    expect(callers).toEqual([]);
+  // The daemon must go through runCommand() (the approval floor): the way
+  // around it exists only on the tests' subclass.
+  it('the headless backend has no public execute() without the floor', () => {
+    expect('execute' in HeadlessBrowser.prototype).toBe(false);
+    expect('execute' in TestHeadlessBrowser.prototype).toBe(true);
   });
 
   it('daemon/main.ts does not import the headless backend statically', () => {
@@ -49,9 +47,9 @@ describe('playwright stays optional at load time', () => {
 describe('actions without page work', () => {
   beforeEach(() => { launch.mockReset(); });
 
-  async function started(): Promise<HeadlessBrowser> {
+  async function started(): Promise<TestHeadlessBrowser> {
     fakeBrowser();
-    const browser = new HeadlessBrowser();
+    const browser = new TestHeadlessBrowser();
     await browser.start();
     return browser;
   }
@@ -90,14 +88,14 @@ describe('runCommand: the approval floor', () => {
   const SHOP = 'https://shop.example.test/cart';
 
   /** A started browser whose one tab is on `url`; `reload` records refreshes. */
-  async function startedOn(url: string): Promise<{ browser: HeadlessBrowser; reload: ReturnType<typeof vi.fn> }> {
+  async function startedOn(url: string): Promise<{ browser: TestHeadlessBrowser; reload: ReturnType<typeof vi.fn> }> {
     const reload = vi.fn(async () => null);
     const page = { on: vi.fn(), url: () => url, reload };
     launch.mockResolvedValue({
       newContext: async () => ({ newPage: async () => page }),
       close: vi.fn(async () => undefined),
     });
-    const browser = new HeadlessBrowser();
+    const browser = new TestHeadlessBrowser();
     await browser.start();
     return { browser, reload };
   }
@@ -178,7 +176,7 @@ describe('HeadlessBrowser lifecycle', () => {
 
   it('is ready after start() and not ready after stop()', async () => {
     const { close } = fakeBrowser();
-    const browser = new HeadlessBrowser();
+    const browser = new TestHeadlessBrowser();
     expect(browser.isReady()).toBe(false);
     await browser.start();
     expect(browser.isReady()).toBe(true);
@@ -190,7 +188,7 @@ describe('HeadlessBrowser lifecycle', () => {
   it('is not ready after stop() even when close() throws', async () => {
     const { close } = fakeBrowser();
     close.mockRejectedValue(new Error('boom'));
-    const browser = new HeadlessBrowser();
+    const browser = new TestHeadlessBrowser();
     await browser.start();
     await expect(browser.stop()).rejects.toThrow('boom');
     expect(browser.isReady()).toBe(false);
@@ -198,7 +196,7 @@ describe('HeadlessBrowser lifecycle', () => {
 
   it('answers actions with an error after stop()', async () => {
     fakeBrowser();
-    const browser = new HeadlessBrowser();
+    const browser = new TestHeadlessBrowser();
     await browser.start();
     await browser.stop();
     const result = await browser.execute('get_page_info', undefined, {});
@@ -221,7 +219,7 @@ describe('HeadlessBrowser lifecycle', () => {
 
   it('calling stop() twice is harmless', async () => {
     const { close } = fakeBrowser();
-    const browser = new HeadlessBrowser();
+    const browser = new TestHeadlessBrowser();
     await browser.start();
     await browser.stop();
     await browser.stop();
