@@ -11,8 +11,8 @@ Inari MCPの現行版（v0.2.x）で分かっている制約と注意点。
 - **URLパターンはパスと比べ、クエリやフラグメントとは比べない**: パスに`?`や`#`（`%3F`、`%23`も）を含むホストパターンは、決して一致しないので設定エラーになる。クエリ文字列で一致させたいときは、`re:`（URL全体に対する正規表現）で書くこと
 - **拡張機能とMCP Serverの版が違うと、コマンドが`config_error`で拒否されることがある**: MCP Serverがコマンドに付けたコンテナスコープやURLルールを拡張機能が使えないとき、拡張機能はその検査を飛ばして実行せず、コマンドを拒否する。拡張機能とMCP Serverは一緒に更新すること（READMEの「更新」を参照）
 - **共有daemonは、起動したプロセスの環境変数を使う**: `FOX_READ_ONLY`などの環境変数は、実際にdaemonを起動したプロセスのものだけが読まれる。Firefox（Native Host）が起動したdaemonはFirefoxの環境変数を引き継ぎ、`claude mcp add --env`の値は使われない。確実に効かせたい設定は`~/.inari-mcp/safety.json`に書くこと（READMEを参照）。セッションとdaemonで設定が食い違うと、セッション開始時と`fox_safety_status`の結果に警告が出る
-- **以前の版の`allow_script_execution`が残った`safety.json`では、すべてのツールが拒否される**: Inari MCPにはスクリプト系ツールがないので、このキーは知らないキーになり、ファイルを使えない（ほかの知らないキーと同じく、安全側に倒す）。キーを消してdaemonを再起動する
-- **以前の版のキー`protected_url_patterns`や`confirm_protected_actions`が残った`safety.json`では、すべてのツールが拒否される**: InariMCPはどのサイトでも操作系ツールごとに尋ねるので、保護対象サイトの一覧もその切り替えもない。どちらのキーも知らないキーになる（安全側に倒す）。キーを消してdaemonを再起動し、読み取りとスクリーンショットでも尋ねたいサイトは`confirm_read_sites`に書く
+- **以前の版の`allow_script_execution`が残った`safety.json`では、すべてのツールが拒否される**: Inari MCPにはスクリプト系ツールがないので、このキーは知らないキーになり、ファイルを使えない（ほかの知らないキーと同じく、安全側を優先する）。キーを消してdaemonを再起動する
+- **以前の版のキー`protected_url_patterns`や`confirm_protected_actions`が残った`safety.json`では、すべてのツールが拒否される**: InariMCPはどのサイトでも操作系ツールごとに尋ねるので、保護対象サイトの一覧もその切り替えもない。どちらのキーも知らないキーになる（安全側を優先する）。キーを消してdaemonを再起動し、読み取りとスクリーンショットでも尋ねたいサイトは`confirm_read_sites`に書く
 - **`blocked_url_patterns` / `allowed_url_patterns`はhttp(s)のタブにだけ効く**: ユーザーが開いた`file://`のページやブラウザ内部のページ（`about:`、`moz-extension://`）はサイトではないので、リストの対象にならない。許可リストのモードでも、そのようなタブは読み取り・操作の対象になる。`fox_navigate`ではそこへ行けない（http(s)と`about:blank`以外は`blocked_scheme`で拒否する）
 
 ## 人による承認
@@ -68,7 +68,7 @@ Inari MCPの現行版（v0.2.x）で分かっている制約と注意点。
 - **UbuntuのSnap版FirefoxではNative Messagingが動かないことがある**: `apt install firefox`で入るのはSnap版で、xdg-desktop-portalを通してhostを起動する。インストーラはそのためのマニフェストも書くが、ポータルがhostを起動できるかはシステムによる。動かなければMozillaのAPTリポジトリからdeb版を入れる
 - **Flatpak版FirefoxのNative Messagingにはポータルが必要**: サンドボックスの中からホストのnodeは実行できない。インストーラはFlatpakの置き場にもマニフェストを書くが、Firefoxがhostに届くのは`about:config`で`widget.use-xdg-desktop-portal.native-messaging`を`1`にし、WebExtensionsに対応したxdg-desktop-portalがあるときだけ。そうでなければポップアップに「Setup needed」と出て、インストーラを実行し直しても直らない。この経路は未検証で、Flatpak以外のFirefoxが確実
 - **macOSは未検証**: インストーラとアンインストーラのmacOS用の経路（`~/Library/Application Support/...`）は、実機のMacで一度も動かしていない
-- **WindowsでPowerShellが使えないと、Firefoxと一緒にdaemonが止まることがある**: Native Hostは、daemonをFirefoxのジョブオブジェクトの外で起動するためにPowerShellを使い、だめならWMI（`cscript`）、タスク スケジューラ（`schtasks`）を試す。すべて失敗するとdaemonをジョブの中で起動して`native-host.log`に警告を出し、そのときはFirefoxを閉じるとdaemonと、それを使うClaude Codeのセッションが止まる。インストーラとアンインストーラ自体にはPowerShellは要らない
+- **WindowsでPowerShellが使えないと、Firefoxと一緒にdaemonが止まることがある**: Native HostはdaemonをFirefoxのジョブオブジェクトの外で起動するためにPowerShellを使い、だめならWMI（`cscript`）、タスク スケジューラ（`schtasks`）を試す。すべて失敗するとdaemonをジョブの中で起動して`native-host.log`に警告を出し、そのときはFirefoxを閉じるとdaemonと、それを使うClaude Codeのセッションが止まる。インストーラとアンインストーラ自体にはPowerShellは要らない
 - **WSLのClaude CodeからWindowsのFirefoxは使えない**: それぞれが自分の`~/.inari-mcp/`（とAPIトークン）でdaemonを起動するので、WSLのセッションはWindowsのFirefoxに届かない。Claude CodeとFirefoxは同じ側で動かす
 - **Firefoxのプロファイルを複数同時に開くと、先に接続した1つだけが使われる**: どれが使われているかはどこにも表示されない
 - **アンインストールの後にdaemonが戻ってくることがある**: アンインストーラは最初にFirefoxへの登録を外し、daemonより先にこのリポジトリのNative Hostを止めるが、Inari MCPを使っているClaude Codeのセッションが残っていると、次のブラウザツールの呼び出しでdaemonを起動し直す（APIトークンも作り直す）。それらのセッションを再起動すること（アンインストーラが一覧を出す）。プロセスの一覧を取れない場合（`ps` / WMIがない）は、拡張機能を外すかFirefoxも終了する
