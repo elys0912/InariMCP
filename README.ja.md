@@ -14,7 +14,7 @@
 
 ## これは何？
 
-Inari MCP for Firefoxは、Firefox拡張機能・ネイティブメッセージングホスト・MCPサーバーで構成されるツールで、Claude Code（または他のMCPクライアント）にあなたの実際のFirefox — cookieもセッションも既存の拡張機能もそのままの環境 — を操作させることができる。使い捨てプロファイルを立ち上げる代わりに、WebExtensionとネイティブメッセージングブリッジを通じて実行中のFirefoxと通信し、今見ているタブでページを読む・要素を探す・スクリーンショットを撮る・タブを切り替える・クリックや入力をする。操作はどれも、あなたが承認してから行う。
+Inari MCP for Firefoxは、Firefox拡張機能・ネイティブメッセージングホスト・MCPサーバーで構成されるツールで、Claude Code（または他のMCPクライアント）にあなたの実際のFirefox（cookieもセッションも既存の拡張機能もそのままの環境）を操作させることができる。使い捨てプロファイルを立ち上げる代わりに、WebExtensionとネイティブメッセージングブリッジを通じて実行中のFirefoxと通信し、今見ているタブでページを読む・要素を探す・スクリーンショットを撮る・タブを切り替える・クリックや入力をする。操作はどれも、あなたが承認してから行う。
 
 これは[nanogenomic/ClaudeCodeBrowser](https://github.com/nanogenomic/ClaudeCodeBrowser)（MIT）のフォークで、PythonからTypeScriptに移植し、Firefox専用に絞ったもの。
 
@@ -40,14 +40,14 @@ Inari MCPは意図的に用途を絞っている。以下に当てはまる場�
 
 ## 特徴
 
-- **17個の`fox_*`ツール** — ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、読み取りと検索、タブ管理、待機をカバー。関連する操作は1つのツールにまとめ、モード引数で切り替える（`fox_wait`の`for: "url"`、`fox_tab`の`action: "close"`など）。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
-- **ツールプロファイル（`FOX_CAPS`）** — 全てのツールを登録すると実際にコンテキストトークンを消費する。プロファイル（`core`、`human`、`wait`など）を選んで必要な分だけ読み込める。[`FOX_CAPS`のプロファイル](#fox_capsのプロファイル)を参照。
-- **操作はすべてあなたが承認** — クリック・入力・キーの入力・入力欄の値の設定・hover・ページの移動・タブを開く/閉じる操作は、どのサイトでも1回ずつ、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのInari MCPツールバーのポップアップで、あなたが承認するまで待つ。ページの中からは承認できない。読み取り・待機・スクロール・要素の強調表示・タブの切り替えは承認を求めない（`confirm_read_sites`に書いたサイトでは、ページの読み取りとスクリーンショットも承認を求める）。[人による承認](#人による承認)を参照。
-- **許可・一時停止・バッジ** — 拡張機能は初回の起動で許可を求め、許可するまでどこにも繋がない。ツールバーのポップアップに、すべての呼び出しを断る一時停止のスイッチがあり、ツールが動いている間はバッジが付く。
-- **安全ガード** — コンテナスコープ、レート制限、URLスキームの確認、ブロック/許可リスト、読み取り専用モードを、すべての呼び出しの前に通す。判定はすべて手元のPCのJSONLの監査ログに残る。
-- **コンテナ分離（オプトイン）** — Firefoxの`contextualIdentities`を使い、エージェントを専用コンテナに制限できる。これにより、他のタブで開いている銀行・メールのセッションをエージェントから見えなくできる。これはFirefox専用の機能で、Chromiumには同等のものが存在しない。
-- **ヘッドレスモード（上級者向け）** — 拡張機能経由を使いたくない場合のための、Playwrightベースの、Firefox専用ヘッドレスバックエンド。使えないツール・引数が多い（[ツールの対応状況](#ツールの対応状況)を参照）。
-- **FirefoxネイティブなAPI** — トークンを節約できるページ内テキスト検索用の`browser.find`、全ページ・全タブを含むスクリーンショット用の`tabs.captureTab`（背景タブも切り替えずに撮る。破棄済み（discarded）のタブは、切り替えるまでエラーになる）。
+- **17個の`fox_*`ツール**：ナビゲーション、クリック/入力/スクロール、スクリーンショット（可視範囲/全ページ/全タブ）、読み取りと検索、タブ管理、待機をカバー。関連する操作は1つのツールにまとめ、モード引数で切り替える（`fox_wait`の`for: "url"`、`fox_tab`の`action: "close"`など）。Playwright MCPと併用しても衝突しないよう`browser_`ではなく`fox_`をプレフィックスにしている。まだすべての経路で動くわけではない。[ツールの対応状況](#ツールの対応状況)を参照。
+- **ツールプロファイル（`FOX_CAPS`）**：全てのツールを登録すると実際にコンテキストトークンを消費する。プロファイル（`core`、`human`、`wait`など）を選んで必要な分だけ読み込める。[`FOX_CAPS`のプロファイル](#fox_capsのプロファイル)を参照。
+- **操作はすべてあなたが承認**：クリック・入力・キーの入力・入力欄の値の設定・hover・ページの移動・タブを開く/閉じる操作は、どのサイトでも1回ずつ、Claude Code自身の確認ダイアログ（MCP elicitation）か、FirefoxのInari MCPツールバーのポップアップで、あなたが承認するまで待つ。ページの中からは承認できない。読み取り・待機・スクロール・要素の強調表示・タブの切り替えは承認を求めない（`confirm_read_sites`に書いたサイトでは、ページの読み取りとスクリーンショットも承認を求める）。[人による承認](#人による承認)を参照。
+- **許可・一時停止・バッジ**：拡張機能は初回の起動で許可を求め、許可するまでどこにも繋がない。ツールバーのポップアップに、すべての呼び出しを断る一時停止のスイッチがあり、ツールが動いている間はバッジが付く。
+- **安全ガード**：コンテナスコープ、レート制限、URLスキームの確認、ブロック/許可リスト、読み取り専用モードを、すべての呼び出しの前に通す。判定はすべて手元のPCのJSONLの監査ログに残る。
+- **コンテナ分離（オプトイン）**：Firefoxの`contextualIdentities`を使い、エージェントを専用コンテナに制限できる。これにより、他のタブで開いている銀行・メールのセッションをエージェントから見えなくできる。これはFirefox専用の機能で、Chromiumには同等のものが存在しない。
+- **ヘッドレスモード（上級者向け）**：拡張機能経由を使いたくない場合のための、Playwrightベースの、Firefox専用ヘッドレスバックエンド。使えないツール・引数が多い（[ツールの対応状況](#ツールの対応状況)を参照）。
+- **FirefoxネイティブなAPI**：トークンを節約できるページ内テキスト検索用の`browser.find`、全ページ・全タブを含むスクリーンショット用の`tabs.captureTab`（背景タブも切り替えずに撮る。破棄済み（discarded）のタブは、切り替えるまでエラーになる）。
 
 ## クイックスタート
 
@@ -57,9 +57,9 @@ Inari MCPは意図的に用途を絞っている。以下に当てはまる場�
 
 登場するもの：
 
-- **拡張機能** — Firefoxに入れる部品。addons.mozilla.org（Firefoxの公式のアドオン配布サイト）から入れる。
-- **ネイティブホスト** — 拡張機能とAIツールをつなぐ、このPCの中の補助プログラム。GitHubから入手して、コマンドを3つ打って入れる。これが無いと拡張機能は何もしない。
-- **MCPクライアント** — Claude CodeなどのAIツール。ここにInari MCPを登録すると、AIがFirefoxを使えるようになる。
+- **拡張機能**：Firefoxに入れる部品。addons.mozilla.org（Firefoxの公式のアドオン配布サイト）から入れる。
+- **ネイティブホスト**：拡張機能とAIツールをつなぐ、このPCの中の補助プログラム。GitHubから入手して、コマンドを3つ打って入れる。これが無いと拡張機能は何もしない。
+- **MCPクライアント**：Claude CodeなどのAIツール。ここにInari MCPを登録すると、AIがFirefoxを使えるようになる。
 
 **1. Node.jsを入れる。** https://nodejs.org/ から「LTS」と書かれた版をダウンロードして、そのままインストールする（バージョン20以上なら使える）。すでに入っていればこの手順は飛ばしてよい。
 
@@ -151,7 +151,7 @@ npm run setup
 
 質問するのは標準入力が端末のときだけで、そうでなければ既定の答えを使う。`--skip-build`と`--no-register-claude`も受け付ける。以前の`npm run install:windows` / `install:unix`は`node scripts/install.mjs --build`の別名として残っている。
 
-**Node.jsを入れ替えた・アップグレードした場合は、インストーラを実行し直すこと** — 生成されるラッパーには、インストーラを実行したnodeバイナリの絶対パスが埋め込まれている（そのバイナリが無くなった場合は、Firefoxの`PATH`上の`node`で起動する）。そのnodeがバージョンマネージャーのもの（バージョンを切り替えるとパスが変わる）ならインストーラが警告する。`--node`で変わらないパスを指定できる。
+**Node.jsを入れ替えた・アップグレードした場合は、インストーラを実行し直すこと**。生成されるラッパーには、インストーラを実行したnodeバイナリの絶対パスが埋め込まれている（そのバイナリが無くなった場合は、Firefoxの`PATH`上の`node`で起動する）。そのnodeがバージョンマネージャーのもの（バージョンを切り替えるとパスが変わる）ならインストーラが警告する。`--node`で変わらないパスを指定できる。
 
 ### MCPクライアントに登録する
 
@@ -266,7 +266,7 @@ FOX_HEADLESS=1 node packages/mcp-server/dist/index.js
 
 （または`claude mcp add --env FOX_HEADLESS=1 …`）。有効になるのは`1`・`true`・`yes`（大文字小文字は問わない）だけで、それ以外の値では無効のまま。「無効」として知られた値（`0`・`false`・`no`・`off`）以外、たとえば`on`なら、daemonがログに警告を出す。`FOX_HEADLESS_STARTUP_TIMEOUT`はFirefox起動のタイムアウト（ミリ秒、既定`45000`）。`playwright`が入っていないと、daemonは起動時に`daemon.log`へ`FOX_HEADLESS needs the optional dependency playwright, which is not installed (…)`と出して終了する。メッセージのとおり`playwright`（`--omit=optional`を付けずに`npm ci`、または`packages/mcp-server`で`npm install playwright`）とそのFirefox（`npx playwright install firefox`）を入れる。これらの設定が効くのは、このセッションがdaemonを起動した場合だけ（[下記](#先にdaemonを起動した側の設定が勝つ)を参照）。
 
-これにより実際のセッション/cookie/ログイン状態は失われる点に注意 — 使い捨てプロファイルになる、Playwright MCPと同じトレードオフ。使えないツール・引数が多く（無視した引数は結果の`warnings`に並ぶ）、ブラウザのポップアップで尋ねる相手もいないので、操作系ツールはMCP elicitationでしか承認できない。ヘッドレスモードにはFirefoxのコンテナがないので、`safety.json`で`container_scope.enabled`にしているとブラウザへのコマンドはすべて拒否される。ヘッドレスのdaemonにはコンテナスコープを切った専用の`safety.json`を`FOX_SAFETY_CONFIG`で渡す。実際にログイン済みのFirefoxを使いたい場合は拡張機能経由を使うこと。
+これにより実際のセッション/cookie/ログイン状態は失われる点に注意。使い捨てプロファイルになる点は、Playwright MCPと同じトレードオフになる。使えないツール・引数が多く（無視した引数は結果の`warnings`に並ぶ）、ブラウザのポップアップで尋ねる相手もいないので、操作系ツールはMCP elicitationでしか承認できない。ヘッドレスモードにはFirefoxのコンテナがないので、`safety.json`で`container_scope.enabled`にしているとブラウザへのコマンドはすべて拒否される。ヘッドレスのdaemonにはコンテナスコープを切った専用の`safety.json`を`FOX_SAFETY_CONFIG`で渡す。実際にログイン済みのFirefoxを使いたい場合は拡張機能経由を使うこと。
 
 ### 更新
 
@@ -397,7 +397,7 @@ WindowsのNative Hostは、daemonをFirefoxのジョブオブジェクトの外�
 | `FOX_HOST` | `127.0.0.1` | daemon、中継、Native Host、アンインストーラ | HTTP/WSサーバーのアドレス。ループバックのアドレス（127.0.0.0/8、`::1`、`localhost`）だけ。それ以外なら、daemon・中継・Native Hostがすべて拒否し、それぞれのログに理由を書く（daemonは起動しない）。空または空白だけの値は未設定として扱う（既定値を使う） |
 | `FOX_HTTP_PORT` | `8785` | daemon、中継、Native Host、アンインストーラ | HTTPのポート（daemonの多重起動防止も兼ねる）。空または空白だけの値は未設定として扱う（既定値を使う） |
 | `FOX_WS_PORT` | `8786` | daemon、Native Host | Native Hostが接続するWebSocketのポート。空または空白だけの値は未設定として扱う（既定値を使う） |
-| `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。**安全の境界ではない** — このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
+| `FOX_CAPS` | 未設定（全ツール） | 中継 | ツールプロファイル、カンマ区切り（[下記](#fox_capsのプロファイル)）。**安全の境界ではない**。このセッションが登録するツールスキーマを絞ってコンテキストトークンを節約するだけの設定。daemonはどの呼び出し元からのどのツールも受け付ける。読み取り専用、URL制限、コンテナスコープといった実際の制限は`safety.json` / 安全ガードが担う |
 | `FOX_HEADLESS` | 未設定 | daemon | `1` / `true` / `yes`でヘッドレスPlaywrightバックエンドを使う。それ以外は無効（`on`など認識できない値は警告をログに出す） |
 | `FOX_HEADLESS_STARTUP_TIMEOUT` | `45000` | daemon | ヘッドレスFirefoxの起動タイムアウト（**ミリ秒**。秒ではない） |
 | `FOX_EXECUTABLE` | PlaywrightのFirefox | daemon（ヘッドレスのみ） | Playwrightが起動するFirefoxバイナリのパス |
@@ -451,7 +451,7 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 
 ホストとスキームは大文字小文字を区別しない。`allowed_url_patterns`ではパスは書いたとおりに一致する（区切りの位置で: `/admin`は`/administrator`を含まない）。`blocked_url_patterns`と`confirm_read_sites`では、`%xx`のエスケープを戻し、連続するスラッシュをまとめ、大文字小文字をそろえたうえで、後ろに何が続いても一致する。それ以外の書き方（`paypal\.com`のような正規表現だけのもの）は、どのリストでもエラーにする。ホストパターンか、URL全体に一致させる`re:`で書く。
 
-`safety.json`を使えない場合（読めない、JSONとして不正、未知のキー — 以前の版の`safety.json`にある`protected_url_patterns`と`confirm_protected_actions`も含む —、型の誤り、使えないURLパターン）、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。使えないURLパターンとは、空のもの、不正な`re:`の正規表現、ホストパターンのうち不正なポート（1〜65535以外）やIPv6アドレス、IPアドレスの前の`*.`、末尾の`/*`以外でパスに含まれる`*`、パスに含まれる`?` / `#`（`%3F` / `%23`も）、ホストパターンでも`re:`でもないもの。`blocked_url_patterns`と`confirm_read_sites`にあるドットのないホストパターン（`paypal`はホスト`paypal`とそのサブドメインにだけ一致する）は、警告付きで使い、警告は`fox_safety_status`（`patternWarnings`）に出る。遷移先も確認する: 許可するのは`http://`・`https://`・`about:blank`だけで、ホストの前にユーザー名やパスワードが付いたURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。ホストの無いページ（`view-source:`、`blob:`、`data:`など。`about:`のページと`file:`は除く）にあるタブはどのURLパターンにも一致しないので、そこで操作するツールは拒否する。読み取るツールは動く。
+`safety.json`を使えない場合（読めない、JSONとして不正、未知のキー（以前の版の`safety.json`にある`protected_url_patterns`と`confirm_protected_actions`も含む）、型の誤り、使えないURLパターン）、daemonはエラーをstderr（`daemon.log`）に出し、ファイルを直してdaemonを再起動するまで、`fox_safety_status`（エラーを表示する）以外のすべてのツールを拒否する。使えないURLパターンとは、空のもの、不正な`re:`の正規表現、ホストパターンのうち不正なポート（1〜65535以外）やIPv6アドレス、IPアドレスの前の`*.`、末尾の`/*`以外でパスに含まれる`*`、パスに含まれる`?` / `#`（`%3F` / `%23`も）、ホストパターンでも`re:`でもないもの。`blocked_url_patterns`と`confirm_read_sites`にあるドットのないホストパターン（`paypal`はホスト`paypal`とそのサブドメインにだけ一致する）は、警告付きで使い、警告は`fox_safety_status`（`patternWarnings`）に出る。遷移先も確認する: 許可するのは`http://`・`https://`・`about:blank`だけで、ホストの前にユーザー名やパスワードが付いたURLは拒否し、最終的なURL（リダイレクトやクリックの後）がブロック対象になった結果は返さない。ホストの無いページ（`view-source:`、`blob:`、`data:`など。`about:`のページと`file:`は除く）にあるタブはどのURLパターンにも一致しないので、そこで操作するツールは拒否する。読み取るツールは動く。
 
 ### 人による承認
 
@@ -464,13 +464,13 @@ URLパターンは文字列のままではなく、解析したURLと照合す�
 
 サイトとは、呼び出しが操作するページのホスト名のこと（`url`を付けた`fox_navigate`と`create`の`fox_tab`では、開くURLのホスト名。URLなしの新しいタブは`about:`、ローカルのファイルは`file:`）。対象のタブがどのページにあるかをdaemonがまだ知らないとき（起動した直後や、一覧で見たことのないタブ）は、その呼び出しはまだ承認できず、先に`fox_tabs`を呼ぶようモデルに返す。Firefoxの拡張機能はタブの実際のURLで承認をもう一度確かめ、daemonが何を送ってきても、そのタブのサイトに対して承認されていない操作は拒否する。ヘッドレスのバックエンドも、コマンドを実行する直前に同じように確かめる。その間にタブが別のサイトへ移っていた場合は、そのサイトについて改めて尋ねる。
 
-承認が効くのは、そのツールをその引数のまま、そのサイトで1回呼ぶことだけ。要求の期限（120秒。Firefoxのポップアップが待つのは最大60秒）までに答える必要があり、承認は中継だけが見る1回限りのトークンで運ばれる（モデルには見えない）。同じタブで同じツールを続けて呼ぶ場合も、操作系の呼び出しは1回ずつ尋ねる（「しばらく許可」はない）。引数は省略せずに見せる: 見えない文字と文字の向きを変える文字（双方向制御文字、ゼロ幅文字、タグ文字、U+2028 / U+2029）は警告の行を付けて`\u`のエスケープで表示し、引数が収まらない呼び出し（1つの値が160、または`名前: 値`の行の全体が800を超える。長さは各値をJSONに直した後のUTF-16の単位で数え、引用符とエスケープを含む。値の中の改行は2、絵文字は2と数える）は承認を求めずに、承認できないことをモデルに返す。つまり長い引数は承認できない: 長いURLの`fox_navigate`、長文の`fox_type`。テキストは短い呼び出しに分けられる場合があるが、URLは分けられない。ページの中のもの — ボタンや`fox_click` — では承認できない。elicitationでの承認が有効な間は、1つのリスクを受け入れている: 回答はローカルのHTTPでdaemonに届くので、`~/.inari-mcp/api_token`を読めるローカルのプロセスは自分の要求を自分で承認できる。Firefoxのポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する（ヘッドレスモードでは承認できなくなる）。
+承認が効くのは、そのツールをその引数のまま、そのサイトで1回呼ぶことだけ。要求の期限（120秒。Firefoxのポップアップが待つのは最大60秒）までに答える必要があり、承認は中継だけが見る1回限りのトークンで運ばれる（モデルには見えない）。同じタブで同じツールを続けて呼ぶ場合も、操作系の呼び出しは1回ずつ尋ねる（「しばらく許可」はない）。引数は省略せずに見せる: 見えない文字と文字の向きを変える文字（双方向制御文字、ゼロ幅文字、タグ文字、U+2028 / U+2029）は警告の行を付けて`\u`のエスケープで表示し、引数が収まらない呼び出し（1つの値が160、または`名前: 値`の行の全体が800を超える。長さは各値をJSONに直した後のUTF-16の単位で数え、引用符とエスケープを含む。値の中の改行は2、絵文字は2と数える）は承認を求めずに、承認できないことをモデルに返す。つまり長い引数は承認できない: 長いURLの`fox_navigate`、長文の`fox_type`。テキストは短い呼び出しに分けられる場合があるが、URLは分けられない。ページの中のもの（ボタンや`fox_click`）では承認できない。elicitationでの承認が有効な間は、1つのリスクを受け入れている: 回答はローカルのHTTPでdaemonに届くので、`~/.inari-mcp/api_token`を読めるローカルのプロセスは自分の要求を自分で承認できる。Firefoxのポップアップでの承認だけにするには`FOX_APPROVAL_ELICITATION=0`を設定する（ヘッドレスモードでは承認できなくなる）。
 
 `fox_request_approval`はこれとは別の、同じポップアップであなたに尋ねる単純な質問で、その答えでツールの呼び出しが許可されることはない。
 
 ### 先にdaemonを起動した側の設定が勝つ
 
-daemon はセッションごとに新しく起動されるわけではない。Claude Codeの中継とFirefox（Native Host経由）のどちらか先に起動した方がdaemonを立ち上げ、残りは全員その1つのdaemonと通信する。これは環境変数に影響する — `FOX_READ_ONLY`、`FOX_HEADLESS`などは、実際にdaemonを起動したプロセスの環境変数だけが読まれる（`FOX_APPROVAL_ELICITATION`は両側で読む。中継はそれぞれ自分の環境変数から、daemonは起動されたときの環境変数から。[環境変数](#環境変数)を参照）。Native Hostが起動したdaemonはFirefoxの環境変数を引き継ぎ、Claude Codeのセッションのものは使わない。Firefoxが先にdaemonを起動していた場合、後から起動したClaude CodeセッションのMCP設定に`FOX_READ_ONLY=1`と書いてあっても効かない。警告は出る（セッション開始時と`fox_safety_status`の結果）が、既存のdaemonはそのままの設定で動き続ける。
+daemon はセッションごとに新しく起動されるわけではない。Claude Codeの中継とFirefox（Native Host経由）のどちらか先に起動した方がdaemonを立ち上げ、残りは全員その1つのdaemonと通信する。これは環境変数に影響する。`FOX_READ_ONLY`、`FOX_HEADLESS`などは、実際にdaemonを起動したプロセスの環境変数だけが読まれる（`FOX_APPROVAL_ELICITATION`は両側で読む。中継はそれぞれ自分の環境変数から、daemonは起動されたときの環境変数から。[環境変数](#環境変数)を参照）。Native Hostが起動したdaemonはFirefoxの環境変数を引き継ぎ、Claude Codeのセッションのものは使わない。Firefoxが先にdaemonを起動していた場合、後から起動したClaude CodeセッションのMCP設定に`FOX_READ_ONLY=1`と書いてあっても効かない。警告は出る（セッション開始時と`fox_safety_status`の結果）が、既存のdaemonはそのままの設定で動き続ける。
 
 `safety.json`にはこの問題がない。どちらがdaemonを起動しても、既定では同じ固定パス（`~/.inari-mcp/safety.json`）から読まれるからだ。`read_only`などを確実に効かせたいなら、環境変数ではなく`safety.json`側に設定すること。
 
@@ -489,7 +489,7 @@ Inari MCP for Firefox 0.1.0は、addons.mozilla.orgに掲載した最初の版�
 - FirefoxネイティブAPI: コンテナタブ、`browser.find`、`tabs.captureTab`（P7）
 - 拡張機能経路のエンドツーエンド結合、および中継＋共有サーバー構成への移行（Claude Codeを複数セッション同時に使ってもポートを取り合わない）（P7.5）
 - Windows 11 + Firefoxでの実機E2E（2026-09-27）
-- インストーラー — 最初はPowerShell / bashのスクリプトで、実機Windows 11と、Linux（WSL2のUbuntu 24.04、deb版Firefox 156）で結線を確認済み（2026-09-28）。その後、PowerShellの要らない全プラットフォーム共通のNode.jsのインストーラとアンインストーラ（`scripts/install.mjs` / `scripts/uninstall.mjs`、`npm run setup` / `npm run teardown`）に置き換えた。macOS固有の経路は実機のmacOSではまだ動かしていない。Linuxの確認に使ったスモークテストは`scripts/e2e/`にある
+- インストーラー：最初はPowerShell / bashのスクリプトで、実機Windows 11と、Linux（WSL2のUbuntu 24.04、deb版Firefox 156）で結線を確認済み（2026-09-28）。その後、PowerShellの要らない全プラットフォーム共通のNode.jsのインストーラとアンインストーラ（`scripts/install.mjs` / `scripts/uninstall.mjs`、`npm run setup` / `npm run teardown`）に置き換えた。macOS固有の経路は実機のmacOSではまだ動かしていない。Linuxの確認に使ったスモークテストは`scripts/e2e/`にある
 - 診断（`--doctor`）、`--help` / `--version`、全パッケージと拡張機能の版の統一（0.1.4）
 - 配布準備: 正式なExtension ID確定（`inari-mcp@elys0912.github.io`）、AMOの`data_collection_permissions`設定、`web-ext lint`がエラー・警告0件（P8）
 - 承認をページの外へ移動（ツールバーのポップアップ / MCP elicitation、1回限りの承認トークン）、daemon・中継・Native Hostの間のHMACによる相互認証
@@ -511,7 +511,7 @@ Inari MCP for Firefox 0.1.0は、addons.mozilla.orgに掲載した最初の版�
 | `fox_request_approval` | 動く | 常に拒否（尋ねる相手がいない） |
 | その他すべて | 動く | 動くが、無視される引数が多い（結果の`warnings`に並ぶ。[既知の制約](docs/known-issues.ja.md)を参照） |
 
-未実装のツールを呼ぶと、黙って失敗するのではなくエラー（`Not implemented in extension: …` / `Unsupported headless action: …`）が返る。
+未実装のツールを呼ぶと、気づかないうちに失敗するのではなくエラー（`Not implemented in extension: …` / `Unsupported headless action: …`）が返る。
 
 現行版の制約は[`docs/known-issues.ja.md`](docs/known-issues.ja.md)にまとめている（[English](docs/known-issues.md)）。
 
@@ -552,7 +552,7 @@ npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（Pla
 - [変更履歴](docs/CHANGELOG.ja.md)
 - [既知の制約](docs/known-issues.ja.md)
 - [開発](docs/development.ja.md)
-- [Issues](https://github.com/elys0912/InariMCP/issues) — 質問と不具合の報告
+- [Issues](https://github.com/elys0912/InariMCP/issues)：質問と不具合の報告
 
 ## Credits
 
@@ -560,4 +560,4 @@ npm run e2e:extension     # 拡張機能がFirefoxに読み込まれるか（Pla
 
 ## License
 
-MIT — [LICENSE](./LICENSE)を参照。
+MIT（[LICENSE](./LICENSE)を参照）。
